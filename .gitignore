@@ -1,0 +1,7 @@
+.vscode/settings.json
+
+*.o
+*.dSYM
+*.data
+
+matmul-test
