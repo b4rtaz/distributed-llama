@@ -1,8 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "matmul.h"
-#include "matmul-slice.h"
+#include "matmul.hpp"
 
 int n = 4096;
 int d = 4096;
@@ -18,31 +17,32 @@ void test0_default() {
 void test0_distr() {
     int slices = 8;
 
-    struct matmul_slice slice;
-    matmul_slice_new(&slice, slices, n, d);
+    MatMulSlice* slice = new MatMulSlice(slices, n, d);
 
     for (int s = 0; s < slices; s++) {
-        float* weights0 = calloc(slice.weights0Length, sizeof(float));
+        float* weights0 = new float[slice->weights0Length];
 
-        int weightsOffset = matmul_slice_split_weights(&slice, s, weights, weights0);
+        int weightsOffset = slice->splitWeights(s, weights, weights0);
 
-        float* output0 = calloc(slice.d0, sizeof(float));
-        matmul(output0, input, weights0, n, slice.d0);
+        float* output0 = new float[slice->d0];
+        matmul(output0, input, weights0, slice->n, slice->d0);
 
-        int outputOffset = matmul_slice_merge_output(&slice, s, output, output0);
+        int outputOffset = slice->mergeOutputs(s, output, output0);
 
-        free(weights0);
-        free(output0);
+        delete[] weights0;
+        delete[] output0;
 
         printf("weights <%8d, %8d> output <%4d, %4d>\n",
             weightsOffset,
-            weightsOffset + slice.weights0Length,
+            weightsOffset + slice->weights0Length,
             outputOffset,
-            outputOffset + slice.d0);
+            outputOffset + slice->d0);
     }
+
+    delete slice;
 }
 
-void compareOrFail(char *name) {
+void compareOrFail(const char *name) {
     int ix = -1;
     for (int i = 0; i < d; i++) {
         if (output[i] != expectedOutput[i]) {
@@ -59,7 +59,7 @@ void compareOrFail(char *name) {
     }
 }
 
-void readData(float* target, int n, char* path) {
+void readData(float* target, int n, const char* path) {
     FILE* f = fopen(path, "r");
     if (f == NULL) exit(-1);
     fread(target, sizeof(float), n, f);
@@ -68,13 +68,13 @@ void readData(float* target, int n, char* path) {
 }
 
 int main() {
-    input = calloc(n, sizeof(float));
-    weights = calloc(n * d, sizeof(float));
-    output = calloc(d, sizeof(float));
-    expectedOutput = calloc(d, sizeof(float));
-    readData(input, n, "matmul/test0-input.data");
-    readData(weights, n * d, "matmul/test0-weights.data");
-    readData(expectedOutput, d, "matmul/test0-output.data");
+    input = new float[n];
+    weights = new float[n * d];
+    output = new float[d];
+    expectedOutput = new float[d];
+    readData(input, n, "test-data/matmul-input.data");
+    readData(weights, n * d, "test-data/matmul-weights.data");
+    readData(expectedOutput, d, "test-data/matmul-output.data");
 
     memset(output, 0, d * sizeof(float));
     test0_default();
@@ -84,9 +84,9 @@ int main() {
     test0_distr();
     compareOrFail("distr");
 
-    free(input);
-    free(weights);
-    free(output);
-    free(expectedOutput);
+    delete[] input;
+    delete[] weights;
+    delete[] output;
+    delete[] expectedOutput;
     return 0;
 }
