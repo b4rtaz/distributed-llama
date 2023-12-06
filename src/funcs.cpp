@@ -1,6 +1,13 @@
 #include <math.h>
+#include <sys/time.h>
 
-void rmsnorm(float* o, float* x, float* weight, int size) {
+long timeMs() {
+    struct timeval te; 
+    gettimeofday(&te, NULL);
+    return te.tv_sec * 1000LL + te.tv_usec / 1000;
+}
+
+float sumOfSquares(float* x, int size) {
     // calculate sum of squares
     float ss = 0.0f;
     for (int j = 0; j < size; j++) {
@@ -9,6 +16,10 @@ void rmsnorm(float* o, float* x, float* weight, int size) {
     ss /= size;
     ss += 1e-5f;
     ss = 1.0f / sqrtf(ss);
+    return ss;
+}
+
+void rmsnorm(float* o, float* x, float* weight, int size, float ss) {
     // normalize and scale
     for (int j = 0; j < size; j++) {
         o[j] = weight[j] * (ss * x[j]);

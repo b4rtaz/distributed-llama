@@ -1,4 +1,6 @@
 #include <stdio.h>
+#include "shared-buffer.hpp"
+#include "matmul.hpp"
 
 class TransformerSpec {
 public:
@@ -10,19 +12,46 @@ public:
     int hidden_dim;
     int kv_dim;
     int vocab_size;
+
+    int sliceCount;
+};
+
+class TransformerBlockQkv {
+private:
+    int sliceIndex;
+    TransformerSpec* spec;
+    SharedBuffer *sharedBuffer;
+
+    float *qWeights0;
+    float *kWeights0;
+    float *vWeights0;
+
+public:
+    MatMulSlice *qSlice;
+    MatMulSlice *kSlice;
+    MatMulSlice *vSlice;
+
+    TransformerBlockQkv(int sliceIndex, TransformerSpec* spec, SharedBuffer *sharedBuffer);
+    ~TransformerBlockQkv();
+
+    void readWeights(float *qWeights, float *kWeights, float *vWeights);
+
+    void beginForwarding();
+    void waitForEnd();
 };
 
 class TransformerBlock {
 private:
     TransformerSpec* spec;
-    bool allocate;
+    SharedBuffer *sharedBuffer;
+    TransformerBlockQkv **qkvs;
 public:
     float* rms_att_weight; // (dim) rmsnorm weights
     float* rms_ffn_weight; // (dim)
     // weights for matmuls. note dim == n_heads * head_size
-    float* wq; // (dim, n_heads * head_size)
-    float* wk; // (dim, n_kv_heads * head_size)
-    float* wv; // (dim, n_kv_heads * head_size)
+    //float* wq; // (dim, n_heads * head_size)
+    //float* wk; // (dim, n_kv_heads * head_size)
+    //float* wv; // (dim, n_kv_heads * head_size)
     float* wo; // (n_heads * head_size, dim)
     // weights for ffn
     float* w1; // (hidden_dim, dim)
@@ -39,10 +68,9 @@ public:
     float* att; // (n_heads, seq_len)
     float* logits; // (vocab_size)
 
-    TransformerBlock(TransformerSpec* spec, bool allocate);
+    TransformerBlock(TransformerSpec* spec, SharedBuffer *sharedBuffer, TransformerBlockQkv **qkvs);
     ~TransformerBlock();
 
     void readWeights(FILE *f);
-
     void forward(int pos, float* x);
 };

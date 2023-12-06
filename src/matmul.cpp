@@ -22,13 +22,13 @@ void matmul(float* output, float* input, float* weights, int n, int d) {
     }
 }
 
-MatMulSlice::MatMulSlice(int slices, int n, int d) {
-    if (d % slices != 0) {
-        printf("d=%d must be divisible by slices=%d\n", d, slices);
+MatMulSlice::MatMulSlice(int sliceCount, int n, int d) {
+    if (d % sliceCount != 0) {
+        printf("d=%d must be divisible by sliceCount=%d\n", d, sliceCount);
         exit(1);
     }
-    this->slices = slices;
-    this->d0 = d / slices;
+    this->sliceCount = sliceCount;
+    this->d0 = d / sliceCount;
     this->n = n;
     this->weights0Length = this->d0 * this->n;
 }
