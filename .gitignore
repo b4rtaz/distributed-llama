@@ -5,3 +5,4 @@
 *.data
 
 matmul-test
+transformer-test

@@ -2,10 +2,10 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "matmul-test",
+            "name": "transformer-test",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/matmul-test",
+            "program": "${workspaceFolder}/transformer-test",
             "args": [],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
