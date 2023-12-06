@@ -24,26 +24,30 @@ int main() {
     spec.vocab_size = 32000;
     spec.sliceCount = 4;
 
-    float x[spec.dim];
+    SharedBuffer sharedBuffer(SB_LENGTH);
+    sharedBuffer.create(SB_X, 0, 1, spec.dim * sizeof(float));
+    sharedBuffer.create(SB_XB, 0, 1, spec.dim * sizeof(float));
+    sharedBuffer.create(SB_XB2, 0, 1, spec.dim * sizeof(float));
+
+    TransformerBlockQkv** qkvs = new TransformerBlockQkv*[spec.sliceCount];
+    TransformerBlockAtt** atts = new TransformerBlockAtt*[spec.sliceCount];
+    for (int s = 0; s < spec.sliceCount; s++) {
+        qkvs[s] = new TransformerBlockQkv(s, &spec, &sharedBuffer);
+        atts[s] = new TransformerBlockAtt(s, &spec, &sharedBuffer);
+    }
+    TransformerBlockQkv* firstQkv = qkvs[0];
+
+    sharedBuffer.create(SB_Q, 0, spec.sliceCount, firstQkv->qSlice->n * firstQkv->qSlice->d0 * sizeof(float));
+    sharedBuffer.create(SB_K, 0, spec.sliceCount, firstQkv->kSlice->n * firstQkv->kSlice->d0 * sizeof(float));
+    sharedBuffer.create(SB_V, 0, spec.sliceCount, firstQkv->vSlice->n * firstQkv->vSlice->d0 * sizeof(float));
+
+    float* x = (float*)sharedBuffer.get(SB_X, 0);
     float expectedOutput[spec.dim];
 
     readData(x, spec.dim, "test-data/block-input.data");
     readData(expectedOutput, spec.dim, "test-data/block-output.data");
 
-    SharedBuffer sharedBuffer(4);
-    sharedBuffer.create(0, 0, 1, spec.dim * sizeof(float));
-
-    TransformerBlockQkv** qkvs = new TransformerBlockQkv*[spec.sliceCount];
-    for (int s = 0; s < spec.sliceCount; s++) {
-        qkvs[s] = new TransformerBlockQkv(s, &spec, &sharedBuffer);
-    }
-    TransformerBlockQkv* firstQkv = qkvs[0];
-
-    sharedBuffer.create(1, 0, spec.sliceCount, firstQkv->qSlice->n * firstQkv->qSlice->d0 * sizeof(float));
-    sharedBuffer.create(2, 0, spec.sliceCount, firstQkv->kSlice->n * firstQkv->kSlice->d0 * sizeof(float));
-    sharedBuffer.create(3, 0, spec.sliceCount, firstQkv->vSlice->n * firstQkv->vSlice->d0 * sizeof(float));
-
-    TransformerBlock block(&spec, &sharedBuffer, qkvs);
+    TransformerBlock block(&spec, &sharedBuffer, qkvs, atts);
     FILE *fWeights = fopen("test-data/block-weights.data", "r");
     block.readWeights(fWeights);
     fclose(fWeights);
@@ -51,7 +55,7 @@ int main() {
     printf("Weights are read\n");
 
     long t0 = timeMs();
-    block.forward(0, x);
+    block.forward(0);
     long t1 = timeMs();
 
     printf("Forward pass took %ld ms\n", t1 - t0);

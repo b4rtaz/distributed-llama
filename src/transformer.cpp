@@ -23,7 +23,6 @@ TransformerBlockQkv::~TransformerBlockQkv() {
     delete qSlice;
     delete kSlice;
     delete vSlice;
-
     delete[] qWeights0;
     delete[] kWeights0;
     delete[] vWeights0;
@@ -36,10 +35,10 @@ void TransformerBlockQkv::readWeights(float *qWeights, float *kWeights, float *v
 }
 
 void TransformerBlockQkv::beginForwarding() {
-    float *xb = (float*)sharedBuffer->get(0, 0);
-    float *q0 = (float*)sharedBuffer->get(1, sliceIndex);
-    float *k0 = (float*)sharedBuffer->get(2, sliceIndex);
-    float *v0 = (float*)sharedBuffer->get(3, sliceIndex);
+    float *xb = (float*)sharedBuffer->get(SB_XB, 0);
+    float *q0 = (float*)sharedBuffer->get(SB_Q, sliceIndex);
+    float *k0 = (float*)sharedBuffer->get(SB_K, sliceIndex);
+    float *v0 = (float*)sharedBuffer->get(SB_V, sliceIndex);
 
     matmul(q0, xb, qWeights0, qSlice->n, qSlice->d0);
     sharedBuffer->sync(1, sliceIndex);
@@ -55,19 +54,113 @@ void TransformerBlockQkv::waitForEnd() {
     // TODO
 }
 
-TransformerBlock::TransformerBlock(TransformerSpec* spec, SharedBuffer* sharedBuffer, TransformerBlockQkv **qkvs) {
+TransformerBlockAtt::TransformerBlockAtt(int sliceIndex, TransformerSpec* spec, SharedBuffer *sharedBuffer) {
+    this->sliceIndex = sliceIndex;
+    this->spec = spec;
+    this->sharedBuffer = sharedBuffer;
+
+    woSlice = new MatMulSlice(spec->sliceCount, spec->dim, spec->dim);
+
+    woWeights0 = new float[woSlice->weights0Length];
+}
+
+TransformerBlockAtt::~TransformerBlockAtt() {
+    delete woSlice;
+    delete[] woWeights0;
+}
+
+void TransformerBlockAtt::readWeights(float *woWeights) {
+    this->woSlice->splitWeights(sliceIndex, woWeights, woWeights0);
+}
+
+void TransformerBlockAtt::beginForwarding() {
+    float *xb = (float*)sharedBuffer->get(SB_XB, 0);
+    float *xb2 = (float*)sharedBuffer->get(SB_XB2, sliceIndex);
+
+    matmul(xb2, xb, woWeights0, woSlice->n, woSlice->d0);
+    sharedBuffer->sync(SB_XB2, sliceIndex);
+}
+
+void TransformerBlockAtt::waitForEnd() {
+    // TODO
+}
+
+TransformerBlockFfn::TransformerBlockFfn(int sliceIndex, TransformerSpec* spec, SharedBuffer *sharedBuffer) {
+    this->sliceIndex = sliceIndex;
+    this->spec = spec;
+    this->sharedBuffer = sharedBuffer;
+
+    w1Slice = new MatMulSlice(spec->sliceCount, spec->hidden_dim, spec->dim);
+    w2Slice = new MatMulSlice(spec->sliceCount, spec->dim, spec->hidden_dim);
+    w3Slice = new MatMulSlice(spec->sliceCount, spec->hidden_dim, spec->dim);
+
+    w1Weights0 = new float[w1Slice->weights0Length];
+    w2Weights0 = new float[w2Slice->weights0Length];
+    w3Weights0 = new float[w3Slice->weights0Length];
+}
+
+TransformerBlockFfn::~TransformerBlockFfn() {
+    delete w1Slice;
+    delete w2Slice;
+    delete w3Slice;
+    delete[] w1Weights0;
+    delete[] w2Weights0;
+    delete[] w3Weights0;
+}
+
+void TransformerBlockFfn::readWeights(float *w1Weights, float *w2Weights, float *w3Weights) {
+    this->w1Slice->splitWeights(sliceIndex, w1Weights, w1Weights0);
+    this->w2Slice->splitWeights(sliceIndex, w2Weights, w2Weights0);
+    this->w3Slice->splitWeights(sliceIndex, w3Weights, w3Weights0);
+}
+
+void TransformerBlockFfn::beginForwarding() {
+    float*xb = (float*)sharedBuffer->get(SB_XB, sliceIndex);
+
+    matmul(hb0, xb, w1Weights0, w1Slice->n, w1Slice->d0);
+    matmul(hb20, xb, w3Weights0, w3Slice->n, w3Slice->d0);
+
+    // Now for FFN in PyTorch we have: self.w2(F.silu(self.w1(x)) * self.w3(x))
+    // first calculate self.w1(x) and self.w3(x)
+    // matmul(hb, xb, w1, dim, hidden_dim);
+    // matmul(hb2, xb, w3, dim, hidden_dim);
+
+    // SwiGLU non-linearity
+    for (int i = 0; i < w1Slice->d0; i++) {
+        float val = hb0[i];
+        // silu(x)=x*σ(x), where σ(x) is the logistic sigmoid
+        val *= (1.0f / (1.0f + expf(-val)));
+        // elementwise multiply with w3(x)
+        val *= hb20[i];
+        hb0[i] = val;
+    }
+
+    // final matmul to get the output of the ffn
+    matmul(xb, hb0, w2Weights0, w2Slice->n, w2Slice->d0);
+}
+
+void TransformerBlockFfn::waitForEnd() {
+    // TODO
+}
+
+TransformerBlock::TransformerBlock(
+    TransformerSpec* spec,
+    SharedBuffer* sharedBuffer,
+    TransformerBlockQkv **qkvs,
+    TransformerBlockAtt **atts) {
     this->spec = spec;
     this->sharedBuffer = sharedBuffer;
     this->qkvs = qkvs;
+    this->atts = atts;
 
     rms_att_weight = new float[spec->dim];
     rms_ffn_weight = new float[spec->dim];
-    wo = new float[spec->n_heads * spec->head_size * spec->dim];
+    //wo = new float[spec->n_heads * spec->head_size * spec->dim];
     w1 = new float[spec->hidden_dim * spec->dim];
     w2 = new float[spec->dim * spec->hidden_dim];
     w3 = new float[spec->hidden_dim * spec->dim];
 
-    xb = new float[spec->dim];
+    //xb = new float[spec->dim];
     xb2 = new float[spec->dim];
     hb = new float[spec->hidden_dim];
     hb2 = new float[spec->hidden_dim];
@@ -80,12 +173,12 @@ TransformerBlock::TransformerBlock(TransformerSpec* spec, SharedBuffer* sharedBu
 TransformerBlock::~TransformerBlock() {
     delete[] rms_att_weight;
     delete[] rms_ffn_weight;
-    delete[] wo;
+    //delete[] wo;
     delete[] w1;
     delete[] w2;
     delete[] w3;
 
-    delete[] xb;
+    //delete[] xb;
     delete[] xb2;
     delete[] hb;
     delete[] hb2;
@@ -108,36 +201,47 @@ void TransformerBlock::readWeights(FILE *f) {
     for (int s = 0; s < spec->sliceCount; s++) {
         qkvs[s]->readWeights(wq, wk, wv);
     }
-
     delete[] wq;
     delete[] wk;
     delete[] wv;
 
-    // loop
-
+    float* wo = new float[spec->dim * spec->dim];
     fread(wo, sizeof(float), spec->dim * spec->dim, f);
+    for (int s = 0; s < spec->sliceCount; s++) {
+        atts[s]->readWeights(wo);
+    }
+    delete[] wo;
+
+    // fread(wo, sizeof(float), spec->dim * spec->dim, f);
     fread(w1, sizeof(float), spec->hidden_dim * spec->dim, f);
     fread(w2, sizeof(float), spec->hidden_dim * spec->dim, f);
     fread(w3, sizeof(float), spec->hidden_dim * spec->dim, f);
 }
 
-void TransformerBlock::forward(int pos, float* x) {
+void TransformerBlock::forward(int pos) {
     int dim = spec->dim;
     int kv_dim = spec->kv_dim;
     int kv_mul = spec->n_heads / spec->n_kv_heads; // integer multiplier of the kv sharing in multiquery
     int hidden_dim =  spec->hidden_dim;
     int head_size = dim / spec->n_heads;
 
+    float* x = (float*)sharedBuffer->get(SB_X, 0);
+    float* xb = (float*)sharedBuffer->get(SB_XB, 0);
+
+
     // attention rmsnorm
     float xss1 = sumOfSquares(x, dim);
     rmsnorm(xb, x, rms_att_weight, dim, xss1);
+
+    printf("x: %f %f %f %f\n", x[0], x[1], x[2], x[3]);
+    printf("xb: %f %f %f %f\n", xb[0], xb[1], xb[2], xb[3]);
 
     float* k = key_cache + pos * kv_dim;
     float* v = value_cache + pos * kv_dim;
 
     // qkv matmuls for this position
-    memcpy(sharedBuffer->get(0, 0), xb, dim * sizeof(float));
-    sharedBuffer->sync(0, 0);
+    memcpy(sharedBuffer->get(SB_XB, 0), xb, dim * sizeof(float));
+    sharedBuffer->sync(SB_XB, 0);
 
     for (int s = 0; s < spec->sliceCount; s++) {
         qkvs[s]->beginForwarding();
@@ -145,9 +249,9 @@ void TransformerBlock::forward(int pos, float* x) {
     for (int s = 0; s < spec->sliceCount; s++) {
         TransformerBlockQkv *qkv = qkvs[s];
         qkv->waitForEnd();
-        qkv->qSlice->mergeOutputs(s, q, (float*)sharedBuffer->get(1, s));
-        qkv->kSlice->mergeOutputs(s, k, (float*)sharedBuffer->get(2, s));
-        qkv->vSlice->mergeOutputs(s, v, (float*)sharedBuffer->get(3, s));
+        qkv->qSlice->mergeOutputs(s, q, (float*)sharedBuffer->get(SB_Q, s));
+        qkv->kSlice->mergeOutputs(s, k, (float*)sharedBuffer->get(SB_K, s));
+        qkv->vSlice->mergeOutputs(s, v, (float*)sharedBuffer->get(SB_V, s));
     }
 
     // RoPE relative positional encoding: complex-valued rotate q and k in each head
@@ -207,8 +311,16 @@ void TransformerBlock::forward(int pos, float* x) {
         }
     }
 
-    // final matmul to get the output of the attention
-    matmul(xb2, xb, wo, dim, dim);
+    memcpy(sharedBuffer->get(SB_XB, 0), xb, dim * sizeof(float));
+    sharedBuffer->sync(SB_XB, 0);
+
+    for (int s = 0; s < spec->sliceCount; s++) {
+        atts[s]->beginForwarding();
+    }
+    for (int s = 0; s < spec->sliceCount; s++) {
+        atts[s]->waitForEnd();
+        atts[s]->woSlice->mergeOutputs(s, xb2, (float*)sharedBuffer->get(SB_XB2, s));
+    }
 
     // residual connection back into x
     for (int i = 0; i < dim; i++) {
@@ -218,6 +330,8 @@ void TransformerBlock::forward(int pos, float* x) {
     // ffn rmsnorm
     float xss2 = sumOfSquares(x, dim);
     rmsnorm(xb, x, rms_ffn_weight, dim, xss2);
+
+    sharedBuffer->sync(SB_XB, 0);
 
     // Now for FFN in PyTorch we have: self.w2(F.silu(self.w1(x)) * self.w3(x))
     // first calculate self.w1(x) and self.w3(x)
