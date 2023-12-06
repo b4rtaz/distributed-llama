@@ -12,7 +12,7 @@ public:
     ~SharedBuffer();
     void create(int bufferIndex, int startSliceIndex, int endSliceIndex, int sliceSize);
     char* get(int bufferIndex, int sliceIndex);
-    void sync(int bufferIndex, int sliceIndex);
+    void send(int bufferIndex, int sliceIndex);
 };
 
 #endif

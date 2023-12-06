@@ -41,13 +41,13 @@ void TransformerBlockQkv::beginForwarding() {
     float *v0 = (float*)sharedBuffer->get(SB_V, sliceIndex);
 
     matmul(q0, xb, qWeights0, qSlice->n, qSlice->d0);
-    sharedBuffer->sync(1, sliceIndex);
+    sharedBuffer->send(1, sliceIndex);
 
     matmul(k0, xb, kWeights0, kSlice->n, kSlice->d0);
-    sharedBuffer->sync(2, sliceIndex);
+    sharedBuffer->send(2, sliceIndex);
 
     matmul(v0, xb, vWeights0, vSlice->n, vSlice->d0);
-    sharedBuffer->sync(3, sliceIndex);
+    sharedBuffer->send(3, sliceIndex);
 }
 
 void TransformerBlockQkv::waitForEnd() {
@@ -78,7 +78,7 @@ void TransformerBlockAtt::beginForwarding() {
     float *xb2 = (float*)sharedBuffer->get(SB_XB2, sliceIndex);
 
     matmul(xb2, xb, woWeights0, woSlice->n, woSlice->d0);
-    sharedBuffer->sync(SB_XB2, sliceIndex);
+    sharedBuffer->send(SB_XB2, sliceIndex);
 }
 
 void TransformerBlockAtt::waitForEnd() {
@@ -90,40 +90,35 @@ TransformerBlockFfn::TransformerBlockFfn(int sliceIndex, TransformerSpec* spec, 
     this->spec = spec;
     this->sharedBuffer = sharedBuffer;
 
-    w1Slice = new MatMulSlice(spec->sliceCount, spec->hidden_dim, spec->dim);
-    w2Slice = new MatMulSlice(spec->sliceCount, spec->dim, spec->hidden_dim);
-    w3Slice = new MatMulSlice(spec->sliceCount, spec->hidden_dim, spec->dim);
+    w1Slice = new MatMulSlice(spec->sliceCount, spec->dim, spec->hidden_dim);
+    // w2Slice = new MatMulSlice(spec->sliceCount, spec->hidden_dim, spec->dim);
+    w3Slice = new MatMulSlice(spec->sliceCount, spec->dim, spec->hidden_dim);
+
+    hb20 = new float[w3Slice->d0];
 
     w1Weights0 = new float[w1Slice->weights0Length];
-    w2Weights0 = new float[w2Slice->weights0Length];
+    // w2Weights0 = new float[w2Slice->weights0Length];
     w3Weights0 = new float[w3Slice->weights0Length];
 }
 
 TransformerBlockFfn::~TransformerBlockFfn() {
     delete w1Slice;
-    delete w2Slice;
     delete w3Slice;
     delete[] w1Weights0;
-    delete[] w2Weights0;
     delete[] w3Weights0;
 }
 
-void TransformerBlockFfn::readWeights(float *w1Weights, float *w2Weights, float *w3Weights) {
+void TransformerBlockFfn::readWeights(float *w1Weights, float *w3Weights) {
     this->w1Slice->splitWeights(sliceIndex, w1Weights, w1Weights0);
-    this->w2Slice->splitWeights(sliceIndex, w2Weights, w2Weights0);
     this->w3Slice->splitWeights(sliceIndex, w3Weights, w3Weights0);
 }
 
 void TransformerBlockFfn::beginForwarding() {
-    float*xb = (float*)sharedBuffer->get(SB_XB, sliceIndex);
+    float*xb = (float*)sharedBuffer->get(SB_XB, 0);
+    float* hb0 = (float*)sharedBuffer->get(SB_HB, sliceIndex);
 
     matmul(hb0, xb, w1Weights0, w1Slice->n, w1Slice->d0);
     matmul(hb20, xb, w3Weights0, w3Slice->n, w3Slice->d0);
-
-    // Now for FFN in PyTorch we have: self.w2(F.silu(self.w1(x)) * self.w3(x))
-    // first calculate self.w1(x) and self.w3(x)
-    // matmul(hb, xb, w1, dim, hidden_dim);
-    // matmul(hb2, xb, w3, dim, hidden_dim);
 
     // SwiGLU non-linearity
     for (int i = 0; i < w1Slice->d0; i++) {
@@ -134,12 +129,41 @@ void TransformerBlockFfn::beginForwarding() {
         val *= hb20[i];
         hb0[i] = val;
     }
+    // printf("hb0 (norm): %f %f %f %f\n", hb0[0], hb0[1], hb0[2], hb0[3]);
 
-    // final matmul to get the output of the ffn
-    matmul(xb, hb0, w2Weights0, w2Slice->n, w2Slice->d0);
+    sharedBuffer->send(SB_HB, sliceIndex);
 }
 
 void TransformerBlockFfn::waitForEnd() {
+    // TODO
+}
+
+TransformerBlockFfn2::TransformerBlockFfn2(int sliceIndex, TransformerSpec* spec, SharedBuffer *sharedBuffer) {
+    this->sliceIndex = sliceIndex;
+    this->spec = spec;
+    this->sharedBuffer = sharedBuffer;
+
+    w2Slice = new MatMulSlice(spec->sliceCount, spec->hidden_dim, spec->dim);
+    w2Weights0 = new float[w2Slice->weights0Length];
+}
+
+TransformerBlockFfn2::~TransformerBlockFfn2() {
+    delete w2Slice;
+    delete[] w2Weights0;
+}
+
+void TransformerBlockFfn2::readWeights(float *w2Weights) {
+    this->w2Slice->splitWeights(sliceIndex, w2Weights, w2Weights0);
+}
+
+void TransformerBlockFfn2::beginForwarding() {
+    float *hh = (float*)sharedBuffer->get(SB_HH, 0);
+    float *xb = (float*)sharedBuffer->get(SB_XB, sliceIndex);
+
+    matmul(xb, hh, w2Weights0, w2Slice->n, w2Slice->d0);
+}
+
+void TransformerBlockFfn2::waitForEnd() {
     // TODO
 }
 
@@ -147,20 +171,20 @@ TransformerBlock::TransformerBlock(
     TransformerSpec* spec,
     SharedBuffer* sharedBuffer,
     TransformerBlockQkv **qkvs,
-    TransformerBlockAtt **atts) {
+    TransformerBlockAtt **atts,
+    TransformerBlockFfn **ffns,
+    TransformerBlockFfn2 **ffn2s) {
     this->spec = spec;
     this->sharedBuffer = sharedBuffer;
     this->qkvs = qkvs;
     this->atts = atts;
+    this->ffns = ffns;
+    this->ffn2s = ffn2s;
 
     rms_att_weight = new float[spec->dim];
     rms_ffn_weight = new float[spec->dim];
-    //wo = new float[spec->n_heads * spec->head_size * spec->dim];
-    w1 = new float[spec->hidden_dim * spec->dim];
     w2 = new float[spec->dim * spec->hidden_dim];
-    w3 = new float[spec->hidden_dim * spec->dim];
 
-    //xb = new float[spec->dim];
     xb2 = new float[spec->dim];
     hb = new float[spec->hidden_dim];
     hb2 = new float[spec->hidden_dim];
@@ -173,12 +197,7 @@ TransformerBlock::TransformerBlock(
 TransformerBlock::~TransformerBlock() {
     delete[] rms_att_weight;
     delete[] rms_ffn_weight;
-    //delete[] wo;
-    delete[] w1;
-    delete[] w2;
-    delete[] w3;
 
-    //delete[] xb;
     delete[] xb2;
     delete[] hb;
     delete[] hb2;
@@ -212,36 +231,39 @@ void TransformerBlock::readWeights(FILE *f) {
     }
     delete[] wo;
 
-    // fread(wo, sizeof(float), spec->dim * spec->dim, f);
+    float* w1 = new float[spec->hidden_dim * spec->dim];
+    float* w2 = new float[spec->dim * spec->hidden_dim];
+    float* w3 = new float[spec->hidden_dim * spec->dim];
     fread(w1, sizeof(float), spec->hidden_dim * spec->dim, f);
     fread(w2, sizeof(float), spec->hidden_dim * spec->dim, f);
     fread(w3, sizeof(float), spec->hidden_dim * spec->dim, f);
+    for (int s = 0; s < spec->sliceCount; s++) {
+        ffns[s]->readWeights(w1, w3);
+        ffn2s[s]->readWeights(w2);
+    }
+    delete[] w1;
+    delete[] w2;
+    delete[] w3;
 }
 
-void TransformerBlock::forward(int pos) {
+void TransformerBlock::forward(int pos, float* x) {
     int dim = spec->dim;
     int kv_dim = spec->kv_dim;
     int kv_mul = spec->n_heads / spec->n_kv_heads; // integer multiplier of the kv sharing in multiquery
     int hidden_dim =  spec->hidden_dim;
     int head_size = dim / spec->n_heads;
 
-    float* x = (float*)sharedBuffer->get(SB_X, 0);
     float* xb = (float*)sharedBuffer->get(SB_XB, 0);
-
+    float* hh = (float*)sharedBuffer->get(SB_HH, 0);
 
     // attention rmsnorm
-    float xss1 = sumOfSquares(x, dim);
-    rmsnorm(xb, x, rms_att_weight, dim, xss1);
-
-    printf("x: %f %f %f %f\n", x[0], x[1], x[2], x[3]);
-    printf("xb: %f %f %f %f\n", xb[0], xb[1], xb[2], xb[3]);
+    rmsnorm(xb, x, rms_att_weight, dim, sumOfSquares(x, dim));
 
     float* k = key_cache + pos * kv_dim;
     float* v = value_cache + pos * kv_dim;
 
     // qkv matmuls for this position
-    memcpy(sharedBuffer->get(SB_XB, 0), xb, dim * sizeof(float));
-    sharedBuffer->sync(SB_XB, 0);
+    sharedBuffer->send(SB_XB, 0);
 
     for (int s = 0; s < spec->sliceCount; s++) {
         qkvs[s]->beginForwarding();
@@ -311,8 +333,7 @@ void TransformerBlock::forward(int pos) {
         }
     }
 
-    memcpy(sharedBuffer->get(SB_XB, 0), xb, dim * sizeof(float));
-    sharedBuffer->sync(SB_XB, 0);
+    sharedBuffer->send(SB_XB, 0);
 
     for (int s = 0; s < spec->sliceCount; s++) {
         atts[s]->beginForwarding();
@@ -328,28 +349,30 @@ void TransformerBlock::forward(int pos) {
     }
 
     // ffn rmsnorm
-    float xss2 = sumOfSquares(x, dim);
-    rmsnorm(xb, x, rms_ffn_weight, dim, xss2);
+    rmsnorm(xb, x, rms_ffn_weight, dim, sumOfSquares(x, dim));
 
-    sharedBuffer->sync(SB_XB, 0);
+    sharedBuffer->send(SB_XB, 0);
 
-    // Now for FFN in PyTorch we have: self.w2(F.silu(self.w1(x)) * self.w3(x))
-    // first calculate self.w1(x) and self.w3(x)
-    matmul(hb, xb, w1, dim, hidden_dim);
-    matmul(hb2, xb, w3, dim, hidden_dim);
+    // float *hb = new float[spec->hidden_dim];
 
-    // SwiGLU non-linearity
-    for (int i = 0; i < hidden_dim; i++) {
-        float val = hb[i];
-        // silu(x)=x*σ(x), where σ(x) is the logistic sigmoid
-        val *= (1.0f / (1.0f + expf(-val)));
-        // elementwise multiply with w3(x)
-        val *= hb2[i];
-        hb[i] = val;
+    for (int s = 0; s < spec->sliceCount; s++) {
+        ffns[s]->beginForwarding();
+    }
+    for (int s = 0; s < spec->sliceCount; s++) {
+        ffns[s]->waitForEnd();
+        ffns[s]->w3Slice->mergeOutputs(s, hb, (float*)sharedBuffer->get(SB_HB, s));
     }
 
-    // final matmul to get the output of the ffn
-    matmul(xb, hb, w2, hidden_dim, dim);
+    memcpy(hh, hb, hidden_dim * sizeof(float));
+    sharedBuffer->send(SB_HH, 0);
+
+    for (int s = 0; s < spec->sliceCount; s++) {
+        ffn2s[s]->beginForwarding();
+    }
+    for (int s = 0; s < spec->sliceCount; s++) {
+        ffn2s[s]->waitForEnd();
+        ffn2s[s]->w2Slice->mergeOutputs(s, xb, (float*)sharedBuffer->get(SB_XB, s));
+    }
 
     // residual connection
     for (int i = 0; i < dim; i++) {

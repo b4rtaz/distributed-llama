@@ -2,13 +2,14 @@
 #include "shared-buffer.hpp"
 #include "matmul.hpp"
 
-#define SB_LENGTH 6
-#define SB_X 0
-#define SB_XB 1
-#define SB_Q 2
-#define SB_K 3
-#define SB_V 4
-#define SB_XB2 5
+#define SB_LENGTH 7
+#define SB_XB 0
+#define SB_XB2 1
+#define SB_HH 2
+#define SB_Q 3
+#define SB_K 4
+#define SB_V 5
+#define SB_HB 6
 
 class TransformerSpec {
 public:
@@ -67,21 +68,32 @@ public:
 class TransformerBlockFfn: public TransformerBlockFragment {
 private:
     float *w1Weights0;
-    float *w2Weights0;
     float *w3Weights0;
-
-    float *hb0;
     float *hb20;
 
 public:
     MatMulSlice *w1Slice;
-    MatMulSlice *w2Slice;
     MatMulSlice *w3Slice;
 
     TransformerBlockFfn(int sliceIndex, TransformerSpec* spec, SharedBuffer *sharedBuffer);
     ~TransformerBlockFfn();
 
-    void readWeights(float *w1Weights, float *w2Weights, float *w3Weights);
+    void readWeights(float *w1Weights, float *w3Weights);
+    void beginForwarding();
+    void waitForEnd();
+};
+
+class TransformerBlockFfn2: public TransformerBlockFragment {
+private:
+    float *w2Weights0;
+
+public:
+    MatMulSlice *w2Slice;
+
+    TransformerBlockFfn2(int sliceIndex, TransformerSpec* spec, SharedBuffer *sharedBuffer);
+    ~TransformerBlockFfn2();
+
+    void readWeights(float *w2Weights);
     void beginForwarding();
     void waitForEnd();
 };
@@ -92,6 +104,8 @@ private:
     SharedBuffer *sharedBuffer;
     TransformerBlockQkv **qkvs;
     TransformerBlockAtt **atts;
+    TransformerBlockFfn **ffns;
+    TransformerBlockFfn2 **ffn2s;
 public:
     float* rms_att_weight; // (dim) rmsnorm weights
     float* rms_ffn_weight; // (dim)
@@ -101,9 +115,9 @@ public:
     //float* wv; // (dim, n_kv_heads * head_size)
     //float* wo; // (n_heads * head_size, dim)
     // weights for ffn
-    float* w1; // (hidden_dim, dim)
+    //float* w1; // (hidden_dim, dim)
     float* w2; // (dim, hidden_dim)
-    float* w3; // (hidden_dim, dim)
+    //float* w3; // (hidden_dim, dim)
 
     //float* xb; // (dim)
     float* xb2; // (dim)
@@ -115,9 +129,15 @@ public:
     float* att; // (n_heads, seq_len)
     float* logits; // (vocab_size)
 
-    TransformerBlock(TransformerSpec* spec, SharedBuffer *sharedBuffer, TransformerBlockQkv **qkvs, TransformerBlockAtt **atts);
+    TransformerBlock(
+        TransformerSpec* spec,
+        SharedBuffer *sharedBuffer,
+        TransformerBlockQkv **qkvs,
+        TransformerBlockAtt **atts,
+        TransformerBlockFfn **ffns,
+        TransformerBlockFfn2 **ffn2s);
     ~TransformerBlock();
 
     void readWeights(FILE *f);
-    void forward(int pos);
+    void forward(int pos, float* x);
 };

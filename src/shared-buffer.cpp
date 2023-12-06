@@ -35,6 +35,6 @@ char* SharedBuffer::get(int bufferIndex, int sliceIndex) {
     return buffer[bufferIndex] + sliceSize[bufferIndex] * index;
 }
 
-void SharedBuffer::sync(int bufferIndex, int sliceIndex) {
+void SharedBuffer::send(int bufferIndex, int sliceIndex) {
     // TODO
 }
