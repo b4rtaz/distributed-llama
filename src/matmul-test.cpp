@@ -22,17 +22,17 @@ void test0_distr() {
     for (int s = 0; s < slices; s++) {
         float* weights0 = new float[slice->weights0Length];
 
-        int weightsOffset = slice->splitWeights(s, weights, weights0);
+        long weightsOffset = slice->splitWeights(s, weights, weights0);
 
         float* output0 = new float[slice->d0];
         matmul(output0, input, weights0, slice->n, slice->d0);
 
-        int outputOffset = slice->mergeOutputs(s, output, output0);
+        long outputOffset = slice->mergeOutputs(s, output, output0);
 
         delete[] weights0;
         delete[] output0;
 
-        printf("weights <%8d, %8d> output <%4d, %4d>\n",
+        printf("weights <%8ld, %8ld> output <%4ld, %4ld>\n",
             weightsOffset,
             weightsOffset + slice->weights0Length,
             outputOffset,

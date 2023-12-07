@@ -33,8 +33,8 @@ MatMulSlice::MatMulSlice(int sliceCount, int n, int d) {
     this->weights0Length = this->d0 * this->n;
 }
 
-int MatMulSlice::splitWeights(int sliceIndex, float* weights, float* weights0) {
-    int offset = this->d0 * sliceIndex * this->n;
+long MatMulSlice::splitWeights(int sliceIndex, float* weights, float* weights0) {
+    long offset = this->d0 * sliceIndex * this->n;
     for (int i = 0; i < this->d0; i++) {
         for (int j = 0; j < this->n; j++) {
             weights0[i * this->n + j] = weights[offset + i * this->n + j];
@@ -43,8 +43,8 @@ int MatMulSlice::splitWeights(int sliceIndex, float* weights, float* weights0) {
     return offset;
 }
 
-int MatMulSlice::mergeOutputs(int sliceIndex, float* output, float* output0) {
-    int offset = this->d0 * sliceIndex;
+long MatMulSlice::mergeOutputs(int sliceIndex, float* output, float* output0) {
+    long offset = this->d0 * sliceIndex;
     for (int i = 0; i < this->d0; i++) {
         output[offset + i] = output0[i];
     }

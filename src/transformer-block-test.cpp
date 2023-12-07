@@ -3,7 +3,9 @@
 #include <string.h>
 #include <fcntl.h>
 #include <sys/mman.h>
+#include "shared-buffer.hpp"
 #include "funcs.hpp"
+#include "transformer.hpp"
 #include "transformer-block.hpp"
 
 void readData(float* target, int n, const char* path) {
@@ -17,6 +19,7 @@ void readData(float* target, int n, const char* path) {
 int main() {
     TransformerSpec spec;
     spec.dim = 4096;
+    spec.nLayers = 1;
     spec.headSize = 128;
     spec.nKvHeads = 32;
     spec.seqLen = 2048;
@@ -24,31 +27,10 @@ int main() {
     spec.nHeads = spec.dim / spec.headSize;
     spec.kvDim = (spec.dim * spec.nKvHeads) / spec.nHeads;
     spec.vocabSize = 32000;
-    spec.sliceCount = 8;
+    spec.sliceCount = 4;
 
-    SharedBuffer sharedBuffer(SB_LENGTH);
-
-    TransformerBlockQkv** qkvs = new TransformerBlockQkv*[spec.sliceCount];
-    TransformerBlockAtt** atts = new TransformerBlockAtt*[spec.sliceCount];
-    TransformerBlockFfn** ffns = new TransformerBlockFfn*[spec.sliceCount];
-    TransformerBlockFfn2** ffn2s = new TransformerBlockFfn2*[spec.sliceCount];
-    for (int s = 0; s < spec.sliceCount; s++) {
-        qkvs[s] = new TransformerBlockQkv(s, &spec, &sharedBuffer);
-        atts[s] = new TransformerBlockAtt(s, &spec, &sharedBuffer);
-        ffns[s] = new TransformerBlockFfn(s, &spec, &sharedBuffer);
-        ffn2s[s] = new TransformerBlockFfn2(s, &spec, &sharedBuffer);
-    }
-    TransformerBlockQkv* firstQkv = qkvs[0];
-
-    sharedBuffer.createUnit(SB_UNIT_XB, spec.dim * sizeof(float));
-    sharedBuffer.createUnit(SB_UNIT_HH, spec.hiddenDim * sizeof(float));
-    sharedBuffer.createSliced(SB_SLICED_XB2, spec.dim * sizeof(float), spec.sliceCount);
-    sharedBuffer.createSliced(SB_SLICED_Q, spec.dim * spec.dim * sizeof(float), spec.sliceCount);
-    sharedBuffer.createSliced(SB_SLICED_K, spec.dim * spec.kvDim * sizeof(float), spec.sliceCount);
-    sharedBuffer.createSliced(SB_SLICED_V, spec.dim * spec.kvDim * sizeof(float), spec.sliceCount);
-    sharedBuffer.createSliced(SB_SLICED_HB, spec.hiddenDim * sizeof(float), spec.sliceCount);
-
-    TransformerBlock block(&spec, &sharedBuffer, qkvs, atts, ffns, ffn2s);
+    SharedBuffer* sharedBuffer = createTransformerSharedBuffer(&spec);
+    TransformerBlock block(&spec, sharedBuffer);
 
     {
         const char* path = "test-data/block-weights.data";
@@ -85,14 +67,9 @@ int main() {
     block.forward(0, x);
     long t1 = timeMs();
 
-    for (int s = 0; s < spec.sliceCount; s++) {
-        delete qkvs[s];
-        delete atts[s];
-        delete ffns[s];
-        delete ffn2s[s];
-    }
-
     printf("Forward pass took %ld ms\n", t1 - t0);
+
+    delete sharedBuffer;
 
     int ix = -1;
     for (int i = 0; i < spec.dim; i++) {

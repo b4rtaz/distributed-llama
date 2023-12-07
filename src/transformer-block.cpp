@@ -5,6 +5,18 @@
 #include "funcs.hpp"
 #include "matmul.hpp"
 
+SharedBuffer* createTransformerSharedBuffer(TransformerSpec* spec) {
+    SharedBuffer* sb = new SharedBuffer(SB_LENGTH);
+    sb->createUnit(SB_UNIT_XB, spec->dim * sizeof(float));
+    sb->createUnit(SB_UNIT_HH, spec->hiddenDim * sizeof(float));
+    sb->createSliced(SB_SLICED_XB2, spec->dim * sizeof(float), spec->sliceCount);
+    sb->createSliced(SB_SLICED_Q, spec->dim * spec->dim * sizeof(float), spec->sliceCount);
+    sb->createSliced(SB_SLICED_K, spec->dim * spec->kvDim * sizeof(float), spec->sliceCount);
+    sb->createSliced(SB_SLICED_V, spec->dim * spec->kvDim * sizeof(float), spec->sliceCount);
+    sb->createSliced(SB_SLICED_HB, spec->hiddenDim * sizeof(float), spec->sliceCount);
+    return sb;
+}
+
 TransformerBlockQkv::TransformerBlockQkv(int sliceIndex, TransformerSpec* spec, SharedBuffer *sharedBuffer) {
     this->sliceIndex = sliceIndex;
     this->spec = spec;
@@ -17,6 +29,8 @@ TransformerBlockQkv::TransformerBlockQkv(int sliceIndex, TransformerSpec* spec, 
     qWeights0 = new float[qSlice->weights0Length];
     kWeights0 = new float[kSlice->weights0Length];
     vWeights0 = new float[vSlice->weights0Length];
+
+    printf("{%d} qkv: %ld bytes\n", sliceIndex, (qSlice->weights0Length + kSlice->weights0Length + vSlice->weights0Length) * sizeof(float));
 }
 
 TransformerBlockQkv::~TransformerBlockQkv() {
@@ -62,6 +76,8 @@ TransformerBlockAtt::TransformerBlockAtt(int sliceIndex, TransformerSpec* spec, 
     woSlice = new MatMulSlice(spec->sliceCount, spec->dim, spec->dim);
 
     woWeights0 = new float[woSlice->weights0Length];
+
+    printf("{%d} att: %ld bytes\n", sliceIndex, woSlice->weights0Length * sizeof(float));
 }
 
 TransformerBlockAtt::~TransformerBlockAtt() {
@@ -96,8 +112,9 @@ TransformerBlockFfn::TransformerBlockFfn(int sliceIndex, TransformerSpec* spec, 
     hb20 = new float[w3Slice->d0];
 
     w1Weights0 = new float[w1Slice->weights0Length];
-    // w2Weights0 = new float[w2Slice->weights0Length];
     w3Weights0 = new float[w3Slice->weights0Length];
+
+    printf("{%d} ffn: %ld bytes\n", sliceIndex, (w1Slice->weights0Length + w3Slice->weights0Length) * sizeof(float));
 }
 
 TransformerBlockFfn::~TransformerBlockFfn() {
@@ -113,7 +130,7 @@ void TransformerBlockFfn::readWeights(float *w1Weights, float *w3Weights) {
 }
 
 void TransformerBlockFfn::beginForwarding() {
-    float*xb = (float*)sharedBuffer->getUnit(SB_UNIT_XB);
+    float* xb = (float*)sharedBuffer->getUnit(SB_UNIT_XB);
     float* hb0 = (float*)sharedBuffer->getSliced(SB_SLICED_HB, sliceIndex);
 
     matmul(hb0, xb, w1Weights0, w1Slice->n, w1Slice->d0);
@@ -144,6 +161,8 @@ TransformerBlockFfn2::TransformerBlockFfn2(int sliceIndex, TransformerSpec* spec
 
     w2Slice = new MatMulSlice(spec->sliceCount, spec->hiddenDim, spec->dim);
     w2Weights0 = new float[w2Slice->weights0Length];
+
+    printf("{%d} ffn2: %ld bytes\n", sliceIndex, w2Slice->weights0Length * sizeof(float));
 }
 
 TransformerBlockFfn2::~TransformerBlockFfn2() {
@@ -168,19 +187,20 @@ void TransformerBlockFfn2::waitForEnd() {
     // TODO
 }
 
-TransformerBlock::TransformerBlock(
-    TransformerSpec* spec,
-    SharedBuffer* sharedBuffer,
-    TransformerBlockQkv **qkvs,
-    TransformerBlockAtt **atts,
-    TransformerBlockFfn **ffns,
-    TransformerBlockFfn2 **ffn2s) {
+TransformerBlock::TransformerBlock(TransformerSpec* spec, SharedBuffer* sharedBuffer) {
     this->spec = spec;
     this->sharedBuffer = sharedBuffer;
-    this->qkvs = qkvs;
-    this->atts = atts;
-    this->ffns = ffns;
-    this->ffn2s = ffn2s;
+
+    qkvs = new TransformerBlockQkv*[spec->sliceCount];
+    atts = new TransformerBlockAtt*[spec->sliceCount];
+    ffns = new TransformerBlockFfn*[spec->sliceCount];
+    ffn2s = new TransformerBlockFfn2*[spec->sliceCount];
+    for (int s = 0; s < spec->sliceCount; s++) {
+        qkvs[s] = new TransformerBlockQkv(s, spec, sharedBuffer);
+        atts[s] = new TransformerBlockAtt(s, spec, sharedBuffer);
+        ffns[s] = new TransformerBlockFfn(s, spec, sharedBuffer);
+        ffn2s[s] = new TransformerBlockFfn2(s, spec, sharedBuffer);
+    }
 
     rmsAttWeight = new float[spec->dim];
     rmsFfnWeight = new float[spec->dim];
@@ -194,6 +214,17 @@ TransformerBlock::TransformerBlock(
 }
 
 TransformerBlock::~TransformerBlock() {
+    for (int s = 0; s < spec->sliceCount; s++) {
+        delete qkvs[s];
+        delete atts[s];
+        delete ffns[s];
+        delete ffn2s[s];
+    }
+    delete[] qkvs;
+    delete[] atts;
+    delete[] ffns;
+    delete[] ffn2s;
+
     delete[] rmsAttWeight;
     delete[] rmsFfnWeight;
 
@@ -277,7 +308,7 @@ void TransformerBlock::forward(int pos, float* x) {
     float* hh = (float*)sharedBuffer->getUnit(SB_UNIT_HH);
 
     // attention rmsnorm
-    rmsnorm(xb, x, rmsAttWeight, dim, sumOfSquares(x, dim));
+    rmsnorm(xb, x, rmsAttWeight, dim);
     sharedBuffer->send(SB_UNIT_XB);
 
     // qkv matmuls for this position
@@ -368,7 +399,7 @@ void TransformerBlock::forward(int pos, float* x) {
     }
 
     // ffn rmsnorm
-    rmsnorm(xb, x, rmsFfnWeight, dim, sumOfSquares(x, dim));
+    rmsnorm(xb, x, rmsFfnWeight, dim);
 
     sharedBuffer->send(SB_UNIT_XB);
 

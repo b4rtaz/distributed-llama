@@ -7,7 +7,7 @@ long timeMs() {
     return te.tv_sec * 1000LL + te.tv_usec / 1000;
 }
 
-float sumOfSquares(float* x, int size) {
+void rmsnorm(float* o, float* x, float* weight, int size) {
     // calculate sum of squares
     float ss = 0.0f;
     for (int j = 0; j < size; j++) {
@@ -16,10 +16,7 @@ float sumOfSquares(float* x, int size) {
     ss /= size;
     ss += 1e-5f;
     ss = 1.0f / sqrtf(ss);
-    return ss;
-}
 
-void rmsnorm(float* o, float* x, float* weight, int size, float ss) {
     // normalize and scale
     for (int j = 0; j < size; j++) {
         o[j] = weight[j] * (ss * x[j]);

@@ -1,6 +1,10 @@
 #include <stdio.h>
+#include "transformer-spec.hpp"
 #include "shared-buffer.hpp"
 #include "matmul.hpp"
+
+#ifndef transformer_block_hpp
+#define transformer_block_hpp
 
 #define SB_LENGTH 7
 #define SB_UNIT_XB 0
@@ -11,18 +15,7 @@
 #define SB_SLICED_V 5
 #define SB_SLICED_HB 6
 
-class TransformerSpec {
-public:
-    int dim;
-    int nHeads;
-    int headSize;
-    int nKvHeads;
-    int seqLen;
-    int hiddenDim;
-    int kvDim;
-    int vocabSize;
-    int sliceCount;
-};
+SharedBuffer* createTransformerSharedBuffer(TransformerSpec* spec);
 
 class TransformerBlockFragment {
 protected:
@@ -116,15 +109,11 @@ public:
     float* valueCache; // (seq_len, kv_dim)
     float* att; // (n_heads, seq_len)
 
-    TransformerBlock(
-        TransformerSpec* spec,
-        SharedBuffer *sharedBuffer,
-        TransformerBlockQkv **qkvs,
-        TransformerBlockAtt **atts,
-        TransformerBlockFfn **ffns,
-        TransformerBlockFfn2 **ffn2s);
+    TransformerBlock(TransformerSpec* spec, SharedBuffer *sharedBuffer);
     ~TransformerBlock();
 
     long readWeights(char *wd);
     void forward(int pos, float* x);
 };
+
+#endif
