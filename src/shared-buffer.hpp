@@ -4,15 +4,17 @@
 class SharedBuffer {
 private:
     int count;
+    int* slices;
+    int* bytes;
     char** buffer;
-    int* startSliceIndex;
-    int* sliceSize;
 public:
     SharedBuffer(int count);
     ~SharedBuffer();
-    void create(int bufferIndex, int startSliceIndex, int endSliceIndex, int sliceSize);
-    char* get(int bufferIndex, int sliceIndex);
-    void send(int bufferIndex, int sliceIndex);
+    void createSliced(int bufferIndex, int bytes, int slices);
+    void createUnit(int bufferIndex, int bytes);
+    char* getSliced(int bufferIndex, int sliceIndex);
+    char* getUnit(int bufferIndex);
+    void send(int bufferIndex);
 };
 
 #endif

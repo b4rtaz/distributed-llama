@@ -5,36 +5,56 @@
 
 SharedBuffer::SharedBuffer(int count) {
     this->count = count;
+    slices = new int[count];
+    bytes = new int[count];
     buffer = new char*[count];
-    startSliceIndex = new int[count];
-    sliceSize = new int[count];
 }
 
 SharedBuffer::~SharedBuffer() {
     for (int i = 0; i < count; i++) {
         delete[] buffer[i];
     }
+    delete[] slices;
+    delete[] bytes;
     delete[] buffer;
-    delete[] startSliceIndex;
-    delete[] sliceSize;
 }
 
-void SharedBuffer::create(int bufferIndex, int startSliceIndex, int endSliceIndex, int sliceSize) {
-    int count = endSliceIndex - startSliceIndex;
-    buffer[bufferIndex] = new char[count * sliceSize];
-    this->startSliceIndex[bufferIndex] = startSliceIndex;
-    this->sliceSize[bufferIndex] = sliceSize;
+void SharedBuffer::createSliced(int bufferIndex, int bytes, int slices) {
+    buffer[bufferIndex] = new char[bytes];
+    this->bytes[bufferIndex] = bytes;
+    this->slices[bufferIndex] = slices;
 }
 
-char* SharedBuffer::get(int bufferIndex, int sliceIndex) {
-    int index = startSliceIndex[bufferIndex] + sliceIndex;
-    if (index < 0) {
-        printf("Invalid index\n");
-        exit(1);
+void SharedBuffer::createUnit(int bufferIndex, int bytes) {
+    buffer[bufferIndex] = new char[bytes];
+    this->bytes[bufferIndex] = bytes;
+    this->slices[bufferIndex] = -1;
+}
+
+char* SharedBuffer::getSliced(int bufferIndex, int sliceIndex) {
+    int bytes = this->bytes[bufferIndex];
+    int slices = this->slices[bufferIndex];
+    if (slices == -1) {
+        printf("Buffer %d is not sliced\n", bufferIndex);
+        exit(-1);
     }
-    return buffer[bufferIndex] + sliceSize[bufferIndex] * index;
+    if (sliceIndex >= slices) {
+        printf("Slice index %d out of range for buffer %d with %d slices\n", sliceIndex, bufferIndex, slices);
+        exit(-1);
+    }
+    int sliceOffset = bytes / slices;
+    return buffer[bufferIndex] + sliceOffset * sliceIndex;
 }
 
-void SharedBuffer::send(int bufferIndex, int sliceIndex) {
+char* SharedBuffer::getUnit(int bufferIndex) {
+    int slices = this->slices[bufferIndex];
+    if (slices != -1) {
+        printf("Buffer %d is sliced\n", bufferIndex);
+        exit(-1);
+    }
+    return buffer[bufferIndex];
+}
+
+void SharedBuffer::send(int bufferIndex) {
     // TODO
 }

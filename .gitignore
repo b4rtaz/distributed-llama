@@ -5,4 +5,4 @@
 *.data
 
 matmul-test
-transformer-test
+transformer-block-test

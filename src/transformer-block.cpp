@@ -1,7 +1,7 @@
 #include <math.h>
 #include <string.h>
 #include "shared-buffer.hpp"
-#include "transformer.hpp"
+#include "transformer-block.hpp"
 #include "funcs.hpp"
 #include "matmul.hpp"
 
@@ -11,8 +11,8 @@ TransformerBlockQkv::TransformerBlockQkv(int sliceIndex, TransformerSpec* spec, 
     this->sharedBuffer = sharedBuffer;
 
     qSlice = new MatMulSlice(spec->sliceCount, spec->dim, spec->dim);
-    kSlice = new MatMulSlice(spec->sliceCount, spec->dim, spec->kv_dim);
-    vSlice = new MatMulSlice(spec->sliceCount, spec->dim, spec->kv_dim);
+    kSlice = new MatMulSlice(spec->sliceCount, spec->dim, spec->kvDim);
+    vSlice = new MatMulSlice(spec->sliceCount, spec->dim, spec->kvDim);
 
     qWeights0 = new float[qSlice->weights0Length];
     kWeights0 = new float[kSlice->weights0Length];
@@ -35,19 +35,19 @@ void TransformerBlockQkv::readWeights(float *qWeights, float *kWeights, float *v
 }
 
 void TransformerBlockQkv::beginForwarding() {
-    float *xb = (float*)sharedBuffer->get(SB_XB, 0);
-    float *q0 = (float*)sharedBuffer->get(SB_Q, sliceIndex);
-    float *k0 = (float*)sharedBuffer->get(SB_K, sliceIndex);
-    float *v0 = (float*)sharedBuffer->get(SB_V, sliceIndex);
+    float *xb = (float*)sharedBuffer->getUnit(SB_UNIT_XB);
+    float *q0 = (float*)sharedBuffer->getSliced(SB_SLICED_Q, sliceIndex);
+    float *k0 = (float*)sharedBuffer->getSliced(SB_SLICED_K, sliceIndex);
+    float *v0 = (float*)sharedBuffer->getSliced(SB_SLICED_V, sliceIndex);
 
     matmul(q0, xb, qWeights0, qSlice->n, qSlice->d0);
-    sharedBuffer->send(1, sliceIndex);
+    sharedBuffer->send(SB_SLICED_Q);
 
     matmul(k0, xb, kWeights0, kSlice->n, kSlice->d0);
-    sharedBuffer->send(2, sliceIndex);
+    sharedBuffer->send(SB_SLICED_K);
 
     matmul(v0, xb, vWeights0, vSlice->n, vSlice->d0);
-    sharedBuffer->send(3, sliceIndex);
+    sharedBuffer->send(SB_SLICED_V);
 }
 
 void TransformerBlockQkv::waitForEnd() {
@@ -74,11 +74,11 @@ void TransformerBlockAtt::readWeights(float *woWeights) {
 }
 
 void TransformerBlockAtt::beginForwarding() {
-    float *xb = (float*)sharedBuffer->get(SB_XB, 0);
-    float *xb2 = (float*)sharedBuffer->get(SB_XB2, sliceIndex);
+    float *xb = (float*)sharedBuffer->getUnit(SB_UNIT_XB);
+    float *xb2 = (float*)sharedBuffer->getSliced(SB_SLICED_XB2, sliceIndex);
 
     matmul(xb2, xb, woWeights0, woSlice->n, woSlice->d0);
-    sharedBuffer->send(SB_XB2, sliceIndex);
+    sharedBuffer->send(SB_SLICED_XB2);
 }
 
 void TransformerBlockAtt::waitForEnd() {
@@ -90,9 +90,8 @@ TransformerBlockFfn::TransformerBlockFfn(int sliceIndex, TransformerSpec* spec, 
     this->spec = spec;
     this->sharedBuffer = sharedBuffer;
 
-    w1Slice = new MatMulSlice(spec->sliceCount, spec->dim, spec->hidden_dim);
-    // w2Slice = new MatMulSlice(spec->sliceCount, spec->hidden_dim, spec->dim);
-    w3Slice = new MatMulSlice(spec->sliceCount, spec->dim, spec->hidden_dim);
+    w1Slice = new MatMulSlice(spec->sliceCount, spec->dim, spec->hiddenDim);
+    w3Slice = new MatMulSlice(spec->sliceCount, spec->dim, spec->hiddenDim);
 
     hb20 = new float[w3Slice->d0];
 
@@ -114,8 +113,8 @@ void TransformerBlockFfn::readWeights(float *w1Weights, float *w3Weights) {
 }
 
 void TransformerBlockFfn::beginForwarding() {
-    float*xb = (float*)sharedBuffer->get(SB_XB, 0);
-    float* hb0 = (float*)sharedBuffer->get(SB_HB, sliceIndex);
+    float*xb = (float*)sharedBuffer->getUnit(SB_UNIT_XB);
+    float* hb0 = (float*)sharedBuffer->getSliced(SB_SLICED_HB, sliceIndex);
 
     matmul(hb0, xb, w1Weights0, w1Slice->n, w1Slice->d0);
     matmul(hb20, xb, w3Weights0, w3Slice->n, w3Slice->d0);
@@ -131,7 +130,7 @@ void TransformerBlockFfn::beginForwarding() {
     }
     // printf("hb0 (norm): %f %f %f %f\n", hb0[0], hb0[1], hb0[2], hb0[3]);
 
-    sharedBuffer->send(SB_HB, sliceIndex);
+    sharedBuffer->send(SB_SLICED_HB);
 }
 
 void TransformerBlockFfn::waitForEnd() {
@@ -143,7 +142,7 @@ TransformerBlockFfn2::TransformerBlockFfn2(int sliceIndex, TransformerSpec* spec
     this->spec = spec;
     this->sharedBuffer = sharedBuffer;
 
-    w2Slice = new MatMulSlice(spec->sliceCount, spec->hidden_dim, spec->dim);
+    w2Slice = new MatMulSlice(spec->sliceCount, spec->hiddenDim, spec->dim);
     w2Weights0 = new float[w2Slice->weights0Length];
 }
 
@@ -157,10 +156,12 @@ void TransformerBlockFfn2::readWeights(float *w2Weights) {
 }
 
 void TransformerBlockFfn2::beginForwarding() {
-    float *hh = (float*)sharedBuffer->get(SB_HH, 0);
-    float *xb = (float*)sharedBuffer->get(SB_XB, sliceIndex);
+    float *hh = (float*)sharedBuffer->getUnit(SB_UNIT_HH);
+    float *xb2 = (float*)sharedBuffer->getSliced(SB_SLICED_XB2, sliceIndex);
 
-    matmul(xb, hh, w2Weights0, w2Slice->n, w2Slice->d0);
+    matmul(xb2, hh, w2Weights0, w2Slice->n, w2Slice->d0);
+
+    sharedBuffer->send(SB_SLICED_XB2);
 }
 
 void TransformerBlockFfn2::waitForEnd() {
@@ -181,42 +182,50 @@ TransformerBlock::TransformerBlock(
     this->ffns = ffns;
     this->ffn2s = ffn2s;
 
-    rms_att_weight = new float[spec->dim];
-    rms_ffn_weight = new float[spec->dim];
-    w2 = new float[spec->dim * spec->hidden_dim];
+    rmsAttWeight = new float[spec->dim];
+    rmsFfnWeight = new float[spec->dim];
 
     xb2 = new float[spec->dim];
-    hb = new float[spec->hidden_dim];
-    hb2 = new float[spec->hidden_dim];
+    hb = new float[spec->hiddenDim];
     q = new float[spec->dim];
-    key_cache = new float[spec->seq_len * spec->kv_dim];
-    value_cache = new float[spec->seq_len * spec->kv_dim];
-    att = new float[spec->n_heads * spec->head_size];
+    keyCache = new float[spec->seqLen * spec->kvDim];
+    valueCache = new float[spec->seqLen * spec->kvDim];
+    att = new float[spec->nHeads * spec->headSize];
 }
 
 TransformerBlock::~TransformerBlock() {
-    delete[] rms_att_weight;
-    delete[] rms_ffn_weight;
+    delete[] rmsAttWeight;
+    delete[] rmsFfnWeight;
 
     delete[] xb2;
     delete[] hb;
-    delete[] hb2;
     delete[] q;
-    delete[] key_cache;
-    delete[] value_cache;
+    delete[] keyCache;
+    delete[] valueCache;
     delete[] att;
 }
 
-void TransformerBlock::readWeights(FILE *f) {
-    fread(rms_att_weight, sizeof(float), spec->dim, f);
-    fread(rms_ffn_weight, sizeof(float), spec->dim, f);
-    
+long TransformerBlock::readWeights(char* wd) {
+    float* w = (float*)wd;
+    memcpy(rmsAttWeight, w, spec->dim * sizeof(float));
+    w += spec->dim;
+
+    memcpy(rmsFfnWeight, w, spec->dim * sizeof(float));
+    w += spec->dim;
+
     float* wq = new float[spec->dim * spec->dim];
-    float* wk = new float[spec->dim * spec->n_kv_heads * spec->head_size];
-    float* wv = new float[spec->dim * spec->n_kv_heads * spec->head_size];
-    fread(wq, sizeof(float), spec->dim * spec->dim, f);
-    fread(wk, sizeof(float), spec->dim * spec->n_kv_heads * spec->head_size, f);
-    fread(wv, sizeof(float), spec->dim * spec->n_kv_heads * spec->head_size, f);
+    float* wk = new float[spec->dim * spec->nKvHeads * spec->headSize];
+    float* wv = new float[spec->dim * spec->nKvHeads * spec->headSize];
+
+    memcpy(wq, w, spec->dim * spec->dim * sizeof(float));
+    w += spec->dim * spec->dim;
+
+    memcpy(wk, w, spec->dim * spec->nKvHeads * spec->headSize * sizeof(float));
+    w += spec->dim * spec->nKvHeads * spec->headSize;
+
+    memcpy(wv, w, spec->dim * spec->nKvHeads * spec->headSize * sizeof(float));
+    w += spec->dim * spec->nKvHeads * spec->headSize;
+
     for (int s = 0; s < spec->sliceCount; s++) {
         qkvs[s]->readWeights(wq, wk, wv);
     }
@@ -225,18 +234,27 @@ void TransformerBlock::readWeights(FILE *f) {
     delete[] wv;
 
     float* wo = new float[spec->dim * spec->dim];
-    fread(wo, sizeof(float), spec->dim * spec->dim, f);
+    memcpy(wo, w, spec->dim * spec->dim * sizeof(float));
+    w += spec->dim * spec->dim;
+
     for (int s = 0; s < spec->sliceCount; s++) {
         atts[s]->readWeights(wo);
     }
     delete[] wo;
 
-    float* w1 = new float[spec->hidden_dim * spec->dim];
-    float* w2 = new float[spec->dim * spec->hidden_dim];
-    float* w3 = new float[spec->hidden_dim * spec->dim];
-    fread(w1, sizeof(float), spec->hidden_dim * spec->dim, f);
-    fread(w2, sizeof(float), spec->hidden_dim * spec->dim, f);
-    fread(w3, sizeof(float), spec->hidden_dim * spec->dim, f);
+    float* w1 = new float[spec->dim * spec->hiddenDim];
+    float* w2 = new float[spec->hiddenDim * spec->dim];
+    float* w3 = new float[spec->dim * spec->hiddenDim];
+
+    memcpy(w1, w, spec->dim * spec->hiddenDim * sizeof(float));
+    w += spec->dim * spec->hiddenDim;
+
+    memcpy(w2, w, spec->hiddenDim * spec->dim * sizeof(float));
+    w += spec->hiddenDim * spec->dim;
+
+    memcpy(w3, w, spec->dim * spec->hiddenDim * sizeof(float));
+    w += spec->dim * spec->hiddenDim;
+
     for (int s = 0; s < spec->sliceCount; s++) {
         ffns[s]->readWeights(w1, w3);
         ffn2s[s]->readWeights(w2);
@@ -244,26 +262,27 @@ void TransformerBlock::readWeights(FILE *f) {
     delete[] w1;
     delete[] w2;
     delete[] w3;
+
+    return (long)((char*)w - wd);
 }
 
 void TransformerBlock::forward(int pos, float* x) {
     int dim = spec->dim;
-    int kv_dim = spec->kv_dim;
-    int kv_mul = spec->n_heads / spec->n_kv_heads; // integer multiplier of the kv sharing in multiquery
-    int hidden_dim =  spec->hidden_dim;
-    int head_size = dim / spec->n_heads;
+    int kv_dim = spec->kvDim;
+    int kv_mul = spec->nHeads / spec->nKvHeads; // integer multiplier of the kv sharing in multiquery
+    int hidden_dim =  spec->hiddenDim;
+    int head_size = dim / spec->nHeads;
 
-    float* xb = (float*)sharedBuffer->get(SB_XB, 0);
-    float* hh = (float*)sharedBuffer->get(SB_HH, 0);
+    float* xb = (float*)sharedBuffer->getUnit(SB_UNIT_XB);
+    float* hh = (float*)sharedBuffer->getUnit(SB_UNIT_HH);
 
     // attention rmsnorm
-    rmsnorm(xb, x, rms_att_weight, dim, sumOfSquares(x, dim));
-
-    float* k = key_cache + pos * kv_dim;
-    float* v = value_cache + pos * kv_dim;
+    rmsnorm(xb, x, rmsAttWeight, dim, sumOfSquares(x, dim));
+    sharedBuffer->send(SB_UNIT_XB);
 
     // qkv matmuls for this position
-    sharedBuffer->send(SB_XB, 0);
+    float* k = keyCache + pos * kv_dim;
+    float* v = valueCache + pos * kv_dim;
 
     for (int s = 0; s < spec->sliceCount; s++) {
         qkvs[s]->beginForwarding();
@@ -271,9 +290,9 @@ void TransformerBlock::forward(int pos, float* x) {
     for (int s = 0; s < spec->sliceCount; s++) {
         TransformerBlockQkv *qkv = qkvs[s];
         qkv->waitForEnd();
-        qkv->qSlice->mergeOutputs(s, q, (float*)sharedBuffer->get(SB_Q, s));
-        qkv->kSlice->mergeOutputs(s, k, (float*)sharedBuffer->get(SB_K, s));
-        qkv->vSlice->mergeOutputs(s, v, (float*)sharedBuffer->get(SB_V, s));
+        qkv->qSlice->mergeOutputs(s, q, (float*)sharedBuffer->getSliced(SB_SLICED_Q, s));
+        qkv->kSlice->mergeOutputs(s, k, (float*)sharedBuffer->getSliced(SB_SLICED_K, s));
+        qkv->vSlice->mergeOutputs(s, v, (float*)sharedBuffer->getSliced(SB_SLICED_V, s));
     }
 
     // RoPE relative positional encoding: complex-valued rotate q and k in each head
@@ -296,15 +315,15 @@ void TransformerBlock::forward(int pos, float* x) {
     // multihead attention. iterate over all heads
     int h;
     #pragma omp parallel for private(h)
-    for (h = 0; h < spec->n_heads; h++) {
+    for (h = 0; h < spec->nHeads; h++) {
         // get the query vector for this head
         float* _q = q + h * head_size;
         // attention scores for this head
-        float* _att = att + h * spec->seq_len;
+        float* _att = att + h * spec->seqLen;
         // iterate over all timesteps, including the current one
         for (int t = 0; t <= pos; t++) {
             // get the key vector for this head and at this timestep
-            float* k = key_cache + t * kv_dim + (h / kv_mul) * head_size;
+            float* k = keyCache + t * kv_dim + (h / kv_mul) * head_size;
             // calculate the attention score as the dot product of q and k
             float score = 0.0f;
             for (int i = 0; i < head_size; i++) {
@@ -323,7 +342,7 @@ void TransformerBlock::forward(int pos, float* x) {
         memset(_xb, 0, head_size * sizeof(float));
         for (int t = 0; t <= pos; t++) {
             // get the value vector for this head and at this timestep
-            float* _v = value_cache + t * kv_dim + (h / kv_mul) * head_size;
+            float* _v = valueCache + t * kv_dim + (h / kv_mul) * head_size;
             // get the attention weight for this timestep
             float a = _att[t];
             // accumulate the weighted value into xb
@@ -333,14 +352,14 @@ void TransformerBlock::forward(int pos, float* x) {
         }
     }
 
-    sharedBuffer->send(SB_XB, 0);
+    sharedBuffer->send(SB_UNIT_XB);
 
     for (int s = 0; s < spec->sliceCount; s++) {
         atts[s]->beginForwarding();
     }
     for (int s = 0; s < spec->sliceCount; s++) {
         atts[s]->waitForEnd();
-        atts[s]->woSlice->mergeOutputs(s, xb2, (float*)sharedBuffer->get(SB_XB2, s));
+        atts[s]->woSlice->mergeOutputs(s, xb2, (float*)sharedBuffer->getSliced(SB_SLICED_XB2, s));
     }
 
     // residual connection back into x
@@ -349,29 +368,27 @@ void TransformerBlock::forward(int pos, float* x) {
     }
 
     // ffn rmsnorm
-    rmsnorm(xb, x, rms_ffn_weight, dim, sumOfSquares(x, dim));
+    rmsnorm(xb, x, rmsFfnWeight, dim, sumOfSquares(x, dim));
 
-    sharedBuffer->send(SB_XB, 0);
-
-    // float *hb = new float[spec->hidden_dim];
+    sharedBuffer->send(SB_UNIT_XB);
 
     for (int s = 0; s < spec->sliceCount; s++) {
         ffns[s]->beginForwarding();
     }
     for (int s = 0; s < spec->sliceCount; s++) {
         ffns[s]->waitForEnd();
-        ffns[s]->w3Slice->mergeOutputs(s, hb, (float*)sharedBuffer->get(SB_HB, s));
+        ffns[s]->w3Slice->mergeOutputs(s, hb, (float*)sharedBuffer->getSliced(SB_SLICED_HB, s));
     }
 
     memcpy(hh, hb, hidden_dim * sizeof(float));
-    sharedBuffer->send(SB_HH, 0);
+    sharedBuffer->send(SB_UNIT_HH);
 
     for (int s = 0; s < spec->sliceCount; s++) {
         ffn2s[s]->beginForwarding();
     }
     for (int s = 0; s < spec->sliceCount; s++) {
         ffn2s[s]->waitForEnd();
-        ffn2s[s]->w2Slice->mergeOutputs(s, xb, (float*)sharedBuffer->get(SB_XB, s));
+        ffn2s[s]->w2Slice->mergeOutputs(s, xb, (float*)sharedBuffer->getSliced(SB_SLICED_XB2, s));
     }
 
     // residual connection

@@ -1,16 +1,16 @@
-rm matmul
+rm matmul.o
 rm matmul-test
-rm funcs
-rm shared-buffer
-rm transformer
-rm transformer-test
+rm funcs.o
+rm shared-buffer.o
+rm transformer-block.o
+rm transformer-block-test
 
 make matmul
 make matmul-test
 make funcs
 make shared-buffer
-make transformer
-make transformer-test
+make transformer-block
+make transformer-block-test
 chmod +x matmul-test
-chmod +x transformer-test
-./transformer-test
+chmod +x transformer-block-test
+./transformer-block-test
