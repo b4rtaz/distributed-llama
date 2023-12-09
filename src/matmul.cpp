@@ -1,6 +1,30 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <pthread.h>
 #include "matmul.hpp"
+
+struct matmul_thread_args {
+    float* output;
+    float* input;
+    float* weights;
+    int n;
+    int ds;
+    int de;
+};
+
+void* matmul_thread(void* arg) {
+    matmul_thread_args* a = (matmul_thread_args*)arg;
+
+    int i;
+    for (i = a->ds; i < a->de; i++) {
+        float val = 0.0f;
+        for (int j = 0; j < a->n; j++) {
+            val += a->weights[i * a->n + j] * a->input[j];
+        }
+        a->output[i] = val;
+    }
+    return 0;
+}
 
 //     weights      input    output
 //   ___________     ___      ___
@@ -11,14 +35,24 @@
 //                    1
 void matmul(float* output, float* input, float* weights, int n, int d) {
     // weights (d,n) @ input (n,1) -> output (d,1)
+    
+    int threadCount = 8;
+    pthread_t threads[threadCount];
+    matmul_thread_args args[threadCount];
+
     int i;
-    #pragma omp parallel for private(i)
-    for (i = 0; i < d; i++) {
-        float val = 0.0f;
-        for (int j = 0; j < n; j++) {
-            val += weights[i * n + j] * input[j];
-        }
-        output[i] = val;
+    for (i = 0; i < threadCount; i++) {
+        matmul_thread_args* s = &args[i];
+        s->output = output;
+        s->input = input;
+        s->weights = weights;
+        s->n = n;
+        s->ds = i * d / threadCount;
+        s->de = (i + 1) * d / threadCount;
+        int result = pthread_create(&threads[i], NULL, matmul_thread, (void*)s);
+    }
+    for (i = 0; i < threadCount; i++) {
+        pthread_join(threads[i], NULL);
     }
 }
 

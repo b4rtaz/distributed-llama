@@ -29,7 +29,7 @@ int main() {
     spec.sliceCount = 4;
 
     SharedBuffer* sharedBuffer = createTransformerSharedBuffer(&spec);
-    TransformerBlock block(&spec, sharedBuffer);
+    TransformerBlock block(0, &spec, sharedBuffer);
 
     {
         const char* path = "test-data/block-weights.data";

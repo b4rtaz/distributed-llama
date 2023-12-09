@@ -15,36 +15,50 @@ SharedBuffer* createTransformerSharedBuffer(TransformerSpec* spec) {
     return sb;
 }
 
-TransformerBlockQkv::TransformerBlockQkv(int sliceIndex, TransformerSpec* spec, SharedBuffer *sharedBuffer) {
+TransformerBlockFragment::TransformerBlockFragment(int layerIndex, int sliceIndex, TransformerSpec* spec, SharedBuffer *sharedBuffer) {
+    this->layerIndex = layerIndex;
     this->sliceIndex = sliceIndex;
     this->spec = spec;
     this->sharedBuffer = sharedBuffer;
+}
 
+//
+// TransformerBlockQkv
+//
+
+TransformerBlockQkv::TransformerBlockQkv(int layerIndex, int sliceIndex, TransformerSpec* spec, SharedBuffer *sharedBuffer)
+    : TransformerBlockFragment(layerIndex, sliceIndex, spec, sharedBuffer) {
     qSlice = new MatMulSlice(spec->sliceCount, spec->dim, spec->dim);
     kSlice = new MatMulSlice(spec->sliceCount, spec->dim, spec->kvDim);
     vSlice = new MatMulSlice(spec->sliceCount, spec->dim, spec->kvDim);
-
-    qWeights0 = new float[qSlice->weights0Length];
-    kWeights0 = new float[kSlice->weights0Length];
-    vWeights0 = new float[vSlice->weights0Length];
 }
 
 TransformerBlockQkv::~TransformerBlockQkv() {
     delete qSlice;
     delete kSlice;
     delete vSlice;
+}
+
+NativeTransformerBlockQkv::NativeTransformerBlockQkv(int layerIndex, int sliceIndex, TransformerSpec* spec, SharedBuffer *sharedBuffer)
+    : TransformerBlockQkv(layerIndex, sliceIndex, spec, sharedBuffer) {
+    qWeights0 = new float[qSlice->weights0Length];
+    kWeights0 = new float[kSlice->weights0Length];
+    vWeights0 = new float[vSlice->weights0Length];
+}
+
+NativeTransformerBlockQkv::~NativeTransformerBlockQkv() {
     delete[] qWeights0;
     delete[] kWeights0;
     delete[] vWeights0;
 }
 
-void TransformerBlockQkv::readWeights(float *qWeights, float *kWeights, float *vWeights) {
+void NativeTransformerBlockQkv::readWeights(float *qWeights, float *kWeights, float *vWeights) {
     this->qSlice->splitWeights(sliceIndex, qWeights, qWeights0);
     this->qSlice->splitWeights(sliceIndex, kWeights, kWeights0);
     this->qSlice->splitWeights(sliceIndex, vWeights, vWeights0);
 }
 
-void TransformerBlockQkv::beginForwarding() {
+void NativeTransformerBlockQkv::beginForwarding() {
     float *xb = (float*)sharedBuffer->getUnit(SB_UNIT_XB);
     float *q0 = (float*)sharedBuffer->getSliced(SB_SLICED_Q, sliceIndex);
     float *k0 = (float*)sharedBuffer->getSliced(SB_SLICED_K, sliceIndex);
@@ -60,30 +74,35 @@ void TransformerBlockQkv::beginForwarding() {
     sharedBuffer->send(SB_SLICED_V);
 }
 
-void TransformerBlockQkv::waitForEnd() {
-    // TODO
-}
+void NativeTransformerBlockQkv::waitForEnd() {}
 
-TransformerBlockAtt::TransformerBlockAtt(int sliceIndex, TransformerSpec* spec, SharedBuffer *sharedBuffer) {
-    this->sliceIndex = sliceIndex;
-    this->spec = spec;
-    this->sharedBuffer = sharedBuffer;
+//
+// TransformerBlockAtt
+//
 
+TransformerBlockAtt::TransformerBlockAtt(int layerIndex, int sliceIndex, TransformerSpec* spec, SharedBuffer *sharedBuffer)
+    : TransformerBlockFragment(layerIndex, sliceIndex, spec, sharedBuffer) {
     woSlice = new MatMulSlice(spec->sliceCount, spec->dim, spec->dim);
-
-    woWeights0 = new float[woSlice->weights0Length];
 }
 
 TransformerBlockAtt::~TransformerBlockAtt() {
     delete woSlice;
+}
+
+NativeTransformerBlockAtt::NativeTransformerBlockAtt(int layerIndex, int sliceIndex, TransformerSpec* spec, SharedBuffer *sharedBuffer)
+    : TransformerBlockAtt(layerIndex, sliceIndex, spec, sharedBuffer) {
+    woWeights0 = new float[woSlice->weights0Length];
+}
+
+NativeTransformerBlockAtt::~NativeTransformerBlockAtt() {
     delete[] woWeights0;
 }
 
-void TransformerBlockAtt::readWeights(float *woWeights) {
+void NativeTransformerBlockAtt::readWeights(float *woWeights) {
     this->woSlice->splitWeights(sliceIndex, woWeights, woWeights0);
 }
 
-void TransformerBlockAtt::beginForwarding() {
+void NativeTransformerBlockAtt::beginForwarding() {
     float *xb = (float*)sharedBuffer->getUnit(SB_UNIT_XB);
     float *xb2 = (float*)sharedBuffer->getSliced(SB_SLICED_XB2, sliceIndex);
 
@@ -91,37 +110,42 @@ void TransformerBlockAtt::beginForwarding() {
     sharedBuffer->send(SB_SLICED_XB2);
 }
 
-void TransformerBlockAtt::waitForEnd() {
-    // TODO
-}
+void NativeTransformerBlockAtt::waitForEnd() {}
 
-TransformerBlockFfn::TransformerBlockFfn(int sliceIndex, TransformerSpec* spec, SharedBuffer *sharedBuffer) {
-    this->sliceIndex = sliceIndex;
-    this->spec = spec;
-    this->sharedBuffer = sharedBuffer;
+//
+// TransformerBlockFfn
+//
 
+TransformerBlockFfn::TransformerBlockFfn(int layerIndex, int sliceIndex, TransformerSpec* spec, SharedBuffer *sharedBuffer)
+    : TransformerBlockFragment(layerIndex, sliceIndex, spec, sharedBuffer) {
     w1Slice = new MatMulSlice(spec->sliceCount, spec->dim, spec->hiddenDim);
     w3Slice = new MatMulSlice(spec->sliceCount, spec->dim, spec->hiddenDim);
-
-    hb20 = new float[w3Slice->d0];
-
-    w1Weights0 = new float[w1Slice->weights0Length];
-    w3Weights0 = new float[w3Slice->weights0Length];
 }
 
 TransformerBlockFfn::~TransformerBlockFfn() {
     delete w1Slice;
     delete w3Slice;
+}
+
+NativeTransformerBlockFfn::NativeTransformerBlockFfn(int layerIndex, int sliceIndex, TransformerSpec* spec, SharedBuffer *sharedBuffer)
+    : TransformerBlockFfn(layerIndex, sliceIndex, spec, sharedBuffer) {
+    hb20 = new float[w3Slice->d0];
+    w1Weights0 = new float[w1Slice->weights0Length];
+    w3Weights0 = new float[w3Slice->weights0Length];
+}
+
+NativeTransformerBlockFfn::~NativeTransformerBlockFfn() {
+    delete[] hb20;
     delete[] w1Weights0;
     delete[] w3Weights0;
 }
 
-void TransformerBlockFfn::readWeights(float *w1Weights, float *w3Weights) {
+void NativeTransformerBlockFfn::readWeights(float *w1Weights, float *w3Weights) {
     this->w1Slice->splitWeights(sliceIndex, w1Weights, w1Weights0);
     this->w3Slice->splitWeights(sliceIndex, w3Weights, w3Weights0);
 }
 
-void TransformerBlockFfn::beginForwarding() {
+void NativeTransformerBlockFfn::beginForwarding() {
     float* xb = (float*)sharedBuffer->getUnit(SB_UNIT_XB);
     float* hb0 = (float*)sharedBuffer->getSliced(SB_SLICED_HB, sliceIndex);
 
@@ -141,29 +165,35 @@ void TransformerBlockFfn::beginForwarding() {
     sharedBuffer->send(SB_SLICED_HB);
 }
 
-void TransformerBlockFfn::waitForEnd() {
-    // TODO
-}
+void NativeTransformerBlockFfn::waitForEnd() {}
 
-TransformerBlockFfn2::TransformerBlockFfn2(int sliceIndex, TransformerSpec* spec, SharedBuffer *sharedBuffer) {
-    this->sliceIndex = sliceIndex;
-    this->spec = spec;
-    this->sharedBuffer = sharedBuffer;
+//
+// TransformerBlockFfn2
+//
 
+TransformerBlockFfn2::TransformerBlockFfn2(int layerIndex, int sliceIndex, TransformerSpec* spec, SharedBuffer *sharedBuffer)
+    : TransformerBlockFragment(layerIndex, sliceIndex, spec, sharedBuffer) {
     w2Slice = new MatMulSlice(spec->sliceCount, spec->hiddenDim, spec->dim);
-    w2Weights0 = new float[w2Slice->weights0Length];
 }
 
 TransformerBlockFfn2::~TransformerBlockFfn2() {
     delete w2Slice;
+}
+
+NativeTransformerBlockFfn2::NativeTransformerBlockFfn2(int layerIndex, int sliceIndex, TransformerSpec* spec, SharedBuffer *sharedBuffer)
+    : TransformerBlockFfn2(layerIndex, sliceIndex, spec, sharedBuffer) {
+    w2Weights0 = new float[w2Slice->weights0Length];
+}
+
+NativeTransformerBlockFfn2::~NativeTransformerBlockFfn2() {
     delete[] w2Weights0;
 }
 
-void TransformerBlockFfn2::readWeights(float *w2Weights) {
+void NativeTransformerBlockFfn2::readWeights(float *w2Weights) {
     this->w2Slice->splitWeights(sliceIndex, w2Weights, w2Weights0);
 }
 
-void TransformerBlockFfn2::beginForwarding() {
+void NativeTransformerBlockFfn2::beginForwarding() {
     float *hh = (float*)sharedBuffer->getUnit(SB_UNIT_HH);
     float *xb2 = (float*)sharedBuffer->getSliced(SB_SLICED_XB2, sliceIndex);
 
@@ -172,11 +202,14 @@ void TransformerBlockFfn2::beginForwarding() {
     sharedBuffer->send(SB_SLICED_XB2);
 }
 
-void TransformerBlockFfn2::waitForEnd() {
-    // TODO
-}
+void NativeTransformerBlockFfn2::waitForEnd() {}
 
-TransformerBlock::TransformerBlock(TransformerSpec* spec, SharedBuffer* sharedBuffer) {
+//
+// TransformerBlock
+//
+
+TransformerBlock::TransformerBlock(int layerIndex, TransformerSpec* spec, SharedBuffer* sharedBuffer) {
+    this->layerIndex = layerIndex;
     this->spec = spec;
     this->sharedBuffer = sharedBuffer;
 
@@ -188,10 +221,10 @@ TransformerBlock::TransformerBlock(TransformerSpec* spec, SharedBuffer* sharedBu
     ffns = new TransformerBlockFfn*[spec->sliceCount];
     ffn2s = new TransformerBlockFfn2*[spec->sliceCount];
     for (int s = 0; s < spec->sliceCount; s++) {
-        qkvs[s] = new TransformerBlockQkv(s, spec, sharedBuffer);
-        atts[s] = new TransformerBlockAtt(s, spec, sharedBuffer);
-        ffns[s] = new TransformerBlockFfn(s, spec, sharedBuffer);
-        ffn2s[s] = new TransformerBlockFfn2(s, spec, sharedBuffer);
+        qkvs[s] = new NativeTransformerBlockQkv(this->layerIndex, s, spec, sharedBuffer);
+        atts[s] = new NativeTransformerBlockAtt(this->layerIndex, s, spec, sharedBuffer);
+        ffns[s] = new NativeTransformerBlockFfn(this->layerIndex, s, spec, sharedBuffer);
+        ffn2s[s] = new NativeTransformerBlockFfn2(this->layerIndex, s, spec, sharedBuffer);
     }
 
     xb2 = new float[spec->dim];
@@ -417,13 +450,17 @@ void TransformerBlock::forward(int pos, float* x) {
     }
 }
 
+//
+// Transformer
+//
+
 Transformer::Transformer(TransformerSpec* spec, SharedBuffer *sharedBuffer) {
     this->spec = spec;
     this->sharedBuffer = sharedBuffer;
 
     this->blocks = new TransformerBlock*[spec->nLayers];
-    for (int i = 0; i < spec->nLayers; i++) {
-        this->blocks[i] = new TransformerBlock(spec, sharedBuffer);
+    for (int l = 0; l < spec->nLayers; l++) {
+        this->blocks[l] = new TransformerBlock(l, spec, sharedBuffer);
     }
 
     this->x = new float[spec->dim];
