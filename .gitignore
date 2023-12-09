@@ -3,6 +3,9 @@
 *.o
 *.dSYM
 *.data
+*.bin
+__pycache__
 
 matmul-test
 transformer-block-test
+main

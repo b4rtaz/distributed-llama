@@ -36,11 +36,11 @@ char* SharedBuffer::getSliced(int bufferIndex, int sliceIndex) {
     int slices = this->slices[bufferIndex];
     if (slices == -1) {
         printf("Buffer %d is not sliced\n", bufferIndex);
-        exit(-1);
+        exit(EXIT_FAILURE);
     }
     if (sliceIndex >= slices) {
         printf("Slice index %d out of range for buffer %d with %d slices\n", sliceIndex, bufferIndex, slices);
-        exit(-1);
+        exit(EXIT_FAILURE);
     }
     int sliceOffset = bytes / slices;
     return buffer[bufferIndex] + sliceOffset * sliceIndex;
@@ -50,7 +50,7 @@ char* SharedBuffer::getUnit(int bufferIndex) {
     int slices = this->slices[bufferIndex];
     if (slices != -1) {
         printf("Buffer %d is sliced\n", bufferIndex);
-        exit(-1);
+        exit(EXIT_FAILURE);
     }
     return buffer[bufferIndex];
 }

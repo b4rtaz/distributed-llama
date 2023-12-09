@@ -2,10 +2,10 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "transformer-block-test",
+            "name": "main",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/transformer-block-test",
+            "program": "${workspaceFolder}/main",
             "args": [],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",

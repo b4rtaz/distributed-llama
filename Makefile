@@ -12,8 +12,14 @@ funcs: src/funcs.cpp
 shared-buffer: src/shared-buffer.cpp
 	$(CC) -std=c++11 -Werror -O3 -c src/shared-buffer.cpp -o shared-buffer.o
 
-transformer-block: src/transformer-block.cpp
-	$(CC) -std=c++11 -Werror -O3 -c src/transformer-block.cpp -g -o transformer-block.o
+transformer: src/transformer.cpp
+	$(CC) -std=c++11 -Werror -O3 -c src/transformer.cpp -g -o transformer.o
 
 transformer-block-test: src/transformer-block-test.cpp
-	$(CC) -std=c++11 -Werror -O3 src/transformer-block-test.cpp -g -o transformer-block-test shared-buffer.o transformer-block.o matmul.o funcs.o
+	$(CC) -std=c++11 -Werror -O3 src/transformer-block-test.cpp -g -o transformer-block-test shared-buffer.o transformer.o matmul.o funcs.o
+
+tokenizer: src/transformer.cpp
+	$(CC) -std=c++11 -Werror -O3 -c src/tokenizer.cpp -g -o tokenizer.o
+
+main: src/main.cpp
+	$(CC) -std=c++11 -Werror -O3 src/main.cpp -g -o main shared-buffer.o transformer.o matmul.o funcs.o tokenizer.o

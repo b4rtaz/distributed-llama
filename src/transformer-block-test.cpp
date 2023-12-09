@@ -3,10 +3,9 @@
 #include <string.h>
 #include <fcntl.h>
 #include <sys/mman.h>
-#include "shared-buffer.hpp"
 #include "funcs.hpp"
+#include "shared-buffer.hpp"
 #include "transformer.hpp"
-#include "transformer-block.hpp"
 
 void readData(float* target, int n, const char* path) {
     FILE* f = fopen(path, "r");
