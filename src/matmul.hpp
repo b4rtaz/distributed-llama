@@ -1,17 +1,24 @@
 #ifndef matmul_hpp
 #define matmul_hpp
 
-void matmul(float* output, float* input, float* weights, int n, int d);
+enum FloatType {
+    F32 = 0,
+    F16 = 1
+};
+long getFloatSize(FloatType type);
+
+void matmul(FloatType type, float* output, float* input, char* weights, int n, int d);
 
 class MatMulSlice {
 public:
+    int floatSize;
     int sliceCount;
     int d0;
     int n;
-    long weights0Length; // Number of floats in weights0
+    long weights0Bytes;
 
-    MatMulSlice(int sliceCount, int n, int d);
-    long splitWeights(int sliceIndex, float* weights, float* weights0);
+    MatMulSlice(FloatType type, int sliceCount, int n, int d);
+    long splitWeights(int sliceIndex, char* weights, char* weights0);
     long mergeOutputs(int sliceIndex, float* output, float* output0);
 };
 

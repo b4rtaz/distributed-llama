@@ -7,7 +7,7 @@
 int n = 256;
 int d = 256;
 float* input; // (256,1)
-float* weights; // (256,256)
+char* weights; // (256,256)
 float* output; // (256,1)
 float expectedOutput[256] = {
     0.00940421689, 0.0099773258, 0.00998678058, 0.00987196993, 0.0104839709, 0.00963028241, 0.0103303399, 0.0105523383, 
@@ -45,21 +45,21 @@ float expectedOutput[256] = {
 };
 
 void test0_default() {
-    matmul(output, input, weights, n, d);
+    matmul(F32, output, input, weights, n, d);
 }
 
 void test0_distr() {
     int slices = 8;
 
-    MatMulSlice* slice = new MatMulSlice(slices, n, d);
+    MatMulSlice* slice = new MatMulSlice(F32, slices, n, d);
 
     for (int s = 0; s < slices; s++) {
-        float* weights0 = new float[slice->weights0Length];
+        char* weights0 = new char[slice->weights0Bytes];
 
         long weightsOffset = slice->splitWeights(s, weights, weights0);
 
         float* output0 = new float[slice->d0];
-        matmul(output0, input, weights0, slice->n, slice->d0);
+        matmul(F32, output0, input, weights0, slice->n, slice->d0);
 
         long outputOffset = slice->mergeOutputs(s, output, output0);
 
@@ -68,7 +68,7 @@ void test0_distr() {
 
         printf("weights <%8ld, %8ld> output <%4ld, %4ld>\n",
             weightsOffset,
-            weightsOffset + slice->weights0Length,
+            weightsOffset + slice->weights0Bytes,
             outputOffset,
             outputOffset + slice->d0);
     }
@@ -95,13 +95,13 @@ void compareOrFail(const char *name) {
 
 int main() {
     input = new float[n];
-    weights = new float[n * d];
+    weights = new char[n * d * sizeof(float)];
     output = new float[d];
 
     unsigned long long state = 800000010L;
     int i;
     for (i = 0; i < n; i++) input[i] = randomF32(&state) / 80.0;
-    for (i = 0; i < n * d; i++) weights[i] = randomF32(&state) / 80.0;
+    for (i = 0; i < n * d; i++) ((float*)weights)[i] = randomF32(&state) / 80.0;
 
     memset(output, 0, d * sizeof(float));
     test0_default();

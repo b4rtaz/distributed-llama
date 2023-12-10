@@ -25,6 +25,8 @@ public:
     int hiddenDim;
     int kvDim;
     int vocabSize;
+
+    FloatType blockFloatType;
     int sliceCount;
 };
 
@@ -43,29 +45,29 @@ public:
 
 class TransformerBlockQkv: public TransformerBlockFragment {
 public:
-    MatMulSlice *qSlice;
-    MatMulSlice *kSlice;
-    MatMulSlice *vSlice;
+    MatMulSlice* qSlice;
+    MatMulSlice* kSlice;
+    MatMulSlice* vSlice;
 
     TransformerBlockQkv(int layerIndex, int sliceIndex, TransformerSpec* spec, SharedBuffer *sharedBuffer);
     virtual ~TransformerBlockQkv();
 
-    virtual void readWeights(float *qWeights, float *kWeights, float *vWeights) = 0;
+    virtual void readWeights(char* qWeights, char* kWeights, char* vWeights) = 0;
     virtual void beginForwarding() = 0;
     virtual void waitForEnd() = 0;
 };
 
 class NativeTransformerBlockQkv: public TransformerBlockQkv {
 private:
-    float *qWeights0;
-    float *kWeights0;
-    float *vWeights0;
+    char *qWeights0;
+    char *kWeights0;
+    char *vWeights0;
 
 public:
     NativeTransformerBlockQkv(int layerIndex, int sliceIndex, TransformerSpec* spec, SharedBuffer *sharedBuffer);
     ~NativeTransformerBlockQkv();
 
-    void readWeights(float *qWeights, float *kWeights, float *vWeights);
+    void readWeights(char *qWeights, char *kWeights, char *vWeights);
     void beginForwarding();
     void waitForEnd();
 };
@@ -77,20 +79,20 @@ public:
     TransformerBlockAtt(int layerIndex, int sliceIndex, TransformerSpec* spec, SharedBuffer *sharedBuffer);
     virtual ~TransformerBlockAtt();
 
-    virtual void readWeights(float *woWeights) = 0;
+    virtual void readWeights(char *woWeights) = 0;
     virtual void beginForwarding() = 0;
     virtual void waitForEnd() = 0;
 };
 
 class NativeTransformerBlockAtt: public TransformerBlockAtt {
 private:
-    float *woWeights0;
+    char *woWeights0;
 
 public:
     NativeTransformerBlockAtt(int layerIndex, int sliceIndex, TransformerSpec* spec, SharedBuffer *sharedBuffer);
     ~NativeTransformerBlockAtt();
 
-    void readWeights(float *woWeights);
+    void readWeights(char *woWeights);
     void beginForwarding();
     void waitForEnd();
 };
@@ -103,22 +105,22 @@ public:
     TransformerBlockFfn(int layerIndex, int sliceIndex, TransformerSpec* spec, SharedBuffer *sharedBuffer);
     virtual ~TransformerBlockFfn();
 
-    virtual void readWeights(float *w1Weights, float *w3Weights) = 0;
+    virtual void readWeights(char *w1Weights, char *w3Weights) = 0;
     virtual void beginForwarding() = 0;
     virtual void waitForEnd() = 0;
 };
 
 class NativeTransformerBlockFfn: public TransformerBlockFfn {
 private:
-    float *w1Weights0;
-    float *w3Weights0;
+    char *w1Weights0;
+    char *w3Weights0;
     float *hb20;
 
 public:
     NativeTransformerBlockFfn(int layerIndex, int sliceIndex, TransformerSpec* spec, SharedBuffer *sharedBuffer);
     ~NativeTransformerBlockFfn();
 
-    void readWeights(float *w1Weights, float *w3Weights);
+    void readWeights(char *w1Weights, char *w3Weights);
     void beginForwarding();
     void waitForEnd();
 };
@@ -130,20 +132,20 @@ public:
     TransformerBlockFfn2(int layerIndex, int sliceIndex, TransformerSpec* spec, SharedBuffer *sharedBuffer);
     virtual ~TransformerBlockFfn2();
 
-    virtual void readWeights(float *w2Weights) = 0;
+    virtual void readWeights(char *w2Weights) = 0;
     virtual void beginForwarding() = 0;
     virtual void waitForEnd() = 0;
 };
 
 class NativeTransformerBlockFfn2: public TransformerBlockFfn2 {
 private:
-    float *w2Weights0;
+    char *w2Weights0;
 
 public:
     NativeTransformerBlockFfn2(int layerIndex, int sliceIndex, TransformerSpec* spec, SharedBuffer *sharedBuffer);
     ~NativeTransformerBlockFfn2();
 
-    void readWeights(float *w2Weights);
+    void readWeights(char *w2Weights);
     void beginForwarding();
     void waitForEnd();
 };

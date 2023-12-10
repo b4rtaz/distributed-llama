@@ -40,7 +40,6 @@ void generate2(Transformer *transformer, Tokenizer *tokenizer, Sampler *sampler,
             next = sample(sampler, logits);
         }
         pos++;
-        printf("[next=%d]", next);
 
         // data-dependent terminating condition: the BOS (=1) token delimits sequences
         if (next == 1) { break; }
@@ -83,7 +82,8 @@ void generate(TransformerSpec* spec, Transformer* transformer) {
 }
 
 int main() {
-    const char* path = "./converter/llama_7b_fp32.bin";
+    // const char* path = "./converter/llama_7b_fp32.bin"; FloatType type = F32;
+    const char* path = "./converter/llama_7b_torch.float16.bin"; FloatType type = F16;
     FILE* fp = fopen(path, "rb");
 
     int config[7];
@@ -93,7 +93,6 @@ int main() {
     spec.dim = config[0];
     spec.hiddenDim = config[1];
     spec.nLayers = config[2];
-    // spec.nLayers = 1;
     spec.nHeads = config[3];
     spec.nKvHeads = config[4];
     bool sharedWeights = config[5] > 0 ? true : false;
@@ -101,7 +100,8 @@ int main() {
     spec.seqLen = config[6];
     spec.headSize = spec.dim / spec.nHeads;
     spec.kvDim = (spec.dim * spec.nKvHeads) / spec.nHeads;
-    spec.sliceCount = 1;
+    spec.blockFloatType = type;
+    spec.sliceCount = 8;
 
     printf("dim: %d\n", spec.dim);
     printf("hiddenDim: %d\n", spec.hiddenDim);
