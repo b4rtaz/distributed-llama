@@ -291,18 +291,6 @@ void free_sampler(Sampler* sampler) {
     free(sampler->probindex);
 }
 
-unsigned int random_u32(unsigned long long *state) {
-    // xorshift rng: https://en.wikipedia.org/wiki/Xorshift#xorshift.2A
-    *state ^= *state >> 12;
-    *state ^= *state << 25;
-    *state ^= *state >> 27;
-    return (*state * 0x2545F4914F6CDD1Dull) >> 32;
-}
-
-float random_f32(unsigned long long *state) { // random float32 in [0,1)
-    return (random_u32(state) >> 8) / 16777216.0f;
-}
-
 int sample(Sampler* sampler, float* logits) {
     // sample the token given the logits and some hyperparameters
     int next;
@@ -315,7 +303,7 @@ int sample(Sampler* sampler, float* logits) {
         // apply softmax to the logits to get the probabilities for next token
         softmax(logits, sampler->vocab_size);
         // flip a (float) coin (this is our source of entropy for sampling)
-        float coin = random_f32(&sampler->rng_state);
+        float coin = randomF32(&sampler->rng_state);
         // we sample from this distribution to get the next token
         if (sampler->topp <= 0 || sampler->topp >= 1) {
             // simply sample from the predicted probability distribution

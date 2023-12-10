@@ -3,11 +3,11 @@ CC = g++
 matmul: src/matmul.cpp
 	$(CC) -std=c++11 -Werror -O3 -c -pthread src/matmul.cpp -o matmul.o
 
-matmul-test: src/matmul-test.cpp matmul.o
-	$(CC) -std=c++11 -Werror -O3 src/matmul-test.cpp -g -o matmul-test matmul.o
-
 funcs: src/funcs.cpp
 	$(CC) -std=c++11 -Werror -O3 -c src/funcs.cpp -o funcs.o
+
+matmul-test: src/matmul-test.cpp matmul.o
+	$(CC) -std=c++11 -Werror -O3 src/matmul-test.cpp -g -o matmul-test matmul.o funcs.o
 
 shared-buffer: src/shared-buffer.cpp
 	$(CC) -std=c++11 -Werror -O3 -c src/shared-buffer.cpp -o shared-buffer.o

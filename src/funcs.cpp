@@ -7,6 +7,19 @@ long timeMs() {
     return te.tv_sec * 1000LL + te.tv_usec / 1000;
 }
 
+unsigned int randomU32(unsigned long long *state) {
+    // xorshift rng: https://en.wikipedia.org/wiki/Xorshift#xorshift.2A
+    *state ^= *state >> 12;
+    *state ^= *state << 25;
+    *state ^= *state >> 27;
+    return (*state * 0x2545F4914F6CDD1Dull) >> 32;
+}
+
+float randomF32(unsigned long long *state) {
+    // random float32 in <0,1)
+    return (randomU32(state) >> 8) / 16777216.0f;
+}
+
 void rmsnorm(float* o, float* x, float* weight, int size) {
     // calculate sum of squares
     float ss = 0.0f;
