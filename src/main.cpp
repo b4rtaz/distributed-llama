@@ -82,6 +82,8 @@ void generate(TransformerSpec* spec, Transformer* transformer) {
 }
 
 int main() {
+    initQuants();
+
     // const char* path = "./converter/llama_7b_fp32.bin"; FloatType type = F32;
     const char* path = "./converter/llama_7b_torch.float16.bin"; FloatType type = F16;
     FILE* fp = fopen(path, "rb");

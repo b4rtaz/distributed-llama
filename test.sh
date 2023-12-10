@@ -3,6 +3,7 @@ rm matmul-test
 rm transformer-block-test
 rm main
 
+make quants
 make matmul
 make funcs
 make matmul-test

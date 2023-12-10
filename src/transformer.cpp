@@ -1,6 +1,7 @@
 #include <math.h>
 #include <string.h>
 #include <sys/mman.h>
+#include "quants.hpp"
 #include "funcs.hpp"
 #include "transformer.hpp"
 
@@ -14,7 +15,8 @@ char* newBuffer(size_t size) {
         exit(EXIT_FAILURE);
     }
     if (mlock(buffer, size) != 0) {
-        fprintf(stderr, "warn: mlock failed: %zu bytes\n", size);
+        fprintf(stderr, "🚧 Cannot allocate %zu bytes in RAM\n", size);
+        // exit(EXIT_FAILURE);
     }
     return buffer;
 }
@@ -275,6 +277,8 @@ TransformerBlock::~TransformerBlock() {
 }
 
 long TransformerBlock::readWeights(char* wd) {
+    long fs = getFloatBytes(spec->blockFloatType);
+
     char* w = wd;
     memcpy(rmsAttWeight, w, spec->dim * sizeof(float));
     w += spec->dim * sizeof(float);
@@ -282,73 +286,45 @@ long TransformerBlock::readWeights(char* wd) {
     memcpy(rmsFfnWeight, w, spec->dim * sizeof(float));
     w += spec->dim * sizeof(float);
 
-    long fs = getFloatSize(spec->blockFloatType);
-
-    long wqs = spec->dim * spec->dim * fs;
-    char* wq = new char[wqs];
-    long wks = spec->dim * spec->nKvHeads * spec->headSize * fs;
-    char* wk = new char[wks];
-    long wvs = spec->dim * spec->nKvHeads * spec->headSize * fs;
-    char* wv = new char[wvs];
-
-    memcpy(wq, w, wqs);
-    w += wqs;
-
-    memcpy(wk, w, wks);
-    w += wks;
-
-    memcpy(wv, w, wvs);
-    w += wvs;
+    char* wq = w;
+    w += spec->dim * spec->dim * fs;
+    char* wk = w;
+    w += spec->dim * spec->nKvHeads * spec->headSize * fs;
+    char* wv = w;
+    w += spec->dim * spec->nKvHeads * spec->headSize * fs;
 
     for (int s = 0; s < spec->sliceCount; s++) {
         qkvs[s]->readWeights(wq, wk, wv);
     }
-    delete[] wq;
-    delete[] wk;
-    delete[] wv;
 
-    long wos = spec->dim * spec->dim * fs;
-    char* wo = new char[wos];
-    memcpy(wo, w, wos);
-    w += wos;
+    char* wo = w;
+    w += spec->dim * spec->dim * fs;
 
     for (int s = 0; s < spec->sliceCount; s++) {
         atts[s]->readWeights(wo);
     }
-    delete[] wo;
 
-    long w1s = spec->dim * spec->hiddenDim * fs;
-    char* w1 = new char[w1s];
-    long w2s = spec->hiddenDim * spec->dim * fs;
-    char* w2 = new char[w2s];
-    long w3s = spec->dim * spec->hiddenDim * fs;
-    char* w3 = new char[w3s];
-
-    memcpy(w1, w, w1s);
-    w += w1s;
-
-    memcpy(w2, w, w2s);
-    w += w2s;
-
-    memcpy(w3, w, w3s);
-    w += w3s;
+    char* w1 = w;
+    w += spec->dim * spec->hiddenDim * fs;
+    char* w2 = w;
+    w += spec->hiddenDim * spec->dim * fs;
+    char* w3 = w;
+    w += spec->dim * spec->hiddenDim * fs;
 
     for (int s = 0; s < spec->sliceCount; s++) {
         ffns[s]->readWeights(w1, w3);
         ffn2s[s]->readWeights(w2);
     }
-    delete[] w1;
-    delete[] w2;
-    delete[] w3;
+
     return (long)(w - wd);
 }
 
 void TransformerBlock::forward(int pos, float* x) {
     int dim = spec->dim;
-    int kv_dim = spec->kvDim;
-    int kv_mul = spec->nHeads / spec->nKvHeads; // integer multiplier of the kv sharing in multiquery
-    int hidden_dim =  spec->hiddenDim;
-    int head_size = dim / spec->nHeads;
+    int kvDim = spec->kvDim;
+    int kvMul = spec->nHeads / spec->nKvHeads; // integer multiplier of the kv sharing in multiquery
+    int hiddenDim =  spec->hiddenDim;
+    int headSize = dim / spec->nHeads;
 
     float* xb = (float*)sharedBuffer->getUnit(SB_UNIT_XB);
     float* hh = (float*)sharedBuffer->getUnit(SB_UNIT_HH);
@@ -358,8 +334,8 @@ void TransformerBlock::forward(int pos, float* x) {
     sharedBuffer->send(SB_UNIT_XB);
 
     // qkv matmuls for this position
-    float* k = keyCache + pos * kv_dim;
-    float* v = valueCache + pos * kv_dim;
+    float* k = keyCache + pos * kvDim;
+    float* v = valueCache + pos * kvDim;
 
     for (int s = 0; s < spec->sliceCount; s++) {
         qkvs[s]->beginForwarding();
@@ -374,12 +350,12 @@ void TransformerBlock::forward(int pos, float* x) {
 
     // RoPE relative positional encoding: complex-valued rotate q and k in each head
     for (int i = 0; i < dim; i+=2) {
-        int head_dim = i % head_size;
-        float freq = 1.0f / powf(10000.0f, head_dim / (float)head_size);
+        int head_dim = i % headSize;
+        float freq = 1.0f / powf(10000.0f, head_dim / (float)headSize);
         float val = pos * freq;
         float fcr = cosf(val);
         float fci = sinf(val);
-        int rotn = i < kv_dim ? 2 : 1; // how many vectors? 2 = q & k, 1 = q only
+        int rotn = i < kvDim ? 2 : 1; // how many vectors? 2 = q & k, 1 = q only
         for (int _v = 0; _v < rotn; _v++) {
             float* vec = _v == 0 ? q : k; // the vector to rotate (query or key)
             float v0 = vec[i];
@@ -394,19 +370,19 @@ void TransformerBlock::forward(int pos, float* x) {
     #pragma omp parallel for private(h)
     for (h = 0; h < spec->nHeads; h++) {
         // get the query vector for this head
-        float* _q = q + h * head_size;
+        float* _q = q + h * headSize;
         // attention scores for this head
         float* _att = att + h * spec->seqLen;
         // iterate over all timesteps, including the current one
         for (int t = 0; t <= pos; t++) {
             // get the key vector for this head and at this timestep
-            float* k = keyCache + t * kv_dim + (h / kv_mul) * head_size;
+            float* k = keyCache + t * kvDim + (h / kvMul) * headSize;
             // calculate the attention score as the dot product of q and k
             float score = 0.0f;
-            for (int i = 0; i < head_size; i++) {
+            for (int i = 0; i < headSize; i++) {
                 score += _q[i] * k[i];
             }
-            score /= sqrtf(head_size);
+            score /= sqrtf(headSize);
             // save the score to the attention buffer
             _att[t] = score;
         }
@@ -415,15 +391,15 @@ void TransformerBlock::forward(int pos, float* x) {
         softmax(_att, pos + 1);
 
         // weighted sum of the values, store back into xb
-        float* _xb = xb + h * head_size;
-        memset(_xb, 0, head_size * sizeof(float));
+        float* _xb = xb + h * headSize;
+        memset(_xb, 0, headSize * sizeof(float));
         for (int t = 0; t <= pos; t++) {
             // get the value vector for this head and at this timestep
-            float* _v = valueCache + t * kv_dim + (h / kv_mul) * head_size;
+            float* _v = valueCache + t * kvDim + (h / kvMul) * headSize;
             // get the attention weight for this timestep
             float a = _att[t];
             // accumulate the weighted value into xb
-            for (int i = 0; i < head_size; i++) {
+            for (int i = 0; i < headSize; i++) {
                 _xb[i] += a * _v[i];
             }
         }
@@ -458,7 +434,7 @@ void TransformerBlock::forward(int pos, float* x) {
         ffns[s]->w3Slice->mergeOutputs(s, hb, (float*)sharedBuffer->getSliced(SB_SLICED_HB, s));
     }
 
-    memcpy(hh, hb, hidden_dim * sizeof(float));
+    memcpy(hh, hb, hiddenDim * sizeof(float));
     sharedBuffer->send(SB_UNIT_HH);
 
     for (int s = 0; s < spec->sliceCount; s++) {
