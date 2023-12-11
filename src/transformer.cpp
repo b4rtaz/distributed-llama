@@ -15,7 +15,7 @@ char* newBuffer(size_t size) {
         exit(EXIT_FAILURE);
     }
     if (mlock(buffer, size) != 0) {
-        fprintf(stderr, "🚧 Cannot allocate %zu bytes in RAM\n", size);
+        fprintf(stderr, "🚧 Cannot allocate %zu bytes directly in RAM\n", size);
         // exit(EXIT_FAILURE);
     }
     return buffer;
@@ -277,8 +277,6 @@ TransformerBlock::~TransformerBlock() {
 }
 
 long TransformerBlock::readWeights(char* wd) {
-    long fs = getFloatBytes(spec->blockFloatType);
-
     char* w = wd;
     memcpy(rmsAttWeight, w, spec->dim * sizeof(float));
     w += spec->dim * sizeof(float);
@@ -287,35 +285,34 @@ long TransformerBlock::readWeights(char* wd) {
     w += spec->dim * sizeof(float);
 
     char* wq = w;
-    w += spec->dim * spec->dim * fs;
+    w += getBatchBytes(spec->blockFloatType, spec->dim, spec->dim);
     char* wk = w;
-    w += spec->dim * spec->nKvHeads * spec->headSize * fs;
+    w += getBatchBytes(spec->blockFloatType, spec->dim, spec->nKvHeads * spec->headSize);
     char* wv = w;
-    w += spec->dim * spec->nKvHeads * spec->headSize * fs;
+    w += getBatchBytes(spec->blockFloatType, spec->dim, spec->nKvHeads * spec->headSize);
 
     for (int s = 0; s < spec->sliceCount; s++) {
         qkvs[s]->readWeights(wq, wk, wv);
     }
 
     char* wo = w;
-    w += spec->dim * spec->dim * fs;
+    w += getBatchBytes(spec->blockFloatType, spec->dim, spec->dim);
 
     for (int s = 0; s < spec->sliceCount; s++) {
         atts[s]->readWeights(wo);
     }
 
     char* w1 = w;
-    w += spec->dim * spec->hiddenDim * fs;
+    w += getBatchBytes(spec->blockFloatType, spec->dim, spec->hiddenDim);
     char* w2 = w;
-    w += spec->hiddenDim * spec->dim * fs;
+    w += getBatchBytes(spec->blockFloatType, spec->hiddenDim, spec->dim);
     char* w3 = w;
-    w += spec->dim * spec->hiddenDim * fs;
+    w += getBatchBytes(spec->blockFloatType, spec->dim, spec->hiddenDim);
 
     for (int s = 0; s < spec->sliceCount; s++) {
         ffns[s]->readWeights(w1, w3);
         ffn2s[s]->readWeights(w2);
     }
-
     return (long)(w - wd);
 }
 

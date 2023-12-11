@@ -85,7 +85,8 @@ int main() {
     initQuants();
 
     // const char* path = "./converter/llama_7b_fp32.bin"; FloatType type = F32;
-    const char* path = "./converter/llama_7b_torch.float16.bin"; FloatType type = F16;
+    // const char* path = "./converter/llama_7b_torch.float16.bin"; FloatType type = F16;
+    const char* path = "./converter/llama_7b_q40.bin"; FloatType type = Q40;
     FILE* fp = fopen(path, "rb");
 
     int config[7];

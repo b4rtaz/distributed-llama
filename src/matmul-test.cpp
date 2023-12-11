@@ -9,7 +9,7 @@ int d = 256;
 float* input; // (256,1)
 char* weights; // (256,256)
 float* output; // (256,1)
-float expectedOutput[256] = {
+float expectedOutputF32[256] = {
     0.00940421689, 0.0099773258, 0.00998678058, 0.00987196993, 0.0104839709, 0.00963028241, 0.0103303399, 0.0105523383, 
     0.00993812457, 0.0096816523, 0.00982786808, 0.0100828549, 0.0105102677, 0.00949237496, 0.0103284307, 0.00956133474, 
     0.00998091977, 0.0101781245, 0.0098706698, 0.00995308254, 0.00990086515, 0.010440927, 0.00928415731, 0.0101713268, 
@@ -44,11 +44,29 @@ float expectedOutput[256] = {
     0.00984117482, 0.010183882, 0.00954863429, 0.00999936648, 0.00985846296, 0.0102046141, 0.00948831439, 0.00990356226,
 };
 
-void test0_default() {
-    matmul(F32, output, input, weights, n, d);
+void compareOrFail(const char *name, float* o, float* eo, int size) {
+    int ix = -1;
+    for (int i = 0; i < size; i++) {
+        if (o[i] != eo[i]) {
+            ix = i;
+            break;
+        }
+    }
+    if (ix < 0) {
+        printf("[%s] ✅\n", name);
+    } else {
+        printf("[%s] ❌ ix=%d\n", name, ix);
+        printf("%.9g != %.9g\n", o[ix], eo[ix]);
+        exit(-1);
+    }
 }
 
-void test0_distr() {
+void test_f32() {
+    matmul(F32, output, input, weights, n, d);
+    compareOrFail("f32", output, expectedOutputF32, d);
+}
+
+void test_f32_sliced() {
     int slices = 8;
 
     MatMulSlice* slice = new MatMulSlice(F32, slices, n, d);
@@ -74,26 +92,32 @@ void test0_distr() {
     }
 
     delete slice;
+    compareOrFail("f32_sliced", output, expectedOutputF32, d);
 }
 
-void compareOrFail(const char *name) {
-    int ix = -1;
-    for (int i = 0; i < d; i++) {
-        if (output[i] != expectedOutput[i]) {
-            ix = i;
-            break;
-        }
-    }
-    if (ix < 0) {
-        printf("[%s] ✅\n", name);
-    } else {
-        printf("[%s] ❌ ix=%d\n", name, ix);
-        printf("%f != %f\n", output[ix], expectedOutput[ix]);
-        exit(-1);
-    }
+void test_dequantizeQ40Row() {
+    uint8_t data[] = {
+        0x33, 0x2f, 0xa9, 0xcb, 0xdc, 0xfe, 0x80, 0xa9, 0xcb, 0xdc, 0xfe, 0x80, 0xa9, 0xcb, 0xdc, 0xfe, 0x80, 0xa9,
+        0x33, 0xaf, 0x67, 0x45, 0x34, 0x12, 0x80, 0x67, 0x45, 0x34, 0x12, 0x80, 0x67, 0x45, 0x34, 0x12, 0x80, 0x67,
+    };
+    float row[64];
+    dequantizeQ40Row((BlockQ40*)&data, row, 64);
+
+    float expectedRow[] = {
+        0.112487793, 0.224975586, 0.337463379, 0.449951172, 0.449951172, 0.562438965, 0.674926758, 0.787414551, -0.899902344, 0,
+        0.112487793, 0.224975586, 0.337463379, 0.449951172, 0.449951172, 0.562438965, 0.674926758, 0.787414551, -0.899902344, 0,
+        0.112487793, 0.224975586, 0.337463379, 0.449951172, 0.449951172, 0.562438965, 0.674926758, 0.787414551, -0.899902344, 0,
+        0.112487793, 0.224975586, 0.112487793, 0.224975586, 0.337463379, 0.449951172, 0.449951172, 0.562438965, 0.674926758, 0.787414551, 0.899902344, -0,
+        0.112487793, 0.224975586, 0.337463379, 0.449951172, 0.449951172, 0.562438965, 0.674926758, 0.787414551, 0.899902344, -0,
+        0.112487793, 0.224975586, 0.337463379, 0.449951172, 0.449951172, 0.562438965, 0.674926758, 0.787414551, 0.899902344, -0, 0.112487793, 0.224975586
+    };
+
+    compareOrFail("dequantizeQ40Row", row, expectedRow, 64);
 }
 
 int main() {
+    initQuants();
+
     input = new float[n];
     weights = new char[n * d * sizeof(float)];
     output = new float[d];
@@ -104,12 +128,12 @@ int main() {
     for (i = 0; i < n * d; i++) ((float*)weights)[i] = randomF32(&state) / 80.0;
 
     memset(output, 0, d * sizeof(float));
-    test0_default();
-    compareOrFail("default");
+    test_f32();
 
     memset(output, 0, d * sizeof(float));
-    test0_distr();
-    compareOrFail("distr");
+    test_f32_sliced();
+
+    test_dequantizeQ40Row();
 
     delete[] input;
     delete[] weights;

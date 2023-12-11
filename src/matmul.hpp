@@ -7,7 +7,7 @@ void matmul(FloatType type, float* output, float* input, char* weights, int n, i
 
 class MatMulSlice {
 public:
-    int floatSize;
+    FloatType type;
     int sliceCount;
     int d0;
     int n;

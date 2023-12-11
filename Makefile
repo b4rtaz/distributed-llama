@@ -1,10 +1,10 @@
 CC = g++
 
 quants: src/quants.cpp
-	$(CC) -std=c++11 -Werror -O3 -c -pthread src/quants.cpp -o quants.o
+	$(CC) -std=c++11 -Werror -O3 -c -pthread src/quants.cpp -g -o quants.o
 
 matmul: src/matmul.cpp
-	$(CC) -std=c++11 -Werror -O3 -c -pthread src/matmul.cpp -o matmul.o
+	$(CC) -std=c++11 -Werror -O3 -c -pthread src/matmul.cpp -g -o matmul.o
 
 funcs: src/funcs.cpp
 	$(CC) -std=c++11 -Werror -O3 -c src/funcs.cpp -o funcs.o

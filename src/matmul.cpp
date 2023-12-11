@@ -3,6 +3,8 @@
 #include <pthread.h>
 #include "quants.hpp"
 #include "matmul.hpp"
+#include <cassert>
+#include <string.h>
 
 struct MatmulThreadInfo {
     pthread_t handler;
@@ -17,26 +19,46 @@ struct MatmulThreadInfo {
 
 void matmulF32(MatmulThreadInfo* a) {
     float* w = (float*)a->weights;
-    int i;
-    for (i = a->ds; i < a->de; i++) {
+    int d;
+    for (d = a->ds; d < a->de; d++) {
         float val = 0.0f;
         for (int j = 0; j < a->n; j++) {
-            val += w[i * a->n + j] * a->input[j];
+            val += w[d * a->n + j] * a->input[j];
         }
-        a->output[i] = val;
+        a->output[d] = val;
     }
 }
 
 void matmulF16(MatmulThreadInfo* a) {
     uint16_t* w = (uint16_t*)a->weights;
-    int i;
-    for (i = a->ds; i < a->de; i++) {
+    int d;
+    for (d = a->ds; d < a->de; d++) {
         float val = 0.0f;
         for (int j = 0; j < a->n; j++) {
-            float ww = convertF16ToF32(w[i * a->n + j]);
+            float ww = convertF16ToF32(w[d * a->n + j]);
             val += ww * a->input[j];
         }
-        a->output[i] = val;
+        a->output[d] = val;
+    }
+}
+
+void matmulQ40(MatmulThreadInfo* a) {
+    const int blocksPerRow = 8;
+    const int k = QK40 * blocksPerRow;
+    BlockQ40* w = (BlockQ40*)a->weights;
+    assert(a->n % k == 0);
+    int n = a->n / k;
+    float group[k];
+
+    for (int d = a->ds; d < a->de; d++) {
+        float val = 0.0f;
+        for (int j = 0; j < n; j++) {
+            dequantizeQ40Row(&w[d * n * blocksPerRow + j * blocksPerRow], group, k);
+            for (int z = 0; z < k; z++) {
+                val += group[z] * a->input[j * k + z];
+            }
+        }
+        a->output[d] = val;
     }
 }
 
@@ -49,6 +71,9 @@ void* matmulThread(void* arg) {
             break;
         case F16:
             matmulF16(a);
+            break;
+        case Q40:
+            matmulQ40(a);
             break;
         default:
             printf("Unknown float type %d\n", a->type);
@@ -86,25 +111,27 @@ void matmul(FloatType type, float* output, float* input, char* weights, int n, i
 }
 
 MatMulSlice::MatMulSlice(FloatType type, int sliceCount, int n, int d) {
-    if (d % sliceCount != 0) {
-        printf("d=%d must be divisible by sliceCount=%d\n", d, sliceCount);
-        exit(1);
-    }
-    this->floatSize = getFloatBytes(type);
+    assert(d % sliceCount == 0);
+
+    this->type = type;
     this->sliceCount = sliceCount;
     this->d0 = d / sliceCount;
     this->n = n;
-    this->weights0Bytes = this->d0 * this->n * this->floatSize;
+    this->weights0Bytes = getBatchBytes(type, this->n, this->d0);
 }
 
 long MatMulSlice::splitWeights(int sliceIndex, char* weights, char* weights0) {
-    long offset = (this->d0 * sliceIndex * this->n) * floatSize;
-    for (int i = 0; i < this->d0; i++) {
-        for (int j = 0; j < this->n; j++) {
-            long o = i * this->n + j;
-            for (int b = 0; b < floatSize; b++) {
-                weights0[o * floatSize + b] = weights[offset + o * floatSize + b];
-            }
+    int numbersPerBatch = getNumbersPerBatch(this->type);
+    int batchBytes = getBatchBytes(this->type, numbersPerBatch, 1);
+
+    int n = this->n / numbersPerBatch;
+    long offset = this->d0 * sliceIndex * n * batchBytes;
+
+    for (int d = 0; d < this->d0; d++) {
+        for (int j = 0; j < n; j++) {
+            long o = (d * n + j) * batchBytes;
+
+            memcpy(weights0 + o, weights + offset + o, batchBytes);
         }
     }
     return offset; // offset in bytes
