@@ -12,53 +12,7 @@ int compare_tokens(const void *a, const void *b) {
     return strcmp(((TokenIndex*)a)->str, ((TokenIndex*)b)->str);
 }
 
-void build_tokenizer(Tokenizer* t, char* tokenizer_path, int vocab_size) {
-    // i should have written the vocab_size into the tokenizer file... sigh
-    t->vocab_size = vocab_size;
-    // malloc space to hold the scores and the strings
-    t->vocab = (char**)malloc(vocab_size * sizeof(char*));
-    t->vocab_scores = (float*)malloc(vocab_size * sizeof(float));
-    t->sorted_vocab = NULL; // initialized lazily
-    for (int i = 0; i < 256; i++) {
-        t->byte_pieces[i * 2] = (unsigned char)i;
-        t->byte_pieces[i * 2 + 1] = '\0';
-    }
-    // read in the file
-    FILE *file = fopen(tokenizer_path, "rb");
-    if (!file) { fprintf(stderr, "couldn't load %s\n", tokenizer_path); exit(EXIT_FAILURE); }
-    if (fread(&t->max_token_length, sizeof(int), 1, file) != 1) { fprintf(stderr, "failed read\n"); exit(EXIT_FAILURE); }
-    int len;
-    for (int i = 0; i < vocab_size; i++) {
-        if (fread(t->vocab_scores + i, sizeof(float), 1, file) != 1) { fprintf(stderr, "failed read\n"); exit(EXIT_FAILURE);}
-        if (fread(&len, sizeof(int), 1, file) != 1) { fprintf(stderr, "failed read\n"); exit(EXIT_FAILURE); }
-        t->vocab[i] = (char *)malloc(len + 1);
-        if (fread(t->vocab[i], len, 1, file) != 1) { fprintf(stderr, "failed read\n"); exit(EXIT_FAILURE); }
-        t->vocab[i][len] = '\0'; // add the string terminating token
-    }
-    fclose(file);
-}
-
-void free_tokenizer(Tokenizer* t) {
-    for (int i = 0; i < t->vocab_size; i++) { free(t->vocab[i]); }
-    free(t->vocab);
-    free(t->vocab_scores);
-    free(t->sorted_vocab);
-}
-
-char* decode(Tokenizer* t, int prev_token, int token) {
-    char *piece = t->vocab[token];
-    // following BOS (1) token, sentencepiece decoder strips any leading whitespace (see PR #89)
-    if (prev_token == 1 && piece[0] == ' ') { piece++; }
-    // careful, some tokens designate raw bytes, and look like e.g. '<0x01>'
-    // parse this and convert and return the actual byte
-    unsigned char byte_val;
-    if (sscanf(piece, "<0x%02hhX>", &byte_val) == 1) {
-        piece = (char*)t->byte_pieces + byte_val * 2;
-    }
-    return piece;
-}
-
-void safe_printf(char *piece) {
+void safePrintf(char *piece) {
     // piece might be a raw byte token, and we only want to print printable chars or whitespace
     // because some of the other bytes can be various control codes, backspace, etc.
     if (piece == NULL) { return; }
@@ -72,6 +26,52 @@ void safe_printf(char *piece) {
     printf("%s", piece);
 }
 
+Tokenizer::Tokenizer(char* tokenizer_path, int vocab_size) {
+    // i should have written the vocab_size into the tokenizer file... sigh
+    this->vocab_size = vocab_size;
+    // malloc space to hold the scores and the strings
+    vocab = (char**)malloc(vocab_size * sizeof(char*));
+    vocab_scores = (float*)malloc(vocab_size * sizeof(float));
+    sorted_vocab = NULL; // initialized lazily
+    for (int i = 0; i < 256; i++) {
+        byte_pieces[i * 2] = (unsigned char)i;
+        byte_pieces[i * 2 + 1] = '\0';
+    }
+    // read in the file
+    FILE *file = fopen(tokenizer_path, "rb");
+    if (!file) { fprintf(stderr, "couldn't load %s\n", tokenizer_path); exit(EXIT_FAILURE); }
+    if (fread(&max_token_length, sizeof(int), 1, file) != 1) { fprintf(stderr, "failed read\n"); exit(EXIT_FAILURE); }
+    int len;
+    for (int i = 0; i < vocab_size; i++) {
+        if (fread(vocab_scores + i, sizeof(float), 1, file) != 1) { fprintf(stderr, "failed read\n"); exit(EXIT_FAILURE);}
+        if (fread(&len, sizeof(int), 1, file) != 1) { fprintf(stderr, "failed read\n"); exit(EXIT_FAILURE); }
+        vocab[i] = (char *)malloc(len + 1);
+        if (fread(vocab[i], len, 1, file) != 1) { fprintf(stderr, "failed read\n"); exit(EXIT_FAILURE); }
+        vocab[i][len] = '\0'; // add the string terminating token
+    }
+    fclose(file);
+}
+
+Tokenizer::~Tokenizer() {
+    for (int i = 0; i < vocab_size; i++) { free(vocab[i]); }
+    free(vocab);
+    free(vocab_scores);
+    free(sorted_vocab);
+}
+
+char* Tokenizer::decode(int prev_token, int token) {
+    char *piece = vocab[token];
+    // following BOS (1) token, sentencepiece decoder strips any leading whitespace (see PR #89)
+    if (prev_token == 1 && piece[0] == ' ') { piece++; }
+    // careful, some tokens designate raw bytes, and look like e.g. '<0x01>'
+    // parse this and convert and return the actual byte
+    unsigned char byte_val;
+    if (sscanf(piece, "<0x%02hhX>", &byte_val) == 1) {
+        piece = (char*)byte_pieces + byte_val * 2;
+    }
+    return piece;
+}
+
 int str_lookup(char *str, TokenIndex *sorted_vocab, int vocab_size) {
     // efficiently find the perfect match for str in vocab, return its index or -1 if not found
     TokenIndex tok = { .str = str }; // acts as the key to search for
@@ -79,24 +79,24 @@ int str_lookup(char *str, TokenIndex *sorted_vocab, int vocab_size) {
     return res != NULL ? res->id : -1;
 }
 
-void encode(Tokenizer* t, char *text, int8_t bos, int8_t eos, int *tokens, int *n_tokens) {
+void Tokenizer::encode(char *text, int8_t bos, int8_t eos, int *tokens, int *n_tokens) {
     // encode the string text (input) into an upper-bound preallocated tokens[] array
     // bos != 0 means prepend the BOS token (=1), eos != 0 means append the EOS token (=2)
     if (text == NULL) { fprintf(stderr, "cannot encode NULL text\n"); exit(EXIT_FAILURE); }
 
-    if (t->sorted_vocab == NULL) {
+    if (sorted_vocab == NULL) {
         // lazily malloc and sort the vocabulary
-        t->sorted_vocab = new TokenIndex[t->vocab_size];
-        for (int i = 0; i < t->vocab_size; i++) {
-            t->sorted_vocab[i].str = t->vocab[i];
-            t->sorted_vocab[i].id = i;
+        sorted_vocab = new TokenIndex[vocab_size];
+        for (int i = 0; i < vocab_size; i++) {
+            sorted_vocab[i].str = vocab[i];
+            sorted_vocab[i].id = i;
         }
-        qsort(t->sorted_vocab, t->vocab_size, sizeof(TokenIndex), compare_tokens);
+        qsort(sorted_vocab, vocab_size, sizeof(TokenIndex), compare_tokens);
     }
 
     // create a temporary buffer that will store merge candidates of always two consecutive tokens
     // *2 for concat, +1 for null terminator +2 for UTF8 (in case max_token_length is 1)
-    int str_buffer_size = t->max_token_length*2 +1 +2;
+    int str_buffer_size = max_token_length*2 +1 +2;
     char* str_buffer = new char[str_buffer_size];
     size_t str_len = 0;
 
@@ -112,7 +112,7 @@ void encode(Tokenizer* t, char *text, int8_t bos, int8_t eos, int *tokens, int *
     // energy to read more of the sentencepiece code to figure out what it's doing
     if (text[0] != '\0') {
         char space[] = " ";
-        int dummy_prefix = str_lookup(space, t->sorted_vocab, t->vocab_size);
+        int dummy_prefix = str_lookup(space, sorted_vocab, vocab_size);
         tokens[(*n_tokens)++] = dummy_prefix;
     }
 
@@ -149,7 +149,7 @@ void encode(Tokenizer* t, char *text, int8_t bos, int8_t eos, int *tokens, int *
         }
 
         // ok c+1 is not a continuation byte, so we've read in a full codepoint
-        int id = str_lookup(str_buffer, t->sorted_vocab, t->vocab_size);
+        int id = str_lookup(str_buffer, sorted_vocab, vocab_size);
         if (id != -1) {
             // we found this codepoint in vocab, add it as a token
             tokens[(*n_tokens)++] = id;
@@ -172,11 +172,11 @@ void encode(Tokenizer* t, char *text, int8_t bos, int8_t eos, int *tokens, int *
 
         for (int i=0; i < (*n_tokens-1); i++) {
             // check if we can merge the pair (tokens[i], tokens[i+1])
-            snprintf(str_buffer, str_buffer_size, "%s%s", t->vocab[tokens[i]], t->vocab[tokens[i+1]]);
-            int id = str_lookup(str_buffer, t->sorted_vocab, t->vocab_size);
-            if (id != -1 && t->vocab_scores[id] > best_score) {
+            snprintf(str_buffer, str_buffer_size, "%s%s", vocab[tokens[i]], vocab[tokens[i+1]]);
+            int id = str_lookup(str_buffer, sorted_vocab, vocab_size);
+            if (id != -1 && vocab_scores[id] > best_score) {
                 // this merge pair exists in vocab! record its score and position
-                best_score = t->vocab_scores[id];
+                best_score = vocab_scores[id];
                 best_id = id;
                 best_idx = i;
             }
@@ -278,39 +278,39 @@ int sample_topp(float* probabilities, int n, float topp, ProbIndex* probindex, f
     return probindex[last_idx].index; // in case of rounding errors
 }
 
-void build_sampler(Sampler* sampler, int vocab_size, float temperature, float topp, unsigned long long rng_seed) {
-    sampler->vocab_size = vocab_size;
-    sampler->temperature = temperature;
-    sampler->topp = topp;
-    sampler->rng_state = rng_seed;
+Sampler::Sampler(int vocab_size, float temperature, float topp, unsigned long long rng_seed) {
+    this->vocab_size = vocab_size;
+    this->temperature = temperature;
+    this->topp = topp;
+    this->rng_state = rng_seed;
     // buffer only used with nucleus sampling; may not need but it's ~small
-    sampler->probindex = new ProbIndex[sampler->vocab_size];
+    probindex = new ProbIndex[vocab_size];
 }
 
-void free_sampler(Sampler* sampler) {
-    free(sampler->probindex);
+Sampler::~Sampler() {
+    free(probindex);
 }
 
-int sample(Sampler* sampler, float* logits) {
+int Sampler::sample(float* logits) {
     // sample the token given the logits and some hyperparameters
     int next;
-    if (sampler->temperature == 0.0f) {
+    if (temperature == 0.0f) {
         // greedy argmax sampling: take the token with the highest probability
-        next = sample_argmax(logits, sampler->vocab_size);
+        next = sample_argmax(logits, vocab_size);
     } else {
         // apply the temperature to the logits
-        for (int q=0; q<sampler->vocab_size; q++) { logits[q] /= sampler->temperature; }
+        for (int q=0; q < vocab_size; q++) { logits[q] /= temperature; }
         // apply softmax to the logits to get the probabilities for next token
-        softmax(logits, sampler->vocab_size);
+        softmax(logits, vocab_size);
         // flip a (float) coin (this is our source of entropy for sampling)
-        float coin = randomF32(&sampler->rng_state);
+        float coin = randomF32(&rng_state);
         // we sample from this distribution to get the next token
-        if (sampler->topp <= 0 || sampler->topp >= 1) {
+        if (topp <= 0 || topp >= 1) {
             // simply sample from the predicted probability distribution
-            next = sample_mult(logits, sampler->vocab_size, coin);
+            next = sample_mult(logits, vocab_size, coin);
         } else {
             // top-p (nucleus) sampling, clamping the least likely tokens to zero
-            next = sample_topp(logits, sampler->vocab_size, sampler->topp, sampler->probindex, coin);
+            next = sample_topp(logits, vocab_size, topp, probindex, coin);
         }
     }
     return next;

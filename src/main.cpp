@@ -16,7 +16,7 @@ void generate2(Transformer *transformer, Tokenizer *tokenizer, Sampler *sampler,
     // encode the (string) prompt into tokens sequence
     int num_prompt_tokens = 0;
     int* prompt_tokens = (int*)malloc((strlen(prompt)+3) * sizeof(int)); // +3 for '\0', ?BOS, ?EOS
-    encode(tokenizer, prompt, 1, 0, prompt_tokens, &num_prompt_tokens);
+    tokenizer->encode(prompt, 1, 0, prompt_tokens, &num_prompt_tokens);
     if (num_prompt_tokens < 1) {
         fprintf(stderr, "something is wrong, expected at least 1 prompt token\n");
         exit(EXIT_FAILURE);
@@ -37,7 +37,7 @@ void generate2(Transformer *transformer, Tokenizer *tokenizer, Sampler *sampler,
             next = prompt_tokens[pos + 1];
         } else {
             // otherwise sample the next token from the logits
-            next = sample(sampler, logits);
+            next = sampler->sample(logits);
         }
         pos++;
 
@@ -45,8 +45,8 @@ void generate2(Transformer *transformer, Tokenizer *tokenizer, Sampler *sampler,
         if (next == 1) { break; }
 
         // print the token as string, decode it with the Tokenizer object
-        char* piece = decode(tokenizer, token, next);
-        safe_printf(piece); // same as printf("%s", piece), but skips "unsafe" bytes
+        char* piece = tokenizer->decode(token, next);
+        safePrintf(piece); // same as printf("%s", piece), but skips "unsafe" bytes
         fflush(stdout);
         token = next;
 
@@ -64,7 +64,7 @@ void generate2(Transformer *transformer, Tokenizer *tokenizer, Sampler *sampler,
     free(prompt_tokens);
 }
 
-void generate(TransformerSpec* spec, Transformer* transformer) {
+void generate(Transformer* transformer) {
     float temperature = 0.8f;
     float topp = 0.9f; // top-p in nucleus sampling. 1.0 = off. 0.9 works well, but slower
     unsigned long long rng_seed = (unsigned int)time(NULL);
@@ -72,10 +72,8 @@ void generate(TransformerSpec* spec, Transformer* transformer) {
     //int steps = spec->seqLen;
     int steps = 256;
 
-    Tokenizer tokenizer;
-    build_tokenizer(&tokenizer, tokenizer_path, spec->vocabSize);
-    Sampler sampler;
-    build_sampler(&sampler, spec->vocabSize, temperature, topp, rng_seed);
+    Tokenizer tokenizer(tokenizer_path, transformer->spec->vocabSize);
+    Sampler sampler(transformer->spec->vocabSize, temperature, topp, rng_seed);
 
     char prompt[] = "Hello";
     generate2(transformer, &tokenizer, &sampler, prompt, steps);
@@ -87,56 +85,15 @@ int main() {
     // const char* path = "./converter/llama_7b_fp32.bin"; FloatType type = F32;
     // const char* path = "./converter/llama_7b_torch.float16.bin"; FloatType type = F16;
     const char* path = "./converter/llama_7b_q40.bin"; FloatType type = Q40;
-    FILE* fp = fopen(path, "rb");
+    const int sliceCount = 8;
 
-    int config[7];
-    fread(config, sizeof(int), 7, fp);
+    TransformerSpec* spec;
+    Transformer* transformer;
+    loadTransformer(&spec, &transformer, path, type, sliceCount);
 
-    TransformerSpec spec;
-    spec.dim = config[0];
-    spec.hiddenDim = config[1];
-    spec.nLayers = config[2];
-    spec.nHeads = config[3];
-    spec.nKvHeads = config[4];
-    bool sharedWeights = config[5] > 0 ? true : false;
-    spec.vocabSize = abs(config[5]);
-    spec.seqLen = config[6];
-    spec.headSize = spec.dim / spec.nHeads;
-    spec.kvDim = (spec.dim * spec.nKvHeads) / spec.nHeads;
-    spec.blockFloatType = type;
-    spec.sliceCount = 8;
+    generate(transformer);
 
-    printf("dim: %d\n", spec.dim);
-    printf("hiddenDim: %d\n", spec.hiddenDim);
-    printf("nLayers: %d\n", spec.nLayers);
-    printf("nHeads: %d\n", spec.nHeads);
-    printf("nKvHeads: %d\n", spec.nKvHeads);
-    printf("vocabSize: %d\n", spec.vocabSize);
-    printf("seqLen: %d\n", spec.seqLen);
-
-    fseek(fp, 0, SEEK_END);
-    size_t weightsSize = ftell(fp);
-    fclose(fp);
-
-    int fw = open(path, O_RDONLY);
-    char* weights = (char*)mmap(NULL, weightsSize, PROT_READ, MAP_PRIVATE, fw, 0);
-    if (weights == MAP_FAILED) {
-        printf("mmap failed!\n");
-        exit(EXIT_FAILURE);
-    }
-    weights += 7 * sizeof(int);
-
-    SharedBuffer* sharedBuffer = createTransformerSharedBuffer(&spec);
-    Transformer transformer(&spec, sharedBuffer);
-
-    printf("Loading weights...\n");
-
-    long w = transformer.readWeights(weights, sharedWeights);
-
-    munmap(weights, weightsSize);
-
-    printf("Loaded weights (%lu bytes, missed: %lu)\n", weightsSize, weightsSize - w - 7 * sizeof(int));
-
-    generate(&spec, &transformer);
-    return 0;
+    delete transformer;
+    delete spec;
+    return EXIT_SUCCESS;
 }

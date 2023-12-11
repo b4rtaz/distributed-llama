@@ -77,7 +77,7 @@ void* matmulThread(void* arg) {
             break;
         default:
             printf("Unknown float type %d\n", a->type);
-            exit(1);
+            exit(EXIT_FAILURE);
     }
     return 0;
 }

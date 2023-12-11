@@ -1,6 +1,7 @@
 #include <math.h>
 #include <string.h>
 #include <sys/mman.h>
+#include <fcntl.h>
 #include "quants.hpp"
 #include "funcs.hpp"
 #include "transformer.hpp"
@@ -46,9 +47,9 @@ TransformerBlockFragment::TransformerBlockFragment(int layerIndex, int sliceInde
 
 TransformerBlockQkv::TransformerBlockQkv(int layerIndex, int sliceIndex, TransformerSpec* spec, SharedBuffer *sharedBuffer)
     : TransformerBlockFragment(layerIndex, sliceIndex, spec, sharedBuffer) {
-    qSlice = new MatMulSlice(spec->blockFloatType, spec->sliceCount, spec->dim, spec->dim);
-    kSlice = new MatMulSlice(spec->blockFloatType, spec->sliceCount, spec->dim, spec->kvDim);
-    vSlice = new MatMulSlice(spec->blockFloatType, spec->sliceCount, spec->dim, spec->kvDim);
+    qSlice = new MatMulSlice(spec->floatType, spec->sliceCount, spec->dim, spec->dim);
+    kSlice = new MatMulSlice(spec->floatType, spec->sliceCount, spec->dim, spec->kvDim);
+    vSlice = new MatMulSlice(spec->floatType, spec->sliceCount, spec->dim, spec->kvDim);
 }
 
 TransformerBlockQkv::~TransformerBlockQkv() {
@@ -82,13 +83,13 @@ void NativeTransformerBlockQkv::beginForwarding() {
     float *k0 = (float*)sharedBuffer->getSliced(SB_SLICED_K, sliceIndex);
     float *v0 = (float*)sharedBuffer->getSliced(SB_SLICED_V, sliceIndex);
 
-    matmul(spec->blockFloatType, q0, xb, qWeights0, qSlice->n, qSlice->d0);
+    matmul(spec->floatType, q0, xb, qWeights0, qSlice->n, qSlice->d0);
     sharedBuffer->send(SB_SLICED_Q);
 
-    matmul(spec->blockFloatType, k0, xb, kWeights0, kSlice->n, kSlice->d0);
+    matmul(spec->floatType, k0, xb, kWeights0, kSlice->n, kSlice->d0);
     sharedBuffer->send(SB_SLICED_K);
 
-    matmul(spec->blockFloatType, v0, xb, vWeights0, vSlice->n, vSlice->d0);
+    matmul(spec->floatType, v0, xb, vWeights0, vSlice->n, vSlice->d0);
     sharedBuffer->send(SB_SLICED_V);
 }
 
@@ -100,7 +101,7 @@ void NativeTransformerBlockQkv::waitForEnd() {}
 
 TransformerBlockAtt::TransformerBlockAtt(int layerIndex, int sliceIndex, TransformerSpec* spec, SharedBuffer *sharedBuffer)
     : TransformerBlockFragment(layerIndex, sliceIndex, spec, sharedBuffer) {
-    woSlice = new MatMulSlice(spec->blockFloatType, spec->sliceCount, spec->dim, spec->dim);
+    woSlice = new MatMulSlice(spec->floatType, spec->sliceCount, spec->dim, spec->dim);
 }
 
 TransformerBlockAtt::~TransformerBlockAtt() {
@@ -124,7 +125,7 @@ void NativeTransformerBlockAtt::beginForwarding() {
     float *xb = (float*)sharedBuffer->getUnit(SB_UNIT_XB);
     float *xb2 = (float*)sharedBuffer->getSliced(SB_SLICED_XB2, sliceIndex);
 
-    matmul(spec->blockFloatType, xb2, xb, woWeights0, woSlice->n, woSlice->d0);
+    matmul(spec->floatType, xb2, xb, woWeights0, woSlice->n, woSlice->d0);
     sharedBuffer->send(SB_SLICED_XB2);
 }
 
@@ -136,8 +137,8 @@ void NativeTransformerBlockAtt::waitForEnd() {}
 
 TransformerBlockFfn::TransformerBlockFfn(int layerIndex, int sliceIndex, TransformerSpec* spec, SharedBuffer *sharedBuffer)
     : TransformerBlockFragment(layerIndex, sliceIndex, spec, sharedBuffer) {
-    w1Slice = new MatMulSlice(spec->blockFloatType, spec->sliceCount, spec->dim, spec->hiddenDim);
-    w3Slice = new MatMulSlice(spec->blockFloatType, spec->sliceCount, spec->dim, spec->hiddenDim);
+    w1Slice = new MatMulSlice(spec->floatType, spec->sliceCount, spec->dim, spec->hiddenDim);
+    w3Slice = new MatMulSlice(spec->floatType, spec->sliceCount, spec->dim, spec->hiddenDim);
 }
 
 TransformerBlockFfn::~TransformerBlockFfn() {
@@ -167,8 +168,8 @@ void NativeTransformerBlockFfn::beginForwarding() {
     float* xb = (float*)sharedBuffer->getUnit(SB_UNIT_XB);
     float* hb0 = (float*)sharedBuffer->getSliced(SB_SLICED_HB, sliceIndex);
 
-    matmul(spec->blockFloatType, hb0, xb, w1Weights0, w1Slice->n, w1Slice->d0);
-    matmul(spec->blockFloatType, hb20, xb, w3Weights0, w3Slice->n, w3Slice->d0);
+    matmul(spec->floatType, hb0, xb, w1Weights0, w1Slice->n, w1Slice->d0);
+    matmul(spec->floatType, hb20, xb, w3Weights0, w3Slice->n, w3Slice->d0);
 
     // SwiGLU non-linearity
     for (int i = 0; i < w1Slice->d0; i++) {
@@ -191,7 +192,7 @@ void NativeTransformerBlockFfn::waitForEnd() {}
 
 TransformerBlockFfn2::TransformerBlockFfn2(int layerIndex, int sliceIndex, TransformerSpec* spec, SharedBuffer *sharedBuffer)
     : TransformerBlockFragment(layerIndex, sliceIndex, spec, sharedBuffer) {
-    w2Slice = new MatMulSlice(spec->blockFloatType, spec->sliceCount, spec->hiddenDim, spec->dim);
+    w2Slice = new MatMulSlice(spec->floatType, spec->sliceCount, spec->hiddenDim, spec->dim);
 }
 
 TransformerBlockFfn2::~TransformerBlockFfn2() {
@@ -215,7 +216,7 @@ void NativeTransformerBlockFfn2::beginForwarding() {
     float *hh = (float*)sharedBuffer->getUnit(SB_UNIT_HH);
     float *xb2 = (float*)sharedBuffer->getSliced(SB_SLICED_XB2, sliceIndex);
 
-    matmul(spec->blockFloatType, xb2, hh, w2Weights0, w2Slice->n, w2Slice->d0);
+    matmul(spec->floatType, xb2, hh, w2Weights0, w2Slice->n, w2Slice->d0);
 
     sharedBuffer->send(SB_SLICED_XB2);
 }
@@ -285,29 +286,29 @@ long TransformerBlock::readWeights(char* wd) {
     w += spec->dim * sizeof(float);
 
     char* wq = w;
-    w += getBatchBytes(spec->blockFloatType, spec->dim, spec->dim);
+    w += getBatchBytes(spec->floatType, spec->dim, spec->dim);
     char* wk = w;
-    w += getBatchBytes(spec->blockFloatType, spec->dim, spec->nKvHeads * spec->headSize);
+    w += getBatchBytes(spec->floatType, spec->dim, spec->nKvHeads * spec->headSize);
     char* wv = w;
-    w += getBatchBytes(spec->blockFloatType, spec->dim, spec->nKvHeads * spec->headSize);
+    w += getBatchBytes(spec->floatType, spec->dim, spec->nKvHeads * spec->headSize);
 
     for (int s = 0; s < spec->sliceCount; s++) {
         qkvs[s]->readWeights(wq, wk, wv);
     }
 
     char* wo = w;
-    w += getBatchBytes(spec->blockFloatType, spec->dim, spec->dim);
+    w += getBatchBytes(spec->floatType, spec->dim, spec->dim);
 
     for (int s = 0; s < spec->sliceCount; s++) {
         atts[s]->readWeights(wo);
     }
 
     char* w1 = w;
-    w += getBatchBytes(spec->blockFloatType, spec->dim, spec->hiddenDim);
+    w += getBatchBytes(spec->floatType, spec->dim, spec->hiddenDim);
     char* w2 = w;
-    w += getBatchBytes(spec->blockFloatType, spec->hiddenDim, spec->dim);
+    w += getBatchBytes(spec->floatType, spec->hiddenDim, spec->dim);
     char* w3 = w;
-    w += getBatchBytes(spec->blockFloatType, spec->dim, spec->hiddenDim);
+    w += getBatchBytes(spec->floatType, spec->dim, spec->hiddenDim);
 
     for (int s = 0; s < spec->sliceCount; s++) {
         ffns[s]->readWeights(w1, w3);
@@ -518,4 +519,63 @@ void Transformer::forward(int token, int pos) {
 
     // classifier into logits
     matmul(F32, logits, x, (char*)wcls, spec->dim, spec->vocabSize);
+}
+
+void loadTransformer(TransformerSpec** specOut, Transformer** transformerOut, const char* path, FloatType type, int sliceCount) {
+    int headerBytes = 7 * sizeof(int);
+    FILE* fh = fopen(path, "rb");
+    if (fh == NULL) {
+        printf("Cannot open file %s\n", path);
+        exit(EXIT_FAILURE);
+    }
+
+    int config[7];
+    fread(config, headerBytes, sizeof(char), fh);
+
+    TransformerSpec* spec = new TransformerSpec();
+    spec->dim = config[0];
+    spec->hiddenDim = config[1];
+    spec->nLayers = config[2];
+    spec->nHeads = config[3];
+    spec->nKvHeads = config[4];
+    bool sharedWeights = config[5] > 0 ? true : false;
+    spec->vocabSize = abs(config[5]);
+    spec->seqLen = config[6];
+    spec->headSize = spec->dim / spec->nHeads;
+    spec->kvDim = (spec->dim * spec->nKvHeads) / spec->nHeads;
+    spec->floatType = type;
+    spec->sliceCount = sliceCount;
+    *specOut = spec;
+
+    printf("dim: %d\n", spec->dim);
+    printf("hiddenDim: %d\n", spec->hiddenDim);
+    printf("nLayers: %d\n", spec->nLayers);
+    printf("nHeads: %d\n", spec->nHeads);
+    printf("nKvHeads: %d\n", spec->nKvHeads);
+    printf("vocabSize: %d\n", spec->vocabSize);
+    printf("seqLen: %d\n", spec->seqLen);
+
+    fseek(fh, 0, SEEK_END);
+    size_t fileSize = ftell(fh);
+    fclose(fh);
+
+    int fw = open(path, O_RDONLY);
+    char* weights = (char*)mmap(NULL, fileSize, PROT_READ, MAP_PRIVATE, fw, 0);
+    if (weights == MAP_FAILED) {
+        printf("Mmap failed!\n");
+        exit(EXIT_FAILURE);
+    }
+    weights += headerBytes;
+
+    SharedBuffer* sharedBuffer = createTransformerSharedBuffer(spec);
+    Transformer* transformer = new Transformer(spec, sharedBuffer);
+
+    printf("Loading weights...\n");
+
+    long loadedBytes = transformer->readWeights(weights, sharedWeights);
+
+    munmap(weights, fileSize);
+
+    printf("Loaded %lu bytes (missed %lu bytes)\n", loadedBytes, (headerBytes + loadedBytes) - fileSize);
+    *transformerOut = transformer;
 }

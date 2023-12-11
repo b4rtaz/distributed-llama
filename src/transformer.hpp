@@ -26,7 +26,7 @@ public:
     int kvDim;
     int vocabSize;
 
-    FloatType blockFloatType;
+    FloatType floatType;
     int sliceCount;
 };
 
@@ -37,10 +37,10 @@ protected:
     int layerIndex;
     int sliceIndex;
     TransformerSpec* spec;
-    SharedBuffer *sharedBuffer;
+    SharedBuffer* sharedBuffer;
 
 public:
-    TransformerBlockFragment(int layerIndex, int sliceIndex, TransformerSpec* spec, SharedBuffer *sharedBuffer);
+    TransformerBlockFragment(int layerIndex, int sliceIndex, TransformerSpec* spec, SharedBuffer* sharedBuffer);
 };
 
 class TransformerBlockQkv: public TransformerBlockFragment {
@@ -49,7 +49,7 @@ public:
     MatMulSlice* kSlice;
     MatMulSlice* vSlice;
 
-    TransformerBlockQkv(int layerIndex, int sliceIndex, TransformerSpec* spec, SharedBuffer *sharedBuffer);
+    TransformerBlockQkv(int layerIndex, int sliceIndex, TransformerSpec* spec, SharedBuffer* sharedBuffer);
     virtual ~TransformerBlockQkv();
 
     virtual void readWeights(char* qWeights, char* kWeights, char* vWeights) = 0;
@@ -59,93 +59,93 @@ public:
 
 class NativeTransformerBlockQkv: public TransformerBlockQkv {
 private:
-    char *qWeights0;
-    char *kWeights0;
-    char *vWeights0;
+    char* qWeights0;
+    char* kWeights0;
+    char* vWeights0;
 
 public:
-    NativeTransformerBlockQkv(int layerIndex, int sliceIndex, TransformerSpec* spec, SharedBuffer *sharedBuffer);
+    NativeTransformerBlockQkv(int layerIndex, int sliceIndex, TransformerSpec* spec, SharedBuffer* sharedBuffer);
     ~NativeTransformerBlockQkv();
 
-    void readWeights(char *qWeights, char *kWeights, char *vWeights);
+    void readWeights(char* qWeights, char* kWeights, char* vWeights);
     void beginForwarding();
     void waitForEnd();
 };
 
 class TransformerBlockAtt: public TransformerBlockFragment {
 public:
-    MatMulSlice *woSlice;
+    MatMulSlice* woSlice;
 
-    TransformerBlockAtt(int layerIndex, int sliceIndex, TransformerSpec* spec, SharedBuffer *sharedBuffer);
+    TransformerBlockAtt(int layerIndex, int sliceIndex, TransformerSpec* spec, SharedBuffer* sharedBuffer);
     virtual ~TransformerBlockAtt();
 
-    virtual void readWeights(char *woWeights) = 0;
+    virtual void readWeights(char* woWeights) = 0;
     virtual void beginForwarding() = 0;
     virtual void waitForEnd() = 0;
 };
 
 class NativeTransformerBlockAtt: public TransformerBlockAtt {
 private:
-    char *woWeights0;
+    char* woWeights0;
 
 public:
-    NativeTransformerBlockAtt(int layerIndex, int sliceIndex, TransformerSpec* spec, SharedBuffer *sharedBuffer);
+    NativeTransformerBlockAtt(int layerIndex, int sliceIndex, TransformerSpec* spec, SharedBuffer* sharedBuffer);
     ~NativeTransformerBlockAtt();
 
-    void readWeights(char *woWeights);
+    void readWeights(char* woWeights);
     void beginForwarding();
     void waitForEnd();
 };
 
 class TransformerBlockFfn: public TransformerBlockFragment {
 public:
-    MatMulSlice *w1Slice;
-    MatMulSlice *w3Slice;
+    MatMulSlice* w1Slice;
+    MatMulSlice* w3Slice;
 
-    TransformerBlockFfn(int layerIndex, int sliceIndex, TransformerSpec* spec, SharedBuffer *sharedBuffer);
+    TransformerBlockFfn(int layerIndex, int sliceIndex, TransformerSpec* spec, SharedBuffer* sharedBuffer);
     virtual ~TransformerBlockFfn();
 
-    virtual void readWeights(char *w1Weights, char *w3Weights) = 0;
+    virtual void readWeights(char* w1Weights, char* w3Weights) = 0;
     virtual void beginForwarding() = 0;
     virtual void waitForEnd() = 0;
 };
 
 class NativeTransformerBlockFfn: public TransformerBlockFfn {
 private:
-    char *w1Weights0;
-    char *w3Weights0;
+    char* w1Weights0;
+    char* w3Weights0;
     float *hb20;
 
 public:
-    NativeTransformerBlockFfn(int layerIndex, int sliceIndex, TransformerSpec* spec, SharedBuffer *sharedBuffer);
+    NativeTransformerBlockFfn(int layerIndex, int sliceIndex, TransformerSpec* spec, SharedBuffer* sharedBuffer);
     ~NativeTransformerBlockFfn();
 
-    void readWeights(char *w1Weights, char *w3Weights);
+    void readWeights(char* w1Weights, char* w3Weights);
     void beginForwarding();
     void waitForEnd();
 };
 
 class TransformerBlockFfn2: public TransformerBlockFragment {
 public:
-    MatMulSlice *w2Slice;
+    MatMulSlice* w2Slice;
 
-    TransformerBlockFfn2(int layerIndex, int sliceIndex, TransformerSpec* spec, SharedBuffer *sharedBuffer);
+    TransformerBlockFfn2(int layerIndex, int sliceIndex, TransformerSpec* spec, SharedBuffer* sharedBuffer);
     virtual ~TransformerBlockFfn2();
 
-    virtual void readWeights(char *w2Weights) = 0;
+    virtual void readWeights(char* w2Weights) = 0;
     virtual void beginForwarding() = 0;
     virtual void waitForEnd() = 0;
 };
 
 class NativeTransformerBlockFfn2: public TransformerBlockFfn2 {
 private:
-    char *w2Weights0;
+    char* w2Weights0;
 
 public:
-    NativeTransformerBlockFfn2(int layerIndex, int sliceIndex, TransformerSpec* spec, SharedBuffer *sharedBuffer);
+    NativeTransformerBlockFfn2(int layerIndex, int sliceIndex, TransformerSpec* spec, SharedBuffer* sharedBuffer);
     ~NativeTransformerBlockFfn2();
 
-    void readWeights(char *w2Weights);
+    void readWeights(char* w2Weights);
     void beginForwarding();
     void waitForEnd();
 };
@@ -154,7 +154,7 @@ class TransformerBlock {
 private:
     int layerIndex;
     TransformerSpec* spec;
-    SharedBuffer *sharedBuffer;
+    SharedBuffer* sharedBuffer;
     TransformerBlockQkv **qkvs;
     TransformerBlockAtt **atts;
     TransformerBlockFfn **ffns;
@@ -170,16 +170,17 @@ public:
     float* valueCache; // (seq_len, kv_dim)
     float* att; // (n_heads, seq_len)
 
-    TransformerBlock(int layerIndex, TransformerSpec* spec, SharedBuffer *sharedBuffer);
+    TransformerBlock(int layerIndex, TransformerSpec* spec, SharedBuffer* sharedBuffer);
     ~TransformerBlock();
 
-    long readWeights(char *wd);
+    long readWeights(char* wd);
     void forward(int pos, float* x);
 };
 
 class Transformer {
-private:
+public:
     TransformerSpec* spec;
+private:
     SharedBuffer* sharedBuffer;
     TransformerBlock** blocks;
 
@@ -195,5 +196,7 @@ public:
     long readWeights(char* wd, bool sharedWeights);
     void forward(int token, int pos);
 };
+
+void loadTransformer(TransformerSpec** specOut, Transformer** transformerOut, const char* path, FloatType type, int sliceCount);
 
 #endif

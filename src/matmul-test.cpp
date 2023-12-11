@@ -57,7 +57,7 @@ void compareOrFail(const char *name, float* o, float* eo, int size) {
     } else {
         printf("[%s] ❌ ix=%d\n", name, ix);
         printf("%.9g != %.9g\n", o[ix], eo[ix]);
-        exit(-1);
+        exit(EXIT_FAILURE);
     }
 }
 

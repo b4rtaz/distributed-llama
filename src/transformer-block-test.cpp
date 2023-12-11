@@ -533,7 +533,7 @@ int main() {
     spec.nHeads = spec.dim / spec.headSize;
     spec.kvDim = (spec.dim * spec.nKvHeads) / spec.nHeads;
     spec.vocabSize = 32000;
-    spec.blockFloatType = F32;
+    spec.floatType = F32;
     spec.sliceCount = 4;
 
     SharedBuffer* sharedBuffer = createTransformerSharedBuffer(&spec);
