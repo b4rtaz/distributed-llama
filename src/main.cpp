@@ -1,99 +1,97 @@
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <fcntl.h>
-#include <time.h>
-#include <sys/mman.h>
 #include "funcs.hpp"
 #include "shared-buffer.hpp"
 #include "transformer.hpp"
 #include "tokenizer.hpp"
+#include "worker.hpp"
 
-void generate2(Transformer *transformer, Tokenizer *tokenizer, Sampler *sampler, char *prompt, int steps) {
-    char empty_prompt[] = "";
-    if (prompt == NULL) { prompt = empty_prompt; }
+struct ProgramArgs {
+    char* mode;
 
-    // encode the (string) prompt into tokens sequence
-    int num_prompt_tokens = 0;
-    int* prompt_tokens = (int*)malloc((strlen(prompt)+3) * sizeof(int)); // +3 for '\0', ?BOS, ?EOS
-    tokenizer->encode(prompt, 1, 0, prompt_tokens, &num_prompt_tokens);
-    if (num_prompt_tokens < 1) {
-        fprintf(stderr, "something is wrong, expected at least 1 prompt token\n");
-        exit(EXIT_FAILURE);
-    }
+    // inference
+    char* modelPath;
+    char* tokenizerPath;
+    char* prompt;
+    FloatType floatType;
+    int sliceCount;
 
-    // start the main loop
-    long start = 0;  // used to time our code, only initialized after first iteration
-    int next;        // will store the next token in the sequence
-    int token = prompt_tokens[0]; // kick off with the first token in the prompt
-    int pos = 0;     // position in the sequence
-    while (pos < steps) {
-        transformer->forward(token, pos);
-        float* logits = transformer->logits;
+    // worker
+    int port;
+};
 
-        // advance the state machine
-        if (pos < num_prompt_tokens - 1) {
-            // if we are still processing the input prompt, force the next prompt token
-            next = prompt_tokens[pos + 1];
-        } else {
-            // otherwise sample the next token from the logits
-            next = sampler->sample(logits);
-        }
-        pos++;
-
-        // data-dependent terminating condition: the BOS (=1) token delimits sequences
-        if (next == 1) { break; }
-
-        // print the token as string, decode it with the Tokenizer object
-        char* piece = tokenizer->decode(token, next);
-        safePrintf(piece); // same as printf("%s", piece), but skips "unsafe" bytes
-        fflush(stdout);
-        token = next;
-
-        // init the timer here because the first iteration can be slower
-        if (start == 0) { start = timeMs(); }
-    }
-    printf("\n");
-
-    // report achieved tok/s (pos-1 because the timer starts after first iteration)
-    if (pos > 1) {
-        long end = timeMs();
-        fprintf(stderr, "achieved tok/s: %f\n", (pos-1) / (double)(end-start)*1000);
-    }
-
-    free(prompt_tokens);
+int usage() {
+    printf("Usage:\n");
+    printf("main inference -m <model_path> -f <float_type> -t <tokenizer_path> -p <prompt> -s 1");
+    return EXIT_FAILURE;
 }
 
-void generate(Transformer* transformer) {
+int inference(ProgramArgs* args) {
+    if (args->modelPath == NULL || args->tokenizerPath == NULL || args->prompt == NULL) {
+        return usage();
+    }
+
     float temperature = 0.8f;
-    float topp = 0.9f; // top-p in nucleus sampling. 1.0 = off. 0.9 works well, but slower
-    unsigned long long rng_seed = (unsigned int)time(NULL);
-    char* tokenizer_path = (char*)"/Users/b4rtaz/Dev/llama2.c/tokenizer.bin";
-    //int steps = spec->seqLen;
+    float topp = 0.9f;
     int steps = 256;
-
-    Tokenizer tokenizer(tokenizer_path, transformer->spec->vocabSize);
-    Sampler sampler(transformer->spec->vocabSize, temperature, topp, rng_seed);
-
-    char prompt[] = "Hello";
-    generate2(transformer, &tokenizer, &sampler, prompt, steps);
-}
-
-int main() {
-    initQuants();
-
-    // const char* path = "./converter/llama_7b_fp32.bin"; FloatType type = F32;
-    // const char* path = "./converter/llama_7b_torch.float16.bin"; FloatType type = F16;
-    const char* path = "./converter/llama_7b_q40.bin"; FloatType type = Q40;
-    const int sliceCount = 8;
 
     TransformerSpec* spec;
     Transformer* transformer;
-    loadTransformer(&spec, &transformer, path, type, sliceCount);
+    loadTransformer(&spec, &transformer, args->modelPath, args->floatType, args->sliceCount);
 
-    generate(transformer);
+    generate(transformer, args->tokenizerPath, temperature, topp, steps, args->prompt);
 
     delete transformer;
     delete spec;
     return EXIT_SUCCESS;
+}
+
+int worker(ProgramArgs* args) {
+    if (args->port < 1024) {
+        return usage();
+    }
+
+    Worker::serve(args->port);
+    return EXIT_SUCCESS;
+}
+
+int main(int argc, char *argv[]) {
+    initQuants();
+
+    ProgramArgs args;
+    args.mode = NULL;
+    args.modelPath = NULL;
+    args.tokenizerPath = NULL;
+    args.prompt = NULL;
+    args.floatType = F32;
+    args.sliceCount = 1;
+    args.port = 9988;
+
+    if (argc > 1) {
+        args.mode = argv[1];
+    }
+    for (int i = 2; i + 1 < argc; i += 2) {
+        if (strcmp(argv[i], "-m") == 0) {
+            args.modelPath = argv[i + 1];
+        } else if (strcmp(argv[i], "-t") == 0) {
+            args.tokenizerPath = argv[i + 1];
+        } else if (strcmp(argv[i], "-p") == 0) {
+            args.prompt = argv[i + 1];
+        } else if (strcmp(argv[i], "-f") == 0) {
+            args.floatType = (FloatType)atoi(argv[i + 1]);
+        } else if (strcmp(argv[i], "-s") == 0) {
+            args.sliceCount = atoi(argv[i + 1]);
+        } else if (strcmp(argv[i], "-p") == 0) {
+            args.port = atoi(argv[i + 1]);
+        }
+    }
+
+    if (args.mode != NULL) {
+        if (strcmp(args.mode, "inference") == 0) {
+            return inference(&args);
+        } else if (strcmp(args.mode, "worker") == 0) {
+            return worker(&args);
+        }
+    }
+    return usage();
 }

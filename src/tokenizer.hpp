@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include "transformer.hpp"
 
 void safePrintf(char *piece);
 
@@ -44,3 +45,5 @@ public:
     ~Sampler();
     int sample(float* logits);
 };
+
+void generate(Transformer* transformer, char* tokenizerPath, float temperature, float topp, int steps, char* prompt);

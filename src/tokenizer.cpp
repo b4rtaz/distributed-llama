@@ -315,3 +315,63 @@ int Sampler::sample(float* logits) {
     }
     return next;
 }
+
+void generate(Transformer* transformer, char* tokenizerPath, float temperature, float topp, int steps, char* prompt) {
+    unsigned long long rngSeed = (unsigned int)time(NULL);
+
+    Tokenizer tokenizer(tokenizerPath, transformer->spec->vocabSize);
+    Sampler sampler(transformer->spec->vocabSize, temperature, topp, rngSeed);
+
+    char emptyPrompt[] = "";
+    if (prompt == NULL) { prompt = emptyPrompt; }
+
+    // encode the (string) prompt into tokens sequence
+    int numPromptTokens = 0;
+    int* promptTokens = (int*)malloc((strlen(prompt)+3) * sizeof(int)); // +3 for '\0', ?BOS, ?EOS
+    tokenizer.encode(prompt, 1, 0, promptTokens, &numPromptTokens);
+    if (numPromptTokens < 1) {
+        fprintf(stderr, "something is wrong, expected at least 1 prompt token\n");
+        exit(EXIT_FAILURE);
+    }
+
+    // start the main loop
+    long start = 0;  // used to time our code, only initialized after first iteration
+    int next;        // will store the next token in the sequence
+    int token = promptTokens[0]; // kick off with the first token in the prompt
+    int pos = 0;     // position in the sequence
+    while (pos < steps) {
+        transformer->forward(token, pos);
+        float* logits = transformer->logits;
+
+        // advance the state machine
+        if (pos < numPromptTokens - 1) {
+            // if we are still processing the input prompt, force the next prompt token
+            next = promptTokens[pos + 1];
+        } else {
+            // otherwise sample the next token from the logits
+            next = sampler.sample(logits);
+        }
+        pos++;
+
+        // data-dependent terminating condition: the BOS (=1) token delimits sequences
+        if (next == 1) { break; }
+
+        // print the token as string, decode it with the Tokenizer object
+        char* piece = tokenizer.decode(token, next);
+        safePrintf(piece); // same as printf("%s", piece), but skips "unsafe" bytes
+        fflush(stdout);
+        token = next;
+
+        // init the timer here because the first iteration can be slower
+        if (start == 0) { start = timeMs(); }
+    }
+    printf("\n");
+
+    // report achieved tok/s (pos-1 because the timer starts after first iteration)
+    if (pos > 1) {
+        long end = timeMs();
+        fprintf(stderr, "achieved tok/s: %f\n", (pos-1) / (double)(end-start)*1000);
+    }
+
+    free(promptTokens);
+}

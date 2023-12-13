@@ -24,5 +24,8 @@ transformer-block-test: src/transformer-block-test.cpp
 tokenizer: src/transformer.cpp
 	$(CC) -std=c++11 -Werror -O3 -c src/tokenizer.cpp -g -o tokenizer.o
 
+worker: src/worker.cpp
+	$(CC) -std=c++11 -Werror -O3 -c src/worker.cpp -g -o worker.o
+
 main: src/main.cpp
-	$(CC) -std=c++11 -Werror -O3 src/main.cpp -g -o main shared-buffer.o transformer.o quants.o matmul.o funcs.o tokenizer.o
+	$(CC) -std=c++11 -Werror -O3 src/main.cpp -g -o main shared-buffer.o transformer.o quants.o matmul.o funcs.o tokenizer.o worker.o

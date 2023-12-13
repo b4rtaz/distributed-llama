@@ -1,7 +1,7 @@
 #include <math.h>
 #include <string.h>
-#include <sys/mman.h>
 #include <fcntl.h>
+#include <sys/mman.h>
 #include "quants.hpp"
 #include "funcs.hpp"
 #include "transformer.hpp"

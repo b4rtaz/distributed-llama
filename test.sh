@@ -17,6 +17,8 @@ chmod +x transformer-block-test
 ./transformer-block-test
 
 make tokenizer
+make worker
 make main
 chmod +x main
-./main
+# ./main inference -m ./converter/llama_7b_q40.bin -f 2 -t /Users/b4rtaz/Dev/llama2.c/tokenizer.bin -p "Hello world" -s 8
+./main worker -p 9999
