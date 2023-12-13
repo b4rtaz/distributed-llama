@@ -19,19 +19,19 @@ SharedBuffer::~SharedBuffer() {
     delete[] buffer;
 }
 
-void SharedBuffer::createSliced(int bufferIndex, int bytes, int slices) {
+void SharedBuffer::createSliced(uint8_t bufferIndex, int bytes, int slices) {
     buffer[bufferIndex] = new char[bytes];
     this->bytes[bufferIndex] = bytes;
     this->slices[bufferIndex] = slices;
 }
 
-void SharedBuffer::createUnit(int bufferIndex, int bytes) {
+void SharedBuffer::createUnit(uint8_t bufferIndex, int bytes) {
     buffer[bufferIndex] = new char[bytes];
     this->bytes[bufferIndex] = bytes;
     this->slices[bufferIndex] = -1;
 }
 
-char* SharedBuffer::getSliced(int bufferIndex, int sliceIndex) {
+char* SharedBuffer::getSliced(uint8_t bufferIndex, uint8_t sliceIndex) {
     int bytes = this->bytes[bufferIndex];
     int slices = this->slices[bufferIndex];
     if (slices == -1) {
@@ -46,15 +46,11 @@ char* SharedBuffer::getSliced(int bufferIndex, int sliceIndex) {
     return buffer[bufferIndex] + sliceOffset * sliceIndex;
 }
 
-char* SharedBuffer::getUnit(int bufferIndex) {
+char* SharedBuffer::getUnit(uint8_t bufferIndex) {
     int slices = this->slices[bufferIndex];
     if (slices != -1) {
         printf("Buffer %d is sliced\n", bufferIndex);
         exit(EXIT_FAILURE);
     }
     return buffer[bufferIndex];
-}
-
-void SharedBuffer::send(int bufferIndex) {
-    // TODO
 }

@@ -536,8 +536,9 @@ int main() {
     spec.floatType = F32;
     spec.sliceCount = 4;
 
-    SharedBuffer* sharedBuffer = createTransformerSharedBuffer(&spec);
-    TransformerBlock block(0, &spec, sharedBuffer);
+    NativeTransformerState transformerState;
+    initTransformerState(&spec, &transformerState);
+    TransformerBlock block(0, &spec, &transformerState, NULL);
 
     long wBytes = 809533440;
     long wSize = wBytes / sizeof(float);
@@ -559,7 +560,6 @@ int main() {
 
     printf("Forward pass took %ld ms\n", t1 - t0);
 
-    delete sharedBuffer;
     delete[] weights;
 
     int ix = -1;
