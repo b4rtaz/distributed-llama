@@ -28,13 +28,13 @@ void SharedBuffer::createSliced(uint8_t bufferIndex, int bytes, int slices) {
 void SharedBuffer::createUnit(uint8_t bufferIndex, int bytes) {
     buffer[bufferIndex] = new char[bytes];
     this->bytes[bufferIndex] = bytes;
-    this->slices[bufferIndex] = -1;
+    this->slices[bufferIndex] = SLICES_UNIT;
 }
 
 char* SharedBuffer::getSliced(uint8_t bufferIndex, uint8_t sliceIndex) {
     int bytes = this->bytes[bufferIndex];
     int slices = this->slices[bufferIndex];
-    if (slices == -1) {
+    if (slices == SLICES_UNIT) {
         printf("Buffer %d is not sliced\n", bufferIndex);
         exit(EXIT_FAILURE);
     }
@@ -48,9 +48,17 @@ char* SharedBuffer::getSliced(uint8_t bufferIndex, uint8_t sliceIndex) {
 
 char* SharedBuffer::getUnit(uint8_t bufferIndex) {
     int slices = this->slices[bufferIndex];
-    if (slices != -1) {
+    if (slices != SLICES_UNIT) {
         printf("Buffer %d is sliced\n", bufferIndex);
         exit(EXIT_FAILURE);
     }
     return buffer[bufferIndex];
+}
+
+int SharedBuffer::getSlices(uint8_t bufferIndex) {
+    return slices[bufferIndex];
+}
+
+int SharedBuffer::getBytes(uint8_t bufferIndex) {
+    return bytes[bufferIndex];
 }

@@ -16,6 +16,7 @@
 
 class TransformerSpec {
 public:
+    size_t fileSize;
     int dim;
     int nLayers;
     int nHeads;
@@ -24,18 +25,19 @@ public:
     int seqLen;
     int hiddenDim;
     int kvDim;
+    bool sharedWeights;
     int vocabSize;
 
     FloatType floatType;
     int sliceCount;
 };
 
-class RemoteWorkerClient {
+class RemoteClient {
 public:
     virtual void createFragment(uint8_t sliceIndex, uint8_t layerIndex, uint8_t type, char* data, int bytes) = 0;
-    virtual void forwardFragment(uint8_t sliceIndex, uint8_t layerIndex) = 0;
-    virtual void createSlicedBuffer(uint8_t bufferIndex, int bytes, int slices) = 0;
-    virtual void createUnitBuffer(uint8_t bufferIndex, int bytes) = 0;
+    virtual void forwardFragment(uint8_t sliceIndex, uint8_t layerIndex, uint8_t type) = 0;
+    virtual void sendBuffer(uint8_t sliceIndex, uint8_t bufferIndex, char* data, int bytes) = 0;
+    virtual void readBuffer(uint8_t sliceIndex, uint8_t bufferIndex, char* data, int bytes) = 0;
 };
 
 #define TRANSFORMER_BLOCK_QKV 0
@@ -45,27 +47,20 @@ public:
 
 class TransformerState {
 public:
-    virtual void createSlicedBuffer(uint8_t bufferIndex, int bytes, int slices) = 0;
-    virtual void createUnitBuffer(uint8_t bufferIndex, int bytes) = 0;
     virtual char* getSlicedBuffer(uint8_t bufferIndex, uint8_t sliceIndex) = 0;
     virtual char* getUnitBuffer(uint8_t bufferIndex) = 0;
-    virtual void clearSlicedBuffer(uint8_t bufferIndex, uint8_t sliceIndex) = 0;
     virtual void waitForSlicedBuffer(uint8_t bufferIndex, uint8_t sliceIndex) = 0;
-    virtual void sendSlicedBuffer(uint8_t bufferIndex, uint8_t sliceIndex) = 0;
     virtual void sendUnitBuffer(uint8_t bufferIndex, uint8_t sliceIndex) = 0;
+    virtual void sendSlicedBuffer(uint8_t bufferIndex, uint8_t sliceIndex) = 0;
 };
 
 class NativeTransformerState: public TransformerState {
 private:
     SharedBuffer* buffer;
 public:
-    NativeTransformerState();
-    ~NativeTransformerState();
-    void createSlicedBuffer(uint8_t bufferIndex, int bytes, int slices);
-    void createUnitBuffer(uint8_t bufferIndex, int bytes);
+    NativeTransformerState(SharedBuffer* buffer);
     char* getSlicedBuffer(uint8_t bufferIndex, uint8_t sliceIndex);
     char* getUnitBuffer(uint8_t bufferIndex);
-    void clearSlicedBuffer(uint8_t bufferIndex, uint8_t sliceIndex);
     void waitForSlicedBuffer(uint8_t bufferIndex, uint8_t sliceIndex);
     void sendSlicedBuffer(uint8_t bufferIndex, uint8_t sliceIndex);
     void sendUnitBuffer(uint8_t bufferIndex, uint8_t sliceIndex);
@@ -74,21 +69,18 @@ public:
 class RemoteTransformerState: public TransformerState {
 private:
     SharedBuffer* buffer;
-    RemoteWorkerClient* client;
+    RemoteClient* client;
 public:
-    RemoteTransformerState(RemoteWorkerClient* client);
+    RemoteTransformerState(SharedBuffer* buffer, RemoteClient* client);
     ~RemoteTransformerState();
-    void createSlicedBuffer(uint8_t bufferIndex, int bytes, int slices);
-    void createUnitBuffer(uint8_t bufferIndex, int bytes);
     char* getSlicedBuffer(uint8_t bufferIndex, uint8_t sliceIndex);
     char* getUnitBuffer(uint8_t bufferIndex);
-    void clearSlicedBuffer(uint8_t bufferIndex, uint8_t sliceIndex);
     void waitForSlicedBuffer(uint8_t bufferIndex, uint8_t sliceIndex);
     void sendSlicedBuffer(uint8_t bufferIndex, uint8_t sliceIndex);
     void sendUnitBuffer(uint8_t bufferIndex, uint8_t sliceIndex);
 };
 
-void initTransformerState(TransformerSpec* spec, TransformerState* state);
+SharedBuffer* initSharedBuffer(TransformerSpec* spec);
 
 //
 // TransformerFragment
@@ -124,12 +116,11 @@ public:
 };
 
 class NativeTransformerBlockQkv: public TransformerBlockQkv {
-private:
+public:
     char* qWeights0;
     char* kWeights0;
     char* vWeights0;
 
-public:
     NativeTransformerBlockQkv(int layerIndex, int sliceIndex, TransformerSpec* spec, TransformerState* state);
     ~NativeTransformerBlockQkv();
 
@@ -140,9 +131,9 @@ public:
 
 class RemoteTransformerBlockQkv: public TransformerBlockQkv {
 private:
-    RemoteWorkerClient* client;
+    RemoteClient* client;
 public:
-    RemoteTransformerBlockQkv(int layerIndex, int sliceIndex, TransformerSpec* spec, TransformerState* state, RemoteWorkerClient* client);
+    RemoteTransformerBlockQkv(int layerIndex, int sliceIndex, TransformerSpec* spec, TransformerState* state, RemoteClient* client);
 
     void readWeights(char* qWeights, char* kWeights, char* vWeights);
     void beginForwarding();
@@ -166,10 +157,9 @@ public:
 };
 
 class NativeTransformerBlockAtt: public TransformerBlockAtt {
-private:
+public:
     char* woWeights0;
 
-public:
     NativeTransformerBlockAtt(int layerIndex, int sliceIndex, TransformerSpec* spec, TransformerState* state);
     ~NativeTransformerBlockAtt();
 
@@ -180,9 +170,9 @@ public:
 
 class RemoteTransformerBlockAtt: public TransformerBlockAtt {
 private:
-    RemoteWorkerClient* client;
+    RemoteClient* client;
 public:
-    RemoteTransformerBlockAtt(int layerIndex, int sliceIndex, TransformerSpec* spec, TransformerState* state, RemoteWorkerClient* client);
+    RemoteTransformerBlockAtt(int layerIndex, int sliceIndex, TransformerSpec* spec, TransformerState* state, RemoteClient* client);
 
     void readWeights(char* woWeights);
     void beginForwarding();
@@ -208,11 +198,11 @@ public:
 
 class NativeTransformerBlockFfn: public TransformerBlockFfn {
 private:
+    float *hb20;
+public:
     char* w1Weights0;
     char* w3Weights0;
-    float *hb20;
 
-public:
     NativeTransformerBlockFfn(int layerIndex, int sliceIndex, TransformerSpec* spec, TransformerState* state);
     ~NativeTransformerBlockFfn();
 
@@ -223,9 +213,9 @@ public:
 
 class RemoteTransformerBlockFfn: public TransformerBlockFfn {
 private:
-    RemoteWorkerClient* client;
+    RemoteClient* client;
 public:
-    RemoteTransformerBlockFfn(int layerIndex, int sliceIndex, TransformerSpec* spec, TransformerState* state, RemoteWorkerClient* client);
+    RemoteTransformerBlockFfn(int layerIndex, int sliceIndex, TransformerSpec* spec, TransformerState* state, RemoteClient* client);
 
     void readWeights(char* w1Weights, char* w3Weights);
     void beginForwarding();
@@ -249,10 +239,9 @@ public:
 };
 
 class NativeTransformerBlockFfn2: public TransformerBlockFfn2 {
-private:
+public:
     char* w2Weights0;
 
-public:
     NativeTransformerBlockFfn2(int layerIndex, int sliceIndex, TransformerSpec* spec, TransformerState* state);
     ~NativeTransformerBlockFfn2();
 
@@ -263,9 +252,9 @@ public:
 
 class RemoteTransformerBlockFfn2: public TransformerBlockFfn2 {
 private:
-    RemoteWorkerClient* client;
+    RemoteClient* client;
 public:
-    RemoteTransformerBlockFfn2(int layerIndex, int sliceIndex, TransformerSpec* spec, TransformerState* state, RemoteWorkerClient* client);
+    RemoteTransformerBlockFfn2(int layerIndex, int sliceIndex, TransformerSpec* spec, TransformerState* state, RemoteClient* client);
 
     void readWeights(char* w2Weights);
     void beginForwarding();
@@ -296,7 +285,7 @@ public:
     float* valueCache; // (seq_len, kv_dim)
     float* att; // (n_heads, seq_len)
 
-    TransformerBlock(int layerIndex, TransformerSpec* spec, TransformerState* state, RemoteWorkerClient* clientOrNull);
+    TransformerBlock(int layerIndex, TransformerSpec* spec, TransformerState* state, RemoteClient* clientOrNull);
     ~TransformerBlock();
 
     long readWeights(char* wd);
@@ -316,13 +305,14 @@ private:
     float* wcls;
 public:
     float* logits;
-    Transformer(TransformerSpec* spec, TransformerState* state, RemoteWorkerClient* clientOrNull);
+    Transformer(TransformerSpec* spec, TransformerState* state, RemoteClient* clientOrNull);
     ~Transformer();
 
-    long readWeights(char* wd, bool sharedWeights);
+    long readWeights(char* wd);
     void forward(int token, int pos);
 };
 
-void loadTransformer(TransformerSpec** specOut, Transformer** transformerOut, const char* path, FloatType type, int sliceCount);
+void loadTransformerSpec(TransformerSpec* spec, const char* path, FloatType type, int sliceCount);
+void loadTransformer(Transformer** transformerOut, TransformerSpec* spec, const char* path, RemoteClient* clientOrNull);
 
 #endif

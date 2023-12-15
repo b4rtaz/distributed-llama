@@ -6,6 +6,12 @@
 #include "tokenizer.hpp"
 #include "worker.hpp"
 
+struct SlicesProgramArgs {
+    int count;
+    char** hosts;
+    int* ports;
+};
+
 struct ProgramArgs {
     char* mode;
 
@@ -14,7 +20,7 @@ struct ProgramArgs {
     char* tokenizerPath;
     char* prompt;
     FloatType floatType;
-    int sliceCount;
+    SlicesProgramArgs* slices;
 
     // worker
     int port;
@@ -22,7 +28,7 @@ struct ProgramArgs {
 
 int usage() {
     printf("Usage:\n");
-    printf("main inference -m <model_path> -f <float_type> -t <tokenizer_path> -p <prompt> -s 1");
+    printf("main inference -m <model_path> -f <float_type> -t <tokenizer_path> -prompt <prompt> -s 192.0.0.1:2000\n");
     return EXIT_FAILURE;
 }
 
@@ -35,14 +41,21 @@ int inference(ProgramArgs* args) {
     float topp = 0.9f;
     int steps = 256;
 
-    TransformerSpec* spec;
+    TransformerSpec spec;
+    int sliceCount = args->slices != NULL ? args->slices->count : 1;
+    loadTransformerSpec(&spec, args->modelPath, args->floatType, sliceCount);
+
+    RemoteClient* clientOrNull = NULL;
+    if (args->slices != NULL) {
+        clientOrNull = new WorkerRemoteClient(&spec, args->slices->hosts, args->slices->ports);
+    }
+
     Transformer* transformer;
-    loadTransformer(&spec, &transformer, args->modelPath, args->floatType, args->sliceCount);
+    loadTransformer(&transformer, &spec, args->modelPath, clientOrNull);
 
     generate(transformer, args->tokenizerPath, temperature, topp, steps, args->prompt);
 
     delete transformer;
-    delete spec;
     return EXIT_SUCCESS;
 }
 
@@ -64,8 +77,8 @@ int main(int argc, char *argv[]) {
     args.tokenizerPath = NULL;
     args.prompt = NULL;
     args.floatType = F32;
-    args.sliceCount = 1;
-    args.port = 9988;
+    args.port = 9990;
+    args.slices = NULL;
 
     if (argc > 1) {
         args.mode = argv[1];
@@ -75,14 +88,38 @@ int main(int argc, char *argv[]) {
             args.modelPath = argv[i + 1];
         } else if (strcmp(argv[i], "-t") == 0) {
             args.tokenizerPath = argv[i + 1];
-        } else if (strcmp(argv[i], "-p") == 0) {
+        } else if (strcmp(argv[i], "-prompt") == 0) {
             args.prompt = argv[i + 1];
         } else if (strcmp(argv[i], "-f") == 0) {
             args.floatType = (FloatType)atoi(argv[i + 1]);
         } else if (strcmp(argv[i], "-s") == 0) {
-            args.sliceCount = atoi(argv[i + 1]);
+            int j = i + 1;
+            for (; j < argc && argv[j][0] != '-'; j++);
+            int count = j - i - 1;
+
+            args.slices = new SlicesProgramArgs();
+            args.slices->count = count;
+            args.slices->hosts = new char*[count];
+            args.slices->ports = new int[count];
+
+            for (int s = 0; s < count; s++) {
+                char* sep = strstr(argv[i + 1 + s], ":");
+                if (sep == NULL) {
+                    printf("Invalid address %s\n", argv[i + 1 + s]);
+                    exit(EXIT_FAILURE);
+                }
+                int hostLen = sep - argv[i + 1 + s];
+                args.slices->hosts[s] = new char[hostLen + 1];
+                memcpy(args.slices->hosts[s], argv[i + 1 + s], hostLen);
+                args.slices->hosts[s][hostLen] = '\0';
+                args.slices->ports[s] = atoi(sep + 1);
+            }
+
+            i += count;
         } else if (strcmp(argv[i], "-p") == 0) {
             args.port = atoi(argv[i + 1]);
+        } else {
+            printf("Unknown option %s\n", argv[i]);
         }
     }
 
