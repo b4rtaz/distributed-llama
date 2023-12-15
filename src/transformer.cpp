@@ -2,6 +2,7 @@
 #include <string.h>
 #include <fcntl.h>
 #include <sys/mman.h>
+#include <pthread.h>
 #include "quants.hpp"
 #include "funcs.hpp"
 #include "transformer.hpp"
@@ -138,13 +139,13 @@ void NativeTransformerBlockQkv::beginForwarding() {
     float *v0 = (float*)state->getSlicedBuffer(SB_SLICED_V, sliceIndex);
 
     matmul(spec->floatType, q0, xb, qWeights0, qSlice->n, qSlice->d0);
-    state->sendSlicedBuffer(SB_SLICED_Q, sliceIndex);
-
     matmul(spec->floatType, k0, xb, kWeights0, kSlice->n, kSlice->d0);
-    state->sendSlicedBuffer(SB_SLICED_K, sliceIndex);
-
     matmul(spec->floatType, v0, xb, vWeights0, vSlice->n, vSlice->d0);
+
+    state->sendSlicedBuffer(SB_SLICED_Q, sliceIndex);
+    state->sendSlicedBuffer(SB_SLICED_K, sliceIndex);
     state->sendSlicedBuffer(SB_SLICED_V, sliceIndex);
+
 }
 
 void NativeTransformerBlockQkv::waitForEnd() {}
@@ -395,6 +396,7 @@ TransformerBlock::TransformerBlock(int layerIndex, TransformerSpec* spec, Transf
     atts = new TransformerBlockAtt*[spec->sliceCount];
     ffns = new TransformerBlockFfn*[spec->sliceCount];
     ffn2s = new TransformerBlockFfn2*[spec->sliceCount];
+    threadInfos = new TransformerBlockThreadInfo[spec->sliceCount];
     for (int s = 0; s < spec->sliceCount; s++) {
         if (clientOrNull == NULL) {
             qkvs[s] = new NativeTransformerBlockQkv(this->layerIndex, s, spec, state);
@@ -407,6 +409,12 @@ TransformerBlock::TransformerBlock(int layerIndex, TransformerSpec* spec, Transf
             ffns[s] = new RemoteTransformerBlockFfn(this->layerIndex, s, spec, state, clientOrNull);
             ffn2s[s] = new RemoteTransformerBlockFfn2(this->layerIndex, s, spec, state, clientOrNull);
         }
+        TransformerBlockThreadInfo* ti = &threadInfos[s];
+        ti->sliceIndex = s;
+        ti->qkv = qkvs[s];
+        ti->att = atts[s];
+        ti->ffn = ffns[s];
+        ti->ffn2 = ffn2s[s];
     }
 
     xb2 = new float[spec->dim];
@@ -428,6 +436,7 @@ TransformerBlock::~TransformerBlock() {
     delete[] atts;
     delete[] ffns;
     delete[] ffn2s;
+    delete[] threadInfos;
 
     delete[] rmsAttWeight;
     delete[] rmsFfnWeight;
@@ -480,6 +489,30 @@ long TransformerBlock::readWeights(char* wd) {
     return (long)(w - wd);
 }
 
+void* transformerBlockThread(void* arg) {
+    TransformerBlockThreadInfo* info = (TransformerBlockThreadInfo*)arg;
+    switch (info->step)
+    {
+        case TRANSFORMER_BLOCK_QKV:
+        info->qkv->beginForwarding();
+        info->qkv->waitForEnd();
+        break;
+        case TRANSFORMER_BLOCK_ATT:
+        info->att->beginForwarding();
+        info->att->waitForEnd();
+        break;
+        case TRANSFORMER_BLOCK_FFN:
+        info->ffn->beginForwarding();
+        info->ffn->waitForEnd();
+        break;
+        case TRANSFORMER_BLOCK_FFN2:
+        info->ffn2->beginForwarding();
+        info->ffn2->waitForEnd();
+        break;
+    }
+    return 0;
+}
+
 void TransformerBlock::forward(int pos, float* x) {
     int dim = spec->dim;
     int kvDim = spec->kvDim;
@@ -498,11 +531,12 @@ void TransformerBlock::forward(int pos, float* x) {
     float* v = valueCache + pos * kvDim;
 
     for (int s = 0; s < spec->sliceCount; s++) {
-        qkvs[s]->beginForwarding();
+        threadInfos[s].step = TRANSFORMER_BLOCK_QKV;
+        pthread_create(&threadInfos[s].handler, NULL, transformerBlockThread, (void*)&threadInfos[s].handler);
     }
     for (int s = 0; s < spec->sliceCount; s++) {
+        pthread_join(threadInfos[s].handler, NULL);
         TransformerBlockQkv *qkv = qkvs[s];
-        qkv->waitForEnd();
         qkv->qSlice->mergeOutputs(s, q, (float*)state->getSlicedBuffer(SB_SLICED_Q, s));
         qkv->kSlice->mergeOutputs(s, k, (float*)state->getSlicedBuffer(SB_SLICED_K, s));
         qkv->vSlice->mergeOutputs(s, v, (float*)state->getSlicedBuffer(SB_SLICED_V, s));
@@ -564,13 +598,12 @@ void TransformerBlock::forward(int pos, float* x) {
         }
     }
 
-
     for (int s = 0; s < spec->sliceCount; s++) {
-        atts[s]->beginForwarding();
+        threadInfos[s].step = TRANSFORMER_BLOCK_ATT;
+        pthread_create(&threadInfos[s].handler, NULL, transformerBlockThread, (void*)&threadInfos[s].handler);
     }
-
     for (int s = 0; s < spec->sliceCount; s++) {
-        atts[s]->waitForEnd();
+        pthread_join(threadInfos[s].handler, NULL);
         atts[s]->woSlice->mergeOutputs(s, xb2, (float*)state->getSlicedBuffer(SB_SLICED_XB2, s));
     }
 
@@ -583,20 +616,22 @@ void TransformerBlock::forward(int pos, float* x) {
     rmsnorm(xb, x, rmsFfnWeight, dim);
 
     for (int s = 0; s < spec->sliceCount; s++) {
-        ffns[s]->beginForwarding();
+        threadInfos[s].step = TRANSFORMER_BLOCK_FFN;
+        pthread_create(&threadInfos[s].handler, NULL, transformerBlockThread, (void*)&threadInfos[s].handler);
     }
     for (int s = 0; s < spec->sliceCount; s++) {
-        ffns[s]->waitForEnd();
+        pthread_join(threadInfos[s].handler, NULL);
         ffns[s]->w3Slice->mergeOutputs(s, hb, (float*)state->getSlicedBuffer(SB_SLICED_HB, s));
     }
 
     memcpy(hh, hb, hiddenDim * sizeof(float));
 
     for (int s = 0; s < spec->sliceCount; s++) {
-        ffn2s[s]->beginForwarding();
+        threadInfos[s].step = TRANSFORMER_BLOCK_FFN2;
+        pthread_create(&threadInfos[s].handler, NULL, transformerBlockThread, (void*)&threadInfos[s].handler);
     }
     for (int s = 0; s < spec->sliceCount; s++) {
-        ffn2s[s]->waitForEnd();
+        pthread_join(threadInfos[s].handler, NULL);
         ffn2s[s]->w2Slice->mergeOutputs(s, xb, (float*)state->getSlicedBuffer(SB_SLICED_XB2, s));
     }
 

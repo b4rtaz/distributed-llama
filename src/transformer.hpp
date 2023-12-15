@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <pthread.h>
 #include "shared-buffer.hpp"
 #include "matmul.hpp"
 
@@ -265,6 +266,16 @@ public:
 // TransformerBlock
 //
 
+struct TransformerBlockThreadInfo {
+    pthread_t handler;
+    int sliceIndex;
+    int step;
+    TransformerBlockQkv* qkv;
+    TransformerBlockAtt* att;
+    TransformerBlockFfn* ffn;
+    TransformerBlockFfn2* ffn2;
+};
+
 class TransformerBlock {
 private:
     int layerIndex;
@@ -274,6 +285,7 @@ private:
     TransformerBlockAtt **atts;
     TransformerBlockFfn **ffns;
     TransformerBlockFfn2 **ffn2s;
+    TransformerBlockThreadInfo *threadInfos;
 public:
     float* rmsAttWeight; // (dim)
     float* rmsFfnWeight; // (dim)

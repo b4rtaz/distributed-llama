@@ -6,6 +6,7 @@
 #include <errno.h>
 #include <cassert>
 #include <arpa/inet.h>
+#include "funcs.hpp"
 #include "worker.hpp"
 
 #define SOCKET_CHUNK_SIZE 256
@@ -265,6 +266,7 @@ void Worker::handleForwardFragment() {
     readSocket((void*)&layerIndex, sizeof(uint8_t));
     readSocket((void*)&type, sizeof(uint8_t));
 
+    long t0 = timeMs();
     switch (type) {
     case TRANSFORMER_BLOCK_QKV:
         layers[layerIndex].qkv->beginForwarding();
@@ -282,7 +284,8 @@ void Worker::handleForwardFragment() {
         printf("Unknown fragment type %d\n", type);
         exit(EXIT_FAILURE);
     }
-    printf("Forwarder fragment, layer=%d, type=%d\n", layerIndex, type);
+    long t1 = timeMs();
+    printf("Processed fragment %2d/%d in %3ldms\n", layerIndex, type, t1 - t0);
 }
 
 void Worker::serve(int port) {
