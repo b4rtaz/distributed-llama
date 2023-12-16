@@ -115,11 +115,11 @@ void WorkerRemoteClient::readBytes(uint8_t sliceIndex, void* data, size_t bytes)
             chunk = chunkSize;
         }
         int r2 = recv(clientSocket, (char*)data + offset, chunk, 0);
-        if (r2 != chunk) {
+        if (r2 <= 0) {
             printf("Error receiving buffer data (%s)\n", SOCKET_LAST_ERROR);
             exit(EXIT_FAILURE);
         }
-        offset += chunk;
+        offset += r2;
     }
     receivedBytes += bytes;
 }
@@ -147,12 +147,12 @@ void Worker::readSocket(void* data, size_t bytes) {
         if (chunk > chunkSize) {
             chunk = chunkSize;
         }
-        int recvStatus = recv(clientSocket, (char*)data + offset, chunk, 0);
-        if (recvStatus != chunk) {
+        int r = recv(clientSocket, (char*)data + offset, chunk, 0);
+        if (r <= 0) {
             printf("Error receiving data (%s)\n", SOCKET_LAST_ERROR);
             exit(EXIT_FAILURE);
         }
-        offset += chunk;
+        offset += r;
     }
 }
 
