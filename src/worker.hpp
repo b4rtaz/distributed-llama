@@ -13,13 +13,19 @@ private:
     int sliceCount;
     int* clientSockets;
 public:
+    size_t receivedBytes;
+    size_t sentBytes;
+    long transferBufferTime;
+
     WorkerRemoteClient(TransformerSpec* spec, char** hosts, int* ports);
-    void createFragment(uint8_t sliceIndex, uint8_t layerIndex, uint8_t type, char* weights, int bytes);
+    void createFragment(uint8_t sliceIndex, uint8_t layerIndex, uint8_t type, char* weights, size_t bytes);
     void forwardFragment(uint8_t sliceIndex, uint8_t layerIndex, uint8_t type);
-    void sendBuffer(uint8_t sliceIndex, uint8_t bufferIndex, char* data, int bytes);
-    void readBuffer(uint8_t sliceIndex, uint8_t bufferIndex, char* data, int bytes);
+    void sendBuffer(uint8_t sliceIndex, uint8_t bufferIndex, void* data, size_t bytes);
+    void readBuffer(uint8_t sliceIndex, uint8_t bufferIndex, void* data, size_t bytes);
+    void dumpStatistics();
 private:
-    void sendBytes(uint8_t sliceIndex, void* data, int bytes);
+    void sendBytes(uint8_t sliceIndex, void* data, size_t bytes);
+    void readBytes(uint8_t sliceIndex, void* data, size_t bytes);
 };
 
 struct WorkerLayer {
@@ -43,8 +49,8 @@ private:
 
 public:
     Worker(int clientSocket);
-    void readSocket(void* data, int bytes);
-    void writeSocket(void* data, int bytes);
+    void readSocket(void* data, size_t bytes);
+    void writeSocket(void* data, size_t bytes);
     void listen();
     void handleHello();
     void handleCreateFragment();
@@ -60,7 +66,7 @@ public:
     WorkerTransformerState(SharedBuffer* buffer, Worker* worker);
     char* getSlicedBuffer(uint8_t bufferIndex, uint8_t sliceIndex);
     char* getUnitBuffer(uint8_t bufferIndex);
-    void waitForSlicedBuffer(uint8_t bufferIndex, uint8_t sliceIndex);
+    void readSlicedBuffer(uint8_t bufferIndex, uint8_t sliceIndex);
     void sendSlicedBuffer(uint8_t bufferIndex, uint8_t sliceIndex);
     void sendUnitBuffer(uint8_t bufferIndex, uint8_t sliceIndex);
 };

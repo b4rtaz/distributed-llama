@@ -340,6 +340,7 @@ void generate(Transformer* transformer, char* tokenizerPath, float temperature, 
     int token = promptTokens[0]; // kick off with the first token in the prompt
     int pos = 0;     // position in the sequence
     while (pos < steps) {
+        long t0 = timeMs();
         transformer->forward(token, pos);
         float* logits = transformer->logits;
 
@@ -358,19 +359,13 @@ void generate(Transformer* transformer, char* tokenizerPath, float temperature, 
 
         // print the token as string, decode it with the Tokenizer object
         char* piece = tokenizer.decode(token, next);
+        long t1 = timeMs();
+
+        printf("🔶%4ldms ", t1 - t0);
         safePrintf(piece); // same as printf("%s", piece), but skips "unsafe" bytes
+        printf("\n");
         fflush(stdout);
         token = next;
-
-        // init the timer here because the first iteration can be slower
-        if (start == 0) { start = timeMs(); }
-    }
-    printf("\n");
-
-    // report achieved tok/s (pos-1 because the timer starts after first iteration)
-    if (pos > 1) {
-        long end = timeMs();
-        fprintf(stderr, "achieved tok/s: %f\n", (pos-1) / (double)(end-start)*1000);
     }
 
     free(promptTokens);

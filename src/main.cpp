@@ -77,8 +77,8 @@ int main(int argc, char *argv[]) {
     args.tokenizerPath = NULL;
     args.prompt = NULL;
     args.floatType = F32;
-    args.port = 9990;
     args.slices = NULL;
+    args.port = 9990;
 
     if (argc > 1) {
         args.mode = argv[1];

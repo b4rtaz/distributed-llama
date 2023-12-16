@@ -35,7 +35,7 @@ char* NativeTransformerState::getUnitBuffer(uint8_t bufferIndex) {
     return buffer->getUnit(bufferIndex);
 }
 
-void NativeTransformerState::waitForSlicedBuffer(uint8_t bufferIndex, uint8_t sliceIndex) {}
+void NativeTransformerState::readSlicedBuffer(uint8_t bufferIndex, uint8_t sliceIndex) {}
 void NativeTransformerState::sendSlicedBuffer(uint8_t bufferIndex, uint8_t sliceIndex) {}
 void NativeTransformerState::sendUnitBuffer(uint8_t bufferIndex, uint8_t sliceIndex) {}
 
@@ -56,14 +56,14 @@ char* RemoteTransformerState::getUnitBuffer(uint8_t bufferIndex)  {
     return buffer->getUnit(bufferIndex);
 }
 
-void RemoteTransformerState::waitForSlicedBuffer(uint8_t bufferIndex, uint8_t sliceIndex) {
+void RemoteTransformerState::readSlicedBuffer(uint8_t bufferIndex, uint8_t sliceIndex) {
     char* data = buffer->getSliced(bufferIndex, sliceIndex);
-    int bytes = buffer->getBytes(bufferIndex) / buffer->getSlices(bufferIndex);
+    size_t bytes = buffer->getBytes(bufferIndex) / buffer->getSlices(bufferIndex);
     client->readBuffer(sliceIndex, bufferIndex, data, bytes);
 }
 
 void RemoteTransformerState::sendUnitBuffer(uint8_t bufferIndex, uint8_t sliceIndex) {
-    int bytes = buffer->getBytes(bufferIndex);
+    size_t bytes = buffer->getBytes(bufferIndex);
     char* data = buffer->getUnit(bufferIndex);
     client->sendBuffer(sliceIndex, bufferIndex, data, bytes);
 }
@@ -145,7 +145,6 @@ void NativeTransformerBlockQkv::beginForwarding() {
     state->sendSlicedBuffer(SB_SLICED_Q, sliceIndex);
     state->sendSlicedBuffer(SB_SLICED_K, sliceIndex);
     state->sendSlicedBuffer(SB_SLICED_V, sliceIndex);
-
 }
 
 void NativeTransformerBlockQkv::waitForEnd() {}
@@ -156,7 +155,7 @@ RemoteTransformerBlockQkv::RemoteTransformerBlockQkv(int layerIndex, int sliceIn
 }
 
 void RemoteTransformerBlockQkv::readWeights(char* qWeights, char* kWeights, char* vWeights) {
-    int weightsBytes = this->qSlice->weights0Bytes + this->kSlice->weights0Bytes + this->vSlice->weights0Bytes;
+    size_t weightsBytes = this->qSlice->weights0Bytes + this->kSlice->weights0Bytes + this->vSlice->weights0Bytes;
     char* weights = new char[weightsBytes];
 
     this->qSlice->splitWeights(sliceIndex, qWeights, &weights[0]);
@@ -173,9 +172,9 @@ void RemoteTransformerBlockQkv::beginForwarding() {
 }
 
 void RemoteTransformerBlockQkv::waitForEnd() {
-    state->waitForSlicedBuffer(SB_SLICED_Q, sliceIndex);
-    state->waitForSlicedBuffer(SB_SLICED_K, sliceIndex);
-    state->waitForSlicedBuffer(SB_SLICED_V, sliceIndex);
+    state->readSlicedBuffer(SB_SLICED_Q, sliceIndex);
+    state->readSlicedBuffer(SB_SLICED_K, sliceIndex);
+    state->readSlicedBuffer(SB_SLICED_V, sliceIndex);
 }
 
 //
@@ -220,7 +219,7 @@ RemoteTransformerBlockAtt::RemoteTransformerBlockAtt(int layerIndex, int sliceIn
 }
 
 void RemoteTransformerBlockAtt::readWeights(char* woWeights) {
-    int weightsBytes = this->woSlice->weights0Bytes;
+    size_t weightsBytes = this->woSlice->weights0Bytes;
     char* weights = new char[weightsBytes];
 
     this->woSlice->splitWeights(sliceIndex, woWeights, &weights[0]);
@@ -235,7 +234,7 @@ void RemoteTransformerBlockAtt::beginForwarding() {
 }
 
 void RemoteTransformerBlockAtt::waitForEnd() {
-    state->waitForSlicedBuffer(SB_SLICED_XB2, sliceIndex);
+    state->readSlicedBuffer(SB_SLICED_XB2, sliceIndex);
 }
 
 //
@@ -299,7 +298,7 @@ RemoteTransformerBlockFfn::RemoteTransformerBlockFfn(int layerIndex, int sliceIn
 }
 
 void RemoteTransformerBlockFfn::readWeights(char* w1Weights, char* w3Weights) {
-    int weightsBytes = this->w1Slice->weights0Bytes + this->w3Slice->weights0Bytes;
+    size_t weightsBytes = this->w1Slice->weights0Bytes + this->w3Slice->weights0Bytes;
     char* weights = new char[weightsBytes];
 
     this->w1Slice->splitWeights(sliceIndex, w1Weights, &weights[0]);
@@ -316,7 +315,7 @@ void RemoteTransformerBlockFfn::beginForwarding() {
 }
 
 void RemoteTransformerBlockFfn::waitForEnd() {
-    state->waitForSlicedBuffer(SB_SLICED_HB, sliceIndex);
+    state->readSlicedBuffer(SB_SLICED_HB, sliceIndex);
 }
 
 //
@@ -362,7 +361,7 @@ RemoteTransformerBlockFfn2::RemoteTransformerBlockFfn2(int layerIndex, int slice
 }
 
 void RemoteTransformerBlockFfn2::readWeights(char* w2Weights) {
-    int weightsBytes = this->w2Slice->weights0Bytes;
+    size_t weightsBytes = this->w2Slice->weights0Bytes;
     char* weights = new char[weightsBytes];
 
     this->w2Slice->splitWeights(sliceIndex, w2Weights, &weights[0]);
@@ -377,7 +376,7 @@ void RemoteTransformerBlockFfn2::beginForwarding() {
 }
 
 void RemoteTransformerBlockFfn2::waitForEnd() {
-    state->waitForSlicedBuffer(SB_SLICED_XB2, sliceIndex);
+    state->readSlicedBuffer(SB_SLICED_XB2, sliceIndex);
 }
 
 //
@@ -648,6 +647,7 @@ void TransformerBlock::forward(int pos, float* x) {
 Transformer::Transformer(TransformerSpec* spec, TransformerState* state, RemoteClient* clientOrNull) {
     this->spec = spec;
     this->state = state;
+    this->clientOrNull = clientOrNull;
 
     this->blocks = new TransformerBlock*[spec->nLayers];
     for (int l = 0; l < spec->nLayers; l++) {
@@ -711,10 +711,14 @@ void Transformer::forward(int token, int pos) {
 
     // classifier into logits
     matmul(F32, logits, x, (char*)wcls, spec->dim, spec->vocabSize);
+
+    if (clientOrNull != NULL) {
+        clientOrNull->dumpStatistics();
+    }
 }
 
 void loadTransformerSpec(TransformerSpec* spec, const char* path, FloatType type, int sliceCount) {
-    int headerBytes = 7 * sizeof(int);
+    size_t headerBytes = 7 * sizeof(int);
     FILE* fh = fopen(path, "rb");
     if (fh == NULL) {
         printf("Cannot open file %s\n", path);
@@ -753,7 +757,7 @@ void loadTransformerSpec(TransformerSpec* spec, const char* path, FloatType type
 }
 
 void loadTransformer(Transformer** transformerOut, TransformerSpec* spec, const char* path, RemoteClient* clientOrNull) {
-    int headerBytes = 7 * sizeof(int);
+    size_t headerBytes = 7 * sizeof(int);
     int fw = open(path, O_RDONLY);
     char* weights = (char*)mmap(NULL, spec->fileSize, PROT_READ, MAP_PRIVATE, fw, 0);
     if (weights == MAP_FAILED) {
@@ -770,10 +774,16 @@ void loadTransformer(Transformer** transformerOut, TransformerSpec* spec, const 
 
     printf("Loading weights...\n");
 
-    long loadedBytes = transformer->readWeights(weights);
+    size_t loadedBytes = transformer->readWeights(weights);
 
     munmap(weights, spec->fileSize);
 
-    printf("Loaded %lu bytes (missed %lu bytes)\n", loadedBytes, (headerBytes + loadedBytes) - spec->fileSize);
+    size_t missedBytes = (headerBytes + loadedBytes) - spec->fileSize;
+    if (missedBytes != 0) {
+        printf("Missed %ld bytes\n", missedBytes);
+        exit(EXIT_FAILURE);
+    }
+
+    printf("Loaded %ld bytes\n", loadedBytes);
     *transformerOut = transformer;
 }

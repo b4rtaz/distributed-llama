@@ -35,10 +35,11 @@ public:
 
 class RemoteClient {
 public:
-    virtual void createFragment(uint8_t sliceIndex, uint8_t layerIndex, uint8_t type, char* data, int bytes) = 0;
+    virtual void createFragment(uint8_t sliceIndex, uint8_t layerIndex, uint8_t type, char* data, size_t bytes) = 0;
     virtual void forwardFragment(uint8_t sliceIndex, uint8_t layerIndex, uint8_t type) = 0;
-    virtual void sendBuffer(uint8_t sliceIndex, uint8_t bufferIndex, char* data, int bytes) = 0;
-    virtual void readBuffer(uint8_t sliceIndex, uint8_t bufferIndex, char* data, int bytes) = 0;
+    virtual void sendBuffer(uint8_t sliceIndex, uint8_t bufferIndex, void* data, size_t bytes) = 0;
+    virtual void readBuffer(uint8_t sliceIndex, uint8_t bufferIndex, void* data, size_t bytes) = 0;
+    virtual void dumpStatistics() = 0;
 };
 
 #define TRANSFORMER_BLOCK_QKV 0
@@ -50,7 +51,7 @@ class TransformerState {
 public:
     virtual char* getSlicedBuffer(uint8_t bufferIndex, uint8_t sliceIndex) = 0;
     virtual char* getUnitBuffer(uint8_t bufferIndex) = 0;
-    virtual void waitForSlicedBuffer(uint8_t bufferIndex, uint8_t sliceIndex) = 0;
+    virtual void readSlicedBuffer(uint8_t bufferIndex, uint8_t sliceIndex) = 0;
     virtual void sendUnitBuffer(uint8_t bufferIndex, uint8_t sliceIndex) = 0;
     virtual void sendSlicedBuffer(uint8_t bufferIndex, uint8_t sliceIndex) = 0;
 };
@@ -62,7 +63,7 @@ public:
     NativeTransformerState(SharedBuffer* buffer);
     char* getSlicedBuffer(uint8_t bufferIndex, uint8_t sliceIndex);
     char* getUnitBuffer(uint8_t bufferIndex);
-    void waitForSlicedBuffer(uint8_t bufferIndex, uint8_t sliceIndex);
+    void readSlicedBuffer(uint8_t bufferIndex, uint8_t sliceIndex);
     void sendSlicedBuffer(uint8_t bufferIndex, uint8_t sliceIndex);
     void sendUnitBuffer(uint8_t bufferIndex, uint8_t sliceIndex);
 };
@@ -76,7 +77,7 @@ public:
     ~RemoteTransformerState();
     char* getSlicedBuffer(uint8_t bufferIndex, uint8_t sliceIndex);
     char* getUnitBuffer(uint8_t bufferIndex);
-    void waitForSlicedBuffer(uint8_t bufferIndex, uint8_t sliceIndex);
+    void readSlicedBuffer(uint8_t bufferIndex, uint8_t sliceIndex);
     void sendSlicedBuffer(uint8_t bufferIndex, uint8_t sliceIndex);
     void sendUnitBuffer(uint8_t bufferIndex, uint8_t sliceIndex);
 };
@@ -307,6 +308,7 @@ public:
 class Transformer {
 public:
     TransformerSpec* spec;
+    RemoteClient* clientOrNull;
 private:
     TransformerState* state;
     TransformerBlock** blocks;

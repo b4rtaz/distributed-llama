@@ -11,7 +11,7 @@ public:
     int sliceCount;
     int d0;
     int n;
-    long weights0Bytes;
+    size_t weights0Bytes;
 
     MatMulSlice(FloatType type, int sliceCount, int n, int d);
     long splitWeights(int sliceIndex, char* weights, char* weights0);

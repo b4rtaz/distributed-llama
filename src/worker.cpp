@@ -10,7 +10,7 @@
 #include "worker.hpp"
 
 #define SOCKET_LAST_ERROR strerror(errno)
-#define SOCKET_CHUNK_SIZE 256
+#define SOCKET_CHUNK_SIZE 192
 
 //
 // WorkerRemoteClient
@@ -51,10 +51,10 @@ WorkerRemoteClient::WorkerRemoteClient(TransformerSpec* spec, char** hosts, int*
     }
 }
 
-void WorkerRemoteClient::createFragment(uint8_t sliceIndex, uint8_t layerIndex, uint8_t type, char* weights, int bytes) {
+void WorkerRemoteClient::createFragment(uint8_t sliceIndex, uint8_t layerIndex, uint8_t type, char* weights, size_t bytes) {
     uint8_t header[] = { ACTION_CREATE_FRAGMENT, layerIndex, type };
     sendBytes(sliceIndex, header, sizeof(header));
-    sendBytes(sliceIndex, (void*)&bytes, sizeof(int));
+    sendBytes(sliceIndex, &bytes, sizeof(size_t));
     sendBytes(sliceIndex, weights, bytes);
 }
 
@@ -63,56 +63,72 @@ void WorkerRemoteClient::forwardFragment(uint8_t sliceIndex, uint8_t layerIndex,
     sendBytes(sliceIndex, header, sizeof(header));
 }
 
-void WorkerRemoteClient::sendBuffer(uint8_t sliceIndex, uint8_t bufferIndex, char* data, int bytes) {
+void WorkerRemoteClient::sendBuffer(uint8_t sliceIndex, uint8_t bufferIndex, void* data, size_t bytes) {
     uint8_t header[] = { ACTION_SEND_BUFFER, bufferIndex };
     sendBytes(sliceIndex, header, sizeof(header));
+
+    long t0 = timeMs();
     sendBytes(sliceIndex, data, bytes);
+    long t1 = timeMs();
+    transferBufferTime += t1 - t0;
 }
 
-void WorkerRemoteClient::readBuffer(uint8_t sliceIndex, uint8_t bufferIndex, char* data, int bytes) {
+void WorkerRemoteClient::readBuffer(uint8_t sliceIndex, uint8_t bufferIndex, void* data, size_t bytes) {
     int clientSocket = this->clientSockets[sliceIndex];
-    uint bindex;
-    int s1 = recv(clientSocket, (void*)&bindex, sizeof(uint8_t), 0);
-    if (s1 != sizeof(uint8_t)) {
-        printf("Error receiving buffer index %d (%s)\n", s1, SOCKET_LAST_ERROR);
-        exit(EXIT_FAILURE);
-    }
-    if (bindex != bufferIndex) {
-        printf("Error receiving buffer index %d, expected %d\n", bindex, bufferIndex);
-        exit(EXIT_FAILURE);
-    }
-    int chunkSize = bytes > SOCKET_CHUNK_SIZE ? SOCKET_CHUNK_SIZE : bytes;
-    int offset = 0;
-    while (offset < bytes) {
-        int chunk = bytes - offset;
-        if (chunk > chunkSize) {
-            chunk = chunkSize;
-        }
-        int s2 = recv(clientSocket, (char*)data + offset, chunk, 0);
-        if (s2 != chunk) {
-            printf("Error receiving buffer data\n");
-            exit(EXIT_FAILURE);
-        }
-        offset += chunk;
-    }
+    uint8_t header[2];
+    readBytes(sliceIndex, (void*)&header, sizeof(header));
+
+    long t0 = timeMs();
+    readBytes(sliceIndex, data, bytes);
+    long t1 = timeMs();
+    transferBufferTime += t1 - t0;
 }
 
-void WorkerRemoteClient::sendBytes(uint8_t sliceIndex, void* data, int bytes) {
+void WorkerRemoteClient::sendBytes(uint8_t sliceIndex, void* data, size_t bytes) {
+    long t0 = timeMs();
     int clientSocket = this->clientSockets[sliceIndex];
-    int chunkSize = bytes > SOCKET_CHUNK_SIZE ? SOCKET_CHUNK_SIZE : bytes;
-    int offset = 0;
+    size_t chunkSize = bytes > SOCKET_CHUNK_SIZE ? SOCKET_CHUNK_SIZE : bytes;
+    size_t offset = 0;
     while (offset < bytes) {
-        int chunk = bytes - offset;
+        size_t chunk = bytes - offset;
         if (chunk > chunkSize) {
             chunk = chunkSize;
         }
         int sendResult = send(clientSocket, (char*)data + offset, chunk, 0);
         if (sendResult != chunk) {
-            printf("Error sending data\n");
+            printf("Error sending data (%s)\n", SOCKET_LAST_ERROR);
             exit(EXIT_FAILURE);
         }
         offset += chunk;
     }
+    sentBytes += bytes;
+}
+
+void WorkerRemoteClient::readBytes(uint8_t sliceIndex, void* data, size_t bytes) {
+    long t0 = timeMs();
+    int clientSocket = this->clientSockets[sliceIndex];
+    size_t chunkSize = bytes > SOCKET_CHUNK_SIZE ? SOCKET_CHUNK_SIZE : bytes;
+    size_t offset = 0;
+    while (offset < bytes) {
+        size_t chunk = bytes - offset;
+        if (chunk > chunkSize) {
+            chunk = chunkSize;
+        }
+        int r2 = recv(clientSocket, (char*)data + offset, chunk, 0);
+        if (r2 != chunk) {
+            printf("Error receiving buffer data (%s)\n", SOCKET_LAST_ERROR);
+            exit(EXIT_FAILURE);
+        }
+        offset += chunk;
+    }
+    receivedBytes += bytes;
+}
+
+void WorkerRemoteClient::dumpStatistics() {
+    printf("🔽 %zu bytes 🔼 %zu bytes 🕐 %ldms\n", receivedBytes, sentBytes, transferBufferTime / sliceCount);
+    receivedBytes = 0;
+    sentBytes = 0;
+    transferBufferTime = 0;
 }
 
 //
@@ -123,11 +139,11 @@ Worker::Worker(int clientSocket) {
     this->clientSocket = clientSocket;
 }
 
-void Worker::readSocket(void* data, int bytes) {
-    int chunkSize = bytes > SOCKET_CHUNK_SIZE ? SOCKET_CHUNK_SIZE : bytes;
-    int offset = 0;
+void Worker::readSocket(void* data, size_t bytes) {
+    size_t chunkSize = bytes > SOCKET_CHUNK_SIZE ? SOCKET_CHUNK_SIZE : bytes;
+    size_t offset = 0;
     while (offset < bytes) {
-        int chunk = bytes - offset;
+        size_t chunk = bytes - offset;
         if (chunk > chunkSize) {
             chunk = chunkSize;
         }
@@ -140,11 +156,11 @@ void Worker::readSocket(void* data, int bytes) {
     }
 }
 
-void Worker::writeSocket(void* data, int bytes) {
-    int chunkSize = bytes > SOCKET_CHUNK_SIZE ? SOCKET_CHUNK_SIZE : bytes;
-    int offset = 0;
+void Worker::writeSocket(void* data, size_t bytes) {
+    size_t chunkSize = bytes > SOCKET_CHUNK_SIZE ? SOCKET_CHUNK_SIZE : bytes;
+    size_t offset = 0;
     while (offset < bytes) {
-        int chunk = bytes - offset;
+        size_t chunk = bytes - offset;
         if (chunk > chunkSize) {
             chunk = chunkSize;
         }
@@ -194,10 +210,10 @@ void Worker::handleHello() {
 void Worker::handleCreateFragment() {
     uint8_t layerIndex;
     uint8_t type;
-    int bytes;
+    size_t bytes;
     readSocket((void*)&layerIndex, sizeof(uint8_t));
     readSocket((void*)&type, sizeof(uint8_t));
-    readSocket((void*)&bytes, sizeof(int));
+    readSocket((void*)&bytes, sizeof(size_t));
 
     switch (type) {
     case TRANSFORMER_BLOCK_QKV:
@@ -207,7 +223,7 @@ void Worker::handleCreateFragment() {
         readSocket(fragment->qWeights0, fragment->qSlice->weights0Bytes);
         readSocket(fragment->kWeights0, fragment->kSlice->weights0Bytes);
         readSocket(fragment->vWeights0, fragment->vSlice->weights0Bytes);
-        printf("Fragment qkv, layer=%d, weights=%d bytes\n", layerIndex, bytes);
+        printf("Fragment qkv, layer=%d, weights=%zu bytes\n", layerIndex, bytes);
         layers[layerIndex].qkv = fragment;
     }
     break;
@@ -216,7 +232,7 @@ void Worker::handleCreateFragment() {
         NativeTransformerBlockAtt* fragment = new NativeTransformerBlockAtt(layerIndex, sliceIndex, &spec, state);
         assert(fragment->woSlice->weights0Bytes == bytes);
         readSocket(fragment->woWeights0, fragment->woSlice->weights0Bytes);
-        printf("Fragment att, layer=%d, weights=%d bytes\n", layerIndex, bytes);
+        printf("Fragment att, layer=%d, weights=%zu bytes\n", layerIndex, bytes);
         layers[layerIndex].att = fragment;
     }
     break;
@@ -226,7 +242,7 @@ void Worker::handleCreateFragment() {
         assert(fragment->w1Slice->weights0Bytes + fragment->w3Slice->weights0Bytes == bytes);
         readSocket(fragment->w1Weights0, fragment->w1Slice->weights0Bytes);
         readSocket(fragment->w3Weights0, fragment->w3Slice->weights0Bytes);
-        printf("Fragment ffn, layer=%d, weights=%d bytes\n", layerIndex, bytes);
+        printf("Fragment ffn, layer=%d, weights=%zu bytes\n", layerIndex, bytes);
         layers[layerIndex].ffn = fragment;
     }
     break;
@@ -235,7 +251,7 @@ void Worker::handleCreateFragment() {
         NativeTransformerBlockFfn2* fragment = new NativeTransformerBlockFfn2(layerIndex, sliceIndex, &spec, state);
         assert(fragment->w2Slice->weights0Bytes == bytes);
         readSocket(fragment->w2Weights0, fragment->w2Slice->weights0Bytes);
-        printf("Fragment ffn2, layer=%d, weights=%d bytes\n", layerIndex, bytes);
+        printf("Fragment ffn2, layer=%d, weights=%zu bytes\n", layerIndex, bytes);
         layers[layerIndex].ffn2 = fragment;
     }
     break;
@@ -249,8 +265,8 @@ void Worker::handleSendBuffer() {
     uint8_t bufferIndex;
     readSocket((void*)&bufferIndex, sizeof(uint8_t));
 
-    int slices = buffer->getSlices(bufferIndex);
-    int bytes = buffer->getBytes(bufferIndex);
+    size_t slices = buffer->getSlices(bufferIndex);
+    size_t bytes = buffer->getBytes(bufferIndex);
     char* data;
     if (slices == SLICES_UNIT) {
         data = buffer->getUnit(bufferIndex);
@@ -267,7 +283,6 @@ void Worker::handleForwardFragment() {
     readSocket((void*)&layerIndex, sizeof(uint8_t));
     readSocket((void*)&type, sizeof(uint8_t));
 
-    long t0 = timeMs();
     switch (type) {
     case TRANSFORMER_BLOCK_QKV:
         layers[layerIndex].qkv->beginForwarding();
@@ -285,8 +300,6 @@ void Worker::handleForwardFragment() {
         printf("Unknown fragment type %d\n", type);
         exit(EXIT_FAILURE);
     }
-    long t1 = timeMs();
-    printf("Processed fragment %2d/%d in %3ldms\n", layerIndex, type, t1 - t0);
 }
 
 void Worker::serve(int port) {
@@ -353,15 +366,16 @@ char* WorkerTransformerState::getUnitBuffer(uint8_t bufferIndex) {
     return buffer->getUnit(bufferIndex);
 }
 
-void WorkerTransformerState::waitForSlicedBuffer(uint8_t bufferIndex, uint8_t sliceIndex) {
-    printf("Unexpected call to waitForSlicedBuffer\n");
+void WorkerTransformerState::readSlicedBuffer(uint8_t bufferIndex, uint8_t sliceIndex) {
+    printf("Unexpected call to readSlicedBuffer\n");
     exit(EXIT_FAILURE);
 }
 
 void WorkerTransformerState::sendSlicedBuffer(uint8_t bufferIndex, uint8_t sliceIndex) {
     char* data = buffer->getSliced(bufferIndex, sliceIndex);
-    int bytes = buffer->getBytes(bufferIndex) / buffer->getSlices(bufferIndex);
-    worker->writeSocket((void*)&bufferIndex, sizeof(uint8_t));
+    size_t bytes = buffer->getBytes(bufferIndex) / buffer->getSlices(bufferIndex);
+    uint8_t header[] = { ACTION_SEND_BUFFER, bufferIndex };
+    worker->writeSocket((void*)&header, sizeof(header));
     worker->writeSocket(data, bytes);
 }
 

@@ -3,10 +3,10 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-SharedBuffer::SharedBuffer(int count) {
+SharedBuffer::SharedBuffer(size_t count) {
     this->count = count;
-    slices = new int[count];
-    bytes = new int[count];
+    slices = new size_t[count];
+    bytes = new size_t[count];
     buffer = new char*[count];
 }
 
@@ -19,35 +19,35 @@ SharedBuffer::~SharedBuffer() {
     delete[] buffer;
 }
 
-void SharedBuffer::createSliced(uint8_t bufferIndex, int bytes, int slices) {
+void SharedBuffer::createSliced(uint8_t bufferIndex, size_t bytes, size_t slices) {
     buffer[bufferIndex] = new char[bytes];
     this->bytes[bufferIndex] = bytes;
     this->slices[bufferIndex] = slices;
 }
 
-void SharedBuffer::createUnit(uint8_t bufferIndex, int bytes) {
+void SharedBuffer::createUnit(uint8_t bufferIndex, size_t bytes) {
     buffer[bufferIndex] = new char[bytes];
     this->bytes[bufferIndex] = bytes;
     this->slices[bufferIndex] = SLICES_UNIT;
 }
 
 char* SharedBuffer::getSliced(uint8_t bufferIndex, uint8_t sliceIndex) {
-    int bytes = this->bytes[bufferIndex];
-    int slices = this->slices[bufferIndex];
+    size_t bytes = this->bytes[bufferIndex];
+    size_t slices = this->slices[bufferIndex];
     if (slices == SLICES_UNIT) {
-        printf("Buffer %d is not sliced\n", bufferIndex);
+        printf("Buffer %hhu is not sliced\n", bufferIndex);
         exit(EXIT_FAILURE);
     }
     if (sliceIndex >= slices) {
-        printf("Slice index %d out of range for buffer %d with %d slices\n", sliceIndex, bufferIndex, slices);
+        printf("Slice index %hhu out of range for buffer %hhu with %zu slices\n", sliceIndex, bufferIndex, slices);
         exit(EXIT_FAILURE);
     }
-    int sliceOffset = bytes / slices;
+    size_t sliceOffset = bytes / slices;
     return buffer[bufferIndex] + sliceOffset * sliceIndex;
 }
 
 char* SharedBuffer::getUnit(uint8_t bufferIndex) {
-    int slices = this->slices[bufferIndex];
+    size_t slices = this->slices[bufferIndex];
     if (slices != SLICES_UNIT) {
         printf("Buffer %d is sliced\n", bufferIndex);
         exit(EXIT_FAILURE);
@@ -55,10 +55,10 @@ char* SharedBuffer::getUnit(uint8_t bufferIndex) {
     return buffer[bufferIndex];
 }
 
-int SharedBuffer::getSlices(uint8_t bufferIndex) {
+size_t SharedBuffer::getSlices(uint8_t bufferIndex) {
     return slices[bufferIndex];
 }
 
-int SharedBuffer::getBytes(uint8_t bufferIndex) {
+size_t SharedBuffer::getBytes(uint8_t bufferIndex) {
     return bytes[bufferIndex];
 }
