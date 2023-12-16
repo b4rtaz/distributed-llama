@@ -9,6 +9,7 @@
 #include "funcs.hpp"
 #include "worker.hpp"
 
+#define SOCKET_LAST_ERROR strerror(errno)
 #define SOCKET_CHUNK_SIZE 256
 
 //
@@ -37,7 +38,7 @@ WorkerRemoteClient::WorkerRemoteClient(TransformerSpec* spec, char** hosts, int*
 
         int connectResult = connect(clientSocket, (struct sockaddr*)&clientAddr, sizeof(clientAddr));
         if (connectResult != 0) {
-            printf("Cannot connect to %s:%d (%s)\n", host, port, strerror(errno));
+            printf("Cannot connect to %s:%d (%s)\n", host, port, SOCKET_LAST_ERROR);
             exit(EXIT_FAILURE);
         }
 
@@ -73,7 +74,7 @@ void WorkerRemoteClient::readBuffer(uint8_t sliceIndex, uint8_t bufferIndex, cha
     uint bindex;
     int s1 = recv(clientSocket, (void*)&bindex, sizeof(uint8_t), 0);
     if (s1 != sizeof(uint8_t)) {
-        printf("Error receiving buffer index\n");
+        printf("Error receiving buffer index %d (%s)\n", s1, SOCKET_LAST_ERROR);
         exit(EXIT_FAILURE);
     }
     if (bindex != bufferIndex) {
@@ -132,7 +133,7 @@ void Worker::readSocket(void* data, int bytes) {
         }
         int recvStatus = recv(clientSocket, (char*)data + offset, chunk, 0);
         if (recvStatus != chunk) {
-            printf("Error receiving data\n");
+            printf("Error receiving data (%s)\n", SOCKET_LAST_ERROR);
             exit(EXIT_FAILURE);
         }
         offset += chunk;

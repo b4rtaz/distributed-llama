@@ -78,9 +78,9 @@ SharedBuffer* initSharedBuffer(TransformerSpec* spec) {
     buffer->createUnit(SB_UNIT_XB, spec->dim * sizeof(float));
     buffer->createUnit(SB_UNIT_HH, spec->hiddenDim * sizeof(float));
     buffer->createSliced(SB_SLICED_XB2, spec->dim * sizeof(float), spec->sliceCount);
-    buffer->createSliced(SB_SLICED_Q, spec->dim * spec->dim * sizeof(float), spec->sliceCount);
-    buffer->createSliced(SB_SLICED_K, spec->dim * spec->kvDim * sizeof(float), spec->sliceCount);
-    buffer->createSliced(SB_SLICED_V, spec->dim * spec->kvDim * sizeof(float), spec->sliceCount);
+    buffer->createSliced(SB_SLICED_Q, spec->dim * sizeof(float), spec->sliceCount);
+    buffer->createSliced(SB_SLICED_K, spec->kvDim * sizeof(float), spec->sliceCount);
+    buffer->createSliced(SB_SLICED_V, spec->kvDim * sizeof(float), spec->sliceCount);
     buffer->createSliced(SB_SLICED_HB, spec->hiddenDim * sizeof(float), spec->sliceCount);
     return buffer;
 }
