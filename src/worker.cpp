@@ -17,11 +17,16 @@
 //
 
 WorkerRemoteClient::WorkerRemoteClient(TransformerSpec* spec, char** hosts, int* ports) {
-    this->sliceCount = spec->sliceCount;
-    this->clientSockets = new int[spec->sliceCount];
+    sliceCount = spec->sliceCount;
+    clientSockets = new int[spec->sliceCount];
+    waitBufferTime = new long[spec->sliceCount];
+    transferBufferTime = new long[spec->sliceCount];
 
     struct sockaddr_in clientAddr;
     for (uint8_t s = 0; s < sliceCount; s++) {
+        waitBufferTime[s] = 0;
+        transferBufferTime[s] = 0;
+
         char* host = hosts[s];
         int port = ports[s];
 
@@ -51,6 +56,12 @@ WorkerRemoteClient::WorkerRemoteClient(TransformerSpec* spec, char** hosts, int*
     }
 }
 
+WorkerRemoteClient::~WorkerRemoteClient() {
+    delete[] clientSockets;
+    delete[] waitBufferTime;
+    delete[] transferBufferTime;
+}
+
 void WorkerRemoteClient::createFragment(uint8_t sliceIndex, uint8_t layerIndex, uint8_t type, char* weights, size_t bytes) {
     uint8_t header[] = { ACTION_CREATE_FRAGMENT, layerIndex, type };
     sendBytes(sliceIndex, header, sizeof(header));
@@ -65,27 +76,28 @@ void WorkerRemoteClient::forwardFragment(uint8_t sliceIndex, uint8_t layerIndex,
 
 void WorkerRemoteClient::sendBuffer(uint8_t sliceIndex, uint8_t bufferIndex, void* data, size_t bytes) {
     uint8_t header[] = { ACTION_SEND_BUFFER, bufferIndex };
-    sendBytes(sliceIndex, header, sizeof(header));
-
     long t0 = timeMs();
+    sendBytes(sliceIndex, header, sizeof(header));
     sendBytes(sliceIndex, data, bytes);
     long t1 = timeMs();
-    transferBufferTime += t1 - t0;
+    transferBufferTime[sliceIndex] += t1 - t0;
 }
 
 void WorkerRemoteClient::readBuffer(uint8_t sliceIndex, uint8_t bufferIndex, void* data, size_t bytes) {
     int clientSocket = this->clientSockets[sliceIndex];
-    uint8_t header[2];
-    readBytes(sliceIndex, (void*)&header, sizeof(header));
 
     long t0 = timeMs();
-    readBytes(sliceIndex, data, bytes);
+    uint8_t header[2];
+    readBytes(sliceIndex, (void*)&header, sizeof(header));
     long t1 = timeMs();
-    transferBufferTime += t1 - t0;
+    readBytes(sliceIndex, data, bytes);
+    long t2 = timeMs();
+
+    waitBufferTime[sliceIndex] += t1 - t0;
+    transferBufferTime[sliceIndex] += t2 - t1;
 }
 
 void WorkerRemoteClient::sendBytes(uint8_t sliceIndex, void* data, size_t bytes) {
-    long t0 = timeMs();
     int clientSocket = this->clientSockets[sliceIndex];
     size_t chunkSize = bytes > SOCKET_CHUNK_SIZE ? SOCKET_CHUNK_SIZE : bytes;
     size_t offset = 0;
@@ -101,11 +113,9 @@ void WorkerRemoteClient::sendBytes(uint8_t sliceIndex, void* data, size_t bytes)
         }
         offset += s;
     }
-    sentBytes += bytes;
 }
 
 void WorkerRemoteClient::readBytes(uint8_t sliceIndex, void* data, size_t bytes) {
-    long t0 = timeMs();
     int clientSocket = this->clientSockets[sliceIndex];
     size_t chunkSize = bytes > SOCKET_CHUNK_SIZE ? SOCKET_CHUNK_SIZE : bytes;
     size_t offset = 0;
@@ -114,21 +124,23 @@ void WorkerRemoteClient::readBytes(uint8_t sliceIndex, void* data, size_t bytes)
         if (chunk > chunkSize) {
             chunk = chunkSize;
         }
-        int r2 = recv(clientSocket, (char*)data + offset, chunk, 0);
-        if (r2 <= 0) {
-            printf("Error receiving buffer data %d (%s)\n", r2, SOCKET_LAST_ERROR);
+        int r = recv(clientSocket, (char*)data + offset, chunk, 0);
+        if (r <= 0) {
+            printf("Error receiving buffer data %d (%s)\n", r, SOCKET_LAST_ERROR);
             exit(EXIT_FAILURE);
         }
-        offset += r2;
+        offset += r;
     }
-    receivedBytes += bytes;
 }
 
 void WorkerRemoteClient::dumpStatistics() {
-    printf("🔽 %zu bytes 🔼 %zu bytes 🕐 %ldms\n", receivedBytes, sentBytes, transferBufferTime / sliceCount);
-    receivedBytes = 0;
-    sentBytes = 0;
-    transferBufferTime = 0;
+    printf("⌛ ");
+    for (size_t s = 0; s < sliceCount; s++) {
+        printf("%zu: %3ldms/%4ldms ", s, transferBufferTime[s], waitBufferTime[s]);
+        transferBufferTime[s] = 0;
+        waitBufferTime[s] = 0;
+    }
+    printf("\n");
 }
 
 //

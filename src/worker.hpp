@@ -12,12 +12,12 @@ class WorkerRemoteClient: public RemoteClient {
 private:
     int sliceCount;
     int* clientSockets;
+    long* waitBufferTime;
+    long* transferBufferTime;
 public:
-    size_t receivedBytes;
-    size_t sentBytes;
-    long transferBufferTime;
 
     WorkerRemoteClient(TransformerSpec* spec, char** hosts, int* ports);
+    ~WorkerRemoteClient();
     void createFragment(uint8_t sliceIndex, uint8_t layerIndex, uint8_t type, char* weights, size_t bytes);
     void forwardFragment(uint8_t sliceIndex, uint8_t layerIndex, uint8_t type);
     void sendBuffer(uint8_t sliceIndex, uint8_t bufferIndex, void* data, size_t bytes);
