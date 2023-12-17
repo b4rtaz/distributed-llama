@@ -1,4 +1,4 @@
-#include <stdio.h>
+#include <cstdio>
 #include <pthread.h>
 #include "shared-buffer.hpp"
 #include "matmul.hpp"

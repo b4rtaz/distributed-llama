@@ -1,5 +1,6 @@
 #include <cstring>
 #include <cstdlib>
+#include <cstdio>
 #include "shared-buffer.hpp"
 
 SharedBuffer::SharedBuffer(size_t count) {

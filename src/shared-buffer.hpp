@@ -1,5 +1,4 @@
-#include <stdint.h>
-#include <stdio.h>
+#include <cstdlib>
 
 #ifndef shared_buffer_hpp
 #define shared_buffer_hpp

@@ -1,4 +1,4 @@
-#include <stdio.h>
+#include <cstdio>
 #include "transformer.hpp"
 
 void safePrintf(char *piece);
