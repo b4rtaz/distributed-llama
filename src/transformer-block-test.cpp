@@ -1,4 +1,5 @@
 #include <cstring>
+#include <cstdint>
 #include <fcntl.h>
 #include <cmath>
 #include <sys/mman.h>
@@ -535,9 +536,12 @@ int main() {
     spec.floatType = F32;
     spec.sliceCount = 4;
 
+    TransformerConfig config;
+    config.nThread = 4;
+
     SharedBuffer* buffer = initSharedBuffer(&spec);
     NativeTransformerState* transformerState = new NativeTransformerState(buffer);
-    TransformerBlock block(0, &spec, transformerState, NULL);
+    TransformerBlock block(0, &spec, &config, transformerState, NULL);
 
     long wBytes = 809533440;
     long wSize = wBytes / sizeof(float);

@@ -3,7 +3,7 @@
 #ifndef matmul_hpp
 #define matmul_hpp
 
-void matmul(FloatType type, float* output, float* input, char* weights, int n, int d);
+void matmul(FloatType type, int nThread, float* output, float* input, char* weights, int n, int d);
 
 class MatMulSlice {
 public:

@@ -37,18 +37,19 @@ struct WorkerLayer {
 
 class Worker {
 public:
-    static void serve(int port);
+    static void serve(TransformerConfig* config, int port);
 
 private:
     int clientSocket;
     SharedBuffer* buffer;
     TransformerState* state;
     WorkerLayer* layers;
+    TransformerConfig* config;
     TransformerSpec spec;
     uint8_t sliceIndex;
 
 public:
-    Worker(int clientSocket);
+    Worker(TransformerConfig* config, int clientSocket);
     void readSocket(void* data, size_t bytes);
     void writeSocket(void* data, size_t bytes);
     void listen();

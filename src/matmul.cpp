@@ -131,23 +131,22 @@ void* matmulThread(void* arg) {
 //   |_________|   n | |      |_|
 //        n          |_|       1
 //                    1
-void matmul(FloatType type, float* output, float* input, char* weights, int n, int d) {
-    int threadCount = 8;
-    MatmulThreadInfo args[threadCount];
+void matmul(FloatType type, int nThread, float* output, float* input, char* weights, int n, int d) {
+    MatmulThreadInfo args[nThread];
 
     int i;
-    for (i = 0; i < threadCount; i++) {
+    for (i = 0; i < nThread; i++) {
         MatmulThreadInfo* s = &args[i];
         s->output = output;
         s->input = input;
         s->weights = weights;
         s->type = type;
         s->n = n;
-        s->ds = i * d / threadCount;
-        s->de = (i + 1) * d / threadCount;
+        s->ds = i * d / nThread;
+        s->de = (i + 1) * d / nThread;
         int result = pthread_create(&args[i].handler, NULL, matmulThread, (void*)s);
     }
-    for (i = 0; i < threadCount; i++) {
+    for (i = 0; i < nThread; i++) {
         pthread_join(args[i].handler, NULL);
     }
 }

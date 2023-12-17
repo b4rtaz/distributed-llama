@@ -15,6 +15,7 @@ struct SlicesProgramArgs {
 
 struct ProgramArgs {
     char* mode;
+    int nThread; 
 
     // inference
     char* modelPath;
@@ -33,6 +34,10 @@ int usage() {
     return EXIT_FAILURE;
 }
 
+void loadConfig(ProgramArgs* args, TransformerConfig* config) {
+    config->nThread = args->nThread;
+}
+
 int inference(ProgramArgs* args) {
     if (args->modelPath == NULL || args->tokenizerPath == NULL || args->prompt == NULL) {
         return usage();
@@ -46,13 +51,16 @@ int inference(ProgramArgs* args) {
     int sliceCount = args->slices != NULL ? args->slices->count : 1;
     loadTransformerSpec(&spec, args->modelPath, args->floatType, sliceCount);
 
+    TransformerConfig config;
+    loadConfig(args, &config);
+
     RemoteClient* clientOrNull = NULL;
     if (args->slices != NULL) {
         clientOrNull = new WorkerRemoteClient(&spec, args->slices->hosts, args->slices->ports);
     }
 
     Transformer* transformer;
-    loadTransformer(&transformer, &spec, args->modelPath, clientOrNull);
+    loadTransformer(&transformer, &spec, &config, args->modelPath, clientOrNull);
 
     generate(transformer, args->tokenizerPath, temperature, topp, steps, args->prompt);
 
@@ -65,7 +73,10 @@ int worker(ProgramArgs* args) {
         return usage();
     }
 
-    Worker::serve(args->port);
+    TransformerConfig config;
+    loadConfig(args, &config);
+
+    Worker::serve(&config, args->port);
     return EXIT_SUCCESS;
 }
 
@@ -74,6 +85,7 @@ int main(int argc, char *argv[]) {
 
     ProgramArgs args;
     args.mode = NULL;
+    args.nThread = 4;
     args.modelPath = NULL;
     args.tokenizerPath = NULL;
     args.prompt = NULL;
@@ -85,7 +97,9 @@ int main(int argc, char *argv[]) {
         args.mode = argv[1];
     }
     for (int i = 2; i + 1 < argc; i += 2) {
-        if (strcmp(argv[i], "-m") == 0) {
+        if (strcmp(argv[i], "-nthread") == 0) {
+            args.nThread = atoi(argv[i + 1]);
+        } else if (strcmp(argv[i], "-m") == 0) {
             args.modelPath = argv[i + 1];
         } else if (strcmp(argv[i], "-t") == 0) {
             args.tokenizerPath = argv[i + 1];

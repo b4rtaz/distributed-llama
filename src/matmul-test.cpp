@@ -63,7 +63,7 @@ void compareOrFail(const char *name, float* o, float* eo, int size) {
 }
 
 void test_f32() {
-    matmul(F32, output, input, weights, n, d);
+    matmul(F32, 4, output, input, weights, n, d);
     compareOrFail("f32", output, expectedOutputF32, d);
 }
 
@@ -78,7 +78,7 @@ void test_f32_sliced() {
         long weightsOffset = slice->splitWeights(s, weights, weights0);
 
         float* output0 = new float[slice->d0];
-        matmul(F32, output0, input, weights0, slice->n, slice->d0);
+        matmul(F32, 4, output0, input, weights0, slice->n, slice->d0);
 
         long outputOffset = slice->mergeOutputs(s, output, output0);
 

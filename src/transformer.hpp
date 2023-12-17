@@ -34,6 +34,11 @@ public:
     int sliceCount;
 };
 
+class TransformerConfig {
+public:
+    int nThread;
+};
+
 class RemoteClient {
 public:
     virtual void createFragment(uint8_t sliceIndex, uint8_t layerIndex, uint8_t type, char* data, size_t bytes) = 0;
@@ -119,12 +124,14 @@ public:
 };
 
 class NativeTransformerBlockQkv: public TransformerBlockQkv {
+private:
+    TransformerConfig* config;
 public:
     char* qWeights0;
     char* kWeights0;
     char* vWeights0;
 
-    NativeTransformerBlockQkv(int layerIndex, int sliceIndex, TransformerSpec* spec, TransformerState* state);
+    NativeTransformerBlockQkv(int layerIndex, int sliceIndex, TransformerSpec* spec, TransformerConfig* config, TransformerState* state);
     ~NativeTransformerBlockQkv();
 
     void readWeights(char* qWeights, char* kWeights, char* vWeights);
@@ -160,10 +167,12 @@ public:
 };
 
 class NativeTransformerBlockAtt: public TransformerBlockAtt {
+private:
+    TransformerConfig* config;
 public:
     char* woWeights0;
 
-    NativeTransformerBlockAtt(int layerIndex, int sliceIndex, TransformerSpec* spec, TransformerState* state);
+    NativeTransformerBlockAtt(int layerIndex, int sliceIndex, TransformerSpec* spec, TransformerConfig* config, TransformerState* state);
     ~NativeTransformerBlockAtt();
 
     void readWeights(char* woWeights);
@@ -201,12 +210,13 @@ public:
 
 class NativeTransformerBlockFfn: public TransformerBlockFfn {
 private:
+    TransformerConfig* config;
     float *hb20;
 public:
     char* w1Weights0;
     char* w3Weights0;
 
-    NativeTransformerBlockFfn(int layerIndex, int sliceIndex, TransformerSpec* spec, TransformerState* state);
+    NativeTransformerBlockFfn(int layerIndex, int sliceIndex, TransformerSpec* spec, TransformerConfig* config, TransformerState* state);
     ~NativeTransformerBlockFfn();
 
     void readWeights(char* w1Weights, char* w3Weights);
@@ -242,10 +252,12 @@ public:
 };
 
 class NativeTransformerBlockFfn2: public TransformerBlockFfn2 {
+private:
+    TransformerConfig* config;
 public:
     char* w2Weights0;
 
-    NativeTransformerBlockFfn2(int layerIndex, int sliceIndex, TransformerSpec* spec, TransformerState* state);
+    NativeTransformerBlockFfn2(int layerIndex, int sliceIndex, TransformerSpec* spec, TransformerConfig* config, TransformerState* state);
     ~NativeTransformerBlockFfn2();
 
     void readWeights(char* w2Weights);
@@ -299,7 +311,7 @@ public:
     float* valueCache; // (seq_len, kv_dim)
     float* att; // (n_heads, seq_len)
 
-    TransformerBlock(int layerIndex, TransformerSpec* spec, TransformerState* state, RemoteClient* clientOrNull);
+    TransformerBlock(int layerIndex, TransformerSpec* spec, TransformerConfig* config, TransformerState* state, RemoteClient* clientOrNull);
     ~TransformerBlock();
 
     long readWeights(char* wd);
@@ -309,6 +321,7 @@ public:
 class Transformer {
 public:
     TransformerSpec* spec;
+    TransformerConfig* config;
     RemoteClient* clientOrNull;
 private:
     TransformerState* state;
@@ -320,7 +333,7 @@ private:
     float* wcls;
 public:
     float* logits;
-    Transformer(TransformerSpec* spec, TransformerState* state, RemoteClient* clientOrNull);
+    Transformer(TransformerSpec* spec, TransformerConfig* config, TransformerState* state, RemoteClient* clientOrNull);
     ~Transformer();
 
     long readWeights(char* wd);
@@ -328,6 +341,6 @@ public:
 };
 
 void loadTransformerSpec(TransformerSpec* spec, const char* path, FloatType type, int sliceCount);
-void loadTransformer(Transformer** transformerOut, TransformerSpec* spec, const char* path, RemoteClient* clientOrNull);
+void loadTransformer(Transformer** transformerOut, TransformerSpec* spec, TransformerConfig* config, const char* path, RemoteClient* clientOrNull);
 
 #endif

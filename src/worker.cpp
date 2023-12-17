@@ -147,7 +147,8 @@ void WorkerRemoteClient::dumpStatistics() {
 // Worker
 //
 
-Worker::Worker(int clientSocket) {
+Worker::Worker(TransformerConfig* config, int clientSocket) {
+    this->config = config;
     this->clientSocket = clientSocket;
 }
 
@@ -230,7 +231,7 @@ void Worker::handleCreateFragment() {
     switch (type) {
     case TRANSFORMER_BLOCK_QKV:
     {
-        NativeTransformerBlockQkv* fragment = new NativeTransformerBlockQkv(layerIndex, sliceIndex, &spec, state);
+        NativeTransformerBlockQkv* fragment = new NativeTransformerBlockQkv(layerIndex, sliceIndex, &spec, config, state);
         assert(fragment->qSlice->weights0Bytes + fragment->kSlice->weights0Bytes + fragment->vSlice->weights0Bytes == bytes);
         readSocket(fragment->qWeights0, fragment->qSlice->weights0Bytes);
         readSocket(fragment->kWeights0, fragment->kSlice->weights0Bytes);
@@ -241,7 +242,7 @@ void Worker::handleCreateFragment() {
     break;
     case TRANSFORMER_BLOCK_ATT:
     {
-        NativeTransformerBlockAtt* fragment = new NativeTransformerBlockAtt(layerIndex, sliceIndex, &spec, state);
+        NativeTransformerBlockAtt* fragment = new NativeTransformerBlockAtt(layerIndex, sliceIndex, &spec, config, state);
         assert(fragment->woSlice->weights0Bytes == bytes);
         readSocket(fragment->woWeights0, fragment->woSlice->weights0Bytes);
         printf("Fragment att, layer=%d, weights=%zu bytes\n", layerIndex, bytes);
@@ -250,7 +251,7 @@ void Worker::handleCreateFragment() {
     break;
     case TRANSFORMER_BLOCK_FFN:
     {
-        NativeTransformerBlockFfn* fragment = new NativeTransformerBlockFfn(layerIndex, sliceIndex, &spec, state);
+        NativeTransformerBlockFfn* fragment = new NativeTransformerBlockFfn(layerIndex, sliceIndex, &spec, config, state);
         assert(fragment->w1Slice->weights0Bytes + fragment->w3Slice->weights0Bytes == bytes);
         readSocket(fragment->w1Weights0, fragment->w1Slice->weights0Bytes);
         readSocket(fragment->w3Weights0, fragment->w3Slice->weights0Bytes);
@@ -260,7 +261,7 @@ void Worker::handleCreateFragment() {
     break;
     case TRANSFORMER_BLOCK_FFN2:
     {
-        NativeTransformerBlockFfn2* fragment = new NativeTransformerBlockFfn2(layerIndex, sliceIndex, &spec, state);
+        NativeTransformerBlockFfn2* fragment = new NativeTransformerBlockFfn2(layerIndex, sliceIndex, &spec, config, state);
         assert(fragment->w2Slice->weights0Bytes == bytes);
         readSocket(fragment->w2Weights0, fragment->w2Slice->weights0Bytes);
         printf("Fragment ffn2, layer=%d, weights=%zu bytes\n", layerIndex, bytes);
@@ -314,7 +315,7 @@ void Worker::handleForwardFragment() {
     }
 }
 
-void Worker::serve(int port) {
+void Worker::serve(TransformerConfig* config, int port) {
     const char* host = "0.0.0.0";
     int serverSocket;
     struct sockaddr_in serverAddr;
@@ -352,7 +353,7 @@ void Worker::serve(int port) {
             exit(EXIT_FAILURE);
         }
 
-        Worker worker(clientSocket);
+        Worker worker(config, clientSocket);
         printf("Client connected\n");
         worker.listen();
         printf("Client disconnected\n");
