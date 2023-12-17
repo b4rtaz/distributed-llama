@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 #include "funcs.hpp"
 #include "matmul.hpp"
 
@@ -47,7 +48,7 @@ float expectedOutputF32[256] = {
 void compareOrFail(const char *name, float* o, float* eo, int size) {
     int ix = -1;
     for (int i = 0; i < size; i++) {
-        if (o[i] != eo[i]) {
+        if (fabs(o[i] - eo[i]) > 0.00001) { // Optimization may cause some differences
             ix = i;
             break;
         }

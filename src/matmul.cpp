@@ -6,6 +6,12 @@
 #include <cassert>
 #include <string.h>
 
+#define NEON 1
+
+#if NEON
+    #include <arm_neon.h>
+#endif
+
 struct MatmulThreadInfo {
     pthread_t handler;
     float* output;
@@ -20,6 +26,22 @@ struct MatmulThreadInfo {
 void matmulF32(MatmulThreadInfo* a) {
     float* w = (float*)a->weights;
     int d;
+
+#if NEON
+    assert(a->n % 4 == 0);
+    float32x4_t q;
+    float32x4_t p;
+    float32x4_t z;
+    for (d = a->ds; d < a->de; d++) {
+        z = vmovq_n_f32(0);
+        for (int j = 0; j < a->n; j += 4) {
+            q = vld1q_f32(&a->input[j]);
+            p = vld1q_f32(&w[d * a->n + j]);
+            z = vfmaq_f32(z, q, p);
+        }
+        a->output[d] = vaddvq_f32(z);
+    }
+#else
     for (d = a->ds; d < a->de; d++) {
         float val = 0.0f;
         for (int j = 0; j < a->n; j++) {
@@ -27,6 +49,7 @@ void matmulF32(MatmulThreadInfo* a) {
         }
         a->output[d] = val;
     }
+#endif
 }
 
 void matmulF16(MatmulThreadInfo* a) {
@@ -50,6 +73,24 @@ void matmulQ40(MatmulThreadInfo* a) {
     int n = a->n / k;
     float group[k];
 
+#if NEON
+    assert(k % 4 == 0);
+    float32x4_t a0;
+    float32x4_t b0;
+    float32x4_t u;
+    for (int d = a->ds; d < a->de; d++) {
+        u = vmovq_n_f32(0);
+        for (int j = 0; j < n; j++) {
+            dequantizeQ40Row(&w[d * n * blocksPerRow + j * blocksPerRow], group, k);
+            for (int z = 0; z < k; z += 4) {
+                a0 = vld1q_f32(&a->input[j * k + z]);
+                b0 = vld1q_f32(&group[z]);
+                u = vfmaq_f32(u, a0, b0);
+            }
+        }
+        a->output[d] = vaddvq_f32(u);
+    }
+#else
     for (int d = a->ds; d < a->de; d++) {
         float val = 0.0f;
         for (int j = 0; j < n; j++) {
@@ -60,6 +101,7 @@ void matmulQ40(MatmulThreadInfo* a) {
         }
         a->output[d] = val;
     }
+#endif
 }
 
 void* matmulThread(void* arg) {
