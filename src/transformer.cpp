@@ -1,5 +1,6 @@
 #include <cmath>
 #include <cstring>
+#include <cstdint>
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <pthread.h>

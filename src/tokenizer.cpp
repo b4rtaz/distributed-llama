@@ -1,6 +1,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <cstdint>
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <ctype.h>
