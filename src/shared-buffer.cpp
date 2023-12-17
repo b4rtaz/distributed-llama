@@ -1,5 +1,6 @@
 #include <cstring>
 #include <cstdlib>
+#include <cstdint>
 #include <cstdio>
 #include "shared-buffer.hpp"
 
