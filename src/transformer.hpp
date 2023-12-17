@@ -1,4 +1,5 @@
 #include <cstdio>
+#include <cstdint>
 #include <pthread.h>
 #include "shared-buffer.hpp"
 #include "matmul.hpp"
