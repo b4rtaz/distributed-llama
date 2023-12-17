@@ -1,4 +1,5 @@
 #include <cstdio>
+#include <cstdint>
 #include <cmath>
 #include <cassert>
 #include "quants.hpp"
