@@ -1,10 +1,10 @@
-#include <stdio.h>
-#include <stdlib.h>
+#include <cstdint>
+#include <cstdio>
+#include <cassert>
+#include <cstring>
 #include <pthread.h>
 #include "quants.hpp"
 #include "matmul.hpp"
-#include <cassert>
-#include <string.h>
 
 #define NEON 1
 
@@ -28,7 +28,6 @@ void matmulF32(MatmulThreadInfo* a) {
     int d;
 
 #if NEON
-    assert(a->n % 4 == 0);
     float32x4_t q;
     float32x4_t p;
     float32x4_t z;
@@ -74,7 +73,7 @@ void matmulQ40(MatmulThreadInfo* a) {
     float group[k];
 
 #if NEON
-    assert(k % 4 == 0);
+    assert(k % 16 == 0);
     float32x4_t a0;
     float32x4_t b0;
     float32x4_t u;

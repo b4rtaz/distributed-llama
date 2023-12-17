@@ -1,8 +1,6 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cstring>
 #include <fcntl.h>
-#include <math.h>
+#include <cmath>
 #include <sys/mman.h>
 #include "funcs.hpp"
 #include "shared-buffer.hpp"

@@ -1,10 +1,10 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <ctype.h>
-#include <time.h>
+#include <ctime>
 #include "funcs.hpp"
 #include "tokenizer.hpp"
 

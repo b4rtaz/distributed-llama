@@ -1,5 +1,5 @@
-#include <stdlib.h>
-#include <string.h>
+#include <cstring>
+#include <cstdlib>
 #include "funcs.hpp"
 #include "shared-buffer.hpp"
 #include "transformer.hpp"

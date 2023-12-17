@@ -1,8 +1,7 @@
 #include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cstring>
 #include <unistd.h>
-#include <string.h>
+#include <cstring>
 #include <errno.h>
 #include <cassert>
 #include <arpa/inet.h>

@@ -1,5 +1,5 @@
-#include <math.h>
-#include <string.h>
+#include <cmath>
+#include <cstring>
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <pthread.h>

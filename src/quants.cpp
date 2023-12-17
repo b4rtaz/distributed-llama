@@ -1,8 +1,7 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include "quants.hpp"
+#include <cstdio>
+#include <cmath>
 #include <cassert>
-#include <math.h>
+#include "quants.hpp"
 
 int getNumbersPerBatch(FloatType type) {
     switch (type) {
