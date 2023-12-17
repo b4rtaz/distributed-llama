@@ -1,5 +1,6 @@
 #include <cstring>
 #include <cstdlib>
+#include <cstdint>
 #include "funcs.hpp"
 #include "shared-buffer.hpp"
 #include "transformer.hpp"
