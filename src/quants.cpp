@@ -4,6 +4,12 @@
 #include <cassert>
 #include "quants.hpp"
 
+#define NEON 0
+
+#if NEON
+    #include <arm_neon.h>
+#endif
+
 int getNumbersPerBatch(FloatType type) {
     switch (type) {
         case F32:
@@ -82,6 +88,35 @@ void dequantizeQ40Row(const BlockQ40* x, float* y, int k) {
     assert(k % qk == 0);
     const int nb = k / qk;
 
+#if NEON
+    const uint8x16_t m4b = vdupq_n_u8(0x0F);
+    const int8x16_t  s8b = vdupq_n_s8(0x8);
+
+    for (int i = 0; i < nb; i++) {
+        const BlockQ40* b = &x[i];
+        const float d = convertF16ToF32(b->d);
+
+        const uint8x16_t v0_0 = vld1q_u8(b->qs);
+
+        const int8x16_t v0_0l = vreinterpretq_s8_u8(vandq_u8(v0_0, m4b));
+        const int8x16_t v0_0h = vreinterpretq_s8_u8(vshrq_n_u8(v0_0, 4));
+
+        const int8x16_t v0_0ls = vsubq_s8(v0_0l, s8b);
+        const int8x16_t v0_0hs = vsubq_s8(v0_0h, s8b);
+
+        int8x8_t r1 = vget_low_s8(v0_0ls);
+        int8x8_t r2 = vget_high_s8(v0_0ls);
+        int8x8_t r3 = vget_low_s8(v0_0hs);
+        int8x8_t r4 = vget_high_s8(v0_0hs);
+
+        for (int j = 0; j < 8; j++) {
+            y[i * qk + j * 2 + 0] = r1[j] * d;
+            y[i * qk + j * 2 + 1] = r3[j] * d;
+            y[i * qk + j * 2 + 0 + 16] = r2[j] * d;
+            y[i * qk + j * 2 + 1 + 16] = r4[j] * d;
+        }
+    }
+#else
     for (int i = 0; i < nb; i++) {
         const BlockQ40* b = &x[i];
         const float d = convertF16ToF32(b->d);
@@ -94,6 +129,7 @@ void dequantizeQ40Row(const BlockQ40* x, float* y, int k) {
             y[i * qk + j * 2 + 1] = x1 * d;
         }
     }
+#endif
 }
 
 void initQuants() {
