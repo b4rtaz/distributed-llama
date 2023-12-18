@@ -74,6 +74,7 @@ def load_meta_model(model_path):
 
 def save_quantized_q40(x, file):
     group_size = 32
+    group_size_half = group_size // 2
     assert(x.shape[0] % group_size == 0)
     groups = x.reshape(-1, group_size)
     gmax = np.max(groups, axis=1)
@@ -90,9 +91,9 @@ def save_quantized_q40(x, file):
         file.write(twoBytes)
         bytes += 2
 
-        for i in range(0, group_size // 2):
-            x0 = group[i * 2] * id + 8.5
-            x1 = group[i * 2 + 1] * id + 8.5
+        for i in range(0, group_size_half):
+            x0 = group[i] * id + 8.5
+            x1 = group[i + group_size_half] * id + 8.5
             xi0 = min(15, int(x0))
             xi1 = min(15, int(x1))
             b = (xi0 & 0xF) | ((xi1 & 0xF) << 4)

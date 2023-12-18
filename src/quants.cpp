@@ -4,7 +4,7 @@
 #include <cassert>
 #include "quants.hpp"
 
-#define NEON 0
+#define NEON 1
 
 #if NEON
     #include <arm_neon.h>
@@ -110,10 +110,10 @@ void dequantizeQ40Row(const BlockQ40* x, float* y, int k) {
         int8x8_t r4 = vget_high_s8(v0_0hs);
 
         for (int j = 0; j < 8; j++) {
-            y[i * qk + j * 2 + 0] = r1[j] * d;
-            y[i * qk + j * 2 + 1] = r3[j] * d;
-            y[i * qk + j * 2 + 0 + 16] = r2[j] * d;
-            y[i * qk + j * 2 + 1 + 16] = r4[j] * d;
+            y[i * qk + j + 0] = r1[j] * d;
+            y[i * qk + j + 8] = r2[j] * d;
+            y[i * qk + j + 16] = r3[j] * d;
+            y[i * qk + j + 24] = r4[j] * d;
         }
     }
 #else
@@ -125,8 +125,8 @@ void dequantizeQ40Row(const BlockQ40* x, float* y, int k) {
             const int x0 = (b->qs[j] & 0x0F) - 8;
             const int x1 = (b->qs[j] >>   4) - 8;
 
-            y[i * qk + j * 2 + 0] = x0 * d;
-            y[i * qk + j * 2 + 1] = x1 * d;
+            y[i * qk + j] = x0 * d;
+            y[i * qk + j + qk / 2] = x1 * d;
         }
     }
 #endif
