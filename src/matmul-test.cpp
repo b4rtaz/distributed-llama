@@ -93,10 +93,10 @@ void compareOrFail(const char *name, float* o, float* eo, int size) {
         printf("[%s] ❌ ix=%d\n", name, ix);
         printf("%.9g != %.9g\n", o[ix], eo[ix]);
 
-        for (int i = 0; i < size; i++) {
+        /*for (int i = 0; i < size; i++) {
             printf("%.9g, ", o[i]);
             if (i % 8 == 7) printf("\n");
-        }
+        }*/
 
         exit(EXIT_FAILURE);
     }
@@ -131,6 +131,13 @@ void test_q40() {
     matmul(Q40, 4, output, input, (char*)qWeights, n, d);
 
     compareOrFail("q40", output, expectedOutputQ40, n);
+
+    long t0 = timeMs();
+    for (int a = 0; a < 10000; a++) {
+        matmul(Q40, 1, output, input, (char*)qWeights, n, d);
+    }
+    long t1 = timeMs();
+    printf("10000 x q40: %ld ms\n", t1 - t0);
 }
 
 void test_f32_sliced() {

@@ -83,6 +83,45 @@ float convertF16ToF32(uint16_t value) {
     return F16ToF32[value];
 }
 
+// https://github.com/mitsuba-renderer/openexr/blob/dbabb6f9500ee628c1faba21bb8add2649cc32a6/IlmBase/Half/half.cpp#L85
+uint16_t convertF32ToF16(const float x) {
+    int i = *(int*)&x;
+    int s = (i >> 16) & 0x00008000;
+    int e = ((i >> 23) & 0x000000ff) - (127 - 15);
+    int m = i & 0x007fffff;
+
+    if (e <= 0) {
+        if (e < -10) {
+            return s;
+        }
+        m = m | 0x00800000;
+        int t = 14 - e;
+        int a = (1 << (t - 1)) - 1;
+        int b = (m >> t) & 1;
+        m = (m + a + b) >> t;
+        return s | m;
+    } else if (e == 0xff - (127 - 15)) {
+        if (m == 0) {
+            return s | 0x7c00;
+        } else {
+            m >>= 13;
+            return s | 0x7c00 | m | (m == 0);
+        }
+    } else {
+        m = m + 0x00000fff + ((m >> 13) & 1);
+
+        if (m & 0x00800000) {
+            m =  0;
+            e += 1;
+        }
+        if (e > 30) {
+            // overflow (); // TODO: this should not be commented out
+            return s | 0x7c00;
+        }
+        return s | (e << 10) | (m >> 13);
+    }
+}
+
 void dequantizeQ40Row(const BlockQ40* x, float* y, int k) {
     static const int qk = QK40;
     assert(k % qk == 0);
@@ -129,6 +168,47 @@ void dequantizeQ40Row(const BlockQ40* x, float* y, int k) {
             y[i * qk + j + qk / 2] = x1 * d;
         }
     }
+#endif
+}
+
+void quantizeQ80Row(float* x, BlockQ80* y, int k) {
+    assert(QK80 == 32);
+    assert(k % QK80 == 0);
+    const int nb = k / QK80;
+
+#if NEON
+    for (int i = 0; i < nb; i++) {
+        float32x4_t srcv [8];
+        float32x4_t asrcv[8];
+        float32x4_t amaxv[8];
+
+        for (int j = 0; j < 8; j++) srcv[j] = vld1q_f32(x + i*32 + 4*j);
+        for (int j = 0; j < 8; j++) asrcv[j] = vabsq_f32(srcv[j]);
+
+        for (int j = 0; j < 4; j++) amaxv[2*j] = vmaxq_f32(asrcv[2*j], asrcv[2*j+1]);
+        for (int j = 0; j < 2; j++) amaxv[4*j] = vmaxq_f32(amaxv[4*j], amaxv[4*j+2]);
+        for (int j = 0; j < 1; j++) amaxv[8*j] = vmaxq_f32(amaxv[8*j], amaxv[8*j+4]);
+
+        const float amax = vmaxvq_f32(amaxv[0]);
+
+        const float d = amax / ((1 << 7) - 1);
+        const float id = d ? 1.0f/d : 0.0f;
+
+        y[i].d = convertF32ToF16(d);
+
+        for (int j = 0; j < 8; j++) {
+            const float32x4_t v  = vmulq_n_f32(srcv[j], id);
+            const int32x4_t   vi = vcvtnq_s32_f32(v);
+
+            y[i].qs[4*j + 0] = vgetq_lane_s32(vi, 0);
+            y[i].qs[4*j + 1] = vgetq_lane_s32(vi, 1);
+            y[i].qs[4*j + 2] = vgetq_lane_s32(vi, 2);
+            y[i].qs[4*j + 3] = vgetq_lane_s32(vi, 3);
+        }
+    }
+#else
+    printf("quantizeQ80Row is not implemented\n");
+    exit(EXIT_FAILURE);
 #endif
 }
 

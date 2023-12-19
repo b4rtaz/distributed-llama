@@ -16,8 +16,8 @@
 struct MatmulThreadInfo {
     pthread_t handler;
     float* output;
-    float* input;
-    char* weights;
+    void* input;
+    void* weights;
     FloatType type;
     int n;
     int ds;
@@ -25,6 +25,7 @@ struct MatmulThreadInfo {
 };
 
 void matmulF32(MatmulThreadInfo* a) {
+    const float* input = (float*)a->input;
     float* w = (float*)a->weights;
     int d;
 
@@ -35,7 +36,7 @@ void matmulF32(MatmulThreadInfo* a) {
     for (d = a->ds; d < a->de; d++) {
         z = vmovq_n_f32(0);
         for (int j = 0; j < a->n; j += 4) {
-            q = vld1q_f32(&a->input[j]);
+            q = vld1q_f32(&input[j]);
             p = vld1q_f32(&w[d * a->n + j]);
             z = vfmaq_f32(z, q, p);
         }
@@ -53,42 +54,55 @@ void matmulF32(MatmulThreadInfo* a) {
 }
 
 void matmulF16(MatmulThreadInfo* a) {
+    const float* input = (float*)a->input;
     uint16_t* w = (uint16_t*)a->weights;
     int d;
     for (d = a->ds; d < a->de; d++) {
         float val = 0.0f;
         for (int j = 0; j < a->n; j++) {
             float ww = convertF16ToF32(w[d * a->n + j]);
-            val += ww * a->input[j];
+            val += ww * input[j];
         }
         a->output[d] = val;
     }
 }
 
-void matmulQ40(MatmulThreadInfo* a) {
-    const int blocksPerRow = 8;
-    const int k = QK40 * blocksPerRow;
-    BlockQ40* w = (BlockQ40*)a->weights;
-    assert(a->n % k == 0);
-    int n = a->n / k;
-    float group[k];
+void matmulQ40vQ80(MatmulThreadInfo* a) {
+    const BlockQ40* w = (BlockQ40*)a->weights;
+    const BlockQ80* input = (BlockQ80*)a->input;
+    assert(a->n % QK40 == 0);
+    const int n = a->n / QK40;
 
 #if NEON
-    assert(k % 16 == 0);
-    float32x4_t a0;
-    float32x4_t b0;
-    float32x4_t u;
+    float32x4_t sumv0;
     for (int d = a->ds; d < a->de; d++) {
-        u = vmovq_n_f32(0);
+        sumv0 = vmovq_n_f32(0);
         for (int j = 0; j < n; j++) {
-            dequantizeQ40Row(&w[d * n * blocksPerRow + j * blocksPerRow], group, k);
-            for (int z = 0; z < k; z += 4) {
-                a0 = vld1q_f32(&a->input[j * k + z]);
-                b0 = vld1q_f32(&group[z]);
-                u = vfmaq_f32(u, a0, b0);
-            }
+            const BlockQ40* x0 = &w[d * n + j];
+            const BlockQ80* y0 = &input[j];
+
+            const uint8x16_t m4b = vdupq_n_u8(0x0F);
+            const int8x16_t  s8b = vdupq_n_s8(0x8);
+
+            const uint8x16_t v0_0 = vld1q_u8(x0->qs);
+
+            // 4-bit -> 8-bit
+            const int8x16_t v0_0l = vreinterpretq_s8_u8(vandq_u8  (v0_0, m4b));
+            const int8x16_t v0_0h = vreinterpretq_s8_u8(vshrq_n_u8(v0_0, 4));
+
+            // sub 8
+            const int8x16_t v0_0ls = vsubq_s8(v0_0l, s8b);
+            const int8x16_t v0_0hs = vsubq_s8(v0_0h, s8b);
+
+            // load y
+            const int8x16_t v1_0l = vld1q_s8(y0->qs);
+            const int8x16_t v1_0h = vld1q_s8(y0->qs + 16);
+
+            const int32x4_t p_0 = vdotq_s32(vdotq_s32(vdupq_n_s32(0), v0_0ls, v1_0l), v0_0hs, v1_0h);
+
+            sumv0 = vmlaq_n_f32(sumv0, vcvtq_f32_s32(p_0), convertF16ToF32(x0->d) * convertF16ToF32(y0->d));
         }
-        a->output[d] = vaddvq_f32(u);
+        a->output[d] = vaddvq_f32(sumv0);
     }
 #else
     for (int d = a->ds; d < a->de; d++) {
@@ -115,7 +129,7 @@ void* matmulThread(void* arg) {
             matmulF16(a);
             break;
         case Q40:
-            matmulQ40(a);
+            matmulQ40vQ80(a);
             break;
         default:
             printf("Unknown float type %d\n", a->type);
@@ -131,8 +145,14 @@ void* matmulThread(void* arg) {
 //   |_________|   n | |      |_|
 //        n          |_|       1
 //                    1
-void matmul(FloatType type, int nThread, float* output, float* input, char* weights, int n, int d) {
+void matmul(FloatType type, int nThread, float* output, float* input, void* weights, int n, int d) {
     MatmulThreadInfo args[nThread];
+
+    if (type == Q40) {
+        BlockQ80* bq80 = new BlockQ80[n / QK80];
+        quantizeQ80Row(input, bq80, n);
+        input = (float*)bq80;
+    }
 
     int i;
     for (i = 0; i < nThread; i++) {
@@ -148,6 +168,10 @@ void matmul(FloatType type, int nThread, float* output, float* input, char* weig
     }
     for (i = 0; i < nThread; i++) {
         pthread_join(args[i].handler, NULL);
+    }
+
+    if (type == Q40) {
+        delete[] input;
     }
 }
 
