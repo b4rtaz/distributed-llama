@@ -5,7 +5,6 @@ rm main
 
 make quants
 make matmul
-make funcs
 make matmul-test
 chmod +x matmul-test
 ./matmul-test
