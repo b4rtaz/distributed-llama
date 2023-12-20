@@ -343,6 +343,7 @@ void generate(Transformer* transformer, char* tokenizerPath, float temperature, 
     while (pos < steps) {
         long t0 = timeMs();
         transformer->forward(token, pos);
+        long t1 = timeMs();
         float* logits = transformer->logits;
 
         // advance the state machine
@@ -360,7 +361,6 @@ void generate(Transformer* transformer, char* tokenizerPath, float temperature, 
 
         // print the token as string, decode it with the Tokenizer object
         char* piece = tokenizer.decode(token, next);
-        long t1 = timeMs();
 
         printf("🔶 %4ldms ", t1 - t0);
         safePrintf(piece); // same as printf("%s", piece), but skips "unsafe" bytes

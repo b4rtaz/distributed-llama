@@ -64,17 +64,28 @@ void rmsnorm(float* o, float* x, float* weight, int size) {
 }
 
 void softmax(float* x, int size) {
+    float maxVal;
+#if defined(__ARM_NEON)
+    float32x4_t fs;
+    float32x4_t fmaxv = vld1q_f32(&x[0]);
+    for (int i = 4; i < size; i += 4) {
+        fs = vld1q_f32(&x[i]);
+        fmaxv = vmaxq_f32(fmaxv, fs);
+    }
+    maxVal = vmaxvq_f32(fmaxv);
+#else
     // find max value (for numerical stability)
-    float max_val = x[0];
+    maxVal = x[0];
     for (int i = 1; i < size; i++) {
-        if (x[i] > max_val) {
-            max_val = x[i];
+        if (x[i] > maxVal) {
+            maxVal = x[i];
         }
     }
+#endif
     // exp and sum
     float sum = 0.0f;
     for (int i = 0; i < size; i++) {
-        x[i] = expf(x[i] - max_val);
+        x[i] = expf(x[i] - maxVal);
         sum += x[i];
     }
     // normalize
