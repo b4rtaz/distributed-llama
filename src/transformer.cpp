@@ -660,12 +660,15 @@ Transformer::Transformer(TransformerSpec* spec, TransformerConfig* config, Trans
         this->blocks[l] = new TransformerBlock(l, spec, config, state, clientOrNull);
     }
 
-    this->x = new float[spec->dim];
-    this->token_embedding_table = new float[spec->vocabSize * spec->dim];
-    this->rms_final_weight = new float[spec->dim];
-    this->wcls = new float[spec->vocabSize * spec->dim];
+    x = new float[spec->dim];
+    token_embedding_table = new float[spec->vocabSize * spec->dim];
+    rms_final_weight = new float[spec->dim];
 
-    this->logits = new float[spec->vocabSize];
+    wclsFloatType = spec->sharedWeights ? F32 : spec->floatType;
+    wclsBytes = getBatchBytes(wclsFloatType, spec->vocabSize, spec->dim);
+    wcls = new char[wclsBytes];
+
+    logits = new float[spec->vocabSize];
 }
 
 Transformer::~Transformer() {
@@ -697,9 +700,9 @@ long Transformer::readWeights(char* wd) {
     w += (spec->seqLen * spec->headSize / 2) * sizeof(float); // skip what used to be freq_cis_real (for RoPE)
     w += (spec->seqLen * spec->headSize / 2) * sizeof(float); // skip what used to be freq_cis_imag (for RoPE)
 
-    memcpy(wcls, spec->sharedWeights ? (char*)token_embedding_table : w, spec->vocabSize * spec->dim * sizeof(float));
+    memcpy(wcls, spec->sharedWeights ? (char*)token_embedding_table : w, wclsBytes);
     if (!spec->sharedWeights) {
-        w += spec->vocabSize * spec->dim * sizeof(float);
+        w += wclsBytes;
     }
 
     return (long)(w - wd);
@@ -716,7 +719,7 @@ void Transformer::forward(int token, int pos) {
     rmsnorm(x, x, rms_final_weight, spec->dim);
 
     // classifier into logits
-    matmul(F32, config->nThread, logits, x, (char*)wcls, spec->dim, spec->vocabSize);
+    matmul(wclsFloatType, config->nThread, logits, x, wcls, spec->dim, spec->vocabSize);
 
     if (clientOrNull != NULL) {
         clientOrNull->dumpStatistics();

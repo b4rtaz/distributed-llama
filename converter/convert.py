@@ -157,7 +157,7 @@ def export(model, filepath, floatType):
 
     # final classifier weights
     if not shared_classifier:
-        export_tensor(out_file, model.output.weight, 'float32')
+        export_tensor(out_file, model.output.weight, floatType)
 
     # write to binary file
     out_file.close()

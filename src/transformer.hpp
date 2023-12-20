@@ -330,7 +330,9 @@ private:
     float* x;
     float* token_embedding_table;
     float* rms_final_weight;
-    float* wcls;
+    size_t wclsBytes;
+    FloatType wclsFloatType;
+    char* wcls;
 public:
     float* logits;
     Transformer(TransformerSpec* spec, TransformerConfig* config, TransformerState* state, RemoteClient* clientOrNull);
