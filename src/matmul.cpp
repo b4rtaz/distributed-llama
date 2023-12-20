@@ -7,9 +7,7 @@
 #include "quants.hpp"
 #include "matmul.hpp"
 
-#define NEON 1
-
-#if NEON
+#if defined(__ARM_NEON)
     #include <arm_neon.h>
 #endif
 
@@ -29,7 +27,7 @@ void matmulF32(MatmulThreadInfo* a) {
     float* w = (float*)a->weights;
     int d;
 
-#if NEON
+#if defined(__ARM_NEON)
     float32x4_t q;
     float32x4_t p;
     float32x4_t z;
@@ -73,7 +71,7 @@ void matmulQ40vQ80(MatmulThreadInfo* a) {
     assert(a->n % QK40 == 0);
     const int n = a->n / QK40;
 
-#if NEON
+#if defined(__ARM_NEON)
     float32x4_t sumv0;
     float32x4_t sumv1;
     for (int d = a->ds; d < a->de; d++) {

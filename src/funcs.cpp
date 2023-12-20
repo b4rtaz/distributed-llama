@@ -1,5 +1,10 @@
 #include <cmath>
+#include <cassert>
 #include <sys/time.h>
+
+#if defined(__ARM_NEON)
+    #include <arm_neon.h>
+#endif
 
 long timeMs() {
     struct timeval te; 
@@ -21,19 +26,41 @@ float randomF32(unsigned long long *state) {
 }
 
 void rmsnorm(float* o, float* x, float* weight, int size) {
-    // calculate sum of squares
+    assert(size % 8 == 0);
     float ss = 0.0f;
+#if defined(__ARM_NEON)
+    float32x4_t fsq;
+    float32x4_t fs = vmovq_n_f32(0);
+    for (int j = 0; j < size; j += 4) {
+        fsq = vld1q_f32(&x[j]);
+        fs = vmlaq_f32(fs, fsq, fsq);
+    }
+    ss = vaddvq_f32(fs);
+#else
     for (int j = 0; j < size; j++) {
         ss += x[j] * x[j];
     }
+#endif
     ss /= size;
     ss += 1e-5f;
     ss = 1.0f / sqrtf(ss);
 
-    // normalize and scale
+#if defined(__ARM_NEON)
+    float32x4_t fw;
+    float32x4_t fx;
+    float32x4_t fss = vmovq_n_f32(ss);
+    for (int j = 0; j < size; j += 4) {
+        fw = vld1q_f32(&weight[j]);
+        fx = vld1q_f32(&x[j]);
+        fx = vmulq_f32(fx, fw);
+        fx = vmulq_f32(fx, fss);
+        vst1q_f32(&o[j], fx);
+    }
+#else
     for (int j = 0; j < size; j++) {
         o[j] = weight[j] * (ss * x[j]);
     }
+#endif
 }
 
 void softmax(float* x, int size) {

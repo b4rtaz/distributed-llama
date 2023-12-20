@@ -4,9 +4,7 @@
 #include <cassert>
 #include "quants.hpp"
 
-#define NEON 1
-
-#if NEON
+#if defined(__ARM_NEON)
     #include <arm_neon.h>
 #endif
 
@@ -127,7 +125,7 @@ void dequantizeQ40Row(const BlockQ40* x, float* y, int k) {
     assert(k % qk == 0);
     const int nb = k / qk;
 
-#if NEON
+#if defined(__ARM_NEON)
     const uint8x16_t m4b = vdupq_n_u8(0x0F);
     const int8x16_t  s8b = vdupq_n_s8(0x8);
 
@@ -176,7 +174,7 @@ void quantizeQ80Row(float* x, BlockQ80* y, int k) {
     assert(k % QK80 == 0);
     const int nb = k / QK80;
 
-#if NEON
+#if defined(__ARM_NEON)
     for (int i = 0; i < nb; i++) {
         float32x4_t srcv [8];
         float32x4_t asrcv[8];
