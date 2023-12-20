@@ -4,9 +4,14 @@
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <pthread.h>
+#include <cassert>
 #include "quants.hpp"
 #include "funcs.hpp"
 #include "transformer.hpp"
+
+#if defined(__ARM_NEON)
+    #include <arm_neon.h>
+#endif
 
 #define NEW_BUFFER(size) newBuffer(size)
 #define FREE_BUFFER(buffer) free(buffer)
@@ -515,6 +520,27 @@ void* transformerBlockThread(void* arg) {
         break;
     }
     return 0;
+}
+
+static inline float dotProduct(const float* a, const float* b, const int size) {
+    assert(size % 4 == 0);
+#if defined(__ARM_NEON)
+    float32x4_t fa;
+    float32x4_t fb;
+    float32x4_t fs = vmovq_n_f32(0);
+    for (int i = 0; i < size; i += 4) {
+        fa = vld1q_f32(&a[i]);
+        fb = vld1q_f32(&b[i]);
+        fs = vmlaq_f32(fs, fa, fb);
+    }
+    return vaddvq_f32(fs);
+#else
+    float sum = 0.0f;
+    for (int i = 0; i < size; i++) {
+        sum += a[i] * b[i];
+    }
+    return sum;
+#endif
 }
 
 void TransformerBlock::forward(int pos, float* x) {

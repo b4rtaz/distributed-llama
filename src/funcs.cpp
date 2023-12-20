@@ -25,7 +25,7 @@ float randomF32(unsigned long long *state) {
     return (randomU32(state) >> 8) / 16777216.0f;
 }
 
-void rmsnorm(float* o, float* x, float* weight, int size) {
+void rmsnorm(float* o, const float* x, const float* weight, const int size) {
     assert(size % 4 == 0);
     float ss = 0.0f;
 #if defined(__ARM_NEON)
@@ -63,7 +63,7 @@ void rmsnorm(float* o, float* x, float* weight, int size) {
 #endif
 }
 
-void softmax(float* x, int size) {
+void softmax(float* x, const int size) {
     float maxVal;
 #if defined(__ARM_NEON)
     float32x4_t fs;
@@ -92,25 +92,4 @@ void softmax(float* x, int size) {
     for (int i = 0; i < size; i++) {
         x[i] /= sum;
     }
-}
-
-float dotProduct(float* a, float* b, int size) {
-    assert(size % 4 == 0);
-#if defined(__ARM_NEON)
-    float32x4_t fa;
-    float32x4_t fb;
-    float32x4_t fs = vmovq_n_f32(0);
-    for (int i = 0; i < size; i += 4) {
-        fa = vld1q_f32(&a[i]);
-        fb = vld1q_f32(&b[i]);
-        fs = vmlaq_f32(fs, fa, fb);
-    }
-    return vaddvq_f32(fs);
-#else
-    float sum = 0.0f;
-    for (int i = 0; i < size; i++) {
-        sum += a[i] * b[i];
-    }
-    return sum;
-#endif
 }
