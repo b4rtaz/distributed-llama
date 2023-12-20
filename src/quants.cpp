@@ -175,6 +175,8 @@ void quantizeQ80Row(float* x, BlockQ80* y, int k) {
     const int nb = k / QK80;
 
 #if defined(__ARM_NEON)
+    float dBuf[4];
+
     for (int i = 0; i < nb; i++) {
         float32x4_t srcv [8];
         float32x4_t asrcv[8];
@@ -192,7 +194,17 @@ void quantizeQ80Row(float* x, BlockQ80* y, int k) {
         const float d = amax / ((1 << 7) - 1);
         const float id = d ? 1.0f/d : 0.0f;
 
-        y[i].d = convertF32ToF16(d);
+        int dbi = i % 4;
+        dBuf[dbi] = d;
+        if (dbi == 3) {
+            float32x4_t dBuf32 = vld1q_f32(dBuf);
+            int16x4_t dBuf16 = (int16x4_t)vcvt_f16_f32(dBuf32);
+
+            y[i - 3].d = dBuf16[0];
+            y[i - 2].d = dBuf16[1];
+            y[i - 1].d = dBuf16[2];
+            y[i - 0].d = dBuf16[3];
+        }
 
         for (int j = 0; j < 8; j++) {
             const float32x4_t v  = vmulq_n_f32(srcv[j], id);

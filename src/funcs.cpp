@@ -26,7 +26,7 @@ float randomF32(unsigned long long *state) {
 }
 
 void rmsnorm(float* o, float* x, float* weight, int size) {
-    assert(size % 8 == 0);
+    assert(size % 4 == 0);
     float ss = 0.0f;
 #if defined(__ARM_NEON)
     float32x4_t fsq;
