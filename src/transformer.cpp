@@ -575,12 +575,7 @@ void TransformerBlock::forward(int pos, float* x) {
             // get the key vector for this head and at this timestep
             float* k = keyCache + t * kvDim + (h / kvMul) * headSize;
             // calculate the attention score as the dot product of q and k
-            float score = 0.0f;
-            for (int i = 0; i < headSize; i++) {
-                score += _q[i] * k[i];
-            }
-            score /= sqrtf(headSize);
-            // save the score to the attention buffer
+            float score = dotProduct(_q, k, headSize) / sqrtf(headSize);
             _att[t] = score;
         }
 

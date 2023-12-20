@@ -93,3 +93,24 @@ void softmax(float* x, int size) {
         x[i] /= sum;
     }
 }
+
+float dotProduct(float* a, float* b, int size) {
+    assert(size % 4 == 0);
+#if defined(__ARM_NEON)
+    float32x4_t fa;
+    float32x4_t fb;
+    float32x4_t fs = vmovq_n_f32(0);
+    for (int i = 0; i < size; i += 4) {
+        fa = vld1q_f32(&a[i]);
+        fb = vld1q_f32(&b[i]);
+        fs = vmlaq_f32(fs, fa, fb);
+    }
+    return vaddvq_f32(fs);
+#else
+    float sum = 0.0f;
+    for (int i = 0; i < size; i++) {
+        sum += a[i] * b[i];
+    }
+    return sum;
+#endif
+}
