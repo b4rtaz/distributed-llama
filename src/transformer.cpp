@@ -18,7 +18,7 @@
 
 char* newBuffer(size_t size) {
     char* buffer;
-    if (posix_memalign((void**)&buffer, 128, size) != 0) {
+    if (posix_memalign((void**)&buffer, 16, size) != 0) {
         fprintf(stderr, "error: posix_memalign failed\n");
         exit(EXIT_FAILURE);
     }
