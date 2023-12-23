@@ -10,7 +10,7 @@
 #include "worker.hpp"
 
 #define SOCKET_LAST_ERROR strerror(errno)
-#define SOCKET_CHUNK_SIZE 192
+#define SOCKET_CHUNK_SIZE 32
 
 //
 // WorkerRemoteClient
