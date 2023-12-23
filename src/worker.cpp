@@ -10,7 +10,8 @@
 #include "worker.hpp"
 
 #define SOCKET_LAST_ERROR strerror(errno)
-#define SOCKET_CHUNK_SIZE 128
+#define SOCKET_SEND_CHUNK_SIZE 128
+#define SOCKET_READ_CHUNK_SIZE 64
 
 //
 // WorkerRemoteClient
@@ -102,7 +103,7 @@ void WorkerRemoteClient::readBuffer(uint8_t sliceIndex, uint8_t bufferIndex, voi
 
 void WorkerRemoteClient::sendBytes(uint8_t sliceIndex, void* data, size_t bytes) {
     int clientSocket = this->clientSockets[sliceIndex];
-    size_t chunkSize = bytes > SOCKET_CHUNK_SIZE ? SOCKET_CHUNK_SIZE : bytes;
+    size_t chunkSize = bytes > SOCKET_SEND_CHUNK_SIZE ? SOCKET_SEND_CHUNK_SIZE : bytes;
     size_t offset = 0;
     while (offset < bytes) {
         size_t chunk = bytes - offset;
@@ -120,7 +121,7 @@ void WorkerRemoteClient::sendBytes(uint8_t sliceIndex, void* data, size_t bytes)
 
 void WorkerRemoteClient::readBytes(uint8_t sliceIndex, void* data, size_t bytes) {
     int clientSocket = this->clientSockets[sliceIndex];
-    size_t chunkSize = bytes > SOCKET_CHUNK_SIZE ? SOCKET_CHUNK_SIZE : bytes;
+    size_t chunkSize = bytes > SOCKET_READ_CHUNK_SIZE ? SOCKET_READ_CHUNK_SIZE : bytes;
     size_t offset = 0;
     while (offset < bytes) {
         size_t chunk = bytes - offset;
@@ -157,7 +158,7 @@ Worker::Worker(TransformerConfig* config, int clientSocket) {
 }
 
 void Worker::readSocket(void* data, size_t bytes) {
-    size_t chunkSize = bytes > SOCKET_CHUNK_SIZE ? SOCKET_CHUNK_SIZE : bytes;
+    size_t chunkSize = bytes > SOCKET_READ_CHUNK_SIZE ? SOCKET_READ_CHUNK_SIZE : bytes;
     size_t offset = 0;
     while (offset < bytes) {
         size_t chunk = bytes - offset;
@@ -174,7 +175,7 @@ void Worker::readSocket(void* data, size_t bytes) {
 }
 
 void Worker::writeSocket(void* data, size_t bytes) {
-    size_t chunkSize = bytes > SOCKET_CHUNK_SIZE ? SOCKET_CHUNK_SIZE : bytes;
+    size_t chunkSize = bytes > SOCKET_SEND_CHUNK_SIZE ? SOCKET_SEND_CHUNK_SIZE : bytes;
     size_t offset = 0;
     while (offset < bytes) {
         size_t chunk = bytes - offset;
