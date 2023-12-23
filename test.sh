@@ -19,5 +19,5 @@ make tokenizer
 make worker
 make main
 chmod +x main
-./main inference -m ./converter/llama_7b_q40.bin -f 2 -t /Users/b4rtaz/Dev/llama2.c/tokenizer.bin -prompt "Hello world" -nthread 4
+./main inference -m ./converter/llama_7b_q40.bin -f 2 -t /Users/b4rtaz/Dev/llama2.c/tokenizer.bin -prompt "Hello world" -nthread 4 -s 127.0.0.1:9999
 #./main worker -p 9999

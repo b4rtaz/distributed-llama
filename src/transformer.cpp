@@ -541,7 +541,7 @@ void TransformerBlock::forward(int pos, float* x) {
 
     for (int s = 0; s < spec->sliceCount; s++) {
         threadInfos[s].step = TRANSFORMER_BLOCK_QKV;
-        pthread_create(&threadInfos[s].handler, NULL, transformerBlockThread, (void*)&threadInfos[s].handler);
+        pthread_create(&threadInfos[s].handler, NULL, transformerBlockThread, (void*)&threadInfos[s]);
     }
     for (int s = 0; s < spec->sliceCount; s++) {
         pthread_join(threadInfos[s].handler, NULL);
@@ -604,7 +604,7 @@ void TransformerBlock::forward(int pos, float* x) {
 
     for (int s = 0; s < spec->sliceCount; s++) {
         threadInfos[s].step = TRANSFORMER_BLOCK_ATT;
-        pthread_create(&threadInfos[s].handler, NULL, transformerBlockThread, (void*)&threadInfos[s].handler);
+        pthread_create(&threadInfos[s].handler, NULL, transformerBlockThread, (void*)&threadInfos[s]);
     }
     for (int s = 0; s < spec->sliceCount; s++) {
         pthread_join(threadInfos[s].handler, NULL);
@@ -621,7 +621,7 @@ void TransformerBlock::forward(int pos, float* x) {
 
     for (int s = 0; s < spec->sliceCount; s++) {
         threadInfos[s].step = TRANSFORMER_BLOCK_FFN;
-        pthread_create(&threadInfos[s].handler, NULL, transformerBlockThread, (void*)&threadInfos[s].handler);
+        pthread_create(&threadInfos[s].handler, NULL, transformerBlockThread, (void*)&threadInfos[s]);
     }
     for (int s = 0; s < spec->sliceCount; s++) {
         pthread_join(threadInfos[s].handler, NULL);
@@ -632,7 +632,7 @@ void TransformerBlock::forward(int pos, float* x) {
 
     for (int s = 0; s < spec->sliceCount; s++) {
         threadInfos[s].step = TRANSFORMER_BLOCK_FFN2;
-        pthread_create(&threadInfos[s].handler, NULL, transformerBlockThread, (void*)&threadInfos[s].handler);
+        pthread_create(&threadInfos[s].handler, NULL, transformerBlockThread, (void*)&threadInfos[s]);
     }
     for (int s = 0; s < spec->sliceCount; s++) {
         pthread_join(threadInfos[s].handler, NULL);
