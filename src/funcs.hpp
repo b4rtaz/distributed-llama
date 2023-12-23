@@ -10,12 +10,9 @@
 #define funcs_hpp
 
 static inline long timeMs() {
-    return 0;
-#if 0
     struct timeval te; 
     gettimeofday(&te, NULL);
     return te.tv_sec * 1000LL + te.tv_usec / 1000;
-#endif
 }
 
 static inline unsigned int randomU32(unsigned long long *state) {

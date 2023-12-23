@@ -13,7 +13,8 @@ private:
     int sliceCount;
     int* clientSockets;
     long* waitBufferTime;
-    long* transferBufferTime;
+    long* sendBufferTime;
+    long* readBufferTime;
 public:
 
     WorkerRemoteClient(TransformerSpec* spec, char** hosts, int* ports);

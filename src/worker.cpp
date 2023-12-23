@@ -20,12 +20,14 @@ WorkerRemoteClient::WorkerRemoteClient(TransformerSpec* spec, char** hosts, int*
     sliceCount = spec->sliceCount;
     clientSockets = new int[spec->sliceCount];
     waitBufferTime = new long[spec->sliceCount];
-    transferBufferTime = new long[spec->sliceCount];
+    sendBufferTime = new long[spec->sliceCount];
+    readBufferTime = new long[spec->sliceCount];
 
     struct sockaddr_in clientAddr;
     for (uint8_t s = 0; s < sliceCount; s++) {
         waitBufferTime[s] = 0;
-        transferBufferTime[s] = 0;
+        sendBufferTime[s] = 0;
+        readBufferTime[s] = 0;
 
         char* host = hosts[s];
         int port = ports[s];
@@ -59,7 +61,8 @@ WorkerRemoteClient::WorkerRemoteClient(TransformerSpec* spec, char** hosts, int*
 WorkerRemoteClient::~WorkerRemoteClient() {
     delete[] clientSockets;
     delete[] waitBufferTime;
-    delete[] transferBufferTime;
+    delete[] sendBufferTime;
+    delete[] readBufferTime;
 }
 
 void WorkerRemoteClient::createFragment(uint8_t sliceIndex, uint8_t layerIndex, uint8_t type, char* weights, size_t bytes) {
@@ -80,7 +83,7 @@ void WorkerRemoteClient::sendBuffer(uint8_t sliceIndex, uint8_t bufferIndex, voi
     sendBytes(sliceIndex, header, sizeof(header));
     sendBytes(sliceIndex, data, bytes);
     long t1 = timeMs();
-    transferBufferTime[sliceIndex] += t1 - t0;
+    sendBufferTime[sliceIndex] += t1 - t0;
 }
 
 void WorkerRemoteClient::readBuffer(uint8_t sliceIndex, uint8_t bufferIndex, void* data, size_t bytes) {
@@ -94,7 +97,7 @@ void WorkerRemoteClient::readBuffer(uint8_t sliceIndex, uint8_t bufferIndex, voi
     long t2 = timeMs();
 
     waitBufferTime[sliceIndex] += t1 - t0;
-    transferBufferTime[sliceIndex] += t2 - t1;
+    readBufferTime[sliceIndex] += t2 - t1;
 }
 
 void WorkerRemoteClient::sendBytes(uint8_t sliceIndex, void* data, size_t bytes) {
@@ -136,8 +139,9 @@ void WorkerRemoteClient::readBytes(uint8_t sliceIndex, void* data, size_t bytes)
 void WorkerRemoteClient::dumpStatistics() {
     printf("⌛ ");
     for (size_t s = 0; s < sliceCount; s++) {
-        printf("%zu: %3ldms/%4ldms ", s, transferBufferTime[s], waitBufferTime[s]);
-        transferBufferTime[s] = 0;
+        printf("%zu: %3ldms/%3ldms/%4ldms ", s, sendBufferTime[s], readBufferTime[s], waitBufferTime[s]);
+        sendBufferTime[s] = 0;
+        readBufferTime[s] = 0;
         waitBufferTime[s] = 0;
     }
     printf("\n");
