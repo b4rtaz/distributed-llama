@@ -178,7 +178,6 @@ void* matmulThread(void* arg) {
 //        n          |_|       1
 //                    1
 void matmul(FloatType type, int nThread, float* output, float* input, void* weights, int n, int d) {
-#if 0
     MatmulThreadInfo args[nThread];
 
     if (type == Q40) {
@@ -206,7 +205,6 @@ void matmul(FloatType type, int nThread, float* output, float* input, void* weig
     if (type == Q40) {
         delete[] input;
     }
-#endif
 }
 
 MatMulSlice::MatMulSlice(FloatType type, int sliceCount, int n, int d) {

@@ -10,8 +10,6 @@
 #include "worker.hpp"
 
 #define SOCKET_LAST_ERROR strerror(errno)
-#define SOCKET_SEND_CHUNK_SIZE 128
-#define SOCKET_READ_CHUNK_SIZE 64
 
 //
 // WorkerRemoteClient
@@ -103,37 +101,27 @@ void WorkerRemoteClient::readBuffer(uint8_t sliceIndex, uint8_t bufferIndex, voi
 
 void WorkerRemoteClient::sendBytes(uint8_t sliceIndex, void* data, size_t bytes) {
     int clientSocket = this->clientSockets[sliceIndex];
-    size_t chunkSize = bytes > SOCKET_SEND_CHUNK_SIZE ? SOCKET_SEND_CHUNK_SIZE : bytes;
-    size_t offset = 0;
-    while (offset < bytes) {
-        size_t chunk = bytes - offset;
-        if (chunk > chunkSize) {
-            chunk = chunkSize;
-        }
-        int s = send(clientSocket, (char*)data + offset, chunk, 0);
+    while (bytes > 0) {
+        int s = send(clientSocket, (char*)data, bytes, 0);
         if (s <= 0) {
             printf("Error sending data %d (%s)\n", s, SOCKET_LAST_ERROR);
             exit(EXIT_FAILURE);
         }
-        offset += s;
+        bytes -= s;
+        data = (char*)data + s;
     }
 }
 
 void WorkerRemoteClient::readBytes(uint8_t sliceIndex, void* data, size_t bytes) {
     int clientSocket = this->clientSockets[sliceIndex];
-    size_t chunkSize = bytes > SOCKET_READ_CHUNK_SIZE ? SOCKET_READ_CHUNK_SIZE : bytes;
-    size_t offset = 0;
-    while (offset < bytes) {
-        size_t chunk = bytes - offset;
-        if (chunk > chunkSize) {
-            chunk = chunkSize;
-        }
-        int r = recv(clientSocket, (char*)data + offset, chunk, 0);
+    while (bytes > 0) {
+        int r = recv(clientSocket, (char*)data, bytes, 0);
         if (r <= 0) {
             printf("Error receiving buffer data %d (%s)\n", r, SOCKET_LAST_ERROR);
             exit(EXIT_FAILURE);
         }
-        offset += r;
+        data = (char*)data + r;
+        bytes -= r;
     }
 }
 
@@ -158,36 +146,26 @@ Worker::Worker(TransformerConfig* config, int clientSocket) {
 }
 
 void Worker::readSocket(void* data, size_t bytes) {
-    size_t chunkSize = bytes > SOCKET_READ_CHUNK_SIZE ? SOCKET_READ_CHUNK_SIZE : bytes;
-    size_t offset = 0;
-    while (offset < bytes) {
-        size_t chunk = bytes - offset;
-        if (chunk > chunkSize) {
-            chunk = chunkSize;
-        }
-        int r = recv(clientSocket, (char*)data + offset, chunk, 0);
+    while (bytes > 0) {
+        int r = recv(clientSocket, (char*)data, bytes, 0);
         if (r <= 0) {
             printf("Error receiving data %d (%s)\n", r, SOCKET_LAST_ERROR);
             exit(EXIT_FAILURE);
         }
-        offset += r;
+        data = (char*)data + r;
+        bytes -= r;
     }
 }
 
 void Worker::writeSocket(void* data, size_t bytes) {
-    size_t chunkSize = bytes > SOCKET_SEND_CHUNK_SIZE ? SOCKET_SEND_CHUNK_SIZE : bytes;
-    size_t offset = 0;
-    while (offset < bytes) {
-        size_t chunk = bytes - offset;
-        if (chunk > chunkSize) {
-            chunk = chunkSize;
-        }
-        int s = send(clientSocket, (char*)data + offset, chunk, 0);
+    while (bytes > 0) {
+        int s = send(clientSocket, (char*)data , bytes, 0);
         if (s <= 0) {
             printf("Error sending data %d (%s)\n", s, SOCKET_LAST_ERROR);
             exit(EXIT_FAILURE);
         }
-        offset += chunk;
+        bytes -= s;
+        data = (char*)data + s;
     }
 }
 
