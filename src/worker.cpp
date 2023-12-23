@@ -338,7 +338,7 @@ void Worker::serve(TransformerConfig* config, int port) {
         exit(EXIT_FAILURE);
     }
 
-    int listenResult = ::listen(serverSocket, 10);
+    int listenResult = ::listen(serverSocket, 1);
     if (listenResult != 0) {
         printf("Cannot listen %s:%d\n", host, port);
         exit(EXIT_FAILURE);
