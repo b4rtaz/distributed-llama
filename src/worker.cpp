@@ -279,6 +279,8 @@ void Worker::handleForwardFragment() {
     readSocket((void*)&layerIndex, sizeof(uint8_t));
     readSocket((void*)&type, sizeof(uint8_t));
 
+    long t0 = timeMs();
+
     switch (type) {
     case TRANSFORMER_BLOCK_QKV:
         layers[layerIndex].qkv->beginForwarding();
@@ -295,6 +297,13 @@ void Worker::handleForwardFragment() {
     default:
         printf("Unknown fragment type %d\n", type);
         exit(EXIT_FAILURE);
+    }
+
+    long t1 = timeMs();
+    calcTime += t1 - t0;
+    if (type == TRANSFORMER_BLOCK_FFN2 && layerIndex == spec.nLayers - 1) {
+        printf("⌛ Forwarded in %ldms\n", calcTime);
+        calcTime = 0;
     }
 }
 

@@ -48,6 +48,7 @@ private:
     TransformerConfig* config;
     TransformerSpec spec;
     uint8_t sliceIndex;
+    long calcTime;
 
 public:
     Worker(TransformerConfig* config, int clientSocket);
