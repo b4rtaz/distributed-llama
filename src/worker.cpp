@@ -91,6 +91,10 @@ void WorkerRemoteClient::readBuffer(uint8_t sliceIndex, uint8_t bufferIndex, voi
     long t0 = timeMs();
     uint8_t header[2];
     readBytes(sliceIndex, (void*)&header, sizeof(header));
+    if (header[0] != ACTION_SEND_BUFFER || header[1] != bufferIndex) {
+        printf("Unexpected buffer header %d %d\n", header[0], header[1]);
+        exit(EXIT_FAILURE);
+    }
     long t1 = timeMs();
     readBytes(sliceIndex, data, bytes);
     long t2 = timeMs();
@@ -279,8 +283,6 @@ void Worker::handleForwardFragment() {
     readSocket((void*)&layerIndex, sizeof(uint8_t));
     readSocket((void*)&type, sizeof(uint8_t));
 
-    long t0 = timeMs();
-
     switch (type) {
     case TRANSFORMER_BLOCK_QKV:
         layers[layerIndex].qkv->beginForwarding();
@@ -297,13 +299,6 @@ void Worker::handleForwardFragment() {
     default:
         printf("Unknown fragment type %d\n", type);
         exit(EXIT_FAILURE);
-    }
-
-    long t1 = timeMs();
-    calcTime += t1 - t0;
-    if (type == TRANSFORMER_BLOCK_FFN2 && layerIndex == spec.nLayers - 1) {
-        printf("⌛ Forwarded in %ldms\n", calcTime);
-        calcTime = 0;
     }
 }
 

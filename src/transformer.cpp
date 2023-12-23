@@ -145,9 +145,12 @@ void NativeTransformerBlockQkv::beginForwarding() {
     float *k0 = (float*)state->getSlicedBuffer(SB_SLICED_K, sliceIndex);
     float *v0 = (float*)state->getSlicedBuffer(SB_SLICED_V, sliceIndex);
 
+    long t0 = timeMs();
     matmul(spec->floatType, config->nThread, q0, xb, qWeights0, qSlice->n, qSlice->d0);
     matmul(spec->floatType, config->nThread, k0, xb, kWeights0, kSlice->n, kSlice->d0);
     matmul(spec->floatType, config->nThread, v0, xb, vWeights0, vSlice->n, vSlice->d0);
+    long t1 = timeMs();
+    printf("qkv %d ms\n", (int)(t1 - t0));
 
     state->sendSlicedBuffer(SB_SLICED_Q, sliceIndex);
     state->sendSlicedBuffer(SB_SLICED_K, sliceIndex);
