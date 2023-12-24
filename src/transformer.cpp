@@ -666,42 +666,21 @@ long TransformerBlock::readWeights(char* wd) {
     return (long)(w - wd);
 }
 
-#define STEP_QKV_BEGIN 0
-#define STEP_QKV_END 1
-#define STEP_ATT_BEGIN 2
-#define STEP_ATT_END 3
-#define STEP_FFN_BEGIN 4
-#define STEP_FFN_END 5
-#define STEP_FFN2_BEGIN 6
-#define STEP_FFN2_END 7
-
 void* transformerBlockThread(void* arg) {
     TransformerBlockThreadInfo* info = (TransformerBlockThreadInfo*)arg;
     switch (info->step)
     {
-        case STEP_QKV_BEGIN:
+        case TRANSFORMER_BLOCK_QKV:
         info->qkv->beginForwarding();
         break;
-        case STEP_QKV_END:
-        info->qkv->waitForEnd();
-        break;
-        case STEP_ATT_BEGIN:
+        case TRANSFORMER_BLOCK_ATT:
         info->att->beginForwarding();
         break;
-        case STEP_ATT_END:
-        info->att->waitForEnd();
-        break;
-        case STEP_FFN_BEGIN:
+        case TRANSFORMER_BLOCK_FFN:
         info->ffn->beginForwarding();
         break;
-        case STEP_FFN_END:
-        info->ffn->waitForEnd();
-        break;
-        case STEP_FFN2_BEGIN:
+        case TRANSFORMER_BLOCK_FFN2:
         info->ffn2->beginForwarding();
-        break;
-        case STEP_FFN2_END:
-        info->ffn2->waitForEnd();
         break;
     }
     return 0;
@@ -741,10 +720,10 @@ void TransformerBlock::forward(int pos, float* x) {
     float* k = keyCache + pos * kvDim;
     float* v = valueCache + pos * kvDim;
 
-    runStep(STEP_QKV_BEGIN);
-    runStep(STEP_QKV_END);
+    runStep(TRANSFORMER_BLOCK_QKV);
     for (int s = 0; s < spec->sliceCount; s++) {
         TransformerBlockQkv *qkv = qkvs[s];
+        qkv->waitForEnd();
         qkv->qSlice->mergeOutputs(s, q, (float*)firstState->getSlicedBuffer(SB_SLICED_Q, s));
         qkv->kSlice->mergeOutputs(s, k, (float*)firstState->getSlicedBuffer(SB_SLICED_K, s));
         qkv->vSlice->mergeOutputs(s, v, (float*)firstState->getSlicedBuffer(SB_SLICED_V, s));
@@ -801,9 +780,9 @@ void TransformerBlock::forward(int pos, float* x) {
         }
     }
 
-    runStep(STEP_ATT_BEGIN);
-    runStep(STEP_ATT_END);
+    runStep(TRANSFORMER_BLOCK_ATT);
     for (int s = 0; s < spec->sliceCount; s++) {
+        atts[s]->waitForEnd();
         atts[s]->woSlice->mergeOutputs(s, xb2, (float*)firstState->getSlicedBuffer(SB_SLICED_XB2, s));
     }
 
@@ -815,17 +794,17 @@ void TransformerBlock::forward(int pos, float* x) {
     // ffn rmsnorm
     rmsnorm(xb, x, rmsFfnWeight, dim);
 
-    runStep(STEP_FFN_BEGIN);
-    runStep(STEP_FFN_END);
+    runStep(TRANSFORMER_BLOCK_FFN);
     for (int s = 0; s < spec->sliceCount; s++) {
+        ffns[s]->waitForEnd();
         ffns[s]->w3Slice->mergeOutputs(s, hb, (float*)firstState->getSlicedBuffer(SB_SLICED_HB, s));
     }
 
     memcpy(hh, hb, hiddenDim * sizeof(float));
 
-    runStep(STEP_FFN2_BEGIN);
-    runStep(STEP_FFN2_END);
+    runStep(TRANSFORMER_BLOCK_FFN2);
     for (int s = 0; s < spec->sliceCount; s++) {
+        ffn2s[s]->waitForEnd();
         ffn2s[s]->w2Slice->mergeOutputs(s, xb, (float*)firstState->getSlicedBuffer(SB_SLICED_XB2, s));
     }
 
