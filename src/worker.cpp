@@ -7,7 +7,6 @@
 #include <cassert>
 #include <arpa/inet.h>
 #include <fcntl.h>
-#include <sys/ioctl.h>
 #include "funcs.hpp"
 #include "worker.hpp"
 
@@ -31,7 +30,7 @@ void Worker::readSocket(void* data, size_t bytes) {
             if (SOCKET_LAST_ERRCODE == EAGAIN) {
                 continue;
             }
-            printf("Error receiving data %d (%d)\n", SOCKET_LAST_ERRCODE, SOCKET_LAST_ERROR);
+            printf("Error receiving data %d (%s)\n", SOCKET_LAST_ERRCODE, SOCKET_LAST_ERROR);
             exit(EXIT_FAILURE);
         }
         data = (char*)data + r;

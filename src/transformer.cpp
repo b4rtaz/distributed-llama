@@ -7,7 +7,6 @@
 #include <cassert>
 #include <fcntl.h>
 #include <arpa/inet.h>
-#include <sys/ioctl.h>
 #include <errno.h>
 #include "quants.hpp"
 #include "funcs.hpp"
@@ -163,14 +162,12 @@ void RemoteClient::readBytes(uint8_t sliceIndex, void* data, size_t bytes) {
 void RemoteClient::dumpStatistics() {
     printf("⌛ ");
     for (size_t s = 0; s < sliceCount; s++) {
-        if (clientSockets[s] == REMOTE_CLIENT_LOCAL) {
-            printf("- ");
-            continue;
+        if (clientSockets[s] != REMOTE_CLIENT_LOCAL) {
+            printf("%zu: %3ldms/%3ldms/%4ldms ", s, sendBufferTime[s], readBufferTime[s], waitBufferTime[s]);
+            sendBufferTime[s] = 0;
+            readBufferTime[s] = 0;
+            waitBufferTime[s] = 0;
         }
-        printf("%zu: %3ldms/%3ldms/%4ldms ", s, sendBufferTime[s], readBufferTime[s], waitBufferTime[s]);
-        sendBufferTime[s] = 0;
-        readBufferTime[s] = 0;
-        waitBufferTime[s] = 0;
     }
     printf("\n");
 }
