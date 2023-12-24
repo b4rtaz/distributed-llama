@@ -11,6 +11,7 @@
 #include "funcs.hpp"
 #include "worker.hpp"
 
+#define SOCKET_LAST_ERRCODE errno
 #define SOCKET_LAST_ERROR strerror(errno)
 
 //
@@ -25,13 +26,13 @@ Worker::Worker(TransformerConfig* config, int clientSocket) {
 void Worker::readSocket(void* data, size_t bytes) {
     int len;
     while (bytes > 0) {
-        int r = recv(clientSocket, (char*)data, bytes, MSG_DONTWAIT);
-        if (r == 0) {
-            printf("Client disconnected\n");
+        int r = recv(clientSocket, (char*)data, bytes, 0);
+        if (r <= 0) {
+            if (SOCKET_LAST_ERRCODE == EAGAIN) {
+                continue;
+            }
+            printf("Error receiving data %d (%d)\n", SOCKET_LAST_ERRCODE, SOCKET_LAST_ERROR);
             exit(EXIT_FAILURE);
-        }
-        if (r == -1) {
-            continue;
         }
         data = (char*)data + r;
         bytes -= r;
@@ -214,6 +215,11 @@ void Worker::serve(TransformerConfig* config, int port) {
         int clientSocket = accept(serverSocket, (struct sockaddr*)&clientAddr, &clientAddrSize);
         if (clientSocket < 0) {
             printf("Error accepting connection\n");
+            exit(EXIT_FAILURE);
+        }
+
+        if (fcntl(clientSocket, F_SETFL, fcntl(clientSocket, F_GETFL) | O_NONBLOCK) < 0) {
+            printf("Error setting socket to non-blocking\n");
             exit(EXIT_FAILURE);
         }
 
