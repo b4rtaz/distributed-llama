@@ -25,18 +25,13 @@ Worker::Worker(TransformerConfig* config, int clientSocket) {
 void Worker::readSocket(void* data, size_t bytes) {
     int len;
     while (bytes > 0) {
-        // TODO: this is CPU burning approach
-        do {
-            if (ioctl(clientSocket, FIONREAD, &len) < 0) {
-                printf("Error getting socket data length\n");
-                exit(EXIT_FAILURE);
-            }
-        } while (len == 0);
-
-        int r = recv(clientSocket, (char*)data, bytes, 0);
-        if (r <= 0) {
-            printf("Error receiving data %d (%s)\n", r, SOCKET_LAST_ERROR);
+        int r = recv(clientSocket, (char*)data, bytes, MSG_DONTWAIT);
+        if (r == 0) {
+            printf("Client disconnected\n");
             exit(EXIT_FAILURE);
+        }
+        if (r == -1) {
+            continue;
         }
         data = (char*)data + r;
         bytes -= r;
@@ -219,11 +214,6 @@ void Worker::serve(TransformerConfig* config, int port) {
         int clientSocket = accept(serverSocket, (struct sockaddr*)&clientAddr, &clientAddrSize);
         if (clientSocket < 0) {
             printf("Error accepting connection\n");
-            exit(EXIT_FAILURE);
-        }
-
-        if (fcntl(clientSocket, F_SETFL, fcntl(clientSocket, F_GETFL) | O_NONBLOCK) < 0) {
-            printf("Error setting socket to non-blocking\n");
             exit(EXIT_FAILURE);
         }
 
