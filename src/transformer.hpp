@@ -343,6 +343,7 @@ public:
 
     long readWeights(char* wd);
     void forward(int pos, float* x);
+    void runStep(int step);
 };
 
 class Transformer {

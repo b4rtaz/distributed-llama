@@ -540,8 +540,12 @@ int main() {
     config.nThread = 4;
 
     SharedBuffer* buffer = initSharedBuffer(&spec);
-    NativeTransformerState* transformerState = new NativeTransformerState(buffer);
-    TransformerBlock block(0, &spec, &config, transformerState, NULL);
+    TransformerState* states[4];
+    states[0] = new NativeTransformerState(buffer);
+    states[1] = states[0];
+    states[2] = states[0];
+    states[3] = states[0];
+    TransformerBlock block(0, &spec, &config, (TransformerState**)&states);
 
     long wBytes = 809533440;
     long wSize = wBytes / sizeof(float);
@@ -564,7 +568,7 @@ int main() {
     printf("Forward pass took %ld ms\n", t1 - t0);
 
     delete[] weights;
-    delete transformerState;
+    delete (NativeTransformerState*)states[0];
     delete buffer;
 
     int ix = -1;

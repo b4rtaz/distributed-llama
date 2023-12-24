@@ -16,6 +16,7 @@
     #include <arm_neon.h>
 #endif
 
+#define SOCKET_LAST_ERRCODE errno
 #define SOCKET_LAST_ERROR strerror(errno)
 
 #define NEW_BUFFER(size) newBuffer(size)
@@ -148,10 +149,14 @@ void RemoteClient::sendBytes(uint8_t sliceIndex, void* data, size_t bytes) {
 
 void RemoteClient::readBytes(uint8_t sliceIndex, void* data, size_t bytes) {
     int clientSocket = this->clientSockets[sliceIndex];
+    int len;
     while (bytes > 0) {
         int r = recv(clientSocket, (char*)data, bytes, 0);
         if (r <= 0) {
-            printf("Error receiving buffer data %d (%s)\n", r, SOCKET_LAST_ERROR);
+            if (SOCKET_LAST_ERRCODE == EAGAIN) {
+                continue;
+            }
+            printf("Error receiving data %d (%s)\n", SOCKET_LAST_ERRCODE, SOCKET_LAST_ERROR);
             exit(EXIT_FAILURE);
         }
         data = (char*)data + r;
@@ -661,28 +666,62 @@ long TransformerBlock::readWeights(char* wd) {
     return (long)(w - wd);
 }
 
+#define STEP_QKV_BEGIN 0
+#define STEP_QKV_END 1
+#define STEP_ATT_BEGIN 2
+#define STEP_ATT_END 3
+#define STEP_FFN_BEGIN 4
+#define STEP_FFN_END 5
+#define STEP_FFN2_BEGIN 6
+#define STEP_FFN2_END 7
+
 void* transformerBlockThread(void* arg) {
     TransformerBlockThreadInfo* info = (TransformerBlockThreadInfo*)arg;
     switch (info->step)
     {
-        case TRANSFORMER_BLOCK_QKV:
+        case STEP_QKV_BEGIN:
         info->qkv->beginForwarding();
+        break;
+        case STEP_QKV_END:
         info->qkv->waitForEnd();
         break;
-        case TRANSFORMER_BLOCK_ATT:
+        case STEP_ATT_BEGIN:
         info->att->beginForwarding();
+        break;
+        case STEP_ATT_END:
         info->att->waitForEnd();
         break;
-        case TRANSFORMER_BLOCK_FFN:
+        case STEP_FFN_BEGIN:
         info->ffn->beginForwarding();
+        break;
+        case STEP_FFN_END:
         info->ffn->waitForEnd();
         break;
-        case TRANSFORMER_BLOCK_FFN2:
+        case STEP_FFN2_BEGIN:
         info->ffn2->beginForwarding();
+        break;
+        case STEP_FFN2_END:
         info->ffn2->waitForEnd();
         break;
     }
     return 0;
+}
+
+void TransformerBlock::runStep(int step) {
+    int s;
+    for (s = 0; s < spec->sliceCount; s++) {
+        threadInfos[s].step = step;
+        if (pthread_create(&threadInfos[s].handler, NULL, transformerBlockThread, (void*)&threadInfos[s]) != 0) {
+            fprintf(stderr, "error: pthread_create failed\n");
+            exit(EXIT_FAILURE);
+        }
+    }
+    for (s = 0; s < spec->sliceCount; s++) {
+        if (pthread_join(threadInfos[s].handler, NULL) != 0) {
+            fprintf(stderr, "error: pthread_join failed\n");
+            exit(EXIT_FAILURE);
+        }
+    }
 }
 
 void TransformerBlock::forward(int pos, float* x) {
@@ -702,12 +741,9 @@ void TransformerBlock::forward(int pos, float* x) {
     float* k = keyCache + pos * kvDim;
     float* v = valueCache + pos * kvDim;
 
+    runStep(STEP_QKV_BEGIN);
+    runStep(STEP_QKV_END);
     for (int s = 0; s < spec->sliceCount; s++) {
-        threadInfos[s].step = TRANSFORMER_BLOCK_QKV;
-        pthread_create(&threadInfos[s].handler, NULL, transformerBlockThread, (void*)&threadInfos[s]);
-    }
-    for (int s = 0; s < spec->sliceCount; s++) {
-        pthread_join(threadInfos[s].handler, NULL);
         TransformerBlockQkv *qkv = qkvs[s];
         qkv->qSlice->mergeOutputs(s, q, (float*)firstState->getSlicedBuffer(SB_SLICED_Q, s));
         qkv->kSlice->mergeOutputs(s, k, (float*)firstState->getSlicedBuffer(SB_SLICED_K, s));
@@ -765,12 +801,9 @@ void TransformerBlock::forward(int pos, float* x) {
         }
     }
 
+    runStep(STEP_ATT_BEGIN);
+    runStep(STEP_ATT_END);
     for (int s = 0; s < spec->sliceCount; s++) {
-        threadInfos[s].step = TRANSFORMER_BLOCK_ATT;
-        pthread_create(&threadInfos[s].handler, NULL, transformerBlockThread, (void*)&threadInfos[s]);
-    }
-    for (int s = 0; s < spec->sliceCount; s++) {
-        pthread_join(threadInfos[s].handler, NULL);
         atts[s]->woSlice->mergeOutputs(s, xb2, (float*)firstState->getSlicedBuffer(SB_SLICED_XB2, s));
     }
 
@@ -782,23 +815,17 @@ void TransformerBlock::forward(int pos, float* x) {
     // ffn rmsnorm
     rmsnorm(xb, x, rmsFfnWeight, dim);
 
+    runStep(STEP_FFN_BEGIN);
+    runStep(STEP_FFN_END);
     for (int s = 0; s < spec->sliceCount; s++) {
-        threadInfos[s].step = TRANSFORMER_BLOCK_FFN;
-        pthread_create(&threadInfos[s].handler, NULL, transformerBlockThread, (void*)&threadInfos[s]);
-    }
-    for (int s = 0; s < spec->sliceCount; s++) {
-        pthread_join(threadInfos[s].handler, NULL);
         ffns[s]->w3Slice->mergeOutputs(s, hb, (float*)firstState->getSlicedBuffer(SB_SLICED_HB, s));
     }
 
     memcpy(hh, hb, hiddenDim * sizeof(float));
 
+    runStep(STEP_FFN2_BEGIN);
+    runStep(STEP_FFN2_END);
     for (int s = 0; s < spec->sliceCount; s++) {
-        threadInfos[s].step = TRANSFORMER_BLOCK_FFN2;
-        pthread_create(&threadInfos[s].handler, NULL, transformerBlockThread, (void*)&threadInfos[s]);
-    }
-    for (int s = 0; s < spec->sliceCount; s++) {
-        pthread_join(threadInfos[s].handler, NULL);
         ffn2s[s]->w2Slice->mergeOutputs(s, xb, (float*)firstState->getSlicedBuffer(SB_SLICED_XB2, s));
     }
 
