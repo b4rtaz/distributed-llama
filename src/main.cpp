@@ -7,12 +7,6 @@
 #include "tokenizer.hpp"
 #include "worker.hpp"
 
-struct SlicesProgramArgs {
-    int count;
-    char** hosts;
-    int* ports;
-};
-
 struct ProgramArgs {
     char* mode;
     int nThread; 
@@ -22,7 +16,9 @@ struct ProgramArgs {
     char* tokenizerPath;
     char* prompt;
     FloatType floatType;
-    SlicesProgramArgs* slices;
+    int sliceCount;
+    char** sliceHosts;
+    int* slicePorts;
 
     // worker
     int port;
@@ -36,6 +32,9 @@ int usage() {
 
 void loadConfig(ProgramArgs* args, TransformerConfig* config) {
     config->nThread = args->nThread;
+    config->sliceCount = args->sliceCount;
+    config->sliceHosts = args->sliceHosts;
+    config->slicePorts = args->slicePorts;
 }
 
 int inference(ProgramArgs* args) {
@@ -48,19 +47,13 @@ int inference(ProgramArgs* args) {
     int steps = 256;
 
     TransformerSpec spec;
-    int sliceCount = args->slices != NULL ? args->slices->count : 1;
-    loadTransformerSpec(&spec, args->modelPath, args->floatType, sliceCount);
+    loadTransformerSpec(&spec, args->modelPath, args->floatType, args->sliceCount);
 
     TransformerConfig config;
     loadConfig(args, &config);
 
-    RemoteClient* clientOrNull = NULL;
-    if (args->slices != NULL) {
-        clientOrNull = new WorkerRemoteClient(&spec, args->slices->hosts, args->slices->ports);
-    }
-
     Transformer* transformer;
-    loadTransformer(&transformer, &spec, &config, args->modelPath, clientOrNull);
+    loadTransformer(&transformer, &spec, &config, args->modelPath);
 
     generate(transformer, args->tokenizerPath, temperature, topp, steps, args->prompt);
 
@@ -90,7 +83,7 @@ int main(int argc, char *argv[]) {
     args.tokenizerPath = NULL;
     args.prompt = NULL;
     args.floatType = F32;
-    args.slices = NULL;
+    args.sliceCount = 0;
     args.port = 9990;
 
     if (argc > 1) {
@@ -112,22 +105,28 @@ int main(int argc, char *argv[]) {
             for (; j < argc && argv[j][0] != '-'; j++);
             int count = j - i - 1;
 
-            args.slices = new SlicesProgramArgs();
-            args.slices->count = count;
-            args.slices->hosts = new char*[count];
-            args.slices->ports = new int[count];
+            args.sliceCount = count;
+            args.sliceHosts = new char*[count];
+            args.slicePorts = new int[count];
 
             for (int s = 0; s < count; s++) {
-                char* sep = strstr(argv[i + 1 + s], ":");
+                char* v = argv[i + 1 + s];
+                if (strcmp(v, "local") == 0) {
+                    args.sliceHosts[s] = NULL;
+                    args.slicePorts[s] = -1;
+                    continue;
+                }
+
+                char* sep = strstr(v, ":");
                 if (sep == NULL) {
-                    printf("Invalid address %s\n", argv[i + 1 + s]);
+                    printf("Invalid address %s\n", v);
                     exit(EXIT_FAILURE);
                 }
-                int hostLen = sep - argv[i + 1 + s];
-                args.slices->hosts[s] = new char[hostLen + 1];
-                memcpy(args.slices->hosts[s], argv[i + 1 + s], hostLen);
-                args.slices->hosts[s][hostLen] = '\0';
-                args.slices->ports[s] = atoi(sep + 1);
+                int hostLen = sep - v;
+                args.sliceHosts[s] = new char[hostLen + 1];
+                memcpy(args.sliceHosts[s], v, hostLen);
+                args.sliceHosts[s][hostLen] = '\0';
+                args.slicePorts[s] = atoi(sep + 1);
             }
 
             i += count;
@@ -140,6 +139,13 @@ int main(int argc, char *argv[]) {
 
     if (args.mode != NULL) {
         if (strcmp(args.mode, "inference") == 0) {
+            if (args.sliceCount == 0) {
+                args.sliceCount = 1;
+                args.sliceHosts = new char*[1];
+                args.slicePorts = new int[1];
+                args.sliceHosts[0] = NULL;
+            }
+
             return inference(&args);
         } else if (strcmp(args.mode, "worker") == 0) {
             return worker(&args);

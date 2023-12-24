@@ -37,15 +37,34 @@ public:
 class TransformerConfig {
 public:
     int nThread;
+    int sliceCount;
+    char** sliceHosts;
+    int* slicePorts;
 };
 
+#define ACTION_HELLO 0
+#define ACTION_CREATE_FRAGMENT 1
+#define ACTION_FORWARD_FRAGMENT 2
+#define ACTION_SEND_BUFFER 3
+
 class RemoteClient {
+private:
+    int sliceCount;
+    int* clientSockets;
+    long* waitBufferTime;
+    long* sendBufferTime;
+    long* readBufferTime;
 public:
-    virtual void createFragment(uint8_t sliceIndex, uint8_t layerIndex, uint8_t type, char* data, size_t bytes) = 0;
-    virtual void forwardFragment(uint8_t sliceIndex, uint8_t layerIndex, uint8_t type) = 0;
-    virtual void sendBuffer(uint8_t sliceIndex, uint8_t bufferIndex, void* data, size_t bytes) = 0;
-    virtual void readBuffer(uint8_t sliceIndex, uint8_t bufferIndex, void* data, size_t bytes) = 0;
-    virtual void dumpStatistics() = 0;
+    RemoteClient(TransformerSpec* spec, TransformerConfig* config);
+    ~RemoteClient();
+    void createFragment(uint8_t sliceIndex, uint8_t layerIndex, uint8_t type, char* weights, size_t bytes);
+    void forwardFragment(uint8_t sliceIndex, uint8_t layerIndex, uint8_t type);
+    void sendBuffer(uint8_t sliceIndex, uint8_t bufferIndex, void* data, size_t bytes);
+    void readBuffer(uint8_t sliceIndex, uint8_t bufferIndex, void* data, size_t bytes);
+    void dumpStatistics();
+private:
+    void sendBytes(uint8_t sliceIndex, void* data, size_t bytes);
+    void readBytes(uint8_t sliceIndex, void* data, size_t bytes);
 };
 
 #define TRANSFORMER_BLOCK_QKV 0
@@ -55,6 +74,7 @@ public:
 
 class TransformerState {
 public:
+    virtual bool isRemote() = 0;
     virtual char* getSlicedBuffer(uint8_t bufferIndex, uint8_t sliceIndex) = 0;
     virtual char* getUnitBuffer(uint8_t bufferIndex) = 0;
     virtual void readSlicedBuffer(uint8_t bufferIndex, uint8_t sliceIndex) = 0;
@@ -67,6 +87,7 @@ private:
     SharedBuffer* buffer;
 public:
     NativeTransformerState(SharedBuffer* buffer);
+    bool isRemote();
     char* getSlicedBuffer(uint8_t bufferIndex, uint8_t sliceIndex);
     char* getUnitBuffer(uint8_t bufferIndex);
     void readSlicedBuffer(uint8_t bufferIndex, uint8_t sliceIndex);
@@ -81,6 +102,9 @@ private:
 public:
     RemoteTransformerState(SharedBuffer* buffer, RemoteClient* client);
     ~RemoteTransformerState();
+    bool isRemote();
+    void createFragment(uint8_t sliceIndex, uint8_t layerIndex, uint8_t type, char* weights, size_t bytes);
+    void forwardFragment(uint8_t sliceIndex, uint8_t layerIndex, uint8_t type);
     char* getSlicedBuffer(uint8_t bufferIndex, uint8_t sliceIndex);
     char* getUnitBuffer(uint8_t bufferIndex);
     void readSlicedBuffer(uint8_t bufferIndex, uint8_t sliceIndex);
@@ -99,10 +123,9 @@ protected:
     int layerIndex;
     int sliceIndex;
     TransformerSpec* spec;
-    TransformerState* state;
 
 public:
-    TransformerFragment(int layerIndex, int sliceIndex, TransformerSpec* spec, TransformerState* state);
+    TransformerFragment(int layerIndex, int sliceIndex, TransformerSpec* spec);
 };
 
 //
@@ -115,7 +138,7 @@ public:
     MatMulSlice* kSlice;
     MatMulSlice* vSlice;
 
-    TransformerBlockQkv(int layerIndex, int sliceIndex, TransformerSpec* spec, TransformerState* state);
+    TransformerBlockQkv(int layerIndex, int sliceIndex, TransformerSpec* spec);
     virtual ~TransformerBlockQkv();
 
     virtual void readWeights(char* qWeights, char* kWeights, char* vWeights) = 0;
@@ -125,6 +148,7 @@ public:
 
 class NativeTransformerBlockQkv: public TransformerBlockQkv {
 private:
+    TransformerState* state;
     TransformerConfig* config;
 public:
     char* qWeights0;
@@ -141,9 +165,9 @@ public:
 
 class RemoteTransformerBlockQkv: public TransformerBlockQkv {
 private:
-    RemoteClient* client;
+    RemoteTransformerState* state;
 public:
-    RemoteTransformerBlockQkv(int layerIndex, int sliceIndex, TransformerSpec* spec, TransformerState* state, RemoteClient* client);
+    RemoteTransformerBlockQkv(int layerIndex, int sliceIndex, TransformerSpec* spec, RemoteTransformerState* state);
 
     void readWeights(char* qWeights, char* kWeights, char* vWeights);
     void beginForwarding();
@@ -158,7 +182,7 @@ class TransformerBlockAtt: public TransformerFragment {
 public:
     MatMulSlice* woSlice;
 
-    TransformerBlockAtt(int layerIndex, int sliceIndex, TransformerSpec* spec, TransformerState* state);
+    TransformerBlockAtt(int layerIndex, int sliceIndex, TransformerSpec* spec);
     virtual ~TransformerBlockAtt();
 
     virtual void readWeights(char* woWeights) = 0;
@@ -168,6 +192,7 @@ public:
 
 class NativeTransformerBlockAtt: public TransformerBlockAtt {
 private:
+    TransformerState* state;
     TransformerConfig* config;
 public:
     char* woWeights0;
@@ -182,9 +207,9 @@ public:
 
 class RemoteTransformerBlockAtt: public TransformerBlockAtt {
 private:
-    RemoteClient* client;
+    RemoteTransformerState* state;
 public:
-    RemoteTransformerBlockAtt(int layerIndex, int sliceIndex, TransformerSpec* spec, TransformerState* state, RemoteClient* client);
+    RemoteTransformerBlockAtt(int layerIndex, int sliceIndex, TransformerSpec* spec, RemoteTransformerState* state);
 
     void readWeights(char* woWeights);
     void beginForwarding();
@@ -200,7 +225,7 @@ public:
     MatMulSlice* w1Slice;
     MatMulSlice* w3Slice;
 
-    TransformerBlockFfn(int layerIndex, int sliceIndex, TransformerSpec* spec, TransformerState* state);
+    TransformerBlockFfn(int layerIndex, int sliceIndex, TransformerSpec* spec);
     virtual ~TransformerBlockFfn();
 
     virtual void readWeights(char* w1Weights, char* w3Weights) = 0;
@@ -210,6 +235,7 @@ public:
 
 class NativeTransformerBlockFfn: public TransformerBlockFfn {
 private:
+    TransformerState* state;
     TransformerConfig* config;
     float *hb20;
 public:
@@ -226,9 +252,9 @@ public:
 
 class RemoteTransformerBlockFfn: public TransformerBlockFfn {
 private:
-    RemoteClient* client;
+    RemoteTransformerState* state;
 public:
-    RemoteTransformerBlockFfn(int layerIndex, int sliceIndex, TransformerSpec* spec, TransformerState* state, RemoteClient* client);
+    RemoteTransformerBlockFfn(int layerIndex, int sliceIndex, TransformerSpec* spec, RemoteTransformerState* state);
 
     void readWeights(char* w1Weights, char* w3Weights);
     void beginForwarding();
@@ -243,7 +269,7 @@ class TransformerBlockFfn2: public TransformerFragment {
 public:
     MatMulSlice* w2Slice;
 
-    TransformerBlockFfn2(int layerIndex, int sliceIndex, TransformerSpec* spec, TransformerState* state);
+    TransformerBlockFfn2(int layerIndex, int sliceIndex, TransformerSpec* spec);
     virtual ~TransformerBlockFfn2();
 
     virtual void readWeights(char* w2Weights) = 0;
@@ -253,6 +279,7 @@ public:
 
 class NativeTransformerBlockFfn2: public TransformerBlockFfn2 {
 private:
+    TransformerState* state;
     TransformerConfig* config;
 public:
     char* w2Weights0;
@@ -267,9 +294,9 @@ public:
 
 class RemoteTransformerBlockFfn2: public TransformerBlockFfn2 {
 private:
-    RemoteClient* client;
+    RemoteTransformerState* state;
 public:
-    RemoteTransformerBlockFfn2(int layerIndex, int sliceIndex, TransformerSpec* spec, TransformerState* state, RemoteClient* client);
+    RemoteTransformerBlockFfn2(int layerIndex, int sliceIndex, TransformerSpec* spec, RemoteTransformerState* state);
 
     void readWeights(char* w2Weights);
     void beginForwarding();
@@ -294,7 +321,7 @@ class TransformerBlock {
 private:
     int layerIndex;
     TransformerSpec* spec;
-    TransformerState* state;
+    TransformerState* firstState;
     TransformerBlockQkv **qkvs;
     TransformerBlockAtt **atts;
     TransformerBlockFfn **ffns;
@@ -311,7 +338,7 @@ public:
     float* valueCache; // (seq_len, kv_dim)
     float* att; // (n_heads, seq_len)
 
-    TransformerBlock(int layerIndex, TransformerSpec* spec, TransformerConfig* config, TransformerState* state, RemoteClient* clientOrNull);
+    TransformerBlock(int layerIndex, TransformerSpec* spec, TransformerConfig* config, TransformerState** states);
     ~TransformerBlock();
 
     long readWeights(char* wd);
@@ -322,9 +349,8 @@ class Transformer {
 public:
     TransformerSpec* spec;
     TransformerConfig* config;
-    RemoteClient* clientOrNull;
+    RemoteClient* client;
 private:
-    TransformerState* state;
     TransformerBlock** blocks;
 
     float* x;
@@ -335,7 +361,7 @@ private:
     char* wcls;
 public:
     float* logits;
-    Transformer(TransformerSpec* spec, TransformerConfig* config, TransformerState* state, RemoteClient* clientOrNull);
+    Transformer(TransformerSpec* spec, TransformerConfig* config, TransformerState** states, RemoteClient* client);
     ~Transformer();
 
     long readWeights(char* wd);
@@ -343,6 +369,6 @@ public:
 };
 
 void loadTransformerSpec(TransformerSpec* spec, const char* path, FloatType type, int sliceCount);
-void loadTransformer(Transformer** transformerOut, TransformerSpec* spec, TransformerConfig* config, const char* path, RemoteClient* clientOrNull);
+void loadTransformer(Transformer** transformerOut, TransformerSpec* spec, TransformerConfig* config, const char* path);
 
 #endif

@@ -14,135 +14,6 @@
 #define SOCKET_LAST_ERROR strerror(errno)
 
 //
-// WorkerRemoteClient
-//
-
-WorkerRemoteClient::WorkerRemoteClient(TransformerSpec* spec, char** hosts, int* ports) {
-    sliceCount = spec->sliceCount;
-    clientSockets = new int[spec->sliceCount];
-    waitBufferTime = new long[spec->sliceCount];
-    sendBufferTime = new long[spec->sliceCount];
-    readBufferTime = new long[spec->sliceCount];
-
-    struct sockaddr_in clientAddr;
-    for (uint8_t s = 0; s < sliceCount; s++) {
-        waitBufferTime[s] = 0;
-        sendBufferTime[s] = 0;
-        readBufferTime[s] = 0;
-
-        char* host = hosts[s];
-        int port = ports[s];
-
-        memset(&clientAddr, 0, sizeof(clientAddr));
-        clientAddr.sin_family = AF_INET;
-        clientAddr.sin_addr.s_addr = inet_addr(host);
-        clientAddr.sin_port = htons(port);
-
-        int clientSocket = socket(AF_INET, SOCK_STREAM, 0);
-        if (clientSocket < 0) {
-            printf("Error creating socket\n");
-            exit(EXIT_FAILURE);
-        }
-
-        int connectResult = connect(clientSocket, (struct sockaddr*)&clientAddr, sizeof(clientAddr));
-        if (connectResult != 0) {
-            printf("Cannot connect to %s:%d (%s)\n", host, port, SOCKET_LAST_ERROR);
-            exit(EXIT_FAILURE);
-        }
-
-        printf("Connected to %s:%d\n", host, port);
-        this->clientSockets[s] = clientSocket;
-
-        uint8_t header[] = { ACTION_HELLO, s };
-        sendBytes(s, header, sizeof(header));
-        sendBytes(s, (void*)spec, sizeof(TransformerSpec));
-    }
-}
-
-WorkerRemoteClient::~WorkerRemoteClient() {
-    delete[] clientSockets;
-    delete[] waitBufferTime;
-    delete[] sendBufferTime;
-    delete[] readBufferTime;
-}
-
-void WorkerRemoteClient::createFragment(uint8_t sliceIndex, uint8_t layerIndex, uint8_t type, char* weights, size_t bytes) {
-    uint8_t header[] = { ACTION_CREATE_FRAGMENT, layerIndex, type };
-    sendBytes(sliceIndex, header, sizeof(header));
-    sendBytes(sliceIndex, &bytes, sizeof(size_t));
-    sendBytes(sliceIndex, weights, bytes);
-}
-
-void WorkerRemoteClient::forwardFragment(uint8_t sliceIndex, uint8_t layerIndex, uint8_t type) {
-    uint8_t header[] = { ACTION_FORWARD_FRAGMENT, layerIndex, type };
-    sendBytes(sliceIndex, header, sizeof(header));
-}
-
-void WorkerRemoteClient::sendBuffer(uint8_t sliceIndex, uint8_t bufferIndex, void* data, size_t bytes) {
-    uint8_t header[] = { ACTION_SEND_BUFFER, bufferIndex };
-    long t0 = timeMs();
-    sendBytes(sliceIndex, header, sizeof(header));
-    sendBytes(sliceIndex, data, bytes);
-    long t1 = timeMs();
-    sendBufferTime[sliceIndex] += t1 - t0;
-}
-
-void WorkerRemoteClient::readBuffer(uint8_t sliceIndex, uint8_t bufferIndex, void* data, size_t bytes) {
-    int clientSocket = this->clientSockets[sliceIndex];
-
-    long t0 = timeMs();
-    uint8_t header[2];
-    readBytes(sliceIndex, (void*)&header, sizeof(header));
-    if (header[0] != ACTION_SEND_BUFFER || header[1] != bufferIndex) {
-        printf("Unexpected buffer header %d %d\n", header[0], header[1]);
-        exit(EXIT_FAILURE);
-    }
-    long t1 = timeMs();
-    readBytes(sliceIndex, data, bytes);
-    long t2 = timeMs();
-
-    waitBufferTime[sliceIndex] += t1 - t0;
-    readBufferTime[sliceIndex] += t2 - t1;
-}
-
-void WorkerRemoteClient::sendBytes(uint8_t sliceIndex, void* data, size_t bytes) {
-    int clientSocket = this->clientSockets[sliceIndex];
-    while (bytes > 0) {
-        int s = send(clientSocket, (char*)data, bytes, 0);
-        if (s <= 0) {
-            printf("Error sending data %d (%s)\n", s, SOCKET_LAST_ERROR);
-            exit(EXIT_FAILURE);
-        }
-        bytes -= s;
-        data = (char*)data + s;
-    }
-}
-
-void WorkerRemoteClient::readBytes(uint8_t sliceIndex, void* data, size_t bytes) {
-    int clientSocket = this->clientSockets[sliceIndex];
-    while (bytes > 0) {
-        int r = recv(clientSocket, (char*)data, bytes, 0);
-        if (r <= 0) {
-            printf("Error receiving buffer data %d (%s)\n", r, SOCKET_LAST_ERROR);
-            exit(EXIT_FAILURE);
-        }
-        data = (char*)data + r;
-        bytes -= r;
-    }
-}
-
-void WorkerRemoteClient::dumpStatistics() {
-    printf("⌛ ");
-    for (size_t s = 0; s < sliceCount; s++) {
-        printf("%zu: %3ldms/%3ldms/%4ldms ", s, sendBufferTime[s], readBufferTime[s], waitBufferTime[s]);
-        sendBufferTime[s] = 0;
-        readBufferTime[s] = 0;
-        waitBufferTime[s] = 0;
-    }
-    printf("\n");
-}
-
-//
 // Worker
 //
 
@@ -372,6 +243,10 @@ void Worker::serve(TransformerConfig* config, int port) {
 WorkerTransformerState::WorkerTransformerState(SharedBuffer* buffer, Worker* worker) {
     this->buffer = buffer;
     this->worker = worker;
+}
+
+bool WorkerTransformerState::isRemote() {
+    return false;
 }
 
 char* WorkerTransformerState::getSlicedBuffer(uint8_t bufferIndex, uint8_t sliceIndex) {
