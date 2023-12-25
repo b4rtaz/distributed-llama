@@ -82,6 +82,11 @@ RemoteClient::RemoteClient(TransformerSpec* spec, TransformerConfig* config) {
         printf("Connected to %s:%d\n", host, port);
         this->clientSockets[s] = clientSocket;
 
+        if (fcntl(clientSocket, F_SETFL, fcntl(clientSocket, F_GETFL) | O_NONBLOCK) < 0) {
+            printf("Error setting socket to non-blocking\n");
+            exit(EXIT_FAILURE);
+        }
+
         uint8_t header[] = { ACTION_HELLO, s };
         sendBytes(s, header, sizeof(header));
         sendBytes(s, (void*)spec, sizeof(TransformerSpec));
@@ -139,7 +144,10 @@ void RemoteClient::sendBytes(uint8_t sliceIndex, void* data, size_t bytes) {
     while (bytes > 0) {
         int s = send(clientSocket, (char*)data, bytes, 0);
         if (s <= 0) {
-            printf("Error sending data %d (%s)\n", s, SOCKET_LAST_ERROR);
+            if (SOCKET_LAST_ERRCODE == EAGAIN) {
+                continue;
+            }
+            printf("Error sending data %d (%s)\n", SOCKET_LAST_ERRCODE, SOCKET_LAST_ERROR);
             exit(EXIT_FAILURE);
         }
         bytes -= s;
@@ -670,19 +678,35 @@ void* transformerBlockThread(void* arg) {
     {
         case TRANSFORMER_BLOCK_QKV:
         info->block->qkvs[info->sliceIndex]->beginForwarding();
-        info->block->qkvs[info->sliceIndex]->waitForEnd();
+        if (info->sliceIndex == 0) {
+            for (int s = 0; s < info->block->spec->sliceCount; s++) {
+                info->block->qkvs[s]->waitForEnd();
+            }
+        }
         break;
         case TRANSFORMER_BLOCK_ATT:
         info->block->atts[info->sliceIndex]->beginForwarding();
-        info->block->atts[info->sliceIndex]->waitForEnd();
+        if (info->sliceIndex == 0) {
+            for (int s = 0; s < info->block->spec->sliceCount; s++) {
+                info->block->atts[s]->waitForEnd();
+            }
+        }
         break;
         case TRANSFORMER_BLOCK_FFN:
         info->block->ffns[info->sliceIndex]->beginForwarding();
-        info->block->ffns[info->sliceIndex]->waitForEnd();
+        if (info->sliceIndex == 0) {
+            for (int s = 0; s < info->block->spec->sliceCount; s++) {
+                info->block->ffns[s]->waitForEnd();
+            }
+        }
         break;
         case TRANSFORMER_BLOCK_FFN2:
         info->block->ffn2s[info->sliceIndex]->beginForwarding();
-        info->block->ffn2s[info->sliceIndex]->waitForEnd();
+        if (info->sliceIndex == 0) {
+            for (int s = 0; s < info->block->spec->sliceCount; s++) {
+                info->block->ffn2s[s]->waitForEnd();
+            }
+        }
         break;
     }
     return 0;
