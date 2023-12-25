@@ -670,35 +670,19 @@ void* transformerBlockThread(void* arg) {
     {
         case TRANSFORMER_BLOCK_QKV:
         info->block->qkvs[info->sliceIndex]->beginForwarding();
-        if (info->sliceIndex == 0) {
-            for (int s = 0; s < info->block->spec->sliceCount; s++) {
-                info->block->qkvs[s]->waitForEnd();
-            }
-        }
+        info->block->qkvs[info->sliceIndex]->waitForEnd();
         break;
         case TRANSFORMER_BLOCK_ATT:
         info->block->atts[info->sliceIndex]->beginForwarding();
-        if (info->sliceIndex == 0) {
-            for (int s = 0; s < info->block->spec->sliceCount; s++) {
-                info->block->atts[s]->waitForEnd();
-            }
-        }
+        info->block->atts[info->sliceIndex]->waitForEnd();
         break;
         case TRANSFORMER_BLOCK_FFN:
         info->block->ffns[info->sliceIndex]->beginForwarding();
-        if (info->sliceIndex == 0) {
-            for (int s = 0; s < info->block->spec->sliceCount; s++) {
-                info->block->ffns[s]->waitForEnd();
-            }
-        }
+        info->block->ffns[info->sliceIndex]->waitForEnd();
         break;
         case TRANSFORMER_BLOCK_FFN2:
         info->block->ffn2s[info->sliceIndex]->beginForwarding();
-        if (info->sliceIndex == 0) {
-            for (int s = 0; s < info->block->spec->sliceCount; s++) {
-                info->block->ffn2s[s]->waitForEnd();
-            }
-        }
+        info->block->ffn2s[info->sliceIndex]->waitForEnd();
         break;
     }
     return 0;
