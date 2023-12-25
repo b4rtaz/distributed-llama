@@ -573,6 +573,7 @@ TransformerBlock::TransformerBlock(int layerIndex, TransformerSpec* spec, Transf
     ffns = new TransformerBlockFfn*[spec->sliceCount];
     ffn2s = new TransformerBlockFfn2*[spec->sliceCount];
     threadInfos = new TransformerBlockThreadInfo[spec->sliceCount];
+
     for (int s = 0; s < spec->sliceCount; s++) {
         TransformerState* state = states[s];
         if (state->isRemote()) {
@@ -588,10 +589,7 @@ TransformerBlock::TransformerBlock(int layerIndex, TransformerSpec* spec, Transf
         }
         TransformerBlockThreadInfo* ti = &threadInfos[s];
         ti->sliceIndex = s;
-        ti->qkv = qkvs[s];
-        ti->att = atts[s];
-        ti->ffn = ffns[s];
-        ti->ffn2 = ffn2s[s];
+        ti->block = this;
     }
 
     xb2 = new float[spec->dim];
@@ -671,16 +669,36 @@ void* transformerBlockThread(void* arg) {
     switch (info->step)
     {
         case TRANSFORMER_BLOCK_QKV:
-        info->qkv->beginForwarding();
+        info->block->qkvs[info->sliceIndex]->beginForwarding();
+        if (info->sliceIndex == 0) {
+            for (int s = 0; s < info->block->spec->sliceCount; s++) {
+                info->block->qkvs[s]->waitForEnd();
+            }
+        }
         break;
         case TRANSFORMER_BLOCK_ATT:
-        info->att->beginForwarding();
+        info->block->atts[info->sliceIndex]->beginForwarding();
+        if (info->sliceIndex == 0) {
+            for (int s = 0; s < info->block->spec->sliceCount; s++) {
+                info->block->atts[s]->waitForEnd();
+            }
+        }
         break;
         case TRANSFORMER_BLOCK_FFN:
-        info->ffn->beginForwarding();
+        info->block->ffns[info->sliceIndex]->beginForwarding();
+        if (info->sliceIndex == 0) {
+            for (int s = 0; s < info->block->spec->sliceCount; s++) {
+                info->block->ffns[s]->waitForEnd();
+            }
+        }
         break;
         case TRANSFORMER_BLOCK_FFN2:
-        info->ffn2->beginForwarding();
+        info->block->ffn2s[info->sliceIndex]->beginForwarding();
+        if (info->sliceIndex == 0) {
+            for (int s = 0; s < info->block->spec->sliceCount; s++) {
+                info->block->ffn2s[s]->waitForEnd();
+            }
+        }
         break;
     }
     return 0;
@@ -723,7 +741,6 @@ void TransformerBlock::forward(int pos, float* x) {
     runStep(TRANSFORMER_BLOCK_QKV);
     for (int s = 0; s < spec->sliceCount; s++) {
         TransformerBlockQkv *qkv = qkvs[s];
-        qkv->waitForEnd();
         qkv->qSlice->mergeOutputs(s, q, (float*)firstState->getSlicedBuffer(SB_SLICED_Q, s));
         qkv->kSlice->mergeOutputs(s, k, (float*)firstState->getSlicedBuffer(SB_SLICED_K, s));
         qkv->vSlice->mergeOutputs(s, v, (float*)firstState->getSlicedBuffer(SB_SLICED_V, s));
@@ -782,7 +799,6 @@ void TransformerBlock::forward(int pos, float* x) {
 
     runStep(TRANSFORMER_BLOCK_ATT);
     for (int s = 0; s < spec->sliceCount; s++) {
-        atts[s]->waitForEnd();
         atts[s]->woSlice->mergeOutputs(s, xb2, (float*)firstState->getSlicedBuffer(SB_SLICED_XB2, s));
     }
 
@@ -796,7 +812,6 @@ void TransformerBlock::forward(int pos, float* x) {
 
     runStep(TRANSFORMER_BLOCK_FFN);
     for (int s = 0; s < spec->sliceCount; s++) {
-        ffns[s]->waitForEnd();
         ffns[s]->w3Slice->mergeOutputs(s, hb, (float*)firstState->getSlicedBuffer(SB_SLICED_HB, s));
     }
 
@@ -804,7 +819,6 @@ void TransformerBlock::forward(int pos, float* x) {
 
     runStep(TRANSFORMER_BLOCK_FFN2);
     for (int s = 0; s < spec->sliceCount; s++) {
-        ffn2s[s]->waitForEnd();
         ffn2s[s]->w2Slice->mergeOutputs(s, xb, (float*)firstState->getSlicedBuffer(SB_SLICED_XB2, s));
     }
 

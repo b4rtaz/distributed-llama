@@ -307,18 +307,17 @@ public:
 // TransformerBlock
 //
 
+class TransformerBlock;
+
 struct TransformerBlockThreadInfo {
     pthread_t handler;
     int sliceIndex;
     int step;
-    TransformerBlockQkv* qkv;
-    TransformerBlockAtt* att;
-    TransformerBlockFfn* ffn;
-    TransformerBlockFfn2* ffn2;
+    TransformerBlock* block;
 };
 
 class TransformerBlock {
-private:
+public:
     int layerIndex;
     TransformerSpec* spec;
     TransformerState* firstState;
@@ -327,7 +326,7 @@ private:
     TransformerBlockFfn **ffns;
     TransformerBlockFfn2 **ffn2s;
     TransformerBlockThreadInfo *threadInfos;
-public:
+
     float* rmsAttWeight; // (dim)
     float* rmsFfnWeight; // (dim)
 
