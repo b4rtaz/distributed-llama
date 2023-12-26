@@ -217,26 +217,6 @@ void matmulQ40vQ80(MatmulThreadInfo* a) {
 #endif
 }
 
-void* matmulThread(void* arg) {
-    MatmulThreadInfo* a = (MatmulThreadInfo*)arg;
-    switch (a->type)
-    {
-        case F32:
-            matmulF32(a);
-            break;
-        case F16:
-            matmulF16(a);
-            break;
-        case Q40:
-            matmulQ40vQ80(a);
-            break;
-        default:
-            printf("Unknown float type %d\n", a->type);
-            exit(EXIT_FAILURE);
-    }
-    return 0;
-}
-
 //     weights      input    output
 //   ___________     ___      ___
 //   |         |     | |      | |
@@ -244,29 +224,37 @@ void* matmulThread(void* arg) {
 //   |_________|   n | |      |_|
 //        n          |_|       1
 //                    1
-void matmul(FloatType type, int nThread, float* output, float* input, void* weights, int n, int d) {
-    MatmulThreadInfo args[nThread];
-
+void matmul(FloatType type, float* output, float* input, void* weights, int n, int d, unsigned int nThreads, unsigned int threadIndex) {
     if (type == Q40) {
+        // TODO: this should be done once, not by every thread
         BlockQ80* bq80 = new BlockQ80[n / QK80];
         quantizeQ80Row(input, bq80, n);
         input = (float*)bq80;
     }
 
-    int i;
-    for (i = 0; i < nThread; i++) {
-        MatmulThreadInfo* s = &args[i];
-        s->output = output;
-        s->input = input;
-        s->weights = weights;
-        s->type = type;
-        s->n = n;
-        s->ds = i * d / nThread;
-        s->de = (i + 1) * d / nThread;
-        int result = pthread_create(&args[i].handler, NULL, matmulThread, (void*)s);
-    }
-    for (i = 0; i < nThread; i++) {
-        pthread_join(args[i].handler, NULL);
+    MatmulThreadInfo s;
+    s.output = output;
+    s.input = input;
+    s.weights = weights;
+    s.type = type;
+    s.n = n;
+    s.ds = threadIndex * d / nThreads;
+    s.de = (threadIndex + 1) * d / nThreads;
+
+    switch (type)
+    {
+        case F32:
+            matmulF32(&s);
+            break;
+        case F16:
+            matmulF16(&s);
+            break;
+        case Q40:
+            matmulQ40vQ80(&s);
+            break;
+        default:
+            printf("Unknown float type %d\n", s.type);
+            exit(EXIT_FAILURE);
     }
 
     if (type == Q40) {

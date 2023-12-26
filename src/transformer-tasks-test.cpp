@@ -522,7 +522,7 @@ float expectedOutput[4096] = {
     1.00493455, 1.00216055, 1.02500832, 1.01412213, 0.997673035, 1.01922369, 1.01705575, 1.01369667,
 };
 
-int stopTask(unsigned int threadIndex, void* userData) {
+int stopTask(unsigned int nThreads, unsigned int threadIndex, void* userData) {
     return TASK_LOOP_STOP;
 }
 
@@ -560,13 +560,14 @@ int main() {
 
     TaskLoopTask* tasks = new TaskLoopTask[Inference::nTasks];
     memcpy(tasks, Inference::tasks, sizeof(TaskLoopTask) * Inference::nTasks);
-    tasks[Inference::nTasks - 1] = stopTask;
+    tasks[Inference::nTasks - 2] = stopTask; // Replaces nextBlock() with stopTask()
 
+    int nThreads = 4;
     TransformerContext context;
     context.transformer = &transformer;
     context.currentBlockIndex = 0;
 
-    TaskLoop loop(4, Inference::nTasks, tasks, &context);
+    TaskLoop loop(nThreads, Inference::nTasks, tasks, &context);
     long t0 = timeMs();
     loop.run();
     long t1 = timeMs();

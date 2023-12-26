@@ -10,7 +10,7 @@
     TransformerBlock* block = transformer->blocks[ctx->currentBlockIndex]; \
     TransformerSpec* spec = transformer->spec;
 
-int blockRmsAtt(unsigned int threadIndex, void* userData) {
+int blockRmsAtt(unsigned int nThreads, unsigned int threadIndex, void* userData) {
     TRANSFORMER_VARIABLES;
     if (threadIndex == 0) {
         float* xb = (float*)ctx->transformer->buffer->getUnit(TB_UNIT_XB);
@@ -19,28 +19,28 @@ int blockRmsAtt(unsigned int threadIndex, void* userData) {
     return TASK_LOOP_CONTINUE;
 }
 
-int blockQkv(unsigned int threadIndex, void* userData) {
+int blockQkv(unsigned int nThreads, unsigned int threadIndex, void* userData) {
     TRANSFORMER_VARIABLES;
-    if (threadIndex == 0) {
-        float *xb = (float*)transformer->buffer->getUnit(TB_UNIT_XB);
-        float *q0 = (float*)transformer->buffer->getSliced(TB_SLICED_Q, transformer->sliceIndex);
-        float *k0 = (float*)transformer->buffer->getSliced(TB_SLICED_K, transformer->sliceIndex);
-        float *v0 = (float*)transformer->buffer->getSliced(TB_SLICED_V, transformer->sliceIndex);
 
-        matmul(spec->floatType, 1, q0, xb, block->q0, block->q0Slice->n, block->q0Slice->d0);
-        matmul(spec->floatType, 1, k0, xb, block->k0, block->k0Slice->n, block->k0Slice->d0);
-        matmul(spec->floatType, 1, v0, xb, block->v0, block->v0Slice->n, block->v0Slice->d0);
-    }
+    float *xb = (float*)transformer->buffer->getUnit(TB_UNIT_XB);
+    float *q0 = (float*)transformer->buffer->getSliced(TB_SLICED_Q, transformer->sliceIndex);
+    float *k0 = (float*)transformer->buffer->getSliced(TB_SLICED_K, transformer->sliceIndex);
+    float *v0 = (float*)transformer->buffer->getSliced(TB_SLICED_V, transformer->sliceIndex);
+
+    matmul(spec->floatType, q0, xb, block->q0, block->q0Slice->n, block->q0Slice->d0, nThreads, threadIndex);
+    matmul(spec->floatType, k0, xb, block->k0, block->k0Slice->n, block->k0Slice->d0, nThreads, threadIndex);
+    matmul(spec->floatType, v0, xb, block->v0, block->v0Slice->n, block->v0Slice->d0, nThreads, threadIndex);
+
     return TASK_LOOP_CONTINUE;
 }
 
-int blockMergeQkv(unsigned int threadIndex, void* userData) {
+int blockMergeQkv(unsigned int nThreads, unsigned int threadIndex, void* userData) {
     TRANSFORMER_VARIABLES;
     // TODO
     return TASK_LOOP_CONTINUE;
 }
 
-int blockMultiheadAtt(unsigned int threadIndex, void* userData) {
+int blockMultiheadAtt(unsigned int nThreads, unsigned int threadIndex, void* userData) {
     TRANSFORMER_VARIABLES;
     if (threadIndex != 0) {
         return TASK_LOOP_CONTINUE;
@@ -114,20 +114,17 @@ int blockMultiheadAtt(unsigned int threadIndex, void* userData) {
     return TASK_LOOP_CONTINUE;
 }
 
-int blockAtt(unsigned int threadIndex, void* userData) {
+int blockAtt(unsigned int nThreads, unsigned int threadIndex, void* userData) {
     TRANSFORMER_VARIABLES;
 
-    if (threadIndex == 0) {
-        float *xb = (float*)transformer->buffer->getUnit(TB_UNIT_XB);
-        float *xb2 = (float*)transformer->buffer->getSliced(TB_SLICED_XB2, transformer->sliceIndex);
+    float *xb = (float*)transformer->buffer->getUnit(TB_UNIT_XB);
+    float *xb2 = (float*)transformer->buffer->getSliced(TB_SLICED_XB2, transformer->sliceIndex);
 
-        matmul(spec->floatType, 1, xb2, xb, block->wo0, block->wo0Slice->n, block->wo0Slice->d0);
-
-    }
+    matmul(spec->floatType, xb2, xb, block->wo0, block->wo0Slice->n, block->wo0Slice->d0, nThreads, threadIndex);
     return TASK_LOOP_CONTINUE;
 }
 
-int blockMergeAtt(unsigned int threadIndex, void* userData) {
+int blockMergeAtt(unsigned int nThreads, unsigned int threadIndex, void* userData) {
     TRANSFORMER_VARIABLES;
 
     if (threadIndex == 0) {
@@ -146,30 +143,30 @@ int blockMergeAtt(unsigned int threadIndex, void* userData) {
     return TASK_LOOP_CONTINUE;
 }
 
-int blockFfn(unsigned int threadIndex, void* userData) {
+int blockFfn(unsigned int nThreads, unsigned int threadIndex, void* userData) {
     TRANSFORMER_VARIABLES;
 
-    if (threadIndex == 0) {
-        float* xb = (float*)transformer->buffer->getUnit(TB_UNIT_XB);
-        float* hb0 = (float*)transformer->buffer->getSliced(TB_SLICED_HB, transformer->sliceIndex);
+    float* xb = (float*)transformer->buffer->getUnit(TB_UNIT_XB);
+    float* hb0 = (float*)transformer->buffer->getSliced(TB_SLICED_HB, transformer->sliceIndex);
 
-        matmul(spec->floatType, 1, hb0, xb, block->w10, block->w10Slice->n, block->w10Slice->d0);
-        matmul(spec->floatType, 1, block->hb20, xb, block->w30, block->w30Slice->n, block->w30Slice->d0);
+    matmul(spec->floatType, hb0, xb, block->w10, block->w10Slice->n, block->w10Slice->d0, nThreads, threadIndex);
+    matmul(spec->floatType, block->hb20, xb, block->w30, block->w30Slice->n, block->w30Slice->d0, nThreads, threadIndex);
 
-        // SwiGLU non-linearity
-        for (int i = 0; i < block->w10Slice->d0; i++) {
-            float val = hb0[i];
-            // silu(x)=x*σ(x), where σ(x) is the logistic sigmoid
-            val *= (1.0f / (1.0f + expf(-val)));
-            // elementwise multiply with w3(x)
-            val *= block->hb20[i];
-            hb0[i] = val;
-        }
+    // SwiGLU non-linearity
+    int d00 = block->w10Slice->d0 / nThreads;
+    int d0Offset = d00 * threadIndex;
+    for (int i = 0; i < d00; i++) {
+        float val = hb0[i + d0Offset];
+        // silu(x)=x*σ(x), where σ(x) is the logistic sigmoid
+        val *= (1.0f / (1.0f + expf(-val)));
+        // elementwise multiply with w3(x)
+        val *= block->hb20[i + d0Offset];
+        hb0[i + d0Offset] = val;
     }
     return TASK_LOOP_CONTINUE;
 }
 
-int blockMergeFfn(unsigned int threadIndex, void* userData) {
+int blockMergeFfn(unsigned int nThreads, unsigned int threadIndex, void* userData) {
     TRANSFORMER_VARIABLES;
 
     if (threadIndex == 0) {
@@ -181,19 +178,17 @@ int blockMergeFfn(unsigned int threadIndex, void* userData) {
     return TASK_LOOP_CONTINUE;
 }
 
-int blockFfn2(unsigned int threadIndex, void* userData) {
+int blockFfn2(unsigned int nThreads, unsigned int threadIndex, void* userData) {
     TRANSFORMER_VARIABLES;
 
-    if (threadIndex == 0) {
-        float *hh = (float*)transformer->buffer->getUnit(TB_UNIT_HH);
-        float *xb2 = (float*)transformer->buffer->getSliced(TB_SLICED_XB2, transformer->sliceIndex);
+    float *hh = (float*)transformer->buffer->getUnit(TB_UNIT_HH);
+    float *xb2 = (float*)transformer->buffer->getSliced(TB_SLICED_XB2, transformer->sliceIndex);
 
-        matmul(spec->floatType, 1, xb2, hh, block->w20, block->w20Slice->n, block->w20Slice->d0);
-    }
+    matmul(spec->floatType, xb2, hh, block->w20, block->w20Slice->n, block->w20Slice->d0, nThreads, threadIndex);
     return TASK_LOOP_CONTINUE;
 }
 
-int blockMergeFfn2(unsigned int threadIndex, void* userData) {
+int blockMergeFfn2(unsigned int nThreads, unsigned int threadIndex, void* userData) {
     TRANSFORMER_VARIABLES;
 
     if (threadIndex == 0) {
@@ -207,19 +202,30 @@ int blockMergeFfn2(unsigned int threadIndex, void* userData) {
     return TASK_LOOP_CONTINUE;
 }
 
-int nextBlock(unsigned int threadIndex, void* userData) {
+int nextBlock(unsigned int nThreads, unsigned int threadIndex, void* userData) {
     TRANSFORMER_VARIABLES;
 
     if (threadIndex == 0) {
         ctx->currentBlockIndex++;
-        if (ctx->currentBlockIndex == ctx->transformer->spec->nLayers) {
-            float* x = transformer->x;
 
+        if (ctx->currentBlockIndex == spec->nLayers) {
+            float* x = transformer->x;
             rmsnorm(x, x, (float*)transformer->rmsFinal, spec->dim);
-            matmul(spec->floatType, 1, transformer->logits, x, transformer->wcls, spec->dim, spec->vocabSize);
-            return TASK_LOOP_STOP;
+            ctx->finalize = true;
         }
     }
+    return TASK_LOOP_CONTINUE;
+}
+
+int finalize(unsigned int nThreads, unsigned int threadIndex, void* userData) {
+    TRANSFORMER_VARIABLES;
+
+    if (ctx->finalize) {
+        float* x = transformer->x;
+        matmul(spec->floatType, transformer->logits, x, transformer->wcls, spec->dim, spec->vocabSize, nThreads, threadIndex);
+        return TASK_LOOP_STOP;
+    }
+
     return TASK_LOOP_CONTINUE;
 }
 
@@ -235,14 +241,20 @@ static TaskLoopTask inferenceTasks[] = {
     blockFfn2,
     blockMergeFfn2,
     nextBlock,
+    finalize,
 };
 
 TaskLoopTask* Inference::tasks = inferenceTasks;
 int Inference::nTasks = sizeof(inferenceTasks) / sizeof(TaskLoopTask);
 
 Inference::Inference(unsigned int nThreads, Transformer* transformer) {
-    this->nThreads = nThreads;
     this->transformer = transformer;
+    context.transformer = transformer;
+    taskLoop = new TaskLoop(nThreads, nTasks, tasks, (void*)&context);
+}
+
+Inference::~Inference() {
+    delete taskLoop;
 }
 
 float* Inference::infer(int token, int pos) {
@@ -251,12 +263,10 @@ float* Inference::infer(int token, int pos) {
     float* contentRow = ((float*)transformer->tokenEmbeddingTable) + token * transformer->spec->dim;
     memcpy(transformer->x, contentRow, transformer->spec->dim * sizeof(float));
 
-    TransformerContext context;
-    context.transformer = transformer;
+    context.finalize = false;
     context.currentBlockIndex = 0;
 
-    TaskLoop loop(2, nTasks, tasks, (void*)&context);
-    loop.run();
+    taskLoop->run();
 
     return transformer->logits;
 }

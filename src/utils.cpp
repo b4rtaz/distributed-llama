@@ -62,7 +62,7 @@ void TaskLoop::run() {
     for (unsigned int i = 1; i < state.nThreads; i++) {
         int result = pthread_create(&threads[i].handler, NULL, threadHandler, (void*)&threads[i]);
         if (result != 0) {
-            printf("Cannot created thread %d\n", i);
+            printf("Cannot created thread\n");
             exit(EXIT_FAILURE);
         }
     }
@@ -82,7 +82,7 @@ void* TaskLoop::threadHandler(void* arg) {
     while (state->stop == false) {
         unsigned int currentTaskIndex = state->currentTaskIndex;
 
-        int result = state->tasks[currentTaskIndex % state->nTasks](threadIndex, state->userData);
+        int result = state->tasks[currentTaskIndex % state->nTasks](state->nThreads, threadIndex, state->userData);
 
         if (result == TASK_LOOP_STOP) {
             state->stop = true;

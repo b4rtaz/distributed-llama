@@ -6,18 +6,21 @@
 
 struct TransformerContext {
     Transformer* transformer;
-    int currentBlockIndex;
+    bool finalize;
+    unsigned int currentBlockIndex;
 };
 
 class Inference {
 private:
-    unsigned int nThreads;
     Transformer* transformer;
+    TransformerContext context;
+    TaskLoop *taskLoop;
 public:
     static TaskLoopTask* tasks;
     static int nTasks;
 
     Inference(unsigned int nThreads, Transformer* transformer);
+    ~Inference();
     float* infer(int token, int pos);
 };
 

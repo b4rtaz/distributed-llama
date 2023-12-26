@@ -15,7 +15,7 @@ float randomF32(unsigned long long *state);
 #define TASK_LOOP_CONTINUE 0
 #define TASK_LOOP_STOP -1
 
-typedef int (*TaskLoopTask)(unsigned int threadIndex, void* userData);
+typedef int (*TaskLoopTask)(unsigned int nThreads, unsigned int threadIndex, void* userData);
 
 struct TaskLoopState {
     unsigned int nThreads;
