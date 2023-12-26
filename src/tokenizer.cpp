@@ -7,6 +7,7 @@
 #include <ctype.h>
 #include <ctime>
 #include "funcs.hpp"
+#include "utils.hpp"
 #include "tokenizer.hpp"
 
 int compare_tokens(const void *a, const void *b) {
@@ -317,11 +318,11 @@ int Sampler::sample(float* logits) {
     return next;
 }
 
-void generate(Transformer* transformer, char* tokenizerPath, float temperature, float topp, int steps, char* prompt) {
+void generate(TransformerSpec* spec, Inference* inference, char* tokenizerPath, float temperature, float topp, int steps, char* prompt) {
     unsigned long long rngSeed = (unsigned int)time(NULL);
 
-    Tokenizer tokenizer(tokenizerPath, transformer->spec->vocabSize);
-    Sampler sampler(transformer->spec->vocabSize, temperature, topp, rngSeed);
+    Tokenizer tokenizer(tokenizerPath, spec->vocabSize);
+    Sampler sampler(spec->vocabSize, temperature, topp, rngSeed);
 
     char emptyPrompt[] = "";
     if (prompt == NULL) { prompt = emptyPrompt; }
@@ -342,9 +343,8 @@ void generate(Transformer* transformer, char* tokenizerPath, float temperature, 
     int pos = 0;     // position in the sequence
     while (pos < steps) {
         long t0 = timeMs();
-        transformer->forward(token, pos);
+        float* logits = inference->infer(token, pos);
         long t1 = timeMs();
-        float* logits = transformer->logits;
 
         // advance the state machine
         if (pos < numPromptTokens - 1) {

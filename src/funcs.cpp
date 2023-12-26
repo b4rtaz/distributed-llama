@@ -1,15 +1,82 @@
-#include <cstdint>
-#include <cstdio>
-#include <cstdlib>
+#include <cmath>
 #include <cassert>
-#include <cstring>
+#include <cstdio>
 #include <pthread.h>
 #include "quants.hpp"
-#include "matmul.hpp"
+#include "funcs.hpp"
 
 #if defined(__ARM_NEON)
     #include <arm_neon.h>
 #endif
+
+void softmax(float* x, const int size) {
+    float maxVal;
+#if defined(__ARM_NEON)
+    float32x4_t fs;
+    float32x4_t fmaxv = vld1q_f32(&x[0]);
+    for (int i = 4; i < size; i += 4) {
+        fs = vld1q_f32(&x[i]);
+        fmaxv = vmaxq_f32(fmaxv, fs);
+    }
+    maxVal = vmaxvq_f32(fmaxv);
+#else
+    // find max value (for numerical stability)
+    maxVal = x[0];
+    for (int i = 1; i < size; i++) {
+        if (x[i] > maxVal) {
+            maxVal = x[i];
+        }
+    }
+#endif
+    // exp and sum
+    float sum = 0.0f;
+    for (int i = 0; i < size; i++) {
+        x[i] = expf(x[i] - maxVal);
+        sum += x[i];
+    }
+    // normalize
+    for (int i = 0; i < size; i++) {
+        x[i] /= sum;
+    }
+}
+
+void rmsnorm(float* o, const float* x, const float* weight, const int size) {
+    assert(size % 4 == 0);
+    float ss = 0.0f;
+#if defined(__ARM_NEON)
+    float32x4_t fsq;
+    float32x4_t fs = vmovq_n_f32(0);
+    for (int j = 0; j < size; j += 4) {
+        fsq = vld1q_f32(&x[j]);
+        fs = vmlaq_f32(fs, fsq, fsq);
+    }
+    ss = vaddvq_f32(fs);
+#else
+    for (int j = 0; j < size; j++) {
+        ss += x[j] * x[j];
+    }
+#endif
+    ss /= size;
+    ss += 1e-5f;
+    ss = 1.0f / sqrtf(ss);
+
+#if defined(__ARM_NEON)
+    float32x4_t fw;
+    float32x4_t fx;
+    float32x4_t fss = vmovq_n_f32(ss);
+    for (int j = 0; j < size; j += 4) {
+        fw = vld1q_f32(&weight[j]);
+        fx = vld1q_f32(&x[j]);
+        fx = vmulq_f32(fx, fw);
+        fx = vmulq_f32(fx, fss);
+        vst1q_f32(&o[j], fx);
+    }
+#else
+    for (int j = 0; j < size; j++) {
+        o[j] = weight[j] * (ss * x[j]);
+    }
+#endif
+}
 
 struct MatmulThreadInfo {
     pthread_t handler;
@@ -207,37 +274,23 @@ void matmul(FloatType type, int nThread, float* output, float* input, void* weig
     }
 }
 
-MatMulSlice::MatMulSlice(FloatType type, int sliceCount, int n, int d) {
-    assert(d % sliceCount == 0);
-
-    this->type = type;
-    this->sliceCount = sliceCount;
-    this->d0 = d / sliceCount;
-    this->n = n;
-    this->weights0Bytes = getBatchBytes(type, this->n, this->d0);
-}
-
-long MatMulSlice::splitWeights(int sliceIndex, char* weights, char* weights0) {
-    int numbersPerBatch = getNumbersPerBatch(this->type);
-    int batchBytes = getBatchBytes(this->type, numbersPerBatch, 1);
-
-    int n = this->n / numbersPerBatch;
-    long offset = this->d0 * sliceIndex * n * batchBytes;
-
-    for (int d = 0; d < this->d0; d++) {
-        for (int j = 0; j < n; j++) {
-            long o = (d * n + j) * batchBytes;
-
-            memcpy(weights0 + o, weights + offset + o, batchBytes);
-        }
+float dotProduct(const float* a, const float* b, const int size) {
+    assert(size % 4 == 0);
+#if defined(__ARM_NEON)
+    float32x4_t fa;
+    float32x4_t fb;
+    float32x4_t fs = vmovq_n_f32(0);
+    for (int i = 0; i < size; i += 4) {
+        fa = vld1q_f32(&a[i]);
+        fb = vld1q_f32(&b[i]);
+        fs = vmlaq_f32(fs, fa, fb);
     }
-    return offset; // offset in bytes
-}
-
-long MatMulSlice::mergeOutputs(int sliceIndex, float* output, float* output0) {
-    long offset = this->d0 * sliceIndex;
-    for (int i = 0; i < this->d0; i++) {
-        output[offset + i] = output0[i];
+    return vaddvq_f32(fs);
+#else
+    float sum = 0.0f;
+    for (int i = 0; i < size; i++) {
+        sum += a[i] * b[i];
     }
-    return offset; // offset in floats
+    return sum;
+#endif
 }

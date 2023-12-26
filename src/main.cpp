@@ -1,11 +1,12 @@
 #include <cstring>
 #include <cstdlib>
 #include <cstdint>
-#include "funcs.hpp"
-#include "shared-buffer.hpp"
+#include <cstdio>
+#include "utils.hpp"
+#include "socket.hpp"
 #include "transformer.hpp"
+#include "transformer-tasks.hpp"
 #include "tokenizer.hpp"
-#include "worker.hpp"
 
 struct ProgramArgs {
     char* mode;
@@ -16,25 +17,18 @@ struct ProgramArgs {
     char* tokenizerPath;
     char* prompt;
     FloatType floatType;
-    int sliceCount;
-    char** sliceHosts;
-    int* slicePorts;
+    int nWorkers;
+    char** workerHosts;
+    int* workerPorts;
 
     // worker
     int port;
 };
 
 int usage() {
-    printf("Usage:\n");
-    printf("main inference -m <model_path> -f <float_type> -t <tokenizer_path> -prompt <prompt> -s 192.0.0.1:2000\n");
+    printf("Invalid usage\n");
+    // TODO
     return EXIT_FAILURE;
-}
-
-void loadConfig(ProgramArgs* args, TransformerConfig* config) {
-    config->nThread = args->nThread;
-    config->sliceCount = args->sliceCount;
-    config->sliceHosts = args->sliceHosts;
-    config->slicePorts = args->slicePorts;
 }
 
 int inference(ProgramArgs* args) {
@@ -46,18 +40,15 @@ int inference(ProgramArgs* args) {
     float topp = 0.9f;
     int steps = 256;
 
-    TransformerSpec spec;
-    loadTransformerSpec(&spec, args->modelPath, args->floatType, args->sliceCount);
+    SocketPool socketPool = SocketPool::connect(args->nWorkers, args->workerHosts, args->workerPorts);
+    unsigned int nSlices = args->nWorkers + 1;
 
-    TransformerConfig config;
-    loadConfig(args, &config);
+    TransformerSpec spec = Transformer::loadSpecFromFile(args->modelPath, nSlices, args->floatType);
+    Transformer transformer = Transformer::loadRootFromFile(args->modelPath, &spec, &socketPool);
+    Inference inference = Inference(args->nThread, &transformer);
 
-    Transformer* transformer;
-    loadTransformer(&transformer, &spec, &config, args->modelPath);
+    generate(&spec, &inference, args->tokenizerPath, temperature, topp, steps, args->prompt);
 
-    generate(transformer, args->tokenizerPath, temperature, topp, steps, args->prompt);
-
-    delete transformer;
     return EXIT_SUCCESS;
 }
 
@@ -66,10 +57,10 @@ int worker(ProgramArgs* args) {
         return usage();
     }
 
-    TransformerConfig config;
-    loadConfig(args, &config);
+    Socket socket = Socket::accept(args->port);
+    TransformerSpec spec;
+    Transformer transformer = Transformer::loadSlice(&spec, &socket);
 
-    Worker::serve(&config, args->port);
     return EXIT_SUCCESS;
 }
 
@@ -83,7 +74,7 @@ int main(int argc, char *argv[]) {
     args.tokenizerPath = NULL;
     args.prompt = NULL;
     args.floatType = F32;
-    args.sliceCount = 0;
+    args.nWorkers = 0;
     args.port = 9990;
 
     if (argc > 1) {
@@ -105,15 +96,15 @@ int main(int argc, char *argv[]) {
             for (; j < argc && argv[j][0] != '-'; j++);
             int count = j - i - 1;
 
-            args.sliceCount = count;
-            args.sliceHosts = new char*[count];
-            args.slicePorts = new int[count];
+            args.nWorkers = count;
+            args.workerHosts = new char*[count];
+            args.workerPorts = new int[count];
 
             for (int s = 0; s < count; s++) {
                 char* v = argv[i + 1 + s];
                 if (strcmp(v, "local") == 0) {
-                    args.sliceHosts[s] = NULL;
-                    args.slicePorts[s] = -1;
+                    args.workerHosts[s] = NULL;
+                    args.workerPorts[s] = -1;
                     continue;
                 }
 
@@ -123,10 +114,10 @@ int main(int argc, char *argv[]) {
                     exit(EXIT_FAILURE);
                 }
                 int hostLen = sep - v;
-                args.sliceHosts[s] = new char[hostLen + 1];
-                memcpy(args.sliceHosts[s], v, hostLen);
-                args.sliceHosts[s][hostLen] = '\0';
-                args.slicePorts[s] = atoi(sep + 1);
+                args.workerHosts[s] = new char[hostLen + 1];
+                memcpy(args.workerHosts[s], v, hostLen);
+                args.workerHosts[s][hostLen] = '\0';
+                args.workerPorts[s] = atoi(sep + 1);
             }
 
             i += count;
@@ -139,13 +130,6 @@ int main(int argc, char *argv[]) {
 
     if (args.mode != NULL) {
         if (strcmp(args.mode, "inference") == 0) {
-            if (args.sliceCount == 0) {
-                args.sliceCount = 1;
-                args.sliceHosts = new char*[1];
-                args.slicePorts = new int[1];
-                args.sliceHosts[0] = NULL;
-            }
-
             return inference(&args);
         } else if (strcmp(args.mode, "worker") == 0) {
             return worker(&args);

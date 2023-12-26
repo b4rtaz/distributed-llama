@@ -1,5 +1,8 @@
+#ifndef TOKENIZER_HPP
+#define TOKENIZER_HPP
+
 #include <cstdio>
-#include "transformer.hpp"
+#include "transformer-tasks.hpp"
 
 void safePrintf(char *piece);
 
@@ -46,4 +49,6 @@ public:
     int sample(float* logits);
 };
 
-void generate(Transformer* transformer, char* tokenizerPath, float temperature, float topp, int steps, char* prompt);
+void generate(TransformerSpec* spec, Inference* inference, char* tokenizerPath, float temperature, float topp, int steps, char* prompt);
+
+#endif

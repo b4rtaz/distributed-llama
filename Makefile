@@ -1,29 +1,22 @@
 CXX = g++
 CXXFLAGS = -std=c++11 -Werror -O3
 
+utils: src/utils.cpp
+	$(CXX) $(CXXFLAGS) -c src/utils.cpp -o utils.o
 quants: src/quants.cpp
-	$(CXX) $(CXXFLAGS) -c -pthread src/quants.cpp -o quants.o
-
-matmul: src/matmul.cpp quants
-	$(CXX) $(CXXFLAGS) -c -pthread src/matmul.cpp -o matmul.o
-
-matmul-test: src/matmul-test.cpp
-	$(CXX) $(CXXFLAGS) src/matmul-test.cpp -o matmul-test quants.o matmul.o
-
-shared-buffer: src/shared-buffer.cpp
-	$(CXX) $(CXXFLAGS) -c src/shared-buffer.cpp -o shared-buffer.o
-
-transformer: src/transformer.cpp shared-buffer matmul
+	$(CXX) $(CXXFLAGS) -c src/quants.cpp -o quants.o
+funcs: src/funcs.cpp
+	$(CXX) $(CXXFLAGS) -c src/funcs.cpp -o funcs.o
+socket: src/socket.cpp
+	$(CXX) $(CXXFLAGS) -c src/socket.cpp -o socket.o
+transformer: src/utils.cpp
 	$(CXX) $(CXXFLAGS) -c src/transformer.cpp -o transformer.o
-
-transformer-block-test: src/transformer-block-test.cpp
-	$(CXX) $(CXXFLAGS) src/transformer-block-test.cpp -o transformer-block-test shared-buffer.o transformer.o quants.o matmul.o
-
-tokenizer: src/tokenizer.cpp transformer
+transformer-tasks: src/transformer-tasks.cpp
+	$(CXX) $(CXXFLAGS) -c src/transformer-tasks.cpp -o transformer-tasks.o
+tokenizer: src/tokenizer.cpp
 	$(CXX) $(CXXFLAGS) -c src/tokenizer.cpp -o tokenizer.o
 
-worker: src/worker.cpp transformer
-	$(CXX) $(CXXFLAGS) -c src/worker.cpp -o worker.o
-
-main: src/main.cpp worker shared-buffer transformer quants matmul tokenizer
-	$(CXX) $(CXXFLAGS) src/main.cpp -o main shared-buffer.o worker.o transformer.o quants.o matmul.o tokenizer.o
+main: src/main.cpp utils quants funcs socket transformer transformer-tasks tokenizer
+	$(CXX) $(CXXFLAGS) src/main.cpp -o main utils.o quants.o funcs.o socket.o transformer.o transformer-tasks.o tokenizer.o
+transformer-tasks-test: src/transformer-tasks-test.cpp utils quants funcs socket transformer transformer-tasks tokenizer
+	$(CXX) $(CXXFLAGS) src/transformer-tasks-test.cpp -o transformer-tasks-test utils.o quants.o funcs.o socket.o transformer.o transformer-tasks.o tokenizer.o

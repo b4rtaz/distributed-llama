@@ -1,11 +1,11 @@
 #include <cstring>
 #include <cstdint>
-#include <fcntl.h>
 #include <cmath>
-#include <sys/mman.h>
+#include <cassert>
+#include "utils.hpp"
 #include "funcs.hpp"
-#include "shared-buffer.hpp"
 #include "transformer.hpp"
+#include "transformer-tasks.hpp"
 
 float expectedOutput[4096] = {
     1.01638556, 1.01242816, 1.01587915, 1.00391173, 1.01278269, 1.00372863, 1.01289952, 1.00231564, 
@@ -522,6 +522,10 @@ float expectedOutput[4096] = {
     1.00493455, 1.00216055, 1.02500832, 1.01412213, 0.997673035, 1.01922369, 1.01705575, 1.01369667,
 };
 
+int stopTask(unsigned int threadIndex, void* userData) {
+    return TASK_LOOP_STOP;
+}
+
 int main() {
     TransformerSpec spec;
     spec.dim = 4096;
@@ -534,42 +538,40 @@ int main() {
     spec.kvDim = (spec.dim * spec.nKvHeads) / spec.nHeads;
     spec.vocabSize = 32000;
     spec.floatType = F32;
-    spec.sliceCount = 4;
+    spec.nSlices = 1;
 
-    TransformerConfig config;
-    config.nThread = 4;
+    size_t beforeBlockBytes = 524288000;
+    size_t blockBytes       = 809533440;
+    size_t afterBlockBytes  = 525352960;
+    spec.fileSize = beforeBlockBytes + blockBytes + afterBlockBytes + sizeof(TransformerFileHeader);
+    char* data = NEW_BUFFER(beforeBlockBytes + blockBytes + afterBlockBytes);
 
-    SharedBuffer* buffer = initSharedBuffer(&spec);
-    TransformerState* states[4];
-    states[0] = new NativeTransformerState(buffer);
-    states[1] = states[0];
-    states[2] = states[0];
-    states[3] = states[0];
-    TransformerBlock block(0, &spec, &config, (TransformerState**)&states);
-
-    long wBytes = 809533440;
-    long wSize = wBytes / sizeof(float);
-    float* weights = new float[wSize];
-    float x[spec.dim];
+    long blockNumbers = blockBytes / sizeof(float);
+    float* block = (float*)&data[beforeBlockBytes];
     unsigned long long state = 800000010L;
-    for (int i = 0; i < wSize; i++) weights[i] = randomF32(&state) / 120.0;
+    for (int i = 0; i < blockNumbers; i++) block[i] = randomF32(&state) / 120.0;
+
+    SocketPool socketPool(0, NULL);
+    Transformer transformer = Transformer::loadRoot((char*)data, &spec, &socketPool);
+    transformer.pos = 0;
+
+    float* x = transformer.x;
     for (int i = 0; i < spec.dim; i++) x[i] = randomF32(&state) / 120.0;
 
-    long r = block.readWeights((char*)weights);
-    if (r != wBytes) {
-        printf("❌ Read %ld bytes, expected %ld\n", r, wBytes);
-        exit(EXIT_FAILURE);
-    }
+    TaskLoopTask* tasks = new TaskLoopTask[Inference::nTasks];
+    memcpy(tasks, Inference::tasks, sizeof(TaskLoopTask) * Inference::nTasks);
+    tasks[Inference::nTasks - 1] = stopTask;
 
+    TransformerContext context;
+    context.transformer = &transformer;
+    context.currentBlockIndex = 0;
+
+    TaskLoop loop(4, Inference::nTasks, tasks, &context);
     long t0 = timeMs();
-    block.forward(0, x);
+    loop.run();
     long t1 = timeMs();
 
-    printf("Forward pass took %ld ms\n", t1 - t0);
-
-    delete[] weights;
-    delete (NativeTransformerState*)states[0];
-    delete buffer;
+    FREE_BUFFER(data);
 
     int ix = -1;
     for (int i = 0; i < spec.dim; i++) {
@@ -579,10 +581,13 @@ int main() {
         }
     }
     if (ix < 0) {
-        printf("✅ Block forwarded correctly\n");
+        printf("✅ Block forwarded correctly in %ldms\n", t1 - t0);
     } else {
         printf("❌ ix=%d\n", ix);
-        printf("%.9g != %.9g\n", x[ix], expectedOutput[ix]);
+        printf("%.9g != %.9g\n", x[ix], expectedOutput[ix]); ix++;
+        printf("%.9g != %.9g\n", x[ix], expectedOutput[ix]); ix++;
+        printf("%.9g != %.9g\n", x[ix], expectedOutput[ix]); ix++;
+        printf("%.9g != %.9g\n", x[ix], expectedOutput[ix]); ix++;
         exit(EXIT_FAILURE);
     }
 }

@@ -1,5 +1,7 @@
-#ifndef quants_hpp
-#define quants_hpp
+#ifndef QUANTS_HPP
+#define QUANTS_HPP
+
+#include <cstdint>
 
 enum FloatType {
     F32 = 0,
