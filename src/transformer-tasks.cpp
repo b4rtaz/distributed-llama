@@ -1,3 +1,4 @@
+#include <cmath>
 #include <string.h>
 #include "utils.hpp"
 #include "funcs.hpp"
