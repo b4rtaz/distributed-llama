@@ -45,7 +45,7 @@ int inference(ProgramArgs* args) {
 
     TransformerSpec spec = Transformer::loadSpecFromFile(args->modelPath, nSlices, args->floatType);
     Transformer transformer = Transformer::loadRootFromFile(args->modelPath, &spec, &socketPool);
-    Inference inference = Inference(args->nThread, &transformer);
+    Inference inference = Inference(args->nThread, &transformer, &socketPool);
 
     generate(&spec, &inference, args->tokenizerPath, temperature, topp, steps, args->prompt);
 
@@ -60,6 +60,9 @@ int worker(ProgramArgs* args) {
     Socket socket = Socket::accept(args->port);
     TransformerSpec spec;
     Transformer transformer = Transformer::loadSlice(&spec, &socket);
+
+    Worker worker = Worker(args->nThread, &transformer, &socket);
+    worker.work();
 
     return EXIT_SUCCESS;
 }
@@ -102,12 +105,6 @@ int main(int argc, char *argv[]) {
 
             for (int s = 0; s < count; s++) {
                 char* v = argv[i + 1 + s];
-                if (strcmp(v, "local") == 0) {
-                    args.workerHosts[s] = NULL;
-                    args.workerPorts[s] = -1;
-                    continue;
-                }
-
                 char* sep = strstr(v, ":");
                 if (sep == NULL) {
                     printf("Invalid address %s\n", v);

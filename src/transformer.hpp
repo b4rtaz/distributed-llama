@@ -80,14 +80,13 @@ public:
     ~TransformerBlock();
 };
 
-#define TB_LENGTH 7
+#define TB_LENGTH 6
 #define TB_UNIT_XB 0
-#define TB_UNIT_HH 1
-#define TB_SLICED_XB2 2
-#define TB_SLICED_Q 3
-#define TB_SLICED_K 4
-#define TB_SLICED_V 5
-#define TB_SLICED_HB 6
+#define TB_SLICED_XB2 1
+#define TB_SLICED_Q 2
+#define TB_SLICED_K 3
+#define TB_SLICED_V 4
+#define TB_SLICED_HB 5
 
 class TransformerBuffer {
 public:

@@ -16,6 +16,10 @@ int blockRmsAtt(unsigned int nThreads, unsigned int threadIndex, void* userData)
     if (threadIndex == 0) {
         float* xb = (float*)ctx->transformer->buffer->getUnit(TB_UNIT_XB);
         rmsnorm(xb, transformer->x, block->rmsAtt, spec->dim);
+
+        for (uint8_t s = 1; s < spec->nSlices; s++) {
+            // TODO: send xb to workers
+        }
     }
     return TASK_LOOP_CONTINUE;
 }
@@ -46,7 +50,7 @@ int blockMultiheadAtt(unsigned int nThreads, unsigned int threadIndex, void* use
     if (threadIndex != 0) {
         return TASK_LOOP_CONTINUE;
     }
-    
+
     int dim = spec->dim;
     int kvDim = spec->kvDim;
     int kvMul = spec->nHeads / spec->nKvHeads; // integer multiplier of the kv sharing in multiquery
@@ -170,22 +174,17 @@ int blockFfn(unsigned int nThreads, unsigned int threadIndex, void* userData) {
 int blockMergeFfn(unsigned int nThreads, unsigned int threadIndex, void* userData) {
     TRANSFORMER_VARIABLES;
 
-    if (threadIndex == 0) {
-        float* hb = (float*)transformer->buffer->getUnit(TB_SLICED_HB);
-        float* hh = (float*)transformer->buffer->getUnit(TB_UNIT_HH);
-
-        memcpy(hh, hb, spec->hiddenDim * sizeof(float));
-    }
+    // TODO: merge
     return TASK_LOOP_CONTINUE;
 }
 
 int blockFfn2(unsigned int nThreads, unsigned int threadIndex, void* userData) {
     TRANSFORMER_VARIABLES;
 
-    float *hh = (float*)transformer->buffer->getUnit(TB_UNIT_HH);
+    float *hb = (float*)transformer->buffer->getUnit(TB_SLICED_HB);
     float *xb2 = (float*)transformer->buffer->getSliced(TB_SLICED_XB2, transformer->sliceIndex);
 
-    matmul(spec->floatType, xb2, hh, block->w20, block->w20Slice->n, block->w20Slice->d0, nThreads, threadIndex);
+    matmul(spec->floatType, xb2, hb, block->w20, block->w20Slice->n, block->w20Slice->d0, nThreads, threadIndex);
     return TASK_LOOP_CONTINUE;
 }
 
@@ -248,9 +247,10 @@ static TaskLoopTask inferenceTasks[] = {
 TaskLoopTask* Inference::tasks = inferenceTasks;
 int Inference::nTasks = sizeof(inferenceTasks) / sizeof(TaskLoopTask);
 
-Inference::Inference(unsigned int nThreads, Transformer* transformer) {
+Inference::Inference(unsigned int nThreads, Transformer* transformer, SocketPool* socketPool) {
     this->transformer = transformer;
     context.transformer = transformer;
+    context.socketPool = socketPool;
     taskLoop = new TaskLoop(nThreads, nTasks, tasks, (void*)&context);
 }
 
@@ -270,4 +270,30 @@ float* Inference::infer(int token, int pos) {
     taskLoop->run();
 
     return transformer->logits;
+}
+
+static TaskLoopTask workerTasks[] = {
+    blockQkv,
+    blockAtt,
+    blockFfn,
+    blockFfn2,
+    finalize,
+};
+
+TaskLoopTask* Worker::tasks = workerTasks;
+int Worker::nTasks = sizeof(workerTasks) / sizeof(TaskLoopTask);
+
+Worker::Worker(unsigned int nThreads, Transformer* transformer, Socket* socket) {
+    this->transformer = transformer;
+    context.transformer = transformer;
+    context.finalize = true;
+    taskLoop = new TaskLoop(nThreads, nTasks, tasks, (void*)&context);
+}
+
+Worker::~Worker() {
+    delete taskLoop;
+}
+
+void Worker::work() {
+    taskLoop->run();
 }

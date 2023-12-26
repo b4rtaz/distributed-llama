@@ -96,7 +96,6 @@ TransformerBuffer::TransformerBuffer(TransformerSpec* spec) {
     bufferBytes = new size_t[TB_LENGTH];
 
     bufferBytes[TB_UNIT_XB] = spec->dim * sizeof(float);
-    bufferBytes[TB_UNIT_HH] = spec->hiddenDim * sizeof(float);
     bufferBytes[TB_SLICED_XB2] = spec->dim * sizeof(float);
     bufferBytes[TB_SLICED_Q] = spec->dim * sizeof(float);
     bufferBytes[TB_SLICED_K] = spec->kvDim * sizeof(float);
