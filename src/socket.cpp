@@ -2,12 +2,61 @@
 #include <cstdlib>
 #include <cassert>
 #include <arpa/inet.h>
+#include <netinet/tcp.h>
 #include <errno.h>
 #include <string.h>
+#include <fcntl.h>
 #include "socket.hpp"
 
 #define SOCKET_LAST_ERRCODE errno
 #define SOCKET_LAST_ERROR strerror(errno)
+
+static inline void setNotBlocking(int socket) {
+    int status = fcntl(socket, F_SETFL, fcntl(status, F_GETFL, 0) | O_NONBLOCK);
+    if (status == -1) {
+        printf("Error setting socket to non-blocking\n");
+        exit(EXIT_FAILURE);
+    }
+}
+
+static inline void setNoDelay(int socket) {
+    int flag = 1;
+    int status = setsockopt(socket, IPPROTO_TCP, TCP_NODELAY, (char*)&flag, sizeof(int));
+    if (status == -1) {
+        printf("Error setting socket to no-delay\n");
+        exit(EXIT_FAILURE);
+    }
+}
+
+static inline void writeSocket(int socket, const char* data, size_t size) {
+    while (size > 0) {
+        int s = send(socket, (char*)data, size, 0);
+        if (s <= 0) {
+            if (SOCKET_LAST_ERRCODE == EAGAIN) {
+                continue;
+            }
+            printf("Error sending data %d (%s)\n", SOCKET_LAST_ERRCODE, SOCKET_LAST_ERROR);
+            exit(EXIT_FAILURE);
+        }
+        size -= s;
+        data = (char*)data + s;
+    }
+}
+
+static inline void readSocket(int socket, char* data, size_t size) {
+    while (size > 0) {
+        int r = recv(socket, (char*)data, size, 0);
+        if (r <= 0) {
+            if (SOCKET_LAST_ERRCODE == EAGAIN) {
+                continue;
+            }
+            printf("Error receiving data %d (%s)\n", SOCKET_LAST_ERRCODE, SOCKET_LAST_ERROR);
+            exit(EXIT_FAILURE);
+        }
+        data = (char*)data + r;
+        size -= r;
+    }
+}
 
 SocketPool SocketPool::connect(unsigned int nSockets, char** hosts, int* ports) {
     int* sockets = new int[nSockets];
@@ -41,21 +90,27 @@ SocketPool::SocketPool(unsigned int nSockets, int* sockets) {
     this->sockets = sockets;
 }
 
-void SocketPool::write(unsigned int socketIndex, const char* data, size_t size) {
-    assert(socketIndex < nSockets);
-    int socket = sockets[socketIndex];
-    while (size > 0) {
-        int s = send(socket, (char*)data, size, 0);
-        if (s <= 0) {
-            printf("Error sending data %d (%s)\n", SOCKET_LAST_ERRCODE, SOCKET_LAST_ERROR);
-            exit(EXIT_FAILURE);
-        }
-        size -= s;
-        data = (char*)data + s;
+SocketPool::~SocketPool() {
+    for (unsigned int i = 0; i < nSockets; i++) {
+        shutdown(sockets[i], 2);
     }
 }
 
+void SocketPool::setTurboMode() {
+    for (unsigned int i = 0; i < nSockets; i++) {
+        setNotBlocking(sockets[i]);
+        setNoDelay(sockets[i]);
+    }
+}
+
+void SocketPool::write(unsigned int socketIndex, const char* data, size_t size) {
+    assert(socketIndex >= 0 && socketIndex < nSockets);
+    writeSocket(sockets[socketIndex], data, size);
+}
+
 void SocketPool::read(unsigned int socketIndex, char* data, size_t size) {
+    assert(socketIndex >= 0 && socketIndex < nSockets);
+    readSocket(sockets[socketIndex], data, size);
 }
 
 Socket Socket::accept(int port) {
@@ -109,17 +164,15 @@ Socket::~Socket() {
     shutdown(socket, 2);
 }
 
+void Socket::setTurboMode() {
+    setNotBlocking(socket);
+    setNoDelay(socket);
+}
+
 void Socket::write(const char* data, size_t size) {
+    writeSocket(socket, data, size);
 }
 
 void Socket::read(char* data, size_t size) {
-    while (size > 0) {
-        int r = recv(socket, (char*)data, size, 0);
-        if (r <= 0) {
-            printf("Error receiving data %d (%s)\n", SOCKET_LAST_ERRCODE, SOCKET_LAST_ERROR);
-            exit(EXIT_FAILURE);
-        }
-        data = (char*)data + r;
-        size -= r;
-    }
+    readSocket(socket, data, size);
 }

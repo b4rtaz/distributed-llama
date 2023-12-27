@@ -118,10 +118,17 @@ char* TransformerBuffer::getUnit(uint8_t bufferIndex) {
     return buffers[bufferIndex];
 }
 
+size_t TransformerBuffer::getUnitBytes(uint8_t bufferIndex) {
+    return bufferBytes[bufferIndex];
+}
+
 char* TransformerBuffer::getSliced(uint8_t bufferIndex, uint8_t sliceIndex) {
-    size_t bytes = bufferBytes[bufferIndex];
-    size_t sliceOffset = bytes / nSlices;
-    return buffers[bufferIndex] + sliceOffset * sliceIndex;
+    size_t sliceBytes = getSlicedBytes(bufferIndex);
+    return buffers[bufferIndex] + sliceBytes * sliceIndex;
+}
+
+size_t TransformerBuffer::getSlicedBytes(uint8_t bufferIndex) {
+    return bufferBytes[bufferIndex] / nSlices;
 }
 
 Transformer::Transformer(TransformerSpec* spec, uint8_t sliceIndex) {

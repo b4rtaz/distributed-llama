@@ -6,6 +6,7 @@
 
 struct TransformerContext {
     Transformer* transformer;
+    Socket* socket;
     SocketPool* socketPool;
     bool finalize;
     unsigned int currentBlockIndex;

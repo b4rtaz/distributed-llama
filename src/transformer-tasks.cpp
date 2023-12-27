@@ -4,28 +4,67 @@
 #include "funcs.hpp"
 #include "socket.hpp"
 #include "transformer-tasks.hpp"
+#include <cassert>
 
-#define TRANSFORMER_VARIABLES \
+#define TASK_ARGS unsigned int nThreads, unsigned int threadIndex, void* userData
+
+#define TASK_VARIABLES \
     TransformerContext* ctx = (TransformerContext*)userData; \
     Transformer* transformer = ctx->transformer; \
     TransformerBlock* block = transformer->blocks[ctx->currentBlockIndex]; \
     TransformerSpec* spec = transformer->spec;
 
-int blockRmsAtt(unsigned int nThreads, unsigned int threadIndex, void* userData) {
-    TRANSFORMER_VARIABLES;
+void syncUnitBuffer(unsigned int nThreads, unsigned int threadIndex, TransformerContext* ctx, uint8_t bufferIndex) {
+    if (threadIndex != 0) return;
+
+    char* buffer = ctx->transformer->buffer->getUnit(bufferIndex);
+    size_t bufferBytes = ctx->transformer->buffer->getUnitBytes(bufferIndex);
+    if (ctx->socketPool != NULL) {
+        // root
+        for (uint8_t socketIndex = 0; socketIndex < ctx->socketPool->nSockets; socketIndex++) {
+            ctx->socketPool->write(socketIndex, buffer, bufferBytes);
+        }
+    } else if (ctx->socket != NULL) {
+        // worker
+        ctx->socket->read(buffer, bufferBytes);
+    }
+}
+
+void syncSlicedBuffer(unsigned int nThreads, unsigned int threadIndex, TransformerContext* ctx, uint8_t bufferIndex) {
+    if (threadIndex != 0) return;
+
+    size_t bufferBytes = ctx->transformer->buffer->getSlicedBytes(bufferIndex);
+    if (ctx->socketPool != NULL) {
+        // root
+        for (uint8_t socketIndex = 0; socketIndex < ctx->socketPool->nSockets; socketIndex++) {
+            uint8_t sliceIndex = socketIndex + 1;
+            char* buffer = ctx->transformer->buffer->getSliced(bufferIndex, sliceIndex);
+            ctx->socketPool->read(socketIndex, buffer, bufferBytes);
+        }
+    } else if (ctx->socket != NULL) {
+        // worker
+        char* buffer = ctx->transformer->buffer->getSliced(bufferIndex, ctx->transformer->sliceIndex);
+        ctx->socket->write(buffer, bufferBytes);
+    }
+}
+
+int rmsAtt(TASK_ARGS) {
+    TASK_VARIABLES;
     if (threadIndex == 0) {
         float* xb = (float*)ctx->transformer->buffer->getUnit(TB_UNIT_XB);
         rmsnorm(xb, transformer->x, block->rmsAtt, spec->dim);
-
-        for (uint8_t s = 1; s < spec->nSlices; s++) {
-            // TODO: send xb to workers
-        }
     }
     return TASK_LOOP_CONTINUE;
 }
 
-int blockQkv(unsigned int nThreads, unsigned int threadIndex, void* userData) {
-    TRANSFORMER_VARIABLES;
+int syncRmsAtt(TASK_ARGS) {
+    TASK_VARIABLES;
+    syncUnitBuffer(nThreads, threadIndex, ctx, TB_UNIT_XB);
+    return TASK_LOOP_CONTINUE;
+}
+
+int qkv(TASK_ARGS) {
+    TASK_VARIABLES;
 
     float *xb = (float*)transformer->buffer->getUnit(TB_UNIT_XB);
     float *q0 = (float*)transformer->buffer->getSliced(TB_SLICED_Q, transformer->sliceIndex);
@@ -39,14 +78,18 @@ int blockQkv(unsigned int nThreads, unsigned int threadIndex, void* userData) {
     return TASK_LOOP_CONTINUE;
 }
 
-int blockMergeQkv(unsigned int nThreads, unsigned int threadIndex, void* userData) {
-    TRANSFORMER_VARIABLES;
-    // TODO
+int syncQkv(TASK_ARGS) {
+    TASK_VARIABLES;
+    syncSlicedBuffer(nThreads, threadIndex, ctx, TB_SLICED_Q);
+    syncSlicedBuffer(nThreads, threadIndex, ctx, TB_SLICED_K);
+    syncSlicedBuffer(nThreads, threadIndex, ctx, TB_SLICED_V);
+
+    // if (ctx->socketPool != NULL && threadIndex == 0) { float* v = (float*)block->q0; printf("q0 (%d): %f %f %f %f %f %f\n", ctx->currentBlockIndex, v[0], v[1], v[2], v[3], v[4], v[5]); }
     return TASK_LOOP_CONTINUE;
 }
 
-int blockMultiheadAtt(unsigned int nThreads, unsigned int threadIndex, void* userData) {
-    TRANSFORMER_VARIABLES;
+int multiheadAtt(TASK_ARGS) {
+    TASK_VARIABLES;
     if (threadIndex != 0) {
         return TASK_LOOP_CONTINUE;
     }
@@ -119,22 +162,32 @@ int blockMultiheadAtt(unsigned int nThreads, unsigned int threadIndex, void* use
     return TASK_LOOP_CONTINUE;
 }
 
-int blockAtt(unsigned int nThreads, unsigned int threadIndex, void* userData) {
-    TRANSFORMER_VARIABLES;
+int syncMultiheadAtt(TASK_ARGS) {
+    TASK_VARIABLES;
+    syncUnitBuffer(nThreads, threadIndex, ctx, TB_UNIT_XB);
+    return TASK_LOOP_CONTINUE;
+}
 
-    float *xb = (float*)transformer->buffer->getUnit(TB_UNIT_XB);
-    float *xb2 = (float*)transformer->buffer->getSliced(TB_SLICED_XB2, transformer->sliceIndex);
+int att(TASK_ARGS) {
+    TASK_VARIABLES;
+
+    float* xb = (float*)transformer->buffer->getUnit(TB_UNIT_XB);
+    float* xb2 = (float*)transformer->buffer->getSliced(TB_SLICED_XB2, transformer->sliceIndex);
 
     matmul(spec->floatType, xb2, xb, block->wo0, block->wo0Slice->n, block->wo0Slice->d0, nThreads, threadIndex);
     return TASK_LOOP_CONTINUE;
 }
 
-int blockMergeAtt(unsigned int nThreads, unsigned int threadIndex, void* userData) {
-    TRANSFORMER_VARIABLES;
+int syncAtt(TASK_ARGS) {
+    TASK_VARIABLES;
+    syncSlicedBuffer(nThreads, threadIndex, ctx, TB_SLICED_XB2);
+    return TASK_LOOP_CONTINUE;
+}
+
+int rmfFfn(TASK_ARGS) {
+    TASK_VARIABLES;
 
     if (threadIndex == 0) {
-        // TODO: merge xb2
-
         float* xb2 = (float*)transformer->buffer->getUnit(TB_SLICED_XB2);
         float* xb = (float*)transformer->buffer->getUnit(TB_UNIT_XB);
         float* x = (float*)transformer->x;
@@ -148,8 +201,14 @@ int blockMergeAtt(unsigned int nThreads, unsigned int threadIndex, void* userDat
     return TASK_LOOP_CONTINUE;
 }
 
-int blockFfn(unsigned int nThreads, unsigned int threadIndex, void* userData) {
-    TRANSFORMER_VARIABLES;
+int syncRmfFfn(TASK_ARGS) {
+    TASK_VARIABLES;
+    syncUnitBuffer(nThreads, threadIndex, ctx, TB_UNIT_XB);
+    return TASK_LOOP_CONTINUE;
+}
+
+int ffn(TASK_ARGS) {
+    TASK_VARIABLES;
 
     float* xb = (float*)transformer->buffer->getUnit(TB_UNIT_XB);
     float* hb0 = (float*)transformer->buffer->getSliced(TB_SLICED_HB, transformer->sliceIndex);
@@ -171,15 +230,20 @@ int blockFfn(unsigned int nThreads, unsigned int threadIndex, void* userData) {
     return TASK_LOOP_CONTINUE;
 }
 
-int blockMergeFfn(unsigned int nThreads, unsigned int threadIndex, void* userData) {
-    TRANSFORMER_VARIABLES;
-
-    // TODO: merge
+int syncFfnA(TASK_ARGS) {
+    TASK_VARIABLES;
+    syncSlicedBuffer(nThreads, threadIndex, ctx, TB_SLICED_HB);
     return TASK_LOOP_CONTINUE;
 }
 
-int blockFfn2(unsigned int nThreads, unsigned int threadIndex, void* userData) {
-    TRANSFORMER_VARIABLES;
+int syncFfnB(TASK_ARGS) {
+    TASK_VARIABLES;
+    syncUnitBuffer(nThreads, threadIndex, ctx, TB_SLICED_HB);
+    return TASK_LOOP_CONTINUE;
+}
+
+int ffn2(TASK_ARGS) {
+    TASK_VARIABLES;
 
     float *hb = (float*)transformer->buffer->getUnit(TB_SLICED_HB);
     float *xb2 = (float*)transformer->buffer->getSliced(TB_SLICED_XB2, transformer->sliceIndex);
@@ -188,8 +252,14 @@ int blockFfn2(unsigned int nThreads, unsigned int threadIndex, void* userData) {
     return TASK_LOOP_CONTINUE;
 }
 
-int blockMergeFfn2(unsigned int nThreads, unsigned int threadIndex, void* userData) {
-    TRANSFORMER_VARIABLES;
+int syncFfn2(TASK_ARGS) {
+    TASK_VARIABLES;
+    syncSlicedBuffer(nThreads, threadIndex, ctx, TB_SLICED_XB2);
+    return TASK_LOOP_CONTINUE;
+}
+
+int mergeFfn2(TASK_ARGS) {
+    TASK_VARIABLES;
 
     if (threadIndex == 0) {
         float* x = transformer->x;
@@ -202,8 +272,8 @@ int blockMergeFfn2(unsigned int nThreads, unsigned int threadIndex, void* userDa
     return TASK_LOOP_CONTINUE;
 }
 
-int nextBlock(unsigned int nThreads, unsigned int threadIndex, void* userData) {
-    TRANSFORMER_VARIABLES;
+int rootNextBlock(TASK_ARGS) {
+    TASK_VARIABLES;
 
     if (threadIndex == 0) {
         ctx->currentBlockIndex++;
@@ -217,30 +287,48 @@ int nextBlock(unsigned int nThreads, unsigned int threadIndex, void* userData) {
     return TASK_LOOP_CONTINUE;
 }
 
-int finalize(unsigned int nThreads, unsigned int threadIndex, void* userData) {
-    TRANSFORMER_VARIABLES;
+int finalize(TASK_ARGS) {
+    TASK_VARIABLES;
 
     if (ctx->finalize) {
         float* x = transformer->x;
         matmul(spec->floatType, transformer->logits, x, transformer->wcls, spec->dim, spec->vocabSize, nThreads, threadIndex);
         return TASK_LOOP_STOP;
     }
+    return TASK_LOOP_CONTINUE;
+}
 
+int workerNextBlock(TASK_ARGS) {
+    TASK_VARIABLES;
+
+    if (threadIndex == 0) {
+        ctx->currentBlockIndex++;
+
+        if (ctx->currentBlockIndex == spec->nLayers) {
+            ctx->currentBlockIndex = 0;
+        }
+    }
     return TASK_LOOP_CONTINUE;
 }
 
 static TaskLoopTask inferenceTasks[] = {
-    blockRmsAtt,
-    blockQkv,
-    blockMergeQkv,
-    blockMultiheadAtt,
-    blockAtt,
-    blockMergeAtt,
-    blockFfn,
-    blockMergeFfn,
-    blockFfn2,
-    blockMergeFfn2,
-    nextBlock,
+    rmsAtt,
+    syncRmsAtt,
+    qkv,
+    syncQkv,
+    multiheadAtt,
+    syncMultiheadAtt,
+    att,
+    syncAtt,
+    rmfFfn,
+    syncRmfFfn,
+    ffn,
+    syncFfnA,
+    syncFfnB,
+    ffn2,
+    syncFfn2,
+    mergeFfn2,
+    rootNextBlock,
     finalize,
 };
 
@@ -250,6 +338,7 @@ int Inference::nTasks = sizeof(inferenceTasks) / sizeof(TaskLoopTask);
 Inference::Inference(unsigned int nThreads, Transformer* transformer, SocketPool* socketPool) {
     this->transformer = transformer;
     context.transformer = transformer;
+    context.socket = NULL;
     context.socketPool = socketPool;
     taskLoop = new TaskLoop(nThreads, nTasks, tasks, (void*)&context);
 }
@@ -273,11 +362,19 @@ float* Inference::infer(int token, int pos) {
 }
 
 static TaskLoopTask workerTasks[] = {
-    blockQkv,
-    blockAtt,
-    blockFfn,
-    blockFfn2,
-    finalize,
+    syncRmsAtt,
+    qkv,
+    syncQkv,
+    syncMultiheadAtt,
+    att,
+    syncAtt,
+    syncRmfFfn,
+    ffn,
+    syncFfnA,
+    syncFfnB,
+    ffn2,
+    syncFfn2,
+    workerNextBlock,
 };
 
 TaskLoopTask* Worker::tasks = workerTasks;
@@ -286,7 +383,8 @@ int Worker::nTasks = sizeof(workerTasks) / sizeof(TaskLoopTask);
 Worker::Worker(unsigned int nThreads, Transformer* transformer, Socket* socket) {
     this->transformer = transformer;
     context.transformer = transformer;
-    context.finalize = true;
+    context.socket = socket;
+    context.socketPool = NULL;
     taskLoop = new TaskLoop(nThreads, nTasks, tasks, (void*)&context);
 }
 
@@ -295,5 +393,8 @@ Worker::~Worker() {
 }
 
 void Worker::work() {
+    context.finalize = false;
+    context.currentBlockIndex = 0;
+
     taskLoop->run();
 }

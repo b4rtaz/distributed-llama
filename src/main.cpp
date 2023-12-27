@@ -47,6 +47,8 @@ int inference(ProgramArgs* args) {
     Transformer transformer = Transformer::loadRootFromFile(args->modelPath, &spec, &socketPool);
     Inference inference = Inference(args->nThread, &transformer, &socketPool);
 
+    socketPool.setTurboMode();
+
     generate(&spec, &inference, args->tokenizerPath, temperature, topp, steps, args->prompt);
 
     return EXIT_SUCCESS;
@@ -60,6 +62,8 @@ int worker(ProgramArgs* args) {
     Socket socket = Socket::accept(args->port);
     TransformerSpec spec;
     Transformer transformer = Transformer::loadSlice(&spec, &socket);
+
+    socket.setTurboMode();
 
     Worker worker = Worker(args->nThread, &transformer, &socket);
     worker.work();

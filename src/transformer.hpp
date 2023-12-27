@@ -97,7 +97,9 @@ public:
     TransformerBuffer(TransformerSpec* spec);
     ~TransformerBuffer();
     char* getUnit(uint8_t bufferIndex);
+    size_t getUnitBytes(uint8_t bufferIndex);
     char* getSliced(uint8_t bufferIndex, uint8_t sliceIndex);
+    size_t getSlicedBytes(uint8_t bufferIndex);
 };
 
 class Transformer {

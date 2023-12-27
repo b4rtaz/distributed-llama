@@ -13,7 +13,9 @@ public:
     unsigned int nSockets;
 
     SocketPool(unsigned int nSockets, int* sockets);
+    ~SocketPool();
 
+    void setTurboMode();
     void write(unsigned int socketIndex, const char* data, size_t size);
     void read(unsigned int socketIndex, char* data, size_t size);
 };
@@ -28,6 +30,7 @@ public:
     Socket(int socket);
     ~Socket();
 
+    void setTurboMode();
     void write(const char* data, size_t size);
     void read(char* data, size_t size);
 };
