@@ -231,16 +231,21 @@ TransformerBlock::~TransformerBlock() {
 
 static size_t loadSlicedMatmulWeights(uint8_t nSlices, MatmulSlice* slice, char* weights, char* weights0, SocketPool* socketPool) {
     if (nSlices > 1) {
+        char* temp = NEW_BUFFER(slice->bytes);
+        memcpy(temp, weights, slice->bytes);
+
         size_t loadedBytes = 0;
         for (uint8_t s = 0; s < nSlices; s++) {
             uint8_t sliceIndex = (s + 1) % nSlices; // Root slice must be loaded last because we want keep root weights in the memory.
-            loadedBytes += slice->splitWeights(sliceIndex, weights, weights0);
+            loadedBytes += slice->splitWeights(sliceIndex, temp, weights0);
             if (sliceIndex > 0) {
                 unsigned int socketIndex = sliceIndex - 1;
                 socketPool->write(socketIndex, weights0, slice->sliceBytes);
             }
         }
+
         assert(loadedBytes == slice->bytes);
+        FREE_BUFFER(temp);
         return loadedBytes;
     } else {
         size_t loadedBytes = slice->splitWeights(0, weights, weights0);
@@ -346,6 +351,7 @@ Transformer Transformer::loadSlice(TransformerSpec* spec, Socket* socket) {
     for (int i = 0; i < spec->nLayers; i++) {
         TransformerBlock* block = transformer.blocks[i];
         size_t blockBytes = 0;
+        long t0 = timeMs();
         blockBytes += readSlicedMatmulWeights(block->q0Slice, block->q0, socket);
         blockBytes += readSlicedMatmulWeights(block->k0Slice, block->k0, socket);
         blockBytes += readSlicedMatmulWeights(block->v0Slice, block->v0, socket);
@@ -353,7 +359,8 @@ Transformer Transformer::loadSlice(TransformerSpec* spec, Socket* socket) {
         blockBytes += readSlicedMatmulWeights(block->w10Slice, block->w10, socket);
         blockBytes += readSlicedMatmulWeights(block->w20Slice, block->w20, socket);
         blockBytes += readSlicedMatmulWeights(block->w30Slice, block->w30, socket);
-        printf("⏩ Received %ld bytes for block %d\n", blockBytes, i);
+        float kbs = blockBytes / (float)(timeMs() - t0);
+        printf("⏩ Received %ld bytes for block %d (%.0fkB/s)\n", blockBytes, i, kbs);
     }
     return transformer;
 }

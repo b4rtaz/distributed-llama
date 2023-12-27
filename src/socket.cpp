@@ -80,6 +80,9 @@ SocketPool SocketPool::connect(unsigned int nSockets, char** hosts, int* ports) 
             exit(EXIT_FAILURE);
         }
 
+        setNotBlocking(clientSocket);
+        setNoDelay(clientSocket);
+
         sockets[i] = clientSocket;
     }
     return SocketPool(nSockets, sockets);
@@ -93,13 +96,6 @@ SocketPool::SocketPool(unsigned int nSockets, int* sockets) {
 SocketPool::~SocketPool() {
     for (unsigned int i = 0; i < nSockets; i++) {
         shutdown(sockets[i], 2);
-    }
-}
-
-void SocketPool::setTurboMode() {
-    for (unsigned int i = 0; i < nSockets; i++) {
-        setNotBlocking(sockets[i]);
-        setNoDelay(sockets[i]);
     }
 }
 
@@ -152,6 +148,9 @@ Socket Socket::accept(int port) {
 
     printf("Client connected\n");
 
+    setNotBlocking(clientSocket);
+    setNoDelay(clientSocket);
+
     shutdown(serverSocket, 2);
     return Socket(clientSocket);
 }
@@ -162,11 +161,6 @@ Socket::Socket(int socket) {
 
 Socket::~Socket() {
     shutdown(socket, 2);
-}
-
-void Socket::setTurboMode() {
-    setNotBlocking(socket);
-    setNoDelay(socket);
 }
 
 void Socket::write(const char* data, size_t size) {
