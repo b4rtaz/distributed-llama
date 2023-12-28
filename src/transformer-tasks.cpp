@@ -306,14 +306,16 @@ int rmsFinal(TASK_ARGS) {
         float* x = transformer->x;
         transformer->rms = rms(x, spec->dim);
     }
-    return TASK_LOOP_STOP;
+    return TASK_LOOP_CONTINUE;
 }
 
 int rmsFinalNorm(TASK_ARGS) {
     TASK_VARIABLES;
-    float* x = transformer->x;
-    rmsnorm(x, x, transformer->rms, (float*)transformer->rmsFinal, spec->dim, nThreads, threadIndex);
-    return TASK_LOOP_STOP;
+    if (ctx->finalize) {
+        float* x = transformer->x;
+        rmsnorm(x, x, transformer->rms, (float*)transformer->rmsFinal, spec->dim, nThreads, threadIndex);
+    }
+    return TASK_LOOP_CONTINUE;
 }
 
 int finalize(TASK_ARGS) {
