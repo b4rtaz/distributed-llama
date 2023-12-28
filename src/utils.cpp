@@ -92,6 +92,7 @@ void* TaskLoop::threadHandler(void* arg) {
         state->doneThreadCount++;
 
         if (threadIndex == 0) {
+            // printf("📋 Task %4d done\n", currentTaskIndex);
             while (state->stop == false && state->doneThreadCount < state->nThreads) {
                 // NOP
             }

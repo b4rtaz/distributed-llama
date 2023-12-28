@@ -18,10 +18,11 @@ void syncUnitBuffer(unsigned int nThreads, unsigned int threadIndex, Transformer
     if (threadIndex != 0) return;
 
     char* buffer = ctx->transformer->buffer->getUnit(bufferIndex);
+
     size_t bufferBytes = ctx->transformer->buffer->getUnitBytes(bufferIndex);
     if (ctx->socketPool != NULL) {
         // root
-        for (uint8_t socketIndex = 0; socketIndex < ctx->socketPool->nSockets; socketIndex++) {
+        for (unsigned int socketIndex = 0; socketIndex < ctx->socketPool->nSockets; socketIndex++) {
             ctx->socketPool->write(socketIndex, buffer, bufferBytes);
         }
     } else if (ctx->socket != NULL) {
@@ -36,7 +37,7 @@ void syncSlicedBuffer(unsigned int nThreads, unsigned int threadIndex, Transform
     size_t bufferBytes = ctx->transformer->buffer->getSlicedBytes(bufferIndex);
     if (ctx->socketPool != NULL) {
         // root
-        for (uint8_t socketIndex = 0; socketIndex < ctx->socketPool->nSockets; socketIndex++) {
+        for (unsigned int socketIndex = 0; socketIndex < ctx->socketPool->nSockets; socketIndex++) {
             uint8_t sliceIndex = socketIndex + 1;
             char* buffer = ctx->transformer->buffer->getSliced(bufferIndex, sliceIndex);
             ctx->socketPool->read(socketIndex, buffer, bufferBytes);
@@ -51,9 +52,15 @@ void syncSlicedBuffer(unsigned int nThreads, unsigned int threadIndex, Transform
 int rmsAtt(TASK_ARGS) {
     TASK_VARIABLES;
     if (threadIndex == 0) {
-        float* xb = (float*)ctx->transformer->buffer->getUnit(TB_UNIT_XB);
-        rmsnorm(xb, transformer->x, block->rmsAtt, spec->dim);
+        transformer->rms = rms(transformer->x, spec->dim);
     }
+    return TASK_LOOP_CONTINUE;
+}
+
+int rmsAttNorm(TASK_ARGS) {
+    TASK_VARIABLES;
+    float* xb = (float*)ctx->transformer->buffer->getUnit(TB_UNIT_XB);
+    rmsnorm(xb, transformer->x, transformer->rms, block->rmsAtt, spec->dim, nThreads, threadIndex);
     return TASK_LOOP_CONTINUE;
 }
 
@@ -195,9 +202,17 @@ int rmfFfn(TASK_ARGS) {
         for (int i = 0; i < spec->dim; i++) {
             x[i] += xb2[i];
         }
-
-        rmsnorm(xb, x, block->rmsFfn, spec->dim);
+        transformer->rms = rms(x, spec->dim);
     }
+    return TASK_LOOP_CONTINUE;
+}
+
+int rmfFfnNorm(TASK_ARGS) {
+    TASK_VARIABLES;
+    float* xb = (float*)transformer->buffer->getUnit(TB_UNIT_XB);
+    float* x = (float*)transformer->x;
+
+    rmsnorm(xb, x, transformer->rms, block->rmsFfn, spec->dim, nThreads, threadIndex);
     return TASK_LOOP_CONTINUE;
 }
 
@@ -272,19 +287,33 @@ int mergeFfn2(TASK_ARGS) {
     return TASK_LOOP_CONTINUE;
 }
 
-int rootNextBlock(TASK_ARGS) {
+int nextBlock(TASK_ARGS) {
     TASK_VARIABLES;
 
     if (threadIndex == 0) {
         ctx->currentBlockIndex++;
-
         if (ctx->currentBlockIndex == spec->nLayers) {
-            float* x = transformer->x;
-            rmsnorm(x, x, (float*)transformer->rmsFinal, spec->dim);
+            ctx->currentBlockIndex = 0;
             ctx->finalize = true;
         }
     }
     return TASK_LOOP_CONTINUE;
+}
+
+int rmsFinal(TASK_ARGS) {
+    TASK_VARIABLES;
+    if (ctx->finalize && threadIndex == 0) {
+        float* x = transformer->x;
+        transformer->rms = rms(x, spec->dim);
+    }
+    return TASK_LOOP_STOP;
+}
+
+int rmsFinalNorm(TASK_ARGS) {
+    TASK_VARIABLES;
+    float* x = transformer->x;
+    rmsnorm(x, x, transformer->rms, (float*)transformer->rmsFinal, spec->dim, nThreads, threadIndex);
+    return TASK_LOOP_STOP;
 }
 
 int finalize(TASK_ARGS) {
@@ -298,21 +327,9 @@ int finalize(TASK_ARGS) {
     return TASK_LOOP_CONTINUE;
 }
 
-int workerNextBlock(TASK_ARGS) {
-    TASK_VARIABLES;
-
-    if (threadIndex == 0) {
-        ctx->currentBlockIndex++;
-
-        if (ctx->currentBlockIndex == spec->nLayers) {
-            ctx->currentBlockIndex = 0;
-        }
-    }
-    return TASK_LOOP_CONTINUE;
-}
-
 static TaskLoopTask inferenceTasks[] = {
     rmsAtt,
+    rmsAttNorm,
     syncRmsAtt,
     qkv,
     syncQkv,
@@ -321,6 +338,7 @@ static TaskLoopTask inferenceTasks[] = {
     att,
     syncAtt,
     rmfFfn,
+    rmfFfnNorm,
     syncRmfFfn,
     ffn,
     syncFfnA,
@@ -328,7 +346,9 @@ static TaskLoopTask inferenceTasks[] = {
     ffn2,
     syncFfn2,
     mergeFfn2,
-    rootNextBlock,
+    nextBlock,
+    rmsFinal,
+    rmsFinalNorm,
     finalize,
 };
 
@@ -374,7 +394,7 @@ static TaskLoopTask workerTasks[] = {
     syncFfnB,
     ffn2,
     syncFfn2,
-    workerNextBlock,
+    nextBlock,
 };
 
 TaskLoopTask* Worker::tasks = workerTasks;

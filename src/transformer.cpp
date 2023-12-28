@@ -360,7 +360,7 @@ Transformer Transformer::loadSlice(TransformerSpec* spec, Socket* socket) {
         blockBytes += readSlicedMatmulWeights(block->w20Slice, block->w20, socket);
         blockBytes += readSlicedMatmulWeights(block->w30Slice, block->w30, socket);
         float kbs = blockBytes / (float)(timeMs() - t0);
-        printf("⏩ Received %ld bytes for block %d (%.0fkB/s)\n", blockBytes, i, kbs);
+        printf("⏩ Received %ld bytes for block %d (%.0f kB/s)\n", blockBytes, i, kbs);
     }
     return transformer;
 }

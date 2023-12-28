@@ -566,6 +566,8 @@ int main() {
     TransformerContext context;
     context.transformer = &transformer;
     context.currentBlockIndex = 0;
+    context.socket = NULL;
+    context.socketPool = &socketPool;
 
     TaskLoop loop(nThreads, Inference::nTasks, tasks, &context);
     long t0 = timeMs();

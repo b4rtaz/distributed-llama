@@ -116,6 +116,7 @@ public:
     size_t wclsBytes;
     char* wcls;
 
+    float rms;
     int pos;
     float* x;
     float* logits;

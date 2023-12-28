@@ -40,9 +40,9 @@ void softmax(float* x, const int size) {
     }
 }
 
-void rmsnorm(float* o, const float* x, const float* weight, const int size) {
+float rms(const float* x, const int size) {
     assert(size % 4 == 0);
-    float ss = 0.0f;
+    float ss;
 #if defined(__ARM_NEON)
     float32x4_t fsq;
     float32x4_t fs = vmovq_n_f32(0);
@@ -52,6 +52,7 @@ void rmsnorm(float* o, const float* x, const float* weight, const int size) {
     }
     ss = vaddvq_f32(fs);
 #else
+    ss = 0;
     for (int j = 0; j < size; j++) {
         ss += x[j] * x[j];
     }
@@ -59,12 +60,22 @@ void rmsnorm(float* o, const float* x, const float* weight, const int size) {
     ss /= size;
     ss += 1e-5f;
     ss = 1.0f / sqrtf(ss);
+    return ss;
+}
+
+void rmsnorm(float* o, const float* x, const float ms, const float* weight, const int size, unsigned int nThreads, unsigned int threadIndex) {
+    assert(size % 4 == 0);
+    assert(size % nThreads == 0);
+
+    int slice = size / nThreads;
+    int start = threadIndex * slice;
+    int end = start + slice;
 
 #if defined(__ARM_NEON)
     float32x4_t fw;
     float32x4_t fx;
-    float32x4_t fss = vmovq_n_f32(ss);
-    for (int j = 0; j < size; j += 4) {
+    float32x4_t fss = vmovq_n_f32(ms);
+    for (int j = start; j < end; j += 4) {
         fw = vld1q_f32(&weight[j]);
         fx = vld1q_f32(&x[j]);
         fx = vmulq_f32(fx, fw);
@@ -72,8 +83,8 @@ void rmsnorm(float* o, const float* x, const float* weight, const int size) {
         vst1q_f32(&o[j], fx);
     }
 #else
-    for (int j = 0; j < size; j++) {
-        o[j] = weight[j] * (ss * x[j]);
+    for (int j = start; j < end; j++) {
+        o[j] = weight[j] * (ms * x[j]);
     }
 #endif
 }
