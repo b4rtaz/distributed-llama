@@ -6,6 +6,8 @@
 class SocketPool {
 private:
     int* sockets;
+    unsigned int sentBytes;
+    unsigned int recvBytes;
 
 public:
     static SocketPool connect(unsigned int nSockets, char** hosts, int* ports);
@@ -18,6 +20,7 @@ public:
     void enableTurbo();
     void write(unsigned int socketIndex, const char* data, size_t size);
     void read(unsigned int socketIndex, char* data, size_t size);
+    void getStats(size_t* sentBytes, size_t* recvBytes);
 };
 
 class Socket {

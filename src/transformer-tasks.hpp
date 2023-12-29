@@ -28,7 +28,7 @@ public:
     Inference(unsigned int nThreads, Transformer* transformer, SocketPool* socketPool);
     ~Inference();
     float* infer(int token, int pos);
-    void getMeasurements(unsigned long* inferenceTime, unsigned long* transferTime);
+    void getStats(unsigned long* inferenceTime, unsigned long* transferTime);
 };
 
 class Worker {

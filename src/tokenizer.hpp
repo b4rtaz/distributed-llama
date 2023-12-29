@@ -49,6 +49,6 @@ public:
     int sample(float* logits);
 };
 
-void generate(TransformerSpec* spec, Inference* inference, char* tokenizerPath, float temperature, float topp, int steps, char* prompt);
+void generate(TransformerSpec* spec, Inference* inference, SocketPool* socketPool, char* tokenizerPath, float temperature, float topp, int steps, char* prompt);
 
 #endif

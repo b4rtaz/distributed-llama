@@ -49,7 +49,7 @@ int inference(ProgramArgs* args) {
 
     socketPool.enableTurbo();
 
-    generate(&spec, &inference, args->tokenizerPath, temperature, topp, steps, args->prompt);
+    generate(&spec, &inference, &socketPool, args->tokenizerPath, temperature, topp, steps, args->prompt);
 
     return EXIT_SUCCESS;
 }

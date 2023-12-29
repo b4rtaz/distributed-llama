@@ -318,7 +318,7 @@ int Sampler::sample(float* logits) {
     return next;
 }
 
-void generate(TransformerSpec* spec, Inference* inference, char* tokenizerPath, float temperature, float topp, int steps, char* prompt) {
+void generate(TransformerSpec* spec, Inference* inference, SocketPool* socketPool, char* tokenizerPath, float temperature, float topp, int steps, char* prompt) {
     unsigned long long rngSeed = (unsigned int)time(NULL);
 
     Tokenizer tokenizer(tokenizerPath, spec->vocabSize);
@@ -344,9 +344,15 @@ void generate(TransformerSpec* spec, Inference* inference, char* tokenizerPath, 
 
     unsigned long inferenceTime;
     unsigned long transferTime;
+    size_t sentBytes;
+    size_t recvBytes;
     while (pos < steps) {
+        unsigned long t0 = timeMs();
         float* logits = inference->infer(token, pos);
-        inference->getMeasurements(&inferenceTime, &transferTime);
+        unsigned long t1 = timeMs();
+
+        inference->getStats(&inferenceTime, &transferTime);
+        socketPool->getStats(&sentBytes, &recvBytes);
 
         // advance the state machine
         if (pos < numPromptTokens - 1) {
@@ -364,7 +370,7 @@ void generate(TransformerSpec* spec, Inference* inference, char* tokenizerPath, 
         // print the token as string, decode it with the Tokenizer object
         char* piece = tokenizer.decode(token, next);
 
-        printf("🔶 %4ldms %4ldms ", inferenceTime, transferTime);
+        printf("🔶 %4ld ms I %4ld ms T %4ld ms S %6ld kB R %6ld kB ", t1 - t0, inferenceTime, transferTime, sentBytes / 1024, recvBytes / 1024);
         safePrintf(piece); // same as printf("%s", piece), but skips "unsafe" bytes
         printf("\n");
         fflush(stdout);

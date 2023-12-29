@@ -88,6 +88,8 @@ SocketPool SocketPool::connect(unsigned int nSockets, char** hosts, int* ports) 
 SocketPool::SocketPool(unsigned int nSockets, int* sockets) {
     this->nSockets = nSockets;
     this->sockets = sockets;
+    this->sentBytes = 0;
+    this->recvBytes = 0;
 }
 
 SocketPool::~SocketPool() {
@@ -105,12 +107,21 @@ void SocketPool::enableTurbo() {
 
 void SocketPool::write(unsigned int socketIndex, const char* data, size_t size) {
     assert(socketIndex >= 0 && socketIndex < nSockets);
+    sentBytes += size;
     writeSocket(sockets[socketIndex], data, size);
 }
 
 void SocketPool::read(unsigned int socketIndex, char* data, size_t size) {
     assert(socketIndex >= 0 && socketIndex < nSockets);
+    recvBytes += size;
     readSocket(sockets[socketIndex], data, size);
+}
+
+void SocketPool::getStats(size_t* sentBytes, size_t* recvBytes) {
+    *sentBytes = this->sentBytes;
+    *recvBytes = this->recvBytes;
+    this->sentBytes = 0;
+    this->recvBytes = 0;
 }
 
 Socket Socket::accept(int port) {

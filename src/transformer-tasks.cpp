@@ -382,7 +382,7 @@ float* Inference::infer(int token, int pos) {
     return transformer->logits;
 }
 
-void Inference::getMeasurements(unsigned long* inferenceTime, unsigned long* transferTime) {
+void Inference::getStats(unsigned long* inferenceTime, unsigned long* transferTime) {
     *inferenceTime = taskLoop->executionTime[TASK_TYPE_INFERENCE];
     *transferTime = taskLoop->executionTime[TASK_TYPE_TRANSFER];
 }
