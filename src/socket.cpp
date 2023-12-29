@@ -80,8 +80,8 @@ SocketPool SocketPool::connect(unsigned int nSockets, char** hosts, int* ports) 
             exit(EXIT_FAILURE);
         }
 
-        setNotBlocking(clientSocket);
-        setNoDelay(clientSocket);
+        // setNotBlocking(clientSocket);
+        // setNoDelay(clientSocket);
 
         sockets[i] = clientSocket;
     }
@@ -148,8 +148,8 @@ Socket Socket::accept(int port) {
 
     printf("Client connected\n");
 
-    setNotBlocking(clientSocket);
-    setNoDelay(clientSocket);
+    // setNotBlocking(clientSocket);
+    // setNoDelay(clientSocket);
 
     shutdown(serverSocket, 2);
     return Socket(clientSocket);
