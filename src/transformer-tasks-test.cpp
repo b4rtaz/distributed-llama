@@ -523,7 +523,7 @@ float expectedOutput[4096] = {
 };
 
 int stopTask(unsigned int nThreads, unsigned int threadIndex, void* userData) {
-    return TASK_LOOP_STOP;
+    return TASK_STOP;
 }
 
 int main() {
@@ -560,7 +560,7 @@ int main() {
 
     TaskLoopTask* tasks = new TaskLoopTask[Inference::nTasks];
     memcpy(tasks, Inference::tasks, sizeof(TaskLoopTask) * Inference::nTasks);
-    tasks[Inference::nTasks - 2] = stopTask; // Replaces nextBlock() with stopTask()
+    tasks[Inference::nTasks - 2].handler = stopTask; // Replaces nextBlock() with stopTask()
 
     int nThreads = 4;
     TransformerContext context;
@@ -569,7 +569,7 @@ int main() {
     context.socket = NULL;
     context.socketPool = &socketPool;
 
-    TaskLoop loop(nThreads, Inference::nTasks, tasks, &context);
+    TaskLoop loop(nThreads, Inference::nTasks, TASK_N_TYPES, tasks, &context);
     long t0 = timeMs();
     loop.run();
     long t1 = timeMs();

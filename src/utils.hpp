@@ -8,37 +8,41 @@
 #define FREE_BUFFER(buffer) free(buffer)
 
 char* newBuffer(size_t size);
-long timeMs();
+unsigned long timeMs();
 unsigned int randomU32(unsigned long long *state);
 float randomF32(unsigned long long *state);
 
-#define TASK_LOOP_CONTINUE 0
-#define TASK_LOOP_STOP -1
+#define TASK_CONTINUE 0
+#define TASK_STOP -1
 
-typedef int (*TaskLoopTask)(unsigned int nThreads, unsigned int threadIndex, void* userData);
+typedef struct {
+    int (*handler)(unsigned int nThreads, unsigned int threadIndex, void* userData);
+    unsigned int taskType;
+} TaskLoopTask;
 
-struct TaskLoopState {
+class TaskLoop;
+
+struct TaskLoopThread {
+    unsigned int threadIndex;
+    pthread_t handler;
+    TaskLoop* loop;
+};
+
+class TaskLoop {
+public:
     unsigned int nThreads;
     unsigned int nTasks;
+    unsigned int nTypes;
     TaskLoopTask* tasks;
     void* userData;
     std::atomic_uint currentTaskIndex;
     std::atomic_bool stop;
     std::atomic_uint doneThreadCount;
-};
-
-struct TaskLoopThread {
-    unsigned int threadIndex;
-    pthread_t handler;
-    TaskLoopState* state;
-};
-
-class TaskLoop {
-private:
-    TaskLoopState state;
+    unsigned int lastTime;
+    unsigned int* executionTime;
     TaskLoopThread* threads;
-public:
-    TaskLoop(unsigned int nThreads, unsigned int nTasks, TaskLoopTask* tasks, void* userData);
+
+    TaskLoop(unsigned int nThreads, unsigned int nTasks, unsigned int nTypes, TaskLoopTask* tasks, void* userData);
     ~TaskLoop();
     void run();
     static void* threadHandler(void* args);

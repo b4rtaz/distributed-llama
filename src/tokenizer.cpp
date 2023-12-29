@@ -341,10 +341,12 @@ void generate(TransformerSpec* spec, Inference* inference, char* tokenizerPath, 
     int next;        // will store the next token in the sequence
     int token = promptTokens[0]; // kick off with the first token in the prompt
     int pos = 0;     // position in the sequence
+
+    unsigned long inferenceTime;
+    unsigned long transferTime;
     while (pos < steps) {
-        long t0 = timeMs();
         float* logits = inference->infer(token, pos);
-        long t1 = timeMs();
+        inference->getMeasurements(&inferenceTime, &transferTime);
 
         // advance the state machine
         if (pos < numPromptTokens - 1) {
@@ -362,7 +364,7 @@ void generate(TransformerSpec* spec, Inference* inference, char* tokenizerPath, 
         // print the token as string, decode it with the Tokenizer object
         char* piece = tokenizer.decode(token, next);
 
-        printf("🔶 %4ldms ", t1 - t0);
+        printf("🔶 %4ldms %4ldms ", inferenceTime, transferTime);
         safePrintf(piece); // same as printf("%s", piece), but skips "unsafe" bytes
         printf("\n");
         fflush(stdout);

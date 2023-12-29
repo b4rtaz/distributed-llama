@@ -18,7 +18,7 @@ char* newBuffer(size_t size) {
     return buffer;
 }
 
-long timeMs() {
+unsigned long timeMs() {
     struct timeval te; 
     gettimeofday(&te, NULL);
     return te.tv_sec * 1000LL + te.tv_usec / 1000;
@@ -37,29 +37,38 @@ float randomF32(unsigned long long *state) {
     return (randomU32(state) >> 8) / 16777216.0f;
 }
 
-TaskLoop::TaskLoop(unsigned int nThreads, unsigned int nTasks, TaskLoopTask* tasks, void* userData) {
-    state.nThreads = nThreads;
-    state.nTasks = nTasks;
-    state.tasks = tasks;
-    state.userData = userData;
+TaskLoop::TaskLoop(unsigned int nThreads, unsigned int nTasks, unsigned int nTypes, TaskLoopTask* tasks, void* userData) {
+    this->nThreads = nThreads;
+    this->nTasks = nTasks;
+    this->nTypes = nTypes;
+    this->tasks = tasks;
+    this->userData = userData;
+    executionTime = new unsigned int[nTypes];
 
     threads = new TaskLoopThread[nThreads];
     for (unsigned int i = 0; i < nThreads; i++) {
         threads[i].threadIndex = i;
-        threads[i].state = &state;
+        threads[i].loop = this;
     }
 }
 
 TaskLoop::~TaskLoop() {
+    delete[] executionTime;
     delete[] threads;
 }
 
 void TaskLoop::run() {
-    state.currentTaskIndex.exchange(0);
-    state.doneThreadCount.exchange(0);
-    state.stop.exchange(false);
+    currentTaskIndex.exchange(0);
+    doneThreadCount.exchange(0);
+    stop.exchange(false);
 
-    for (unsigned int i = 1; i < state.nThreads; i++) {
+    unsigned int i;
+    lastTime = timeMs();
+    for (i = 0; i < nTypes; i++) {
+        executionTime[i] = 0;
+    }
+
+    for (i = 1; i < nThreads; i++) {
         int result = pthread_create(&threads[i].handler, NULL, threadHandler, (void*)&threads[i]);
         if (result != 0) {
             printf("Cannot created thread\n");
@@ -69,37 +78,42 @@ void TaskLoop::run() {
 
     threadHandler((void*)&threads[0]);
 
-    for (unsigned int i = 1; i < state.nThreads; i++) {
+    for (i = 1; i < nThreads; i++) {
         pthread_join(threads[i].handler, NULL);
     }
 }
 
 void* TaskLoop::threadHandler(void* arg) {
     TaskLoopThread* context = (TaskLoopThread*)arg;
-    TaskLoopState* state = context->state;
+    TaskLoop* loop = context->loop;
     unsigned int threadIndex = context->threadIndex;
 
-    while (state->stop == false) {
-        unsigned int currentTaskIndex = state->currentTaskIndex;
+    while (loop->stop == false) {
+        const unsigned int currentTaskIndex = loop->currentTaskIndex;
+        const TaskLoopTask* task = &loop->tasks[currentTaskIndex];
 
-        int result = state->tasks[currentTaskIndex % state->nTasks](state->nThreads, threadIndex, state->userData);
+        int result = task->handler(loop->nThreads, threadIndex, loop->userData);
 
-        if (result == TASK_LOOP_STOP) {
-            state->stop = true;
+        if (result == TASK_STOP) {
+            loop->stop = true;
             break;
         }
 
-        state->doneThreadCount++;
+        loop->doneThreadCount++;
 
         if (threadIndex == 0) {
+            unsigned int currentTime = timeMs();
+            loop->executionTime[task->taskType] += currentTime - loop->lastTime;
+            loop->lastTime = currentTime;
+
             // printf("📋 Task %4d done\n", currentTaskIndex);
-            while (state->stop == false && state->doneThreadCount < state->nThreads) {
+            while (loop->stop == false && loop->doneThreadCount < loop->nThreads) {
                 // NOP
             }
-            state->doneThreadCount.exchange(0);
-            state->currentTaskIndex.store(currentTaskIndex + 1);
+            loop->doneThreadCount.exchange(0);
+            loop->currentTaskIndex.store((currentTaskIndex + 1) % loop->nTasks);
         } else {
-            while (state->stop == false && state->currentTaskIndex == currentTaskIndex) {
+            while (loop->stop == false && loop->currentTaskIndex == currentTaskIndex) {
                 // NOP
             }
         }
