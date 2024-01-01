@@ -6,5 +6,6 @@
 *.bin
 __pycache__
 
+quants-test
 transformer-tasks-test
 main

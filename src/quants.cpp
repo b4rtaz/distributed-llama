@@ -179,15 +179,19 @@ void dequantizeQ40Row(const BlockQ40* x, float* y, int k) {
 #endif
 }
 
-void quantizeQ80Row(float* x, BlockQ80* y, int k) {
-    assert(QK80 == 32);
-    assert(k % QK80 == 0);
-    const int nb = k / QK80;
+void quantizeQ80Row(float* input, BlockQ80* output, int k, unsigned int nThreads, unsigned int threadIndex) {
+    assert(k % nThreads == 0);
+    const int sk = k / nThreads;
+    assert(sk % QK80 == 0);
+
+    const int blocks = sk / QK80;
+    const float* x = &input[sk * threadIndex];
+    BlockQ80* y = &output[blocks * threadIndex];
 
 #if defined(__ARM_NEON)
     float dBuf[4];
 
-    for (int i = 0; i < nb; i++) {
+    for (int i = 0; i < blocks; i++) {
         float32x4_t srcv [8];
         float32x4_t asrcv[8];
         float32x4_t amaxv[8];
@@ -226,23 +230,35 @@ void quantizeQ80Row(float* x, BlockQ80* y, int k) {
             y[i].qs[4*j + 3] = vgetq_lane_s32(vi, 3);
         }
     }
+
+    int rest = blocks % 4;
+    if (rest != 0) {
+        float32x4_t dBuf32 = vld1q_f32(dBuf);
+        int16x4_t dBuf16 = (int16x4_t)vcvt_f16_f32(dBuf32);
+        for (int i = 0; i < rest; i++) {
+            y[blocks - rest + i].d = dBuf16[i];
+        }
+    }
 #else
     printf("quantizeQ80Row is not implemented\n");
     exit(EXIT_FAILURE);
 #endif
 }
 
-void dequantizeQ80Row(const BlockQ80* x, float* y, int k) {
-    static const int qk = QK80;
-    assert(k % qk == 0);
+void dequantizeQ80Row(const BlockQ80* input, float* output, int k, unsigned int nThreads, unsigned int threadIndex) {
+    assert(k % nThreads == 0);
+    const int sk = k / nThreads;
+    assert(sk % QK80 == 0);
 
-    const int nb = k / qk;
+    const int blocks = sk / QK80;
+    const BlockQ80* x = &input[blocks * threadIndex];
+    float* y = &output[sk * threadIndex];
 
-    for (int i = 0; i < nb; i++) {
+    for (int i = 0; i < blocks; i++) {
         const float d = convertF16ToF32(x[i].d);
 
-        for (int j = 0; j < qk; ++j) {
-            y[i*qk + j] = x[i].qs[j]*d;
+        for (int j = 0; j < QK80; ++j) {
+            y[i*QK80 + j] = x[i].qs[j]*d;
         }
     }
 }

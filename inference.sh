@@ -1,3 +1,7 @@
+make quants-test
+chmod +x ./quants-test
+./quants-test
+
 make transformer-tasks-test
 chmod +x ./transformer-tasks-test
 ./transformer-tasks-test

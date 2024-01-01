@@ -50,18 +50,18 @@ void syncSlicedBuffer(unsigned int nThreads, unsigned int threadIndex, Transform
 }
 
 void quantizeUnitBuffer(unsigned int nThreads, unsigned int threadIndex, TransformerContext* ctx, uint8_t sourceBufferIndex, uint8_t targetBufferIndex) {
-    if (threadIndex != 0) return;
     if (ctx->transformer->spec->bufferFloatType == F32) return;
     assert(ctx->transformer->spec->bufferFloatType == Q80);
 
     quantizeQ80Row(
         (float*)ctx->transformer->buffer->getUnit(sourceBufferIndex),
         (BlockQ80*)ctx->transformer->buffer->getUnit(targetBufferIndex),
-        ctx->transformer->buffer->getUnitBytes(sourceBufferIndex) / sizeof(float));
+        ctx->transformer->buffer->getUnitBytes(sourceBufferIndex) / sizeof(float),
+        nThreads,
+        threadIndex);
 }
 
 void quantizeSlicedBuffer(unsigned int nThreads, unsigned int threadIndex, TransformerContext* ctx, bool quantizeRootSlice, uint8_t sourceBufferIndex, uint8_t targetBufferIndex) {
-    if (threadIndex != 0) return;
     if (ctx->transformer->spec->bufferFloatType == F32) return;
     if (ctx->transformer->sliceIndex == 0 && !quantizeRootSlice) return;
     assert(ctx->transformer->spec->bufferFloatType == Q80);
@@ -69,11 +69,12 @@ void quantizeSlicedBuffer(unsigned int nThreads, unsigned int threadIndex, Trans
     quantizeQ80Row(
         (float*)ctx->transformer->buffer->getSliced(sourceBufferIndex, ctx->transformer->sliceIndex),
         (BlockQ80*)ctx->transformer->buffer->getSliced(targetBufferIndex, ctx->transformer->sliceIndex),
-        ctx->transformer->buffer->getSlicedBytes(sourceBufferIndex) / sizeof(float));
+        ctx->transformer->buffer->getSlicedBytes(sourceBufferIndex) / sizeof(float),
+        nThreads,
+        threadIndex);
 }
 
 void dequantizeSlicedBuffer(unsigned int nThreads, unsigned int threadIndex, TransformerContext* ctx, bool dequantizeRootSlice, uint8_t sourceBufferIndex, uint8_t targetBufferIndex) {
-    if (threadIndex != 0) return;
     if (ctx->transformer->spec->bufferFloatType == F32) return;
     assert(ctx->transformer->spec->bufferFloatType == Q80);
     assert(ctx->socketPool != NULL); // This function may be called only by root.
@@ -83,7 +84,9 @@ void dequantizeSlicedBuffer(unsigned int nThreads, unsigned int threadIndex, Tra
         dequantizeQ80Row(
             (BlockQ80*)ctx->transformer->buffer->getSliced(sourceBufferIndex, sliceIndex),
             (float*)ctx->transformer->buffer->getSliced(targetBufferIndex, sliceIndex),
-            (ctx->transformer->buffer->getSlicedBytes(sourceBufferIndex) / sizeof(BlockQ80)) * QK80);
+            (ctx->transformer->buffer->getSlicedBytes(sourceBufferIndex) / sizeof(BlockQ80)) * QK80,
+            nThreads,
+            threadIndex);
     }
 }
 
