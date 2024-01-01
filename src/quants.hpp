@@ -6,7 +6,8 @@
 enum FloatType {
     F32 = 0,
     F16 = 1,
-    Q40 = 2
+    Q40 = 2,
+    Q80 = 3
 };
 
 #define QK40 32
@@ -30,5 +31,6 @@ float convertF16ToF32(uint16_t value);
 
 void dequantizeQ40Row(const BlockQ40* x, float* y, int k);
 void quantizeQ80Row(float* x, BlockQ80* y, int k);
+void dequantizeQ80Row(const BlockQ80* x, float* y, int k);
 
 #endif

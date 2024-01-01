@@ -16,7 +16,8 @@ struct ProgramArgs {
     char* modelPath;
     char* tokenizerPath;
     char* prompt;
-    FloatType floatType;
+    FloatType weightsFloatType;
+    FloatType bufferFloatType;
     int nWorkers;
     char** workerHosts;
     int* workerPorts;
@@ -43,7 +44,7 @@ int inference(ProgramArgs* args) {
     SocketPool socketPool = SocketPool::connect(args->nWorkers, args->workerHosts, args->workerPorts);
     unsigned int nSlices = args->nWorkers + 1;
 
-    TransformerSpec spec = Transformer::loadSpecFromFile(args->modelPath, nSlices, args->floatType);
+    TransformerSpec spec = Transformer::loadSpecFromFile(args->modelPath, nSlices, args->weightsFloatType, args->bufferFloatType);
     Transformer transformer = Transformer::loadRootFromFile(args->modelPath, &spec, &socketPool);
     Inference inference = Inference(args->nThread, &transformer, &socketPool);
 
@@ -80,7 +81,8 @@ int main(int argc, char *argv[]) {
     args.modelPath = NULL;
     args.tokenizerPath = NULL;
     args.prompt = NULL;
-    args.floatType = F32;
+    args.weightsFloatType = F32;
+    args.bufferFloatType = F32;
     args.nWorkers = 0;
     args.port = 9990;
 
@@ -96,9 +98,11 @@ int main(int argc, char *argv[]) {
             args.tokenizerPath = argv[i + 1];
         } else if (strcmp(argv[i], "-prompt") == 0) {
             args.prompt = argv[i + 1];
-        } else if (strcmp(argv[i], "-f") == 0) {
-            args.floatType = (FloatType)atoi(argv[i + 1]);
-        } else if (strcmp(argv[i], "-s") == 0) {
+        } else if (strcmp(argv[i], "-w") == 0) {
+            args.weightsFloatType = (FloatType)atoi(argv[i + 1]);
+        } else if (strcmp(argv[i], "-b") == 0) {
+            args.bufferFloatType = (FloatType)atoi(argv[i + 1]);
+        }else if (strcmp(argv[i], "-s") == 0) {
             int j = i + 1;
             for (; j < argc && argv[j][0] != '-'; j++);
             int count = j - i - 1;

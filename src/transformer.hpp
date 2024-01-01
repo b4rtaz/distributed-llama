@@ -43,7 +43,8 @@ struct TransformerSpec {
     bool sharedWeights;
     int vocabSize;
 
-    FloatType floatType;
+    FloatType weightsFloatType;
+    FloatType bufferFloatType;
     uint8_t nSlices;
 };
 
@@ -80,13 +81,19 @@ public:
     ~TransformerBlock();
 };
 
-#define TB_LENGTH 6
+#define TB_LENGTH 12
 #define TB_UNIT_XB 0
-#define TB_SLICED_XB2 1
-#define TB_SLICED_Q 2
-#define TB_SLICED_K 3
-#define TB_SLICED_V 4
-#define TB_SLICED_HB 5
+#define TB_UNIT_XB_QUANTIZED 1
+#define TB_SLICED_XB2 2
+#define TB_SLICED_XB2_QUANTIZED 3
+#define TB_SLICED_Q 4
+#define TB_SLICED_Q_QUANTIZED 5
+#define TB_SLICED_K 6
+#define TB_SLICED_K_QUANTIZED 7
+#define TB_SLICED_V 8
+#define TB_SLICED_V_QUANTIZED 9
+#define TB_SLICED_HB 10
+#define TB_SLICED_HB_QUANTIZED 11
 
 class TransformerBuffer {
 public:
@@ -123,7 +130,7 @@ public:
 
     ~Transformer();
 
-    static TransformerSpec loadSpecFromFile(const char* path, const unsigned int nSlices, FloatType type);
+    static TransformerSpec loadSpecFromFile(const char* path, const unsigned int nSlices, FloatType weightsFloatType, FloatType bufferFloatType);
     static Transformer loadRootFromFile(const char* path, TransformerSpec* spec, SocketPool* socketPool);
     static Transformer loadRoot(char* data, TransformerSpec* spec, SocketPool* socketPool);
     static Transformer loadSlice(TransformerSpec* spec, Socket* socket);

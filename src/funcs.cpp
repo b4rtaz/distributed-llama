@@ -94,7 +94,6 @@ struct MatmulThreadInfo {
     float* output;
     void* input;
     void* weights;
-    FloatType type;
     int n;
     int ds;
     int de;
@@ -141,6 +140,45 @@ void matmulF16(MatmulThreadInfo* a) {
         }
         a->output[d] = val;
     }
+}
+
+void matmulQ40(MatmulThreadInfo* a) {
+    const int blocksPerRow = 8;
+    const int k = QK40 * blocksPerRow;
+    BlockQ40* w = (BlockQ40*)a->weights;
+    assert(a->n % k == 0);
+    int n = a->n / k;
+    float group[k];
+
+#if defined(__ARM_NEON)
+    assert(k % 16 == 0);
+    float32x4_t a0;
+    float32x4_t b0;
+    float32x4_t u;
+    for (int d = a->ds; d < a->de; d++) {
+        u = vmovq_n_f32(0);
+        for (int j = 0; j < n; j++) {
+            dequantizeQ40Row(&w[d * n * blocksPerRow + j * blocksPerRow], group, k);
+            for (int z = 0; z < k; z += 4) {
+                a0 = vld1q_f32(&((float*)a->input)[j * k + z]);
+                b0 = vld1q_f32(&group[z]);
+                u = vfmaq_f32(u, a0, b0);
+            }
+        }
+        a->output[d] = vaddvq_f32(u);
+    }
+#else
+    for (int d = a->ds; d < a->de; d++) {
+        float val = 0.0f;
+        for (int j = 0; j < n; j++) {
+            dequantizeQ40Row(&w[d * n * blocksPerRow + j * blocksPerRow], group, k);
+            for (int z = 0; z < k; z++) {
+                val += group[z] * a->input[j * k + z];
+            }
+        }
+        a->output[d] = val;
+    }
+#endif
 }
 
 void matmulQ40vQ80(MatmulThreadInfo* a) {
@@ -235,42 +273,36 @@ void matmulQ40vQ80(MatmulThreadInfo* a) {
 //   |_________|   n | |      |_|
 //        n          |_|       1
 //                    1
-void matmul(FloatType type, float* output, float* input, void* weights, int n, int d, unsigned int nThreads, unsigned int threadIndex) {
-    if (type == Q40) {
-        // TODO: this should be done once, not by every thread
-        BlockQ80* bq80 = new BlockQ80[n / QK80];
-        quantizeQ80Row(input, bq80, n);
-        input = (float*)bq80;
-    }
-
+void matmul(FloatType weightsFloatType, FloatType inputFloatType, float* output, void* input, void* weights, int n, int d, unsigned int nThreads, unsigned int threadIndex) {
     MatmulThreadInfo s;
     s.output = output;
     s.input = input;
     s.weights = weights;
-    s.type = type;
     s.n = n;
     s.ds = threadIndex * d / nThreads;
     s.de = (threadIndex + 1) * d / nThreads;
 
-    switch (type)
-    {
-        case F32:
+    if (inputFloatType == F32) {
+        if (weightsFloatType == F32) {
             matmulF32(&s);
-            break;
-        case F16:
+            return;
+        }
+        if (weightsFloatType == F16) {
             matmulF16(&s);
-            break;
-        case Q40:
-            matmulQ40vQ80(&s);
-            break;
-        default:
-            printf("Unknown float type %d\n", s.type);
-            exit(EXIT_FAILURE);
+            return;
+        }
+        if (weightsFloatType == Q40) {
+            matmulQ40(&s);
+            return;
+        }
+    }
+    if (inputFloatType == Q80 && weightsFloatType == Q40) {
+        matmulQ40vQ80(&s);
+        return;
     }
 
-    if (type == Q40) {
-        delete[] input;
-    }
+    printf("Unsupported float types: %d/%d\n", weightsFloatType, inputFloatType);
+    exit(EXIT_FAILURE);
 }
 
 float dotProduct(const float* a, const float* b, const int size) {

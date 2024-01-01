@@ -49,7 +49,7 @@ long MatmulSlice::mergeOutputs(uint8_t sliceIndex, float* output, float* output0
     return offset; // offset in floats
 }
 
-TransformerSpec Transformer::loadSpecFromFile(const char* path, const unsigned int nSlices, FloatType floatType) {
+TransformerSpec Transformer::loadSpecFromFile(const char* path, const unsigned int nSlices, FloatType weightsFloatType, FloatType bufferFloatType) {
     TransformerSpec spec;
     FILE* fd = fopen(path, "rb");
     if (fd == NULL) {
@@ -70,7 +70,8 @@ TransformerSpec Transformer::loadSpecFromFile(const char* path, const unsigned i
     spec.seqLen = header.seqLen;
     spec.headSize = spec.dim / spec.nHeads;
     spec.kvDim = (spec.dim * spec.nKvHeads) / spec.nHeads;
-    spec.floatType = floatType;
+    spec.weightsFloatType = weightsFloatType;
+    spec.bufferFloatType = bufferFloatType;
     spec.nSlices = nSlices;
 
     printf("💡 dim: %d\n", spec.dim);
@@ -96,18 +97,32 @@ TransformerBuffer::TransformerBuffer(TransformerSpec* spec) {
     bufferBytes = new size_t[TB_LENGTH];
 
     bufferBytes[TB_UNIT_XB] = spec->dim * sizeof(float);
+    bufferBytes[TB_UNIT_XB_QUANTIZED] = getBatchBytes(spec->bufferFloatType, spec->dim, 1);
     bufferBytes[TB_SLICED_XB2] = spec->dim * sizeof(float);
+    bufferBytes[TB_SLICED_XB2_QUANTIZED] = getBatchBytes(spec->bufferFloatType, spec->dim, 1);
     bufferBytes[TB_SLICED_Q] = spec->dim * sizeof(float);
+    bufferBytes[TB_SLICED_Q_QUANTIZED] = getBatchBytes(spec->bufferFloatType, spec->dim, 1);
     bufferBytes[TB_SLICED_K] = spec->kvDim * sizeof(float);
+    bufferBytes[TB_SLICED_K_QUANTIZED] = getBatchBytes(spec->bufferFloatType, spec->kvDim, 1);
     bufferBytes[TB_SLICED_V] = spec->kvDim * sizeof(float);
+    bufferBytes[TB_SLICED_V_QUANTIZED] = getBatchBytes(spec->bufferFloatType, spec->kvDim, 1);
     bufferBytes[TB_SLICED_HB] = spec->hiddenDim * sizeof(float);
-    for (int i = 0; i < TB_LENGTH; i++) {
+    bufferBytes[TB_SLICED_HB_QUANTIZED] = getBatchBytes(spec->bufferFloatType, spec->hiddenDim, 1);
+    for (int i = 0; i < TB_LENGTH; i += 2) {
         buffers[i] = NEW_BUFFER(bufferBytes[i]);
+        if (spec->bufferFloatType == F32) {
+            buffers[i + 1] = buffers[i];
+        } else {
+            buffers[i + 1] = NEW_BUFFER(bufferBytes[i + 1]);
+        }
     }
 }
 
 TransformerBuffer::~TransformerBuffer() {
-    for (int i = 0; i < TB_LENGTH; i++) {
+    for (int i = 0; i < TB_LENGTH; i += 2) {
+        if (buffers[i] != buffers[i + 1]) {
+            FREE_BUFFER(buffers[i + 1]);
+        }
         FREE_BUFFER(buffers[i]);
     }
     delete[] bufferBytes;
@@ -146,7 +161,7 @@ Transformer::Transformer(TransformerSpec* spec, uint8_t sliceIndex) {
         tokenEmbeddingTable = NEW_BUFFER(tokenEmbeddingTableBytes);
         rmsFinalBytes = spec->dim * sizeof(float);
         rmsFinal = NEW_BUFFER(rmsFinalBytes);
-        wclsBytes = spec->sharedWeights ? tokenEmbeddingTableBytes : getBatchBytes(spec->floatType, spec->vocabSize, spec->dim);
+        wclsBytes = spec->sharedWeights ? tokenEmbeddingTableBytes : getBatchBytes(spec->weightsFloatType, spec->vocabSize, spec->dim);
         wcls = NEW_BUFFER(wclsBytes);
         x = (float*)NEW_BUFFER(spec->dim * sizeof(float));
         logits = (float*)NEW_BUFFER(spec->vocabSize * sizeof(float));
@@ -182,13 +197,13 @@ TransformerBlock::TransformerBlock(TransformerSpec* spec, uint8_t sliceIndex) {
         att = (float*)NEW_BUFFER(spec->nHeads * spec->seqLen * sizeof(float));
     }
 
-    q0Slice = new MatmulSlice(spec->floatType, spec->nSlices, spec->dim, spec->dim);
-    k0Slice = new MatmulSlice(spec->floatType, spec->nSlices, spec->dim, spec->kvDim);
-    v0Slice = new MatmulSlice(spec->floatType, spec->nSlices, spec->dim, spec->kvDim);
-    wo0Slice = new MatmulSlice(spec->floatType, spec->nSlices, spec->dim, spec->dim);
-    w10Slice = new MatmulSlice(spec->floatType, spec->nSlices, spec->dim, spec->hiddenDim);
-    w20Slice = new MatmulSlice(spec->floatType, spec->nSlices, spec->hiddenDim, spec->dim);
-    w30Slice = new MatmulSlice(spec->floatType, spec->nSlices, spec->dim, spec->hiddenDim);
+    q0Slice = new MatmulSlice(spec->weightsFloatType, spec->nSlices, spec->dim, spec->dim);
+    k0Slice = new MatmulSlice(spec->weightsFloatType, spec->nSlices, spec->dim, spec->kvDim);
+    v0Slice = new MatmulSlice(spec->weightsFloatType, spec->nSlices, spec->dim, spec->kvDim);
+    wo0Slice = new MatmulSlice(spec->weightsFloatType, spec->nSlices, spec->dim, spec->dim);
+    w10Slice = new MatmulSlice(spec->weightsFloatType, spec->nSlices, spec->dim, spec->hiddenDim);
+    w20Slice = new MatmulSlice(spec->weightsFloatType, spec->nSlices, spec->hiddenDim, spec->dim);
+    w30Slice = new MatmulSlice(spec->weightsFloatType, spec->nSlices, spec->dim, spec->hiddenDim);
 
     q0 = NEW_BUFFER(q0Slice->sliceBytes);
     k0 = NEW_BUFFER(k0Slice->sliceBytes);

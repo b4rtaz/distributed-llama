@@ -16,6 +16,8 @@ int getNumbersPerBatch(FloatType type) {
             return 1;
         case Q40:
             return QK40;
+        case Q80:
+            return QK80;
     }
     fprintf(stderr, "Unsupported float type %d\n", type);
     exit(EXIT_FAILURE);
@@ -28,9 +30,17 @@ long getBatchBytes(FloatType type, int n, int d) {
         case F16:
             return n * d * sizeof(uint16_t);
         case Q40:
-            assert(n % QK40 == 0);
-            int blocks = n / QK40 * d;
-            return blocks * sizeof(BlockQ40);
+            {
+                assert(n % QK40 == 0);
+                int blocks = n / QK40 * d;
+                return blocks * sizeof(BlockQ40);
+            }
+        case Q80:
+            {
+                assert(n % QK80 == 0);
+                int blocks = n / QK80 * d;
+                return blocks * sizeof(BlockQ80);
+            }
     }
     fprintf(stderr, "Unsupported float type %d\n", type);
     exit(EXIT_FAILURE);
@@ -220,6 +230,21 @@ void quantizeQ80Row(float* x, BlockQ80* y, int k) {
     printf("quantizeQ80Row is not implemented\n");
     exit(EXIT_FAILURE);
 #endif
+}
+
+void dequantizeQ80Row(const BlockQ80* x, float* y, int k) {
+    static const int qk = QK80;
+    assert(k % qk == 0);
+
+    const int nb = k / qk;
+
+    for (int i = 0; i < nb; i++) {
+        const float d = convertF16ToF32(x[i].d);
+
+        for (int j = 0; j < qk; ++j) {
+            y[i*qk + j] = x[i].qs[j]*d;
+        }
+    }
 }
 
 void initQuants() {

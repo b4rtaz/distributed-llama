@@ -537,7 +537,8 @@ int main() {
     spec.nHeads = spec.dim / spec.headSize;
     spec.kvDim = (spec.dim * spec.nKvHeads) / spec.nHeads;
     spec.vocabSize = 32000;
-    spec.floatType = F32;
+    spec.weightsFloatType = F32;
+    spec.bufferFloatType = F32;
     spec.nSlices = 1;
 
     size_t beforeBlockBytes = 524288000;

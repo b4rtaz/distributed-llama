@@ -1,10 +1,10 @@
 #include <cmath>
+#include <cassert>
 #include <string.h>
 #include "utils.hpp"
 #include "funcs.hpp"
 #include "socket.hpp"
 #include "transformer-tasks.hpp"
-#include <cassert>
 
 #define TASK_ARGS unsigned int nThreads, unsigned int threadIndex, void* userData
 
@@ -49,6 +49,46 @@ void syncSlicedBuffer(unsigned int nThreads, unsigned int threadIndex, Transform
     }
 }
 
+void quantizeUnitBuffer(unsigned int nThreads, unsigned int threadIndex, TransformerContext* ctx, uint8_t sourceBufferIndex, uint8_t targetBufferIndex) {
+    if (threadIndex != 0) return;
+    if (ctx->transformer->spec->bufferFloatType == F32) return;
+    assert(ctx->transformer->spec->bufferFloatType == Q80);
+
+    quantizeQ80Row(
+        (float*)ctx->transformer->buffer->getUnit(sourceBufferIndex),
+        (BlockQ80*)ctx->transformer->buffer->getUnit(targetBufferIndex),
+        ctx->transformer->buffer->getUnitBytes(sourceBufferIndex) / sizeof(float));
+}
+
+void quantizeSlicedBuffer(unsigned int nThreads, unsigned int threadIndex, TransformerContext* ctx, bool quantizeRootSlice, uint8_t sourceBufferIndex, uint8_t targetBufferIndex) {
+    if (threadIndex != 0) return;
+    if (ctx->transformer->spec->bufferFloatType == F32) return;
+    if (ctx->transformer->sliceIndex == 0 && !quantizeRootSlice) return;
+    assert(ctx->transformer->spec->bufferFloatType == Q80);
+
+    quantizeQ80Row(
+        (float*)ctx->transformer->buffer->getSliced(sourceBufferIndex, ctx->transformer->sliceIndex),
+        (BlockQ80*)ctx->transformer->buffer->getSliced(targetBufferIndex, ctx->transformer->sliceIndex),
+        ctx->transformer->buffer->getSlicedBytes(sourceBufferIndex) / sizeof(float));
+}
+
+void dequantizeSlicedBuffer(unsigned int nThreads, unsigned int threadIndex, TransformerContext* ctx, bool dequantizeRootSlice, uint8_t sourceBufferIndex, uint8_t targetBufferIndex) {
+    if (threadIndex != 0) return;
+    if (ctx->transformer->spec->bufferFloatType == F32) return;
+    assert(ctx->transformer->spec->bufferFloatType == Q80);
+    assert(ctx->socketPool != NULL); // This function may be called only by root.
+
+    unsigned int sliceIndex = dequantizeRootSlice ? 0 : 1;
+    for (; sliceIndex < ctx->transformer->spec->nSlices; sliceIndex++) {
+        dequantizeQ80Row(
+            (BlockQ80*)ctx->transformer->buffer->getSliced(sourceBufferIndex, sliceIndex),
+            (float*)ctx->transformer->buffer->getSliced(targetBufferIndex, sliceIndex),
+            (ctx->transformer->buffer->getSlicedBytes(sourceBufferIndex) / sizeof(BlockQ80)) * QK80);
+    }
+}
+
+//
+
 int rmsAtt(TASK_ARGS) {
     TASK_VARIABLES;
     if (threadIndex == 0) {
@@ -59,38 +99,59 @@ int rmsAtt(TASK_ARGS) {
 
 int rmsAttNorm(TASK_ARGS) {
     TASK_VARIABLES;
-    float* xb = (float*)ctx->transformer->buffer->getUnit(TB_UNIT_XB);
+    float* xb = (float*)transformer->buffer->getUnit(TB_UNIT_XB);
     rmsnorm(xb, transformer->x, transformer->rms, block->rmsAtt, spec->dim, nThreads, threadIndex);
+    return TASK_CONTINUE;
+}
+
+int quantizeRmsAtt(TASK_ARGS) {
+    TASK_VARIABLES;
+    quantizeUnitBuffer(nThreads, threadIndex, ctx, TB_UNIT_XB, TB_UNIT_XB_QUANTIZED);
     return TASK_CONTINUE;
 }
 
 int syncRmsAtt(TASK_ARGS) {
     TASK_VARIABLES;
-    syncUnitBuffer(nThreads, threadIndex, ctx, TB_UNIT_XB);
+    syncUnitBuffer(nThreads, threadIndex, ctx, TB_UNIT_XB_QUANTIZED);
     return TASK_CONTINUE;
 }
 
 int qkv(TASK_ARGS) {
     TASK_VARIABLES;
 
-    float *xb = (float*)transformer->buffer->getUnit(TB_UNIT_XB);
+    float *xbq = (float*)transformer->buffer->getUnit(TB_UNIT_XB_QUANTIZED);
     float *q0 = (float*)transformer->buffer->getSliced(TB_SLICED_Q, transformer->sliceIndex);
     float *k0 = (float*)transformer->buffer->getSliced(TB_SLICED_K, transformer->sliceIndex);
     float *v0 = (float*)transformer->buffer->getSliced(TB_SLICED_V, transformer->sliceIndex);
 
-    matmul(spec->floatType, q0, xb, block->q0, block->q0Slice->n, block->q0Slice->d0, nThreads, threadIndex);
-    matmul(spec->floatType, k0, xb, block->k0, block->k0Slice->n, block->k0Slice->d0, nThreads, threadIndex);
-    matmul(spec->floatType, v0, xb, block->v0, block->v0Slice->n, block->v0Slice->d0, nThreads, threadIndex);
+    matmul(spec->weightsFloatType, spec->bufferFloatType, q0, xbq, block->q0, block->q0Slice->n, block->q0Slice->d0, nThreads, threadIndex);
+    matmul(spec->weightsFloatType, spec->bufferFloatType, k0, xbq, block->k0, block->k0Slice->n, block->k0Slice->d0, nThreads, threadIndex);
+    matmul(spec->weightsFloatType, spec->bufferFloatType, v0, xbq, block->v0, block->v0Slice->n, block->v0Slice->d0, nThreads, threadIndex);
+    return TASK_CONTINUE;
+}
+
+int quantizeQkv(TASK_ARGS) {
+    TASK_VARIABLES;
+    quantizeSlicedBuffer(nThreads, threadIndex, ctx, false, TB_SLICED_Q, TB_SLICED_Q_QUANTIZED);
+    quantizeSlicedBuffer(nThreads, threadIndex, ctx, false, TB_SLICED_K, TB_SLICED_K_QUANTIZED);
+    quantizeSlicedBuffer(nThreads, threadIndex, ctx, false, TB_SLICED_V, TB_SLICED_V_QUANTIZED);
     return TASK_CONTINUE;
 }
 
 int syncQkv(TASK_ARGS) {
     TASK_VARIABLES;
-    syncSlicedBuffer(nThreads, threadIndex, ctx, TB_SLICED_Q);
-    syncSlicedBuffer(nThreads, threadIndex, ctx, TB_SLICED_K);
-    syncSlicedBuffer(nThreads, threadIndex, ctx, TB_SLICED_V);
-
+    syncSlicedBuffer(nThreads, threadIndex, ctx, TB_SLICED_Q_QUANTIZED);
+    syncSlicedBuffer(nThreads, threadIndex, ctx, TB_SLICED_K_QUANTIZED);
+    syncSlicedBuffer(nThreads, threadIndex, ctx, TB_SLICED_V_QUANTIZED);
     // if (ctx->socketPool != NULL && threadIndex == 0) { float* v = (float*)block->q0; printf("q0 (%d): %f %f %f %f %f %f\n", ctx->currentBlockIndex, v[0], v[1], v[2], v[3], v[4], v[5]); }
+    return TASK_CONTINUE;
+}
+
+int dequantizeQkv(TASK_ARGS) {
+    TASK_VARIABLES;
+    dequantizeSlicedBuffer(nThreads, threadIndex, ctx, false, TB_SLICED_Q_QUANTIZED, TB_SLICED_Q);
+    dequantizeSlicedBuffer(nThreads, threadIndex, ctx, false, TB_SLICED_K_QUANTIZED, TB_SLICED_K);
+    dequantizeSlicedBuffer(nThreads, threadIndex, ctx, false, TB_SLICED_V_QUANTIZED, TB_SLICED_V);
     return TASK_CONTINUE;
 }
 
@@ -168,25 +229,44 @@ int multiheadAtt(TASK_ARGS) {
     return TASK_CONTINUE;
 }
 
+int quantizeMultiheadAtt(TASK_ARGS) {
+    TASK_VARIABLES;
+    quantizeUnitBuffer(nThreads, threadIndex, ctx, TB_UNIT_XB, TB_UNIT_XB_QUANTIZED);
+    return TASK_CONTINUE;
+}
+
 int syncMultiheadAtt(TASK_ARGS) {
     TASK_VARIABLES;
-    syncUnitBuffer(nThreads, threadIndex, ctx, TB_UNIT_XB);
+    syncUnitBuffer(nThreads, threadIndex, ctx, TB_UNIT_XB_QUANTIZED);
     return TASK_CONTINUE;
 }
 
 int att(TASK_ARGS) {
     TASK_VARIABLES;
 
-    float* xb = (float*)transformer->buffer->getUnit(TB_UNIT_XB);
+    char* xb = transformer->buffer->getUnit(TB_UNIT_XB_QUANTIZED);
     float* xb2 = (float*)transformer->buffer->getSliced(TB_SLICED_XB2, transformer->sliceIndex);
 
-    matmul(spec->floatType, xb2, xb, block->wo0, block->wo0Slice->n, block->wo0Slice->d0, nThreads, threadIndex);
+    matmul(spec->weightsFloatType, spec->bufferFloatType, xb2, xb, block->wo0, block->wo0Slice->n, block->wo0Slice->d0, nThreads, threadIndex);
+
+    return TASK_CONTINUE;
+}
+
+int quantizeAtt(TASK_ARGS) {
+    TASK_VARIABLES;
+    quantizeSlicedBuffer(nThreads, threadIndex, ctx, false, TB_SLICED_XB2, TB_SLICED_XB2_QUANTIZED);
     return TASK_CONTINUE;
 }
 
 int syncAtt(TASK_ARGS) {
     TASK_VARIABLES;
-    syncSlicedBuffer(nThreads, threadIndex, ctx, TB_SLICED_XB2);
+    syncSlicedBuffer(nThreads, threadIndex, ctx, TB_SLICED_XB2_QUANTIZED);
+    return TASK_CONTINUE;
+}
+
+int dequantizeAtt(TASK_ARGS) {
+    TASK_VARIABLES;
+    dequantizeSlicedBuffer(nThreads, threadIndex, ctx, false, TB_SLICED_XB2_QUANTIZED, TB_SLICED_XB2);    
     return TASK_CONTINUE;
 }
 
@@ -194,6 +274,8 @@ int rmfFfn(TASK_ARGS) {
     TASK_VARIABLES;
 
     if (threadIndex == 0) {
+
+
         float* xb2 = (float*)transformer->buffer->getUnit(TB_SLICED_XB2);
         float* xb = (float*)transformer->buffer->getUnit(TB_UNIT_XB);
         float* x = (float*)transformer->x;
@@ -215,20 +297,26 @@ int rmfFfnNorm(TASK_ARGS) {
     return TASK_CONTINUE;
 }
 
+int quantizeRmfFfn(TASK_ARGS) {
+    TASK_VARIABLES;
+    quantizeUnitBuffer(nThreads, threadIndex, ctx, TB_UNIT_XB, TB_UNIT_XB_QUANTIZED);
+    return TASK_CONTINUE;
+}
+
 int syncRmfFfn(TASK_ARGS) {
     TASK_VARIABLES;
-    syncUnitBuffer(nThreads, threadIndex, ctx, TB_UNIT_XB);
+    syncUnitBuffer(nThreads, threadIndex, ctx, TB_UNIT_XB_QUANTIZED);
     return TASK_CONTINUE;
 }
 
 int ffn(TASK_ARGS) {
     TASK_VARIABLES;
 
-    float* xb = (float*)transformer->buffer->getUnit(TB_UNIT_XB);
+    float* xb = (float*)transformer->buffer->getUnit(TB_UNIT_XB_QUANTIZED);
     float* hb0 = (float*)transformer->buffer->getSliced(TB_SLICED_HB, transformer->sliceIndex);
 
-    matmul(spec->floatType, hb0, xb, block->w10, block->w10Slice->n, block->w10Slice->d0, nThreads, threadIndex);
-    matmul(spec->floatType, block->hb20, xb, block->w30, block->w30Slice->n, block->w30Slice->d0, nThreads, threadIndex);
+    matmul(spec->weightsFloatType, spec->bufferFloatType, hb0, xb, block->w10, block->w10Slice->n, block->w10Slice->d0, nThreads, threadIndex);
+    matmul(spec->weightsFloatType, spec->bufferFloatType, block->hb20, xb, block->w30, block->w30Slice->n, block->w30Slice->d0, nThreads, threadIndex);
 
     // SwiGLU non-linearity
     int d00 = block->w10Slice->d0 / nThreads;
@@ -244,31 +332,49 @@ int ffn(TASK_ARGS) {
     return TASK_CONTINUE;
 }
 
+int quantizeFfnA(TASK_ARGS) {
+    TASK_VARIABLES;
+    quantizeSlicedBuffer(nThreads, threadIndex, ctx, true, TB_SLICED_HB, TB_SLICED_HB_QUANTIZED);
+    return TASK_CONTINUE;
+}
+
 int syncFfnA(TASK_ARGS) {
     TASK_VARIABLES;
-    syncSlicedBuffer(nThreads, threadIndex, ctx, TB_SLICED_HB);
+    syncSlicedBuffer(nThreads, threadIndex, ctx, TB_SLICED_HB_QUANTIZED);
     return TASK_CONTINUE;
 }
 
 int syncFfnB(TASK_ARGS) {
     TASK_VARIABLES;
-    syncUnitBuffer(nThreads, threadIndex, ctx, TB_SLICED_HB);
+    syncUnitBuffer(nThreads, threadIndex, ctx, TB_SLICED_HB_QUANTIZED);
     return TASK_CONTINUE;
 }
 
 int ffn2(TASK_ARGS) {
     TASK_VARIABLES;
 
-    float *hb = (float*)transformer->buffer->getUnit(TB_SLICED_HB);
+    float *hb = (float*)transformer->buffer->getUnit(TB_SLICED_HB_QUANTIZED);
     float *xb2 = (float*)transformer->buffer->getSliced(TB_SLICED_XB2, transformer->sliceIndex);
 
-    matmul(spec->floatType, xb2, hb, block->w20, block->w20Slice->n, block->w20Slice->d0, nThreads, threadIndex);
+    matmul(spec->weightsFloatType, spec->bufferFloatType, xb2, hb, block->w20, block->w20Slice->n, block->w20Slice->d0, nThreads, threadIndex);
+    return TASK_CONTINUE;
+}
+
+int quantizeFfn2(TASK_ARGS) {
+    TASK_VARIABLES;
+    quantizeSlicedBuffer(nThreads, threadIndex, ctx, false, TB_SLICED_XB2, TB_SLICED_XB2_QUANTIZED);
     return TASK_CONTINUE;
 }
 
 int syncFfn2(TASK_ARGS) {
     TASK_VARIABLES;
-    syncSlicedBuffer(nThreads, threadIndex, ctx, TB_SLICED_XB2);
+    syncSlicedBuffer(nThreads, threadIndex, ctx, TB_SLICED_XB2_QUANTIZED);
+    return TASK_CONTINUE;
+}
+
+int dequantizeFfn2(TASK_ARGS) {
+    TASK_VARIABLES;
+    dequantizeSlicedBuffer(nThreads, threadIndex, ctx, false, TB_SLICED_XB2_QUANTIZED, TB_SLICED_XB2);
     return TASK_CONTINUE;
 }
 
@@ -322,7 +428,7 @@ int finalize(TASK_ARGS) {
 
     if (ctx->finalize) {
         float* x = transformer->x;
-        matmul(spec->floatType, transformer->logits, x, transformer->wcls, spec->dim, spec->vocabSize, nThreads, threadIndex);
+        matmul(spec->weightsFloatType, F32, transformer->logits, x, transformer->wcls, spec->dim, spec->vocabSize, nThreads, threadIndex);
         return TASK_STOP;
     }
     return TASK_CONTINUE;
@@ -331,21 +437,31 @@ int finalize(TASK_ARGS) {
 static TaskLoopTask inferenceTasks[] = {
     { rmsAtt, TASK_TYPE_INFERENCE },
     { rmsAttNorm, TASK_TYPE_INFERENCE },
+    { quantizeRmsAtt, TASK_TYPE_INFERENCE },
     { syncRmsAtt, TASK_TYPE_TRANSFER },
     { qkv, TASK_TYPE_INFERENCE },
+    { quantizeQkv, TASK_TYPE_INFERENCE },
     { syncQkv, TASK_TYPE_TRANSFER },
+    { dequantizeQkv, TASK_TYPE_INFERENCE },
     { multiheadAtt, TASK_TYPE_INFERENCE },
+    { quantizeMultiheadAtt, TASK_TYPE_INFERENCE },
     { syncMultiheadAtt, TASK_TYPE_TRANSFER },
     { att, TASK_TYPE_INFERENCE },
+    { quantizeAtt, TASK_TYPE_INFERENCE },
     { syncAtt, TASK_TYPE_TRANSFER },
+    { dequantizeAtt, TASK_TYPE_INFERENCE },
     { rmfFfn, TASK_TYPE_INFERENCE },
     { rmfFfnNorm, TASK_TYPE_INFERENCE },
+    { quantizeRmfFfn, TASK_TYPE_INFERENCE },
     { syncRmfFfn, TASK_TYPE_TRANSFER },
     { ffn, TASK_TYPE_INFERENCE },
+    { quantizeFfnA, TASK_TYPE_INFERENCE },
     { syncFfnA, TASK_TYPE_TRANSFER },
     { syncFfnB, TASK_TYPE_TRANSFER },
     { ffn2, TASK_TYPE_INFERENCE },
+    { quantizeFfn2, TASK_TYPE_INFERENCE },
     { syncFfn2, TASK_TYPE_TRANSFER },
+    { dequantizeFfn2, TASK_TYPE_INFERENCE },
     { mergeFfn2, TASK_TYPE_INFERENCE },
     { nextBlock, TASK_TYPE_INFERENCE },
     { rmsFinal, TASK_TYPE_INFERENCE },
@@ -390,15 +506,19 @@ void Inference::getStats(unsigned long* inferenceTime, unsigned long* transferTi
 static TaskLoopTask workerTasks[] = {
     { syncRmsAtt, TASK_TYPE_TRANSFER },
     { qkv, TASK_TYPE_INFERENCE },
+    { quantizeQkv, TASK_TYPE_INFERENCE },
     { syncQkv, TASK_TYPE_TRANSFER },
     { syncMultiheadAtt, TASK_TYPE_TRANSFER },
     { att, TASK_TYPE_INFERENCE },
+    { quantizeAtt, TASK_TYPE_INFERENCE },
     { syncAtt, TASK_TYPE_TRANSFER },
     { syncRmfFfn, TASK_TYPE_TRANSFER },
     { ffn, TASK_TYPE_INFERENCE },
+    { quantizeFfnA, TASK_TYPE_INFERENCE },
     { syncFfnA, TASK_TYPE_TRANSFER },
     { syncFfnB, TASK_TYPE_TRANSFER },
     { ffn2, TASK_TYPE_INFERENCE },
+    { quantizeFfn2, TASK_TYPE_INFERENCE },
     { syncFfn2, TASK_TYPE_TRANSFER },
     { nextBlock, TASK_TYPE_INFERENCE },
 };
