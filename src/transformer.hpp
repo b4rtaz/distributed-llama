@@ -40,7 +40,6 @@ struct TransformerSpec {
     int seqLen;
     int hiddenDim;
     int kvDim;
-    bool sharedWeights;
     int vocabSize;
 
     FloatType weightsFloatType;

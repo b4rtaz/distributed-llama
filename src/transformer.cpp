@@ -65,7 +65,6 @@ TransformerSpec Transformer::loadSpecFromFile(const char* path, const unsigned i
     spec.nLayers = header.nLayers;
     spec.nHeads = header.nHeads;
     spec.nKvHeads = header.nKvHeads;
-    spec.sharedWeights = header.vocabSize > 0 ? true : false;
     spec.vocabSize = abs(header.vocabSize);
     spec.seqLen = header.seqLen;
     spec.headSize = spec.dim / spec.nHeads;
@@ -161,7 +160,7 @@ Transformer::Transformer(TransformerSpec* spec, uint8_t sliceIndex) {
         tokenEmbeddingTable = NEW_BUFFER(tokenEmbeddingTableBytes);
         rmsFinalBytes = spec->dim * sizeof(float);
         rmsFinal = NEW_BUFFER(rmsFinalBytes);
-        wclsBytes = spec->sharedWeights ? tokenEmbeddingTableBytes : getBatchBytes(spec->weightsFloatType, spec->vocabSize, spec->dim);
+        wclsBytes = getBatchBytes(spec->weightsFloatType, spec->vocabSize, spec->dim);
         wcls = NEW_BUFFER(wclsBytes);
         x = (float*)NEW_BUFFER(spec->dim * sizeof(float));
         logits = (float*)NEW_BUFFER(spec->vocabSize * sizeof(float));
@@ -335,12 +334,8 @@ Transformer Transformer::loadRoot(char* data, TransformerSpec* spec, SocketPool*
     w += (spec->seqLen * spec->headSize / 2) * sizeof(float); // skip what used to be freq_cis_real (for RoPE)
     w += (spec->seqLen * spec->headSize / 2) * sizeof(float); // skip what used to be freq_cis_imag (for RoPE)
 
-    if (spec->sharedWeights) {
-        memcpy(transformer.wcls, transformer.tokenEmbeddingTable, transformer.wclsBytes);
-    } else {
-        memcpy(transformer.wcls, w, transformer.wclsBytes);
-        w += transformer.wclsBytes;
-    }
+    memcpy(transformer.wcls, w, transformer.wclsBytes);
+    w += transformer.wclsBytes;
 
     size_t missedBytes = (long)(w - data) - spec->fileSize + sizeof(TransformerFileHeader);
     if (missedBytes != 0) {
