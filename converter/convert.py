@@ -1,4 +1,5 @@
 import os
+import sys
 import struct
 import json
 import torch
@@ -102,23 +103,23 @@ def save_quantized_q40(x, file):
             bytes += 1
     print(f'Quantized {x.shape[0] * 4} bytes into {bytes} bytes')
 
-def export_tensor(file, tensor, floatType):
+def export_tensor(file, tensor, float_type):
     d = tensor.detach().cpu().view(-1)
-    if (floatType == 'float16'):
+    if (float_type == 'float16'):
         d = d.to(torch.float16).numpy().astype(np.float16)
         b = struct.pack(f'{len(d)}e', *d)
         file.write(b)
-    elif (floatType == 'float32'):
+    elif (float_type == 'float32'):
         d = d.to(torch.float32).numpy().astype(np.float32)
         b = struct.pack(f'{len(d)}f', *d)
         file.write(b)
-    elif (floatType == 'q40'):
+    elif (float_type == 'q40'):
         d = d.to(torch.float32).numpy().astype(np.float32)
         save_quantized_q40(d, file)
     else:
         raise Exception('unknown float type')
 
-def export(model, filepath, floatType):
+def export(model, filepath, float_type):
     out_file = open(filepath, 'wb')
 
     # first write out the header
@@ -140,13 +141,13 @@ def export(model, filepath, floatType):
     for layer in model.layers:
         export_tensor(out_file, layer.attention_norm.weight, 'float32')
         export_tensor(out_file, layer.ffn_norm.weight, 'float32')
-        export_tensor(out_file, layer.attention.wq.weight, floatType)
-        export_tensor(out_file, layer.attention.wk.weight, floatType)
-        export_tensor(out_file, layer.attention.wv.weight, floatType)
-        export_tensor(out_file, layer.attention.wo.weight, floatType)
-        export_tensor(out_file, layer.feed_forward.w1.weight, floatType)
-        export_tensor(out_file, layer.feed_forward.w2.weight, floatType)
-        export_tensor(out_file, layer.feed_forward.w3.weight, floatType)
+        export_tensor(out_file, layer.attention.wq.weight, float_type)
+        export_tensor(out_file, layer.attention.wk.weight, float_type)
+        export_tensor(out_file, layer.attention.wv.weight, float_type)
+        export_tensor(out_file, layer.attention.wo.weight, float_type)
+        export_tensor(out_file, layer.feed_forward.w1.weight, float_type)
+        export_tensor(out_file, layer.feed_forward.w2.weight, float_type)
+        export_tensor(out_file, layer.feed_forward.w3.weight, float_type)
         print(f"Processed {layer.layer_id} layer")
 
     # final rmsnorm
@@ -157,14 +158,33 @@ def export(model, filepath, floatType):
 
     # final classifier weights
     if not shared_classifier:
-        export_tensor(out_file, model.output.weight, floatType)
+        export_tensor(out_file, model.output.weight, float_type)
 
     # write to binary file
     out_file.close()
     print(f"Saved {filepath}")
 
-# targetFloatType = 'float16'
-targetFloatType = 'q40'
+def usage():
+    print('Usage: python convert.py <modelPath> <targetFloatType>')
 
-model = load_meta_model("/Users/b4rtaz/Dev/llama.cpp/models/7B")
-export(model, "llama_7b_{0}.bin".format(targetFloatType), targetFloatType)
+if (len(sys.argv) < 3):
+    usage()
+    exit(1)
+
+model_path = sys.argv[1]
+target_float_type = sys.argv[2]
+
+if (not model_path or not target_float_type in ['float16', 'float32', 'q40']):
+    usage()
+    exit(1)
+
+model_name = model_path.split('/')[-1]
+output_file_name = f'dllama_{model_name}_{target_float_type}.bin'
+
+print(f'Model name: {model_name}')
+print(f'Target float type: {target_float_type}')
+print(f'Target file: {output_file_name}')
+print('Loading... This may take a while...')
+
+model = load_meta_model(model_path)
+export(model, output_file_name, target_float_type)
