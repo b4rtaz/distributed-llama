@@ -16,15 +16,14 @@ def quantizeQ40(x, file):
     gmin = np.min(groups, axis=1)
     absMax = np.where(-gmin > gmax, gmin, gmax)
 
-    bytes = 0
+    nBytes = 0
     for gi, group in enumerate(groups):
         groupAbsMax = absMax[gi]
         delta = groupAbsMax / -8
         id = (1.0 / delta) if delta else 0
 
-        twoBytes = struct.pack('e', np.float16(delta).astype(np.float16))
-        file.write(twoBytes)
-        bytes += 2
+        buffer = struct.pack('e', np.float16(delta).astype(np.float16))
+        nBytes += 2
 
         for i in range(0, groupSizeHalf):
             x0 = group[i] * id + 8.5
@@ -32,10 +31,11 @@ def quantizeQ40(x, file):
             xi0 = min(15, int(x0))
             xi1 = min(15, int(x1))
             b = (xi0 & 0xF) | ((xi1 & 0xF) << 4)
-            byte = struct.pack('B', b)
-            file.write(byte)
-            bytes += 1
-    print(f'Quantized {x.shape[0] * 4} bytes into {bytes} bytes')
+            buffer += struct.pack('B', b)
+            nBytes += 1
+        file.write(buffer)
+    print(f'Quantized {x.shape[0] * 4} bytes into {nBytes} bytes')
+    return int(nBytes)
 
 def exportTensor(file, tensor, floatType):
     tensor = nn.Parameter(tensor)
@@ -44,13 +44,15 @@ def exportTensor(file, tensor, floatType):
         d = d.to(torch.float16).numpy().astype(np.float16)
         b = struct.pack(f'{len(d)}e', *d)
         file.write(b)
+        return len(b)
     elif (floatType == 'float32'):
         d = d.to(torch.float32).numpy().astype(np.float32)
         b = struct.pack(f'{len(d)}f', *d)
         file.write(b)
+        return len(b)
     elif (floatType == 'q40'):
         d = d.to(torch.float32).numpy().astype(np.float32)
-        quantizeQ40(d, file)
+        return quantizeQ40(d, file)
     else:
         raise Exception('Unknown float type')
 
@@ -104,18 +106,24 @@ def getBlockOffsets(params, targetFloatType):
     w1 = getBytes(params['dim'] * params['hidden_dim'], targetFloatType)
     w2 = getBytes(params['hidden_dim'] * params['dim'], targetFloatType)
     w3 = getBytes(params['dim'] * params['hidden_dim'], targetFloatType)
-    return {
-        'attention_norm.weight': 0,
-        'ffn_norm.weight': rms,
-        'attention.wq.weight': rms + ffn,
-        'attention.wk.weight': rms + ffn + q,
-        'attention.wv.weight': rms + ffn + k + q,
-        'attention.wo.weight': rms + ffn + v + k + q,
-        'feed_forward.w1.weight': rms + ffn + wo + v + k + q,
-        'feed_forward.w2.weight': rms + ffn + w1 + wo + v + k + q,
-        'feed_forward.w3.weight': rms + ffn + w2 + w1 + wo + v + k + q,
-        '_total': rms + ffn + w3 + w2 + w1 + wo + v + k + q
+
+    result = {
+        'attention_norm.weight': rms,
+        'ffn_norm.weight': ffn,
+        'attention.wq.weight': q,
+        'attention.wk.weight': k,
+        'attention.wv.weight': v,
+        'attention.wo.weight': wo,
+        'feed_forward.w1.weight': w1,
+        'feed_forward.w2.weight': w2,
+        'feed_forward.w3.weight': w3
     }
+    total = 0
+    for key in list(result.keys()):
+        result[key + '_offset'] = total
+        total += result[key]
+    result['_total'] = total
+    return result
 
 def convert(modelPath, outputPath, targetFloatType):
     paramsPath = os.path.join(modelPath, 'params.json')
@@ -132,9 +140,11 @@ def convert(modelPath, outputPath, targetFloatType):
 
     tokenEmbeddingBytes = getBytes(params['vocab_size'] * params['dim'], 'float32')
     rmsFinalBytes = getBytes(params['dim'], 'float32')
+    wclsBytes = getBytes(params['vocab_size'] * params['dim'], targetFloatType)
 
     isHeaderWritten = False
     modelPaths = sorted(list(Path(modelPath).glob('consolidated.*.pth')))
+    layerProcessedBytes = {}
     for modelPath in modelPaths:
         model = torch.load(modelPath, map_location='cpu')
         modelDict = toDict([model])
@@ -148,30 +158,52 @@ def convert(modelPath, outputPath, targetFloatType):
 
         for layerName in modelDict.keys():
             tensor = modelDict[layerName]
+            print(f'🔶 Exporting {layerName} [{tensor.shape}]...')
+
             nameParts = layerName.split('.', 2)
-            print(f'Exporting {layerName}...')
+            processedBytes = layerProcessedBytes.get(layerName) or 0
+            if (processedBytes == -1):
+                print('Layer is already completed')
+                continue
+
             if (nameParts[0] == 'layers'):
                 index = int(nameParts[1])
-                layerOffset = blockOffsets[nameParts[2]]
-                tensorOffset = int(headerOffset + tokenEmbeddingBytes + blockOffsets['_total'] * index + layerOffset)
+                layerSize = blockOffsets[nameParts[2]]
+                layerOffset = blockOffsets[nameParts[2] + '_offset']
+                tensorOffset = int(headerOffset + tokenEmbeddingBytes + blockOffsets['_total'] * index + layerOffset + processedBytes)
                 tensorFloatType = 'float32' if (nameParts[2] == 'attention_norm.weight' or nameParts[2] == 'ffn_norm.weight') else targetFloatType
                 outFile.seek(tensorOffset)
-                exportTensor(outFile, tensor, tensorFloatType)
+                processedBytes += exportTensor(outFile, tensor, tensorFloatType)
             elif (layerName == 'tok_embeddings.weight'):
-                outFile.seek(headerOffset)
-                exportTensor(outFile, tensor, 'float32')
+                layerSize = tokenEmbeddingBytes
+                outFile.seek(headerOffset + processedBytes)
+                processedBytes += exportTensor(outFile, tensor, 'float32')
             elif (layerName == 'norm.weight'):
-                outFile.seek(afterBlocksOffset)
-                exportTensor(outFile, tensor, 'float32')
+                layerSize = rmsFinalBytes
+                outFile.seek(afterBlocksOffset + processedBytes)
+                processedBytes += exportTensor(outFile, tensor, 'float32')
             elif (layerName == 'rope.freqs'):
                 # We skip this layer
-                pass
+                processedBytes = -1
             elif (layerName == 'output.weight'):
-                tensorOffset = int(afterBlocksOffset + rmsFinalBytes + ropeBytes)
+                layerSize = wclsBytes
+                tensorOffset = int(afterBlocksOffset + rmsFinalBytes + ropeBytes + processedBytes)
                 outFile.seek(tensorOffset)
-                exportTensor(outFile, tensor, targetFloatType)
+                processedBytes += exportTensor(outFile, tensor, targetFloatType)
             else:
                 raise Exception(f'Unknown layer: {layerName}')
+
+            if (processedBytes == layerSize):
+                processedBytes = -1
+                print('🔷 Layer is completed')
+            elif(processedBytes > 0):
+                print(f'Processed {processedBytes}/{layerSize} bytes')
+            layerProcessedBytes[layerName] = processedBytes
+
+    for layerName in layerProcessedBytes:
+        processedBytes = layerProcessedBytes[layerName]
+        if processedBytes >= 0:
+            print(f'Layer {layerName} is not completed (processed {processedBytes} bytes)')
 
     outFile.close()
 
@@ -190,10 +222,12 @@ if __name__ == '__main__':
         usage()
 
     modelName = modelPath.split('/')[-1]
-    outputFileName = f'dllama_{modelName}_{targetFloatType}.bin'
+    outputFileName = f'dllama_{modelName}_{targetFloatType}2.bin'
 
     print(f'Model name: {modelName}')
     print(f'Target float type: {targetFloatType}')
     print(f'Target file: {outputFileName}')
 
     convert(modelPath, outputFileName, targetFloatType)
+
+    print('Done!')
