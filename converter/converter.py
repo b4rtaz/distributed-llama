@@ -4,38 +4,43 @@ import struct
 import json
 import torch
 import math
+import time
 import numpy as np
 from pathlib import Path
 
-def writeQuantizedQ40Tensor(x, file):
-    groupSize = 32
-    groupSizeHalf = groupSize // 2
-    assert(x.shape[0] % groupSize == 0)
-    groups = x.reshape(-1, groupSize)
+LAYER_CHUNK_SIZE = 48
+
+def writeQuantizedQ40Tensor(file, x):
+    t0 = time.time()
+    x = x.to(torch.float32).numpy().astype(np.float32)
+    blockSize = 32
+    blockHalfSize = blockSize // 2
+    assert(x.shape[0] % blockSize == 0)
+    groups = x.reshape(-1, blockSize)
     gmax = np.max(groups, axis=1)
     gmin = np.min(groups, axis=1)
-    absMax = np.where(-gmin > gmax, gmin, gmax)
+    deltas = np.divide(np.where(-gmin > gmax, gmin, gmax), -8)
+    deltas16 = deltas.astype(np.float16)
+    ids = np.where(deltas != 0, 1.0 / deltas, 0)
+    groups = np.add(groups * ids[:, np.newaxis], 8.5)
+    groups = np.where(groups < 15, groups, 15)
 
     nBytes = 0
-    for gi, group in enumerate(groups):
-        groupAbsMax = absMax[gi]
-        delta = groupAbsMax / -8
-        id = (1.0 / delta) if delta else 0
+    block = [0] * blockHalfSize
+    for groupIndex in range(0, len(groups)):
+        group = groups[groupIndex]
+        delta16 = deltas16[groupIndex]
 
-        twoBytes = struct.pack('e', np.float16(delta).astype(np.float16))
-        file.write(twoBytes)
-        nBytes += 2
+        for i in range(0, blockHalfSize):
+            x0 = int(group[i])
+            x1 = int(group[i + blockHalfSize])
+            block[i] = (x0 & 0xF) | ((x1 & 0xF) << 4)
 
-        for i in range(0, groupSizeHalf):
-            x0 = group[i] * id + 8.5
-            x1 = group[i + groupSizeHalf] * id + 8.5
-            xi0 = min(15, int(x0))
-            xi1 = min(15, int(x1))
-            b = (xi0 & 0xF) | ((xi1 & 0xF) << 4)
-            byte = struct.pack('B', b)
-            file.write(byte)
-            nBytes += 1
-    print(f'Quantized {x.shape[0] * 4} bytes into {nBytes} bytes')
+        buffer = struct.pack(f'e{blockHalfSize}B', delta16, *block)
+        file.write(buffer)
+        nBytes += len(buffer)
+    t1 = time.time()
+    print(f'Quantized {x.shape[0] * 4} bytes into {nBytes} bytes in {t1 - t0:.2f} s')
 
 def writeTensor(file, tensor, floatType):
     d = tensor.detach().cpu().view(-1)
@@ -48,12 +53,11 @@ def writeTensor(file, tensor, floatType):
         b = struct.pack(f'{len(d)}f', *d)
         file.write(b)
     elif (floatType == 'q40'):
-        d = d.to(torch.float32).numpy().astype(np.float32)
-        writeQuantizedQ40Tensor(d, file)
+        writeQuantizedQ40Tensor(file, d)
     else:
         raise Exception('Unknown float type')
 
-def writeHeader(outFile, params):
+def writeHeader(file, params):
     header = struct.pack('iiiiiii',
         params['dim'],
         params['hidden_dim'],
@@ -62,7 +66,7 @@ def writeHeader(outFile, params):
         params['n_kv_heads'],
         params['vocab_size'],
         params['max_seq_len'])
-    outFile.write(header)
+    file.write(header)
     print(params)
 
 def convert(modelPath, outputPath, targetFloatType):
@@ -76,7 +80,8 @@ def convert(modelPath, outputPath, targetFloatType):
         params['max_seq_len'] = 2048
 
     modelPaths = sorted(list(Path(modelPath).glob('consolidated.*.pth')))
-    nModels = len(modelPath)
+    nSlices = len(modelPaths)
+
     layers = []
     layers.append('tok_embeddings.weight')
     for layerIndex in range(0, params['n_layers']):
@@ -96,10 +101,9 @@ def convert(modelPath, outputPath, targetFloatType):
     isHeaderWrote = False
     outFile = open(outputPath, 'wb')
 
-    chunkSize = 32
-    nChunks = math.ceil(len(layers) / chunkSize)
+    nChunks = math.ceil(len(layers) / LAYER_CHUNK_SIZE)
     for chunkIndex in range(0, nChunks):
-        chunkLayerNames = layers[chunkSize * chunkIndex:chunkSize * (chunkIndex + 1)]
+        chunkLayerNames = layers[LAYER_CHUNK_SIZE * chunkIndex:LAYER_CHUNK_SIZE * (chunkIndex + 1)]
         models = {}
         for layerName in chunkLayerNames:
             models[layerName] = []
@@ -112,7 +116,7 @@ def convert(modelPath, outputPath, targetFloatType):
                 if (modelKey in chunkLayerNames):
                     models[modelKey].append(model[modelKey])
             if not isHeaderWrote:
-                params['hidden_dim'] = model['layers.0.feed_forward.w1.weight'].shape[0] * nModels
+                params['hidden_dim'] = model['layers.0.feed_forward.w1.weight'].shape[0] * nSlices
                 writeHeader(outFile, params)
                 isHeaderWrote = True
             del model
@@ -143,7 +147,7 @@ def convert(modelPath, outputPath, targetFloatType):
             else:
                 tensor = torch.cat(tensors, dim=(1 if isAxis1 else 0))
 
-            print(f'🔶 Exporting {layerName} ({tensor.shape})...')
+            print(f'🔶 Exporting {layerName} {tensor.shape}...')
             writeTensor(outFile, tensor, floatType)
 
         del models
@@ -165,7 +169,7 @@ if __name__ == '__main__':
         usage()
 
     modelName = modelPath.split('/')[-1]
-    outputFileName = f'dllama_{modelName}_{targetFloatType}2.bin'
+    outputFileName = f'dllama_{modelName}_{targetFloatType}.bin'
 
     print(f'Model name: {modelName}')
     print(f'Target float type: {targetFloatType}')

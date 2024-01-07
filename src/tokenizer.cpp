@@ -346,10 +346,12 @@ void generate(TransformerSpec* spec, Inference* inference, SocketPool* socketPoo
     unsigned long transferTime;
     size_t sentBytes;
     size_t recvBytes;
+    unsigned long totalGenerationTime = 0;
+    unsigned long totalInferenceTime = 0;
+    unsigned long totalTransferTime = 0;
     while (pos < steps) {
-        unsigned long t0 = timeMs();
+        unsigned long startTime = timeMs();
         float* logits = inference->infer(token, pos);
-        unsigned long t1 = timeMs();
 
         inference->getStats(&inferenceTime, &transferTime);
         socketPool->getStats(&sentBytes, &recvBytes);
@@ -369,14 +371,24 @@ void generate(TransformerSpec* spec, Inference* inference, SocketPool* socketPoo
 
         // print the token as string, decode it with the Tokenizer object
         char* piece = tokenizer.decode(token, next);
+    
+        unsigned long generationTime = timeMs() - startTime;
 
-        printf("🔶 %4ld ms I %4ld ms T %4ld ms S %6ld kB R %6ld kB ", t1 - t0, inferenceTime, transferTime, sentBytes / 1024, recvBytes / 1024);
+        totalGenerationTime += generationTime;
+        totalInferenceTime += inferenceTime;
+        totalTransferTime += transferTime;
+
+        printf("🔶 G %4ld ms I %4ld ms T %4ld ms S %6ld kB R %6ld kB ", generationTime, inferenceTime, transferTime, sentBytes / 1024, recvBytes / 1024);
         safePrintf(piece); // same as printf("%s", piece), but skips "unsafe" bytes
         printf("\n");
         fflush(stdout);
         token = next;
     }
 
-    printf("Done.\n");
     free(promptTokens);
+
+    printf("Generated tokens:    %d\n", pos);
+    printf("Avg generation time: %.2f ms\n", totalGenerationTime / (double)steps);
+    printf("Avg inference time:  %.2f ms\n", totalInferenceTime / (double)steps);
+    printf("Avg transfer time:   %.2f ms\n", totalTransferTime / (double)steps);
 }
