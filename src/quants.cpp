@@ -240,8 +240,24 @@ void quantizeQ80Row(float* input, BlockQ80* output, int k, unsigned int nThreads
         }
     }
 #else
-    printf("quantizeQ80Row is not implemented\n");
-    exit(EXIT_FAILURE);
+    for (int i = 0; i < blocks; i++) {
+        float amax = 0.0f;
+
+        for (int j = 0; j < QK80; j++) {
+            const float v = fabsf(x[i*QK80 + j]);
+            amax = amax > v ? amax : v;
+        }
+
+        const float d = amax / ((1 << 7) - 1);
+        const float id = d ? 1.0f/d : 0.0f;
+
+        y[i].d = convertF32ToF16(d);
+
+        for (int j = 0; j < QK80; ++j) {
+            const float x0 = x[i*QK80 + j]*id;
+            y[i].qs[j] = roundf(x0);
+        }
+    }
 #endif
 }
 
