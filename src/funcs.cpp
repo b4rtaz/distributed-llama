@@ -121,7 +121,7 @@ void matmulF32(MatmulThreadInfo* a) {
     for (d = a->ds; d < a->de; d++) {
         float val = 0.0f;
         for (int j = 0; j < a->n; j++) {
-            val += w[d * a->n + j] * a->input[j];
+            val += w[d * a->n + j] * input[j];
         }
         a->output[d] = val;
     }
@@ -253,16 +253,8 @@ void matmulQ40vQ80(MatmulThreadInfo* a) {
         a->output[d] = vaddvq_f32(sumv0) + vaddvq_f32(sumv1);
     }
 #else
-    for (int d = a->ds; d < a->de; d++) {
-        float val = 0.0f;
-        for (int j = 0; j < n; j++) {
-            dequantizeQ40Row(&w[d * n * blocksPerRow + j * blocksPerRow], group, k);
-            for (int z = 0; z < k; z++) {
-                val += group[z] * a->input[j * k + z];
-            }
-        }
-        a->output[d] = val;
-    }
+    printf("matmulQ40vQ80 - not implemented\n");
+    exit(EXIT_FAILURE);
 #endif
 }
 
