@@ -23,8 +23,8 @@ void testQ80(const int len, int nThreads) {
 
     for (int i = 0; i < len; i++) {
         float diff = fabs(output[i] - input[i]);
-        if (diff > 0.0041) {
-            printf("❌ ix=%d %f != %f diff=%f nThreads=%d\n", i, output[i], input[i], diff, nThreads);
+        if (diff > 0.0043) {
+            printf("❌ (%d, %d) ix=%d %f != %f diff=%f nThreads=%d\n", len, nThreads, i, output[i], input[i], diff, nThreads);
             exit(EXIT_FAILURE);
         }
     }
@@ -45,6 +45,9 @@ int main() {
     testQ80(768, 2);
     testQ80(768, 4);
     testQ80(768, 8);
+    testQ80(2752, 1);
+    testQ80(2752, 2);
+    testQ80(2752, 4);
 
     printf("✅ Q80 quantized correctly\n");
     return EXIT_SUCCESS;

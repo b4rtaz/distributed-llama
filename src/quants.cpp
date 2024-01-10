@@ -180,18 +180,20 @@ void dequantizeQ40Row(const BlockQ40* x, float* y, int k) {
 }
 
 void quantizeQ80Row(float* input, BlockQ80* output, int k, unsigned int nThreads, unsigned int threadIndex) {
-    assert(k % nThreads == 0);
-    const int sk = k / nThreads;
-    assert(sk % QK80 == 0);
+    assert(k % QK80 == 0);
 
-    const int blocks = sk / QK80;
+    const int nBlocks = k / QK80;
+    const int blocksPerThread = nBlocks / nThreads;
+    const int sk = blocksPerThread * QK80;
+    const int currentThreadBlocks = blocksPerThread + (threadIndex == nThreads - 1 ? nBlocks % nThreads : 0);
+
     const float* x = &input[sk * threadIndex];
-    BlockQ80* y = &output[blocks * threadIndex];
+    BlockQ80* y = &output[blocksPerThread * threadIndex];
 
 #if defined(__ARM_NEON)
     float dBuf[4];
 
-    for (int i = 0; i < blocks; i++) {
+    for (int i = 0; i < currentThreadBlocks; i++) {
         float32x4_t srcv [8];
         float32x4_t asrcv[8];
         float32x4_t amaxv[8];
@@ -231,16 +233,16 @@ void quantizeQ80Row(float* input, BlockQ80* output, int k, unsigned int nThreads
         }
     }
 
-    int rest = blocks % 4;
+    int rest = currentThreadBlocks % 4;
     if (rest != 0) {
         float32x4_t dBuf32 = vld1q_f32(dBuf);
         int16x4_t dBuf16 = (int16x4_t)vcvt_f16_f32(dBuf32);
         for (int i = 0; i < rest; i++) {
-            y[blocks - rest + i].d = dBuf16[i];
+            y[currentThreadBlocks - rest + i].d = dBuf16[i];
         }
     }
 #else
-    for (int i = 0; i < blocks; i++) {
+    for (int i = 0; i < currentThreadBlocks; i++) {
         float amax = 0.0f;
 
         for (int j = 0; j < QK80; j++) {
@@ -262,15 +264,17 @@ void quantizeQ80Row(float* input, BlockQ80* output, int k, unsigned int nThreads
 }
 
 void dequantizeQ80Row(const BlockQ80* input, float* output, int k, unsigned int nThreads, unsigned int threadIndex) {
-    assert(k % nThreads == 0);
-    const int sk = k / nThreads;
-    assert(sk % QK80 == 0);
+    assert(k % QK80 == 0);
 
-    const int blocks = sk / QK80;
-    const BlockQ80* x = &input[blocks * threadIndex];
+    const int nBlocks = k / QK80;
+    const int blocksPerThread = nBlocks / nThreads;
+    const int sk = blocksPerThread * QK80;
+    const int currentThreadBlocks = blocksPerThread + (threadIndex == nThreads - 1 ? nBlocks % nThreads : 0);
+
+    const BlockQ80* x = &input[blocksPerThread * threadIndex];
     float* y = &output[sk * threadIndex];
 
-    for (int i = 0; i < blocks; i++) {
+    for (int i = 0; i < currentThreadBlocks; i++) {
         const float d = convertF16ToF32(x[i].d);
 
         for (int j = 0; j < QK80; ++j) {
