@@ -168,12 +168,13 @@ void matmulQ40(MatmulThreadInfo* a) {
         a->output[d] = vaddvq_f32(u);
     }
 #else
+    char* input = (char*)a->input;
     for (int d = a->ds; d < a->de; d++) {
         float val = 0.0f;
         for (int j = 0; j < n; j++) {
             dequantizeQ40Row(&w[d * n * blocksPerRow + j * blocksPerRow], group, k);
             for (int z = 0; z < k; z++) {
-                val += group[z] * a->input[j * k + z];
+                val += group[z] * input[j * k + z];
             }
         }
         a->output[d] = val;
