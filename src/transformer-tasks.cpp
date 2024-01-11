@@ -15,34 +15,39 @@
     TransformerSpec* spec = transformer->spec;
 
 void syncUnitBuffer(unsigned int nThreads, unsigned int threadIndex, TransformerContext* ctx, uint8_t bufferIndex) {
-    if (threadIndex != 0) return;
-
     char* buffer = ctx->transformer->buffer->getUnit(bufferIndex);
-
     size_t bufferBytes = ctx->transformer->buffer->getUnitBytes(bufferIndex);
+
     if (ctx->socketPool != NULL) {
         // root
+
         for (unsigned int socketIndex = 0; socketIndex < ctx->socketPool->nSockets; socketIndex++) {
-            ctx->socketPool->write(socketIndex, buffer, bufferBytes);
+            if (socketIndex % nThreads == threadIndex) {
+                ctx->socketPool->write(socketIndex, buffer, bufferBytes);
+            }
         }
     } else if (ctx->socket != NULL) {
+        if (threadIndex != 0) return;
+
         // worker
         ctx->socket->read(buffer, bufferBytes);
     }
 }
 
 void syncSlicedBuffer(unsigned int nThreads, unsigned int threadIndex, TransformerContext* ctx, uint8_t bufferIndex) {
-    if (threadIndex != 0) return;
-
     size_t bufferBytes = ctx->transformer->buffer->getSlicedBytes(bufferIndex);
     if (ctx->socketPool != NULL) {
         // root
         for (unsigned int socketIndex = 0; socketIndex < ctx->socketPool->nSockets; socketIndex++) {
-            uint8_t sliceIndex = socketIndex + 1;
-            char* buffer = ctx->transformer->buffer->getSliced(bufferIndex, sliceIndex);
-            ctx->socketPool->read(socketIndex, buffer, bufferBytes);
+            if (socketIndex % nThreads == threadIndex) {
+                uint8_t sliceIndex = socketIndex + 1;
+                char* buffer = ctx->transformer->buffer->getSliced(bufferIndex, sliceIndex);
+                ctx->socketPool->read(socketIndex, buffer, bufferBytes);
+            }
         }
     } else if (ctx->socket != NULL) {
+        if (threadIndex != 0) return;
+
         // worker
         char* buffer = ctx->transformer->buffer->getSliced(bufferIndex, ctx->transformer->sliceIndex);
         ctx->socket->write(buffer, bufferBytes);
