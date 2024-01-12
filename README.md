@@ -1,10 +1,10 @@
 # Distributed Llama
 
-Run LLMs on weak devices or make powerful devices even more powerful by distributing the workload. This project proves that it's possible split the workload of LLMs across multiple devices and achieve a significant speedup.
+Run LLMs on weak devices or make powerful devices even more powerful by distributing the workload and dividing the RAM usage. This project proves that it's possible split the workload of LLMs across multiple devices and achieve a significant speedup. Distributed Llama allows you to run huge LLMs in-house like Llama 2 70B on multiple devices (3 x 16GB RAM notebook). The project uses TCP sockets to synchronize the state. You can easily configure your AI cluster by using a home router.
 
 Currently the project is only optimized for ARM CPUs.
 
-This project was initiated based on the [llama.c](https://github.com/karpathy/llama2.c) repository. Big thanks to [@karpathy](https://github.com/karpathy) and other contributors. Most ARM optimizations come from the [llama2.cpp](https://github.com/ggerganov/llama.cpp) project.
+This project was initiated based on the [llama2.c](https://github.com/karpathy/llama2.c) repository. Big thanks to [@karpathy](https://github.com/karpathy) and other contributors. Most ARM optimizations come from the [llama.cpp](https://github.com/ggerganov/llama.cpp) project.
 
 Known limitations:
 * You can run Dllama only on 1, 2, 4... 2^n devices.
