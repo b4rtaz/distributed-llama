@@ -34,14 +34,14 @@ void syncUnitBuffer(unsigned int nThreads, unsigned int threadIndex, Transformer
     }
 }
 
-void syncSlicedBuffer(unsigned int nThreads, unsigned int threadIndex, TransformerContext* ctx, uint8_t bufferIndex) {
+void syncSliceOfSlicedBuffer(unsigned int nThreads, unsigned int threadIndex, TransformerContext* ctx, uint8_t bufferIndex) {
     size_t bufferBytes = ctx->transformer->buffer->getSlicedBytes(bufferIndex);
     if (ctx->socketPool != NULL) {
         // root
         for (unsigned int socketIndex = 0; socketIndex < ctx->socketPool->nSockets; socketIndex++) {
             if (socketIndex % nThreads == threadIndex) {
-                uint8_t sliceIndex = socketIndex + 1;
-                char* buffer = ctx->transformer->buffer->getSliced(bufferIndex, sliceIndex);
+                uint8_t workerSliceIndex = socketIndex + 1;
+                char* buffer = ctx->transformer->buffer->getSliced(bufferIndex, workerSliceIndex);
                 ctx->socketPool->read(socketIndex, buffer, bufferBytes);
             }
         }
@@ -51,6 +51,34 @@ void syncSlicedBuffer(unsigned int nThreads, unsigned int threadIndex, Transform
         // worker
         char* buffer = ctx->transformer->buffer->getSliced(bufferIndex, ctx->transformer->sliceIndex);
         ctx->socket->write(buffer, bufferBytes);
+    }
+}
+
+void syncMissingSlicesOfSlicedBuffer(unsigned int nThreads, unsigned int threadIndex, TransformerContext* ctx, uint8_t bufferIndex) {
+    size_t sliceBytes = ctx->transformer->buffer->getSlicedBytes(bufferIndex);
+    if (ctx->socketPool != NULL) {
+        // root
+        for (unsigned int socketIndex = 0; socketIndex < ctx->socketPool->nSockets; socketIndex++) {
+            if (socketIndex % nThreads == threadIndex) {
+                uint8_t workerSliceIndex = socketIndex + 1;
+                for (uint8_t sliceIndex = 0; sliceIndex < ctx->transformer->spec->nSlices; sliceIndex++) {
+                    if (sliceIndex != workerSliceIndex) {
+                        char* buffer = ctx->transformer->buffer->getSliced(bufferIndex, sliceIndex);
+                        ctx->socketPool->write(socketIndex, buffer, sliceBytes);
+                    }
+                }
+            }
+        }
+    } else if (ctx->socket != NULL) {
+        if (threadIndex != 0) return;
+
+        // worker
+        for (uint8_t sliceIndex = 0; sliceIndex < ctx->transformer->spec->nSlices; sliceIndex++) {
+            if (sliceIndex != ctx->transformer->sliceIndex) {
+                char* buffer = ctx->transformer->buffer->getSliced(bufferIndex, sliceIndex);
+                ctx->socket->read(buffer, sliceBytes);
+            }
+        }
     }
 }
 
@@ -148,9 +176,9 @@ int quantizeQkv(TASK_ARGS) {
 
 int syncQkv(TASK_ARGS) {
     TASK_VARIABLES;
-    syncSlicedBuffer(nThreads, threadIndex, ctx, TB_SLICED_Q_QUANTIZED);
-    syncSlicedBuffer(nThreads, threadIndex, ctx, TB_SLICED_K_QUANTIZED);
-    syncSlicedBuffer(nThreads, threadIndex, ctx, TB_SLICED_V_QUANTIZED);
+    syncSliceOfSlicedBuffer(nThreads, threadIndex, ctx, TB_SLICED_Q_QUANTIZED);
+    syncSliceOfSlicedBuffer(nThreads, threadIndex, ctx, TB_SLICED_K_QUANTIZED);
+    syncSliceOfSlicedBuffer(nThreads, threadIndex, ctx, TB_SLICED_V_QUANTIZED);
     // if (ctx->socketPool != NULL && threadIndex == 0) { float* v = (float*)block->q0; printf("q0 (%d): %f %f %f %f %f %f\n", ctx->currentBlockIndex, v[0], v[1], v[2], v[3], v[4], v[5]); }
     return TASK_CONTINUE;
 }
@@ -268,7 +296,7 @@ int quantizeAtt(TASK_ARGS) {
 
 int syncAtt(TASK_ARGS) {
     TASK_VARIABLES;
-    syncSlicedBuffer(nThreads, threadIndex, ctx, TB_SLICED_XB2_QUANTIZED);
+    syncSliceOfSlicedBuffer(nThreads, threadIndex, ctx, TB_SLICED_XB2_QUANTIZED);
     return TASK_CONTINUE;
 }
 
@@ -348,13 +376,13 @@ int quantizeFfnA(TASK_ARGS) {
 
 int syncFfnA(TASK_ARGS) {
     TASK_VARIABLES;
-    syncSlicedBuffer(nThreads, threadIndex, ctx, TB_SLICED_HB_QUANTIZED);
+    syncSliceOfSlicedBuffer(nThreads, threadIndex, ctx, TB_SLICED_HB_QUANTIZED);
     return TASK_CONTINUE;
 }
 
 int syncFfnB(TASK_ARGS) {
     TASK_VARIABLES;
-    syncUnitBuffer(nThreads, threadIndex, ctx, TB_SLICED_HB_QUANTIZED);
+    syncMissingSlicesOfSlicedBuffer(nThreads, threadIndex, ctx, TB_SLICED_HB_QUANTIZED);
     return TASK_CONTINUE;
 }
 
@@ -376,7 +404,7 @@ int quantizeFfn2(TASK_ARGS) {
 
 int syncFfn2(TASK_ARGS) {
     TASK_VARIABLES;
-    syncSlicedBuffer(nThreads, threadIndex, ctx, TB_SLICED_XB2_QUANTIZED);
+    syncSliceOfSlicedBuffer(nThreads, threadIndex, ctx, TB_SLICED_XB2_QUANTIZED);
     return TASK_CONTINUE;
 }
 
