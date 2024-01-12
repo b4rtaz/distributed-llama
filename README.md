@@ -7,7 +7,14 @@ Currently the project is only optimized for ARM CPUs.
 This project was initiated based on the [llama2.c](https://github.com/karpathy/llama2.c) repository. Big thanks to [@karpathy](https://github.com/karpathy) and other contributors. Most ARM optimizations come from the [llama.cpp](https://github.com/ggerganov/llama.cpp) project.
 
 Known limitations:
-* You can run Dllama only on 1, 2, 4... 2^n devices.
+* This project is a proof of concept, it's not optimized for production usage.
+* You can run Distributed Llama only on 1, 2, 4... 2^n devices.
+* The project supports only the inference mode, the chat mode is not supported.
+
+Supported models:
+* Llama 7B
+* Llama 13B
+* Llama 70B
 
 ## 📊 Measurements
 
@@ -61,15 +68,6 @@ cd converter && pip install -r requirements.txt`
 4. Convert weights to Distributed Llama format. This will take a bit of time.
 ```sh
 python converter.py /path/to/llama-2-7b q40
-```
-5. Compile Distributed Llama:
-```sh
-make main
-```
-6. Download the `tokenizer.bin` file from the [llama2.c](https://github.com/karpathy/llama2.c) repository ([direct link](https://github.com/karpathy/llama2.c/raw/master/tokenizer.bin)).
-7. Run Distributed Llama:
-```sh
-./main inference --model ../dllama_llama-2-13b_q40.bin --tokenizer ../tokenizer.bin --weights-float-type q40 --buffer-float-type q80 --prompt "Hello world" --steps 16 --nthreads 4
 ```
 
 In the table below, you can find the expected size of the converted weights with different floating-point types.
