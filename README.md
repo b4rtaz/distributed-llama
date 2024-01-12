@@ -11,9 +11,9 @@ This project was initiated based on the [llama2.c](https://github.com/karpathy/l
 * Currently the project is only optimized for ARM CPUs.
 
 **Supported models:**
-* Llama 7B
-* Llama 13B
-* Llama 70B
+* Llama 2 7B
+* Llama 2 13B
+* Llama 2 70B
 
 **Architecture:**<br />
 The project is split up into two parts:
