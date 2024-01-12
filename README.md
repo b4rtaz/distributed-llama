@@ -2,19 +2,25 @@
 
 Run LLMs on weak devices or make powerful devices even more powerful by distributing the workload and dividing the RAM usage. This project proves that it's possible split the workload of LLMs across multiple devices and achieve a significant speedup. Distributed Llama allows you to run huge LLMs in-house like Llama 2 70B on multiple devices (3 x 16GB RAM notebook). The project uses TCP sockets to synchronize the state. You can easily configure your AI cluster by using a home router.
 
-Currently the project is only optimized for ARM CPUs.
-
 This project was initiated based on the [llama2.c](https://github.com/karpathy/llama2.c) repository. Big thanks to [@karpathy](https://github.com/karpathy) and other contributors. Most ARM optimizations come from the [llama.cpp](https://github.com/ggerganov/llama.cpp) project.
 
-Known limitations:
+**Known limitations:**
 * This project is a proof of concept, it's not optimized for production usage.
 * You can run Distributed Llama only on 1, 2, 4... 2^n devices.
 * The project supports only the inference mode, the chat mode is not supported.
+* Currently the project is only optimized for ARM CPUs.
 
-Supported models:
+**Supported models:**
 * Llama 7B
 * Llama 13B
 * Llama 70B
+
+**Architecture:**<br />
+The project is split up into two parts:
+* **Root node** - it's responsible for loading the model and weights and forward them to workers. Also, it synchronises the state of the neural network. The root node is also a worker, it processes own slice of the neural network.
+* **Worker node** - it processes own slice of the neural network. It doesn't require any configuration related to the model.
+
+You always need the root node and you can add 2^n - 1 worker nodes to speed up the inference. The RAM usage of the neural network is split up across all nodes. The root node requires a bit more RAM than node workers.
 
 ## 📊 Measurements
 
