@@ -96,22 +96,24 @@ void* TaskLoop::threadHandler(void* arg) {
 
         if (result == TASK_STOP) {
             loop->stop = true;
-            break;
         }
 
         loop->doneThreadCount++;
 
         if (threadIndex == 0) {
-            unsigned int currentTime = timeMs();
-            loop->executionTime[task->taskType] += currentTime - loop->lastTime;
-            loop->lastTime = currentTime;
-
             // printf("📋 Task %4d done\n", currentTaskIndex);
             while (loop->stop == false && loop->doneThreadCount < loop->nThreads) {
                 // NOP
             }
-            loop->doneThreadCount.exchange(0);
-            loop->currentTaskIndex.store((currentTaskIndex + 1) % loop->nTasks);
+
+            unsigned int currentTime = timeMs();
+            loop->executionTime[task->taskType] += currentTime - loop->lastTime;
+            loop->lastTime = currentTime;
+
+            if (loop->stop == false) {
+                loop->doneThreadCount.exchange(0);
+                loop->currentTaskIndex.store((currentTaskIndex + 1) % loop->nTasks);
+            }
         } else {
             while (loop->stop == false && loop->currentTaskIndex == currentTaskIndex) {
                 // NOP
