@@ -24,8 +24,8 @@ All tests below were conducted on 2 x Raspberry Pi 4B 8 GB units.
 
 | Model       | F32 Buffer                                                       | Q80 Buffer                                                        |
 |-------------|------------------------------------------------------------------|-------------------------------------------------------------------|
-| Llama 2 7B  | **4880 kB**<br><sub><sup>(S: 2912 kB, R: 1968 kB)</sup></sub>    | **1295 kB** <br><sub><sup>(S: 773 kB, R: 522 kB)</sup></sub>      |
-| Llama 2 13B | **7640 kB**<br><sub><sup>(S: 4560 kB, R: 3080 kB)</sup></sub>    | **2029 kB** <br><sub><sup>(S: 1211 kB, R: 818 kB)</sup></sub>     |
+| Llama 2 7B  | **4192 kB**<br><sub><sup>(S: 2224 kB, R: 1968 kB)</sup></sub>    | **1112 kB** <br><sub><sup>(S: 590 kB, R: 522 kB)</sup></sub>      |
+| Llama 2 13B | **6560 kB**<br><sub><sup>(S: 3480 kB, R: 3080 kB)</sup></sub>    | **1742 kB** <br><sub><sup>(S: 924 kB, R: 818 kB)</sup></sub>     |
 
 S - sent from the root node.<br>
 R - received by the root node.
