@@ -20,7 +20,7 @@ The project is split up into two parts:
 * **Root node** - it's responsible for loading the model and weights and forward them to workers. Also, it synchronises the state of the neural network. The root node is also a worker, it processes own slice of the neural network.
 * **Worker node** - it processes own slice of the neural network. It doesn't require any configuration related to the model.
 
-You always need the root node and you can add 2^n - 1 worker nodes to speed up the inference. The RAM usage of the neural network is split up across all nodes. The root node requires a bit more RAM than node workers.
+You always need the root node and you can add 2^n - 1 worker nodes to speed up the inference. The RAM usage of the neural network is split up across all nodes. The root node requires a bit more RAM than worker nodes.
 
 ## 📊 Measurements
 
@@ -117,7 +117,7 @@ sudo ip addr add 10.0.0.2/24 dev eth0 # 2th device
 ```
 sudo nice -n -20 ./main worker --port 9998
 ```
-9. Run root node on main device:
+9. Run root node on the root device:
 ```sh
 sudo nice -n -20 ./main inference --model ../dllama_llama-2-13b_q40.bin --tokenizer ../tokenizer.bin --weights-float-type q40 --buffer-float-type q80 --prompt "Hello world" --steps 16 --nthreads 4 --workers 10.0.0.1:9998
 ```
