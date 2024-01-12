@@ -147,6 +147,12 @@ int main(int argc, char *argv[]) {
             args.port = atoi(argv[i + 1]);
         } else if (strcmp(argv[i], "--nthreads") == 0) {
             args.nThreads = atoi(argv[i + 1]);
+        } else if (strcmp(argv[i], "--steps") == 0) {
+            args.steps = atoi(argv[i + 1]);
+        } else if (strcmp(argv[i], "--temperature") == 0) {
+            args.temperature = atof(argv[i + 1]);
+        } else if (strcmp(argv[i], "--topp") == 0) {
+            args.topp = atof(argv[i + 1]);
         } else {
             printf("Unknown option %s\n", argv[i]);
             exit(EXIT_FAILURE);
