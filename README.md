@@ -2,7 +2,7 @@
 
 Run LLMs on weak devices or make powerful devices even more powerful by distributing the workload.
 
-## Measurements
+## 📊 Measurements
 
 ### Raspberry Pi
 
@@ -41,7 +41,7 @@ R - received by the root node.
 🔶 G 513173 ms I 511657 ms T  264 ms S      0 kB R      0 kB !
 ```
 
-## How to Convert Llama 2 Weights
+## 🔨 How to Convert Llama 2 Weights
 
 1. Download [Llama 2](https://github.com/facebookresearch/llama) weights. This project supports 7B, 13B and 70B models. This project doesn't support chat models.
 2. Open the `llama-2-7b/params.json` file and replace `"vocab_size": -1` to `"vocab_size": 32000`.
@@ -70,7 +70,7 @@ In the table below, you can find the expected size of the converted weights with
 | Llama 2 13B | 26.03 GB      |          |          | 7.35 GB  |
 | Llama 2 70B | 137.97 GB     |          |          | 36.98 GB |
 
-## How to Run on Raspberry Pi Devices
+## 📟 How to Run on Raspberry Pi Devices
 
 1. Install `Raspberry Pi OS Lite (64 bit)` on your Raspberry Pi devices. This OS doesn't have desktop environment.
 2. Connect to all devices via SSH.
@@ -103,3 +103,7 @@ sudo nice -n -20 ./main worker --port 9998
 ```sh
 sudo nice -n -20 ./main inference --model ../dllama_llama-2-13b_q40.bin --tokenizer ../tokenizer.bin --weights-float-type q40 --buffer-float-type q80 --prompt "Hello world" --steps 16 --nthreads 4 --workers 10.0.0.1:9998
 ```
+
+## 💡 License
+
+This project is released under the MIT license.
