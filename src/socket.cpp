@@ -31,11 +31,14 @@ static inline void setNoDelay(int socket) {
 static inline void writeSocket(int socket, const char* data, size_t size) {
     while (size > 0) {
         int s = send(socket, (char*)data, size, 0);
-        if (s <= 0) {
+        if (s < 0) {
             if (SOCKET_LAST_ERRCODE == EAGAIN) {
                 continue;
             }
             printf("Error sending data %d (%s)\n", SOCKET_LAST_ERRCODE, SOCKET_LAST_ERROR);
+            exit(EXIT_FAILURE);
+        } else if (s == 0) {
+            printf("Error sending data: socket closed\n");
             exit(EXIT_FAILURE);
         }
         size -= s;
@@ -46,11 +49,14 @@ static inline void writeSocket(int socket, const char* data, size_t size) {
 static inline void readSocket(int socket, char* data, size_t size) {
     while (size > 0) {
         int r = recv(socket, (char*)data, size, 0);
-        if (r <= 0) {
+        if (r < 0) {
             if (SOCKET_LAST_ERRCODE == EAGAIN) {
                 continue;
             }
             printf("Error receiving data %d (%s)\n", SOCKET_LAST_ERRCODE, SOCKET_LAST_ERROR);
+            exit(EXIT_FAILURE);
+        } else if (r == 0) {
+            printf("Error receiving data: socket closed\n");
             exit(EXIT_FAILURE);
         }
         data = (char*)data + r;
@@ -58,7 +64,7 @@ static inline void readSocket(int socket, char* data, size_t size) {
     }
 }
 
-SocketPool SocketPool::connect(unsigned int nSockets, char** hosts, int* ports) {
+SocketPool* SocketPool::connect(unsigned int nSockets, char** hosts, int* ports) {
     int* sockets = new int[nSockets];
     struct sockaddr_in addr;
 
@@ -82,14 +88,14 @@ SocketPool SocketPool::connect(unsigned int nSockets, char** hosts, int* ports) 
 
         sockets[i] = clientSocket;
     }
-    return SocketPool(nSockets, sockets);
+    return new SocketPool(nSockets, sockets);
 }
 
 SocketPool::SocketPool(unsigned int nSockets, int* sockets) {
     this->nSockets = nSockets;
     this->sockets = sockets;
-    this->sentBytes = 0;
-    this->recvBytes = 0;
+    this->sentBytes.exchange(0);
+    this->recvBytes.exchange(0);
 }
 
 SocketPool::~SocketPool() {
@@ -120,8 +126,8 @@ void SocketPool::read(unsigned int socketIndex, char* data, size_t size) {
 void SocketPool::getStats(size_t* sentBytes, size_t* recvBytes) {
     *sentBytes = this->sentBytes;
     *recvBytes = this->recvBytes;
-    this->sentBytes = 0;
-    this->recvBytes = 0;
+    this->sentBytes.exchange(0);
+    this->recvBytes.exchange(0);
 }
 
 Socket Socket::accept(int port) {

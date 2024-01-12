@@ -40,7 +40,7 @@ int inference(ProgramArgs* args) {
         return usage();
     }
 
-    SocketPool socketPool = SocketPool::connect(args->nWorkers, args->workerHosts, args->workerPorts);
+    SocketPool* socketPool = SocketPool::connect(args->nWorkers, args->workerHosts, args->workerPorts);
     unsigned int nSlices = args->nWorkers + 1;
 
     TransformerSpec spec = Transformer::loadSpecFromFile(args->modelPath, nSlices, args->weightsFloatType, args->bufferFloatType);
@@ -50,12 +50,14 @@ int inference(ProgramArgs* args) {
         steps = spec.seqLen;
     }
 
-    Transformer transformer = Transformer::loadRootFromFile(args->modelPath, &spec, &socketPool);
-    Inference inference = Inference(args->nThreads, &transformer, &socketPool);
+    Transformer transformer = Transformer::loadRootFromFile(args->modelPath, &spec, socketPool);
+    Inference inference = Inference(args->nThreads, &transformer, socketPool);
 
-    socketPool.enableTurbo();
+    socketPool->enableTurbo();
 
-    generate(&spec, &inference, &socketPool, args->tokenizerPath, args->temperature, args->topp, steps, args->prompt);
+    generate(&spec, &inference, socketPool, args->tokenizerPath, args->temperature, args->topp, steps, args->prompt);
+
+    delete socketPool;
 
     return EXIT_SUCCESS;
 }

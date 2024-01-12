@@ -388,7 +388,7 @@ void generate(TransformerSpec* spec, Inference* inference, SocketPool* socketPoo
     free(promptTokens);
 
     printf("Generated tokens:    %d\n", pos);
-    printf("Avg generation time: %.2f ms\n", totalGenerationTime / (double)steps);
-    printf("Avg inference time:  %.2f ms\n", totalInferenceTime / (double)steps);
-    printf("Avg transfer time:   %.2f ms\n", totalTransferTime / (double)steps);
+    printf("Avg generation time: %.2f ms\n", totalGenerationTime / (double)pos);
+    printf("Avg inference time:  %.2f ms\n", totalInferenceTime / (double)pos);
+    printf("Avg transfer time:   %.2f ms\n", totalTransferTime / (double)pos);
 }

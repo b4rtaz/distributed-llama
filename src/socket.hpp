@@ -1,16 +1,17 @@
 #ifndef SOCKET_HPP
 #define SOCKET_HPP
 
+#include <atomic>
 #include <cstddef>
 
 class SocketPool {
 private:
     int* sockets;
-    unsigned int sentBytes;
-    unsigned int recvBytes;
+    std::atomic_uint sentBytes;
+    std::atomic_uint recvBytes;
 
 public:
-    static SocketPool connect(unsigned int nSockets, char** hosts, int* ports);
+    static SocketPool* connect(unsigned int nSockets, char** hosts, int* ports);
 
     unsigned int nSockets;
 
