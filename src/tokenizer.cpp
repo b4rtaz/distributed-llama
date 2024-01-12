@@ -366,18 +366,18 @@ void generate(TransformerSpec* spec, Inference* inference, SocketPool* socketPoo
         }
         pos++;
 
-        // data-dependent terminating condition: the BOS (=1) token delimits sequences
-        if (next == 1) { break; }
-
-        // print the token as string, decode it with the Tokenizer object
-        char* piece = tokenizer.decode(token, next);
-    
         unsigned long generationTime = timeMs() - startTime;
 
         totalGenerationTime += generationTime;
         totalInferenceTime += inferenceTime;
         totalTransferTime += transferTime;
 
+        // data-dependent terminating condition: the BOS (=1) token delimits sequences
+        if (next == 1) { break; }
+
+        // print the token as string, decode it with the Tokenizer object
+        char* piece = tokenizer.decode(token, next);
+    
         printf("🔶 G %4ld ms I %4ld ms T %4ld ms S %6ld kB R %6ld kB ", generationTime, inferenceTime, transferTime, sentBytes / 1024, recvBytes / 1024);
         safePrintf(piece); // same as printf("%s", piece), but skips "unsafe" bytes
         printf("\n");
