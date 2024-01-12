@@ -1,6 +1,13 @@
 # Distributed Llama
 
-Run LLMs on weak devices or make powerful devices even more powerful by distributing the workload.
+Run LLMs on weak devices or make powerful devices even more powerful by distributing the workload. This project proves that it's possible split the workload of LLMs across multiple devices and achieve a significant speedup.
+
+Currently the project is only optimized for ARM CPUs.
+
+This project was initiated based on the [llama.c](https://github.com/karpathy/llama2.c) repository. Big thanks to [@karpathy](https://github.com/karpathy) and other contributors. Most ARM optimizations come from the [llama2.cpp](https://github.com/ggerganov/llama.cpp) project.
+
+Known limitations:
+* You can run Dllama only on 1, 2, 4... 2^n devices.
 
 ## 📊 Measurements
 
