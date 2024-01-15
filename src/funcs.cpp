@@ -147,7 +147,8 @@ void matmulQ40(MatmulThreadInfo* a) {
     const int k = QK40 * blocksPerRow;
     BlockQ40* w = (BlockQ40*)a->weights;
     assert(a->n % k == 0);
-    int n = a->n / k;
+    const float* input = (float*)a->input;
+    const int n = a->n / k;
     float group[k];
 
 #if defined(__ARM_NEON)
@@ -160,7 +161,7 @@ void matmulQ40(MatmulThreadInfo* a) {
         for (int j = 0; j < n; j++) {
             dequantizeQ40Row(&w[d * n * blocksPerRow + j * blocksPerRow], group, k);
             for (int z = 0; z < k; z += 4) {
-                a0 = vld1q_f32(&((float*)a->input)[j * k + z]);
+                a0 = vld1q_f32(&input[j * k + z]);
                 b0 = vld1q_f32(&group[z]);
                 u = vfmaq_f32(u, a0, b0);
             }
@@ -168,7 +169,6 @@ void matmulQ40(MatmulThreadInfo* a) {
         a->output[d] = vaddvq_f32(u);
     }
 #else
-    char* input = (char*)a->input;
     for (int d = a->ds; d < a->de; d++) {
         float val = 0.0f;
         for (int j = 0; j < n; j++) {
