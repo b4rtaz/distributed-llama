@@ -58,7 +58,11 @@ TransformerSpec Transformer::loadSpecFromFile(const char* path, const unsigned i
     }
 
     TransformerFileHeader header;
-    fread(&header, sizeof(TransformerFileHeader), 1, fd);
+    size_t hs = fread(&header, sizeof(TransformerFileHeader), 1, fd);
+    if (hs != 1) {
+        printf("Cannot read header\n");
+        exit(EXIT_FAILURE);
+    }
 
     spec.dim = header.dim;
     spec.hiddenDim = header.hiddenDim;
