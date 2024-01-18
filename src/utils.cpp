@@ -88,9 +88,9 @@ void* TaskLoop::threadHandler(void* arg) {
     TaskLoop* loop = context->loop;
     unsigned int threadIndex = context->threadIndex;
 
-    while (loop->stop == false) {
-        const unsigned int currentTaskIndex = loop->currentTaskIndex;
-        const TaskLoopTask* task = &loop->tasks[currentTaskIndex];
+    while (loop->stop.load() == false) {
+        const unsigned int currentTaskIndex = loop->currentTaskIndex.load();
+        const TaskLoopTask* task = &loop->tasks[currentTaskIndex % loop->nTasks];
 
         int result = task->handler(loop->nThreads, threadIndex, loop->userData);
 
@@ -98,24 +98,17 @@ void* TaskLoop::threadHandler(void* arg) {
             loop->stop = true;
         }
 
-        loop->doneThreadCount++;
+        int currentCount = loop->doneThreadCount.fetch_add(1);
 
-        if (threadIndex == 0) {
-            // printf("📋 Task %4d done\n", currentTaskIndex);
-            while (loop->stop == false && loop->doneThreadCount < loop->nThreads) {
-                // NOP
-            }
-
+        if (currentCount == loop->nThreads - 1) {
             unsigned int currentTime = timeMs();
             loop->executionTime[task->taskType] += currentTime - loop->lastTime;
             loop->lastTime = currentTime;
 
-            if (loop->stop == false) {
-                loop->doneThreadCount.exchange(0);
-                loop->currentTaskIndex.store((currentTaskIndex + 1) % loop->nTasks);
-            }
+            loop->doneThreadCount.store(0);
+            loop->currentTaskIndex.fetch_add(1);
         } else {
-            while (loop->stop == false && loop->currentTaskIndex == currentTaskIndex) {
+            while (loop->currentTaskIndex.load() == currentTaskIndex) {
                 // NOP
             }
         }

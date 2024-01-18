@@ -123,6 +123,60 @@ void SocketPool::read(unsigned int socketIndex, char* data, size_t size) {
     readSocket(sockets[socketIndex], data, size);
 }
 
+void SocketPool::writeMany(unsigned int n, SocketIo* ios) {
+    bool isWriting;
+    do {
+        isWriting = false;
+        for (unsigned int i = 0; i < n; i++) {
+            SocketIo* io = &ios[i];
+            if (io->size > 0) {
+                isWriting = true;
+                int socket = sockets[io->socketIndex];
+                ssize_t s = send(socket, io->data, io->size, 0);
+                if (s < 0) {
+                    if (SOCKET_LAST_ERRCODE == EAGAIN) {
+                        continue;
+                    }
+                    printf("Error sending data %d (%s)\n", SOCKET_LAST_ERRCODE, SOCKET_LAST_ERROR);
+                    exit(EXIT_FAILURE);
+                } else if (s == 0) {
+                    printf("Error sending data: socket closed\n");
+                    exit(EXIT_FAILURE);
+                }
+                io->size -= s;
+                io->data = (char*)io->data + s;
+            }
+        }
+    } while (isWriting);
+}
+
+void SocketPool::readMany(unsigned int n, SocketIo* ios) {
+    bool isReading;
+    do {
+        isReading = false;
+        for (unsigned int i = 0; i < n; i++) {
+            SocketIo* io = &ios[i];
+            if (io->size > 0) {
+                isReading = true;
+                int socket = sockets[io->socketIndex];
+                ssize_t r = recv(socket, (char*)io->data, io->size, 0);
+                if (r < 0) {
+                    if (SOCKET_LAST_ERRCODE == EAGAIN) {
+                        continue;
+                    }
+                    printf("Error receiving data %d (%s)\n", SOCKET_LAST_ERRCODE, SOCKET_LAST_ERROR);
+                    exit(EXIT_FAILURE);
+                } else if (r == 0) {
+                    printf("Error receiving data: socket closed\n");
+                    exit(EXIT_FAILURE);
+                }
+                io->size -= r;
+                io->data = (char*)io->data + r;
+            }
+        }
+    } while (isReading);
+}
+
 void SocketPool::getStats(size_t* sentBytes, size_t* recvBytes) {
     *sentBytes = this->sentBytes;
     *recvBytes = this->recvBytes;
