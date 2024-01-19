@@ -125,6 +125,11 @@ void SocketPool::read(unsigned int socketIndex, char* data, size_t size) {
 
 void SocketPool::writeMany(unsigned int n, SocketIo* ios) {
     bool isWriting;
+    for (unsigned int i = 0; i < n; i++) {
+        SocketIo* io = &ios[i];
+        assert(io->socketIndex >= 0 && io->socketIndex < nSockets);
+        sentBytes += io->size;
+    }
     do {
         isWriting = false;
         for (unsigned int i = 0; i < n; i++) {
@@ -152,6 +157,11 @@ void SocketPool::writeMany(unsigned int n, SocketIo* ios) {
 
 void SocketPool::readMany(unsigned int n, SocketIo* ios) {
     bool isReading;
+    for (unsigned int i = 0; i < n; i++) {
+        SocketIo* io = &ios[i];
+        assert(io->socketIndex >= 0 && io->socketIndex < nSockets);
+        recvBytes += io->size;
+    }
     do {
         isReading = false;
         for (unsigned int i = 0; i < n; i++) {
