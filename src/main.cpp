@@ -142,7 +142,7 @@ int main(int argc, char *argv[]) {
                 args.workerPorts[s] = atoi(sep + 1);
             }
 
-            i += count;
+            i += count - 1;
         } else if (strcmp(argv[i], "--port") == 0) {
             args.port = atoi(argv[i + 1]);
         } else if (strcmp(argv[i], "--nthreads") == 0) {
