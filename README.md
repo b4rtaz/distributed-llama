@@ -17,7 +17,7 @@ This project was initiated based on the [llama2.c](https://github.com/karpathy/l
 
 **Architecture:**<br />
 The project is split up into two parts:
-* **Root node** - it's responsible for loading the model and weights and forward them to workers. Also, it synchronises the state of the neural network. The root node is also a worker, it processes own slice of the neural network.
+* **Root node** - it's responsible for loading the model and weights and forward them to workers. Also, it synchronizes the state of the neural network. The root node is also a worker, it processes own slice of the neural network.
 * **Worker node** - it processes own slice of the neural network. It doesn't require any configuration related to the model.
 
 You always need the root node and you can add 2^n - 1 worker nodes to speed up the inference. The RAM usage of the neural network is split up across all nodes. The root node requires a bit more RAM than worker nodes.
@@ -30,10 +30,11 @@ You always need the root node and you can add 2^n - 1 worker nodes to speed up t
 
 All tests below utilized Q40 weights and a Q80 buffer. The generation time encompasses the inference time, network transfer time, sampling time, and multi-thread synchronization time. Number of samples: 16. All Raspberry Pi units were connected via Gigabit Ethernet to the TP-Link LS1008G Switch.
 
-| Model       | 1 x RasPi 4B 8 GB                                                   | 2 x RasPi 4B 8 GB                                                     | 4 x RasPi 4B 8 GB                                                                    |
-|-------------|---------------------------------------------------------------------|-----------------------------------------------------------------------|--------------------------------------------------------------------------------------|
-| Llama 2 7B  | **1312.50 ms**<br><sub><sup>(I: 1307.94 ms, T: 1.81 ms)</sup></sub> | **793.69 ms**<br><sub><sup>(I: 739.00 ms, T: 52.50 ms)</sup></sub>    | **494.00 ms** `🔥 265% faster` <br><sub><sup>(I: 458.81 ms, T: 34.06 ms)</sup></sub> |
-| Llama 2 13B | Not enough RAM                                                      | **1497.19 ms**<br><sub><sup>(I: 1465.06 ms, T: 30.88 ms)</sup></sub>  | **848.19 ms** <br><sub><sup>(I: 746.88 ms, T: 99.50 ms)</sup></sub>                  |
+| Model       | 1 x RasPi 4B 8 GB                                                   | 2 x RasPi 4B 8 GB                                                     | 4 x RasPi 4B 8 GB                                                                    | 8 x RasPi 4B 8 GB                                                    |
+|-------------|---------------------------------------------------------------------|-----------------------------------------------------------------------|--------------------------------------------------------------------------------------|----------------------------------------------------------------------|
+| Llama 2 7B  | **1312.50 ms**<br><sub><sup>(I: 1307.94 ms, T: 1.81 ms)</sup></sub> | **793.69 ms**<br><sub><sup>(I: 739.00 ms, T: 52.50 ms)</sup></sub>    | **494.00 ms** 🔥               <br><sub><sup>(I: 458.81 ms, T: 34.06 ms)</sup></sub> | **588.19 ms**<br><sub><sup>(I: 296.69 ms, T: 289.75 ms)</sup></sub>  |
+| Llama 2 13B | <sub><sup>Not enough RAM</sup></sub>                                | **1497.19 ms**<br><sub><sup>(I: 1465.06 ms, T: 30.88 ms)</sup></sub>  | **848.19 ms** 🔥<br><sub><sup>(I: 746.88 ms, T: 99.50 ms)</sup></sub>                | **1114.88 ms**<br><sub><sup>(I: 460.8 ms, T: 652.88 ms)</sup></sub>  |
+| Llama 2 70B | <sub><sup>Not enough RAM</sup></sub>                                | <sub><sup>Not enough RAM</sup></sub>                                  | <sub><sup>Not enough RAM</sup></sub>                                                 | **4842.81 ms** 🔥<br><sub><sup>(I: 2121.94 ms, T: 2719.62 ms)</sup></sub> |
 
 I - inference time of the root node.<br>
 T - network transfer time.
