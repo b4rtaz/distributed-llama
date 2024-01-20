@@ -20,8 +20,8 @@ jobs:
         id: dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install build-essential gcc-8
+          sudo apt-get install build-essential
       - name: Build
         id: build
         run: |
-          CC=gcc-8 make main
+          make main
