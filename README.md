@@ -12,7 +12,7 @@ This project was initiated based on the [llama2.c](https://github.com/karpathy/l
 * This project is a proof of concept, it's not optimized for production usage.
 * You can run Distributed Llama only on 1, 2, 4... 2^n devices.
 * The project supports only the inference mode, the chat mode is not supported.
-* Currently the project is only optimized for ARM CPUs.
+* Currently the project is only optimized for ARM CPUs. x86 CPUs should work, but the performance will be worse.
 
 **Supported models**
 * Llama 2 7B
