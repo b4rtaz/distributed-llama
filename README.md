@@ -10,6 +10,8 @@ This project was initiated based on the [llama2.c](https://github.com/karpathy/l
 
 📃 [Read the report](https://raw.githubusercontent.com/b4rtaz/distributed-llama/main/report/report.pdf)
 
+![Distributed Llama on 8 Raspberry Pi 4B devices](.github/8raspi.jpg)
+
 **Known limitations**
 * This project is a proof of concept, it's not optimized for production usage.
 * You can run Distributed Llama only on 1, 2, 4... 2^n devices.
