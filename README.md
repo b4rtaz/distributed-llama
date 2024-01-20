@@ -41,12 +41,20 @@ T - network transfer time.
 
 #### Network Transfer for Generating Single Token
 
-All tests below were conducted on 2 x Raspberry Pi 4B 8 GB units.
+**F32 Buffer**
 
-| Model       | F32 Buffer                                                       | Q80 Buffer                                                        |
-|-------------|------------------------------------------------------------------|-------------------------------------------------------------------|
-| Llama 2 7B  | **4192 kB**<br><sub><sup>(S: 2224 kB, R: 1968 kB)</sup></sub>    | **1112 kB** <br><sub><sup>(S: 590 kB, R: 522 kB)</sup></sub>      |
-| Llama 2 13B | **6560 kB**<br><sub><sup>(S: 3480 kB, R: 3080 kB)</sup></sub>    | **1742 kB** <br><sub><sup>(S: 924 kB, R: 818 kB)</sup></sub>     |
+| Model       | 2 devices                                                        |
+|-------------|------------------------------------------------------------------|
+| Llama 2 7B  | **4192 kB**<br><sub><sup>(S: 2224 kB, R: 1968 kB)</sup></sub>    |
+| Llama 2 13B | **6560 kB**<br><sub><sup>(S: 3480 kB, R: 3080 kB)</sup></sub>    |
+
+**Q80 Buffer**
+
+| Model       | 2 devices                                                   | 4 devices                                                     | 8 devices                                                       |
+|-------------|-------------------------------------------------------------|---------------------------------------------------------------|-----------------------------------------------------------------|
+| Llama 2 7B  | **1112 kB**<br><sub><sup>(S: 590 kB, R: 522 kB)</sup></sub> | **2830 kB**<br><sub><sup>(S: 2046 kB, R: 784 kB)</sup></sub>  | **6008 kB**<br><sub><sup>(S: 5094 kB, R: 914 kB)</sup></sub>    |
+| Llama 2 13B | **1742 kB**<br><sub><sup>(S: 924 kB, R: 818 kB)</sup></sub> | **4430 kB**<br><sub><sup>(S: 3203 kB, R: 1227 kB)</sup></sub> | **9407 kB**<br><sub><sup>(S: 7976 kB, R: 1431 kB)</sup></sub>   |
+| Llama 2 70B |                                                             |                                                               | **32873 kB**<br><sub><sup>(S: 28857 kB, R: 4016 kB)</sup></sub> |
 
 S - sent from the root node.<br>
 R - received by the root node.
