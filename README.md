@@ -69,7 +69,7 @@ All tests below utilized Q40 weights and a Q80 buffer. The generation time encom
 2. Open the `llama-2-7b/params.json` file and replace `"vocab_size": -1` to `"vocab_size": 32000`.
 3. Install dependencies of the converter:
 ```sh
-cd converter && pip install -r requirements.txt`
+cd converter && pip install -r requirements.txt
 ```
 4. Convert weights to Distributed Llama format. This will take a bit of time.
 ```sh
