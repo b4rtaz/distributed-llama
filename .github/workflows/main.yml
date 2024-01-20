@@ -1,0 +1,27 @@
+name: main
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+jobs:
+  build:
+    name: Build
+    runs-on: ${{matrix.os}}
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v3
+      - name: Dependencies
+        id: dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install build-essential gcc-8
+      - name: Build
+        id: build
+        run: |
+          CC=gcc-8 make main
