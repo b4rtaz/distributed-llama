@@ -6,11 +6,14 @@
 
 Run LLMs on weak devices or make powerful devices even more powerful by distributing the workload and dividing the RAM usage. This project proves that it's possible split the workload of LLMs across multiple devices and achieve a significant speedup. Distributed Llama allows you to run huge LLMs in-house. The project uses TCP sockets to synchronize the state. You can easily configure your AI cluster by using a home router.
 
+<p align="center">
+  <img src=".github/8raspi.jpg" width="50%" alt="Distributed Llama running on 8 Raspberry Pi 4B devices" /><br />
+  <sub><sup>Distributed Llama running on 8 Raspberry Pi 4B devices</sup></sub>
+</p>
+
 This project was initiated based on the [llama2.c](https://github.com/karpathy/llama2.c) repository. Big thanks to [@karpathy](https://github.com/karpathy) and other contributors. Most ARM optimizations come from the [llama.cpp](https://github.com/ggerganov/llama.cpp) project.
 
 📃 [Read the report](https://raw.githubusercontent.com/b4rtaz/distributed-llama/main/report/report.pdf)
-
-![Distributed Llama on 8 Raspberry Pi 4B devices](.github/8raspi.jpg)
 
 **Known limitations**
 * This project is a proof of concept, it's not optimized for production usage.
