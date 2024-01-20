@@ -123,7 +123,7 @@ sudo nice -n -20 ./main worker --port 9998
 sudo nice -n -20 ./main inference --model ../dllama_llama-2-13b_q40.bin --tokenizer ../tokenizer.bin --weights-float-type q40 --buffer-float-type q80 --prompt "Hello world" --steps 16 --nthreads 4 --workers 10.0.0.1:9998
 ```
 
-Share your results!
+[Share your results](https://github.com/b4rtaz/distributed-llama/discussions)!
 
 ## 💡 License
 
