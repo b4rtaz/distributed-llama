@@ -4,18 +4,18 @@ Run LLMs on weak devices or make powerful devices even more powerful by distribu
 
 This project was initiated based on the [llama2.c](https://github.com/karpathy/llama2.c) repository. Big thanks to [@karpathy](https://github.com/karpathy) and other contributors. Most ARM optimizations come from the [llama.cpp](https://github.com/ggerganov/llama.cpp) project.
 
-**Known limitations:**
+**Known limitations**
 * This project is a proof of concept, it's not optimized for production usage.
 * You can run Distributed Llama only on 1, 2, 4... 2^n devices.
 * The project supports only the inference mode, the chat mode is not supported.
 * Currently the project is only optimized for ARM CPUs.
 
-**Supported models:**
+**Supported models**
 * Llama 2 7B
 * Llama 2 13B
 * Llama 2 70B
 
-**Architecture:**<br />
+**Architecture**<br />
 The project is split up into two parts:
 * **Root node** - it's responsible for loading the model and weights and forward them to workers. Also, it synchronizes the state of the neural network. The root node is also a worker, it processes own slice of the neural network.
 * **Worker node** - it processes own slice of the neural network. It doesn't require any configuration related to the model.
@@ -24,9 +24,9 @@ You always need the root node and you can add 2^n - 1 worker nodes to speed up t
 
 ## 📊 Measurements
 
-### Raspberry Pi
+### Average Single Token Generation Time
 
-#### Average Single Token Generation Time
+**Raspberry Pi 4B 8 GB**
 
 All tests below utilized Q40 weights and a Q80 buffer. The generation time encompasses the inference time, network transfer time, sampling time, and multi-thread synchronization time. Number of samples: 16. All Raspberry Pi units were connected via Gigabit Ethernet to the TP-Link LS1008G Switch.
 
@@ -36,10 +36,9 @@ All tests below utilized Q40 weights and a Q80 buffer. The generation time encom
 | Llama 2 13B | <sub><sup>Not enough RAM</sup></sub>                                | **1497.19 ms**<br><sub><sup>(I: 1465.06 ms, T: 30.88 ms)</sup></sub>  | **848.19 ms** 🔥<br><sub><sup>(I: 746.88 ms, T: 99.50 ms)</sup></sub>                | **1114.88 ms**<br><sub><sup>(I: 460.8 ms, T: 652.88 ms)</sup></sub>  |
 | Llama 2 70B | <sub><sup>Not enough RAM</sup></sub>                                | <sub><sup>Not enough RAM</sup></sub>                                  | <sub><sup>Not enough RAM</sup></sub>                                                 | **4842.81 ms** 🔥<br><sub><sup>(I: 2121.94 ms, T: 2719.62 ms)</sup></sub> |
 
-I - inference time of the root node.<br>
-T - network transfer time.
+<sub><sup>I - inference time of the root node, T - network transfer time</sup></sub>
 
-#### Network Transfer for Generating Single Token
+### Network Transfer for Generating Single Token
 
 **F32 Buffer**
 
@@ -47,6 +46,8 @@ T - network transfer time.
 |-------------|------------------------------------------------------------------|
 | Llama 2 7B  | **4192 kB**<br><sub><sup>(S: 2224 kB, R: 1968 kB)</sup></sub>    |
 | Llama 2 13B | **6560 kB**<br><sub><sup>(S: 3480 kB, R: 3080 kB)</sup></sub>    |
+
+<sub><sup>S - sent data from the root node to workers, R - received data by the root node from workers</sup></sub>
 
 **Q80 Buffer**
 
@@ -56,21 +57,7 @@ T - network transfer time.
 | Llama 2 13B | **1742 kB**<br><sub><sup>(S: 924 kB, R: 818 kB)</sup></sub> | **4430 kB**<br><sub><sup>(S: 3203 kB, R: 1227 kB)</sup></sub> | **9407 kB**<br><sub><sup>(S: 7976 kB, R: 1431 kB)</sup></sub>   |
 | Llama 2 70B |                                                             |                                                               | **32873 kB**<br><sub><sup>(S: 28857 kB, R: 4016 kB)</sup></sub> |
 
-S - sent from the root node.<br>
-R - received by the root node.
-
-<!--
-### MacBook Pro M1
-
-70B:
-
-```
-⏩ Loaded 39706066944 bytes
-🔶 G 293682 ms I 293091 ms T  137 ms S      0 kB R      0 kB Hello
-🔶 G 400083 ms I 398644 ms T  171 ms S      0 kB R      0 kB  world
-🔶 G 513173 ms I 511657 ms T  264 ms S      0 kB R      0 kB !
-```
--->
+<sub><sup>S - sent data from the root node to workers, R - received data by the root node from workers</sup></sub>
 
 ## 🔨 How to Convert Llama 2 Weights
 
@@ -96,40 +83,43 @@ In the table below, you can find the expected size of the converted weights with
 ## 📟 How to Run on Raspberry Pi Devices
 
 1. Install `Raspberry Pi OS Lite (64 bit)` on your Raspberry Pi devices. This OS doesn't have desktop environment.
-2. Connect to all devices via SSH.
+2. Connect all devices to the Gigabit switch.
+3. Connect to all devices via SSH.
 ```
 ssh user@raspberrypi1.local
 ssh user@raspberrypi2.local
 ```
-3. Install Git:
+4. Install Git:
 ```sh
 sudo apt install git
 ```
-4. Clone this repository:
+5. Clone this repository:
 ```sh
 git clone https://github.com/b4rtaz/distributed-llama.git
 ```
-5. Compile Distributed Llama:
+6. Compile Distributed Llama:
 ```sh
 make main
 ```
-6. Download the `tokenizer.bin` file from the [llama2.c](https://github.com/karpathy/llama2.c) repository.
+7. Download the `tokenizer.bin` file from the [llama2.c](https://github.com/karpathy/llama2.c) repository.
 ```
 wget https://github.com/karpathy/llama2.c/raw/master/tokenizer.bin
 ```
-7. Optional: assign static IP addresses.
+8. Optional: assign static IP addresses.
 ```sh
 sudo ip addr add 10.0.0.1/24 dev eth0 # 1th device
 sudo ip addr add 10.0.0.2/24 dev eth0 # 2th device
 ```
-8. Run worker nodes on worker devices:
+9. Run worker nodes on worker devices:
 ```
 sudo nice -n -20 ./main worker --port 9998
 ```
-9. Run root node on the root device:
+10. Run root node on the root device:
 ```sh
 sudo nice -n -20 ./main inference --model ../dllama_llama-2-13b_q40.bin --tokenizer ../tokenizer.bin --weights-float-type q40 --buffer-float-type q80 --prompt "Hello world" --steps 16 --nthreads 4 --workers 10.0.0.1:9998
 ```
+
+Share your results!
 
 ## 💡 License
 
