@@ -36,7 +36,7 @@ Projects such as Petals \cite{borzunov2022petals} or Llama.cpp MPI \cite{llamacp
   \captionof{figure}{Layer division using Petals or Llama.cpp MPI; each color represents a separate device.}
 \end{Figure}
 
-Distributed Llama addresses these challenges by introducing an alternative method to partition Large Language Models (LLMs). In this system, the model is vertically divided, where each device receives nearly all layers but is responsible only for forwarding its designated fragment of the layer. Additionally, each device retains in memory only the weights necessary for forwarding the assigned fragment. Since certain LLM layers demand the complete output from the preceding layer, Distributed Llama consolidates outputs and synchronizes all devices.
+Distributed Llama addresses these challenges by introducing an alternative method to partition Large Language Models (LLMs). In this system, the model is horizontally divided, where each device receives nearly all layers but is responsible only for forwarding its designated fragment of the layer. Additionally, each device retains in memory only the weights necessary for forwarding the assigned fragment. Since certain LLM layers demand the complete output from the preceding layer, Distributed Llama consolidates outputs and synchronizes all devices.
 
 \begin{Figure}
   \centering
