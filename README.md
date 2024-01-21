@@ -53,10 +53,10 @@ All tests below utilized Q40 weights and a Q80 buffer. The generation time encom
 
 **F32 Buffer**
 
-| Model       | 2 devices                                                        |
-|-------------|------------------------------------------------------------------|
-| Llama 2 7B  | **4192 kB**<br><sub><sup>(S: 2224 kB, R: 1968 kB)</sup></sub>    |
-| Llama 2 13B | **6560 kB**<br><sub><sup>(S: 3480 kB, R: 3080 kB)</sup></sub>    |
+| Model       | 2 devices                                                        | 4 devices                                                        | 8 devices                                                        |
+|-------------|------------------------------------------------------------------|------------------------------------------------------------------|------------------------------------------------------------------|
+| Llama 2 7B  | **4192 kB**<br><sub><sup>(S: 2224 kB, R: 1968 kB)</sup></sub>    | **10656 kB**<br><sub><sup>(S: 7704 kB, R: 2952 kB)</sup></sub>   | **22624 kB**<br><sub><sup>(S: 19180 kB, R: 3444 kB)</sup></sub> |
+| Llama 2 13B | **6560 kB**<br><sub><sup>(S: 3480 kB, R: 3080 kB)</sup></sub>    | **16680 kB**<br><sub><sup>(S: 12060 kB, R: 4620 kB)</sup></sub>  | **35420 kB**<br><sub><sup>(S: 30030 kB, R: 5390 kB)</sup></sub>  |
 
 <sub><sup>S - sent data from the root node to workers, R - received data by the root node from workers</sup></sub>
 
