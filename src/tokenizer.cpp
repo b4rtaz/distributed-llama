@@ -28,7 +28,7 @@ void safePrintf(char *piece) {
     printf("%s", piece);
 }
 
-Tokenizer::Tokenizer(char* tokenizer_path, int vocab_size) {
+Tokenizer::Tokenizer(char* tokenizerPath, int vocab_size) {
     // i should have written the vocab_size into the tokenizer file... sigh
     this->vocab_size = vocab_size;
     // malloc space to hold the scores and the strings
@@ -40,9 +40,15 @@ Tokenizer::Tokenizer(char* tokenizer_path, int vocab_size) {
         byte_pieces[i * 2 + 1] = '\0';
     }
     // read in the file
-    FILE *file = fopen(tokenizer_path, "rb");
-    if (!file) { fprintf(stderr, "couldn't load %s\n", tokenizer_path); exit(EXIT_FAILURE); }
-    if (fread(&max_token_length, sizeof(int), 1, file) != 1) { fprintf(stderr, "failed read\n"); exit(EXIT_FAILURE); }
+    FILE *file = fopen(tokenizerPath, "rb");
+    if (!file) {
+        fprintf(stderr, "Cannot open %s\n", tokenizerPath);
+        exit(EXIT_FAILURE);
+    }
+    if (fread(&max_token_length, sizeof(int), 1, file) != 1) {
+        fprintf(stderr, "failed read\n");
+        exit(EXIT_FAILURE);
+    }
     int len;
     for (int i = 0; i < vocab_size; i++) {
         if (fread(vocab_scores + i, sizeof(float), 1, file) != 1) { fprintf(stderr, "failed read\n"); exit(EXIT_FAILURE);}
