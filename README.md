@@ -39,6 +39,11 @@ You always need the root node and you can add 2^n - 1 worker nodes to speed up t
 
 **Raspberry Pi 4B 8 GB**
 
+<p align="center">
+  <img src=".github/8raspi2.jpg" width="50%" alt="Distributed Llama running on 8 Raspberry Pi 4B devices" /><br />
+  <sub><sup>8 Raspberry Pi 4B 8GB devices</sup></sub>
+</p>
+
 All tests below utilized Q40 weights and a Q80 buffer. The generation time encompasses the inference time, network transfer time, sampling time, and multi-thread synchronization time. Number of samples: 16. All Raspberry Pi units were connected via Gigabit Ethernet to the TP-Link LS1008G Switch.
 
 | Model       | 1 x RasPi 4B 8 GB                                                   | 2 x RasPi 4B 8 GB                                                     | 4 x RasPi 4B 8 GB                                                                    | 8 x RasPi 4B 8 GB                                                    |
