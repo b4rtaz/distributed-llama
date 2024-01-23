@@ -17,7 +17,7 @@ tokenizer: src/tokenizer.cpp
 	$(CXX) $(CXXFLAGS) -c src/tokenizer.cpp -o tokenizer.o
 
 main: src/main.cpp utils quants funcs socket transformer transformer-tasks tokenizer
-	$(CXX) $(CXXFLAGS) src/main.cpp -o main utils.o quants.o funcs.o socket.o transformer.o transformer-tasks.o tokenizer.o
+	$(CXX) $(CXXFLAGS) src/main.cpp -o main utils.o quants.o funcs.o socket.o transformer.o transformer-tasks.o tokenizer.o -lpthread
 quants-test: src/quants.cpp utils quants
 	$(CXX) $(CXXFLAGS) src/quants-test.cpp -o quants-test utils.o quants.o
 transformer-tasks-test: src/transformer-tasks-test.cpp utils quants funcs socket transformer transformer-tasks tokenizer
