@@ -155,7 +155,7 @@ To add more worker nodes, just add more addresses to the `--workers` argument.
 
 ## 💻 How to Run on MacOS or Linux
 
-You need to have x86_64 AVX2 CPU or ARM CPU. Different devices may have different CPUs.
+You need to have x86_64 AVX2 CPU or ARM CPU. Different devices may have different CPUs. The below instructions are for Debian-based distributions but you can easily adapt them to your distribution or macOS.
 
 1. Install Git and G++:
 ```sh
