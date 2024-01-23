@@ -9,3 +9,4 @@ __pycache__
 quants-test
 transformer-tasks-test
 main
+run.sh
