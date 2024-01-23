@@ -6,7 +6,7 @@ utils: src/utils.cpp
 quants: src/quants.cpp
 	$(CXX) $(CXXFLAGS) -c src/quants.cpp -o quants.o
 funcs: src/funcs.cpp
-	$(CXX) $(CXXFLAGS) -c src/funcs.cpp -o funcs.o
+	$(CXX) $(CXXFLAGS) -mavx2 -march=native -c src/funcs.cpp -o funcs.o
 socket: src/socket.cpp
 	$(CXX) $(CXXFLAGS) -c src/socket.cpp -o socket.o
 transformer: src/utils.cpp
