@@ -1,12 +1,12 @@
 CXX = g++
-CXXFLAGS = -std=c++11 -Werror -O3
+CXXFLAGS = -std=c++11 -Werror -O3 -march=native -mtune=native
 
 utils: src/utils.cpp
 	$(CXX) $(CXXFLAGS) -c src/utils.cpp -o utils.o
 quants: src/quants.cpp
 	$(CXX) $(CXXFLAGS) -c src/quants.cpp -o quants.o
 funcs: src/funcs.cpp
-	$(CXX) $(CXXFLAGS) -mavx2 -march=native -c src/funcs.cpp -o funcs.o
+	$(CXX) $(CXXFLAGS) -c src/funcs.cpp -o funcs.o
 socket: src/socket.cpp
 	$(CXX) $(CXXFLAGS) -c src/socket.cpp -o socket.o
 transformer: src/utils.cpp
