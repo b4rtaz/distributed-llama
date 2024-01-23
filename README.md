@@ -19,7 +19,9 @@ This project was initiated based on the [llama2.c](https://github.com/karpathy/l
 * This project is a proof of concept, it's not optimized for production usage.
 * You can run Distributed Llama only on 1, 2, 4... 2^n devices.
 * The project supports only the inference mode, the chat mode is not supported.
-* Currently the project is only optimized for ARM CPUs. x86 CPUs should work, but the performance will be worse.
+* Optimized for:
+  * ✅ ARM CPUs
+  * ❌ x86_64 CPUs (Q40xF32 mode works but is slow)
 
 **Supported models**
 * Llama 2 7B
@@ -127,7 +129,7 @@ sudo ip addr add 10.0.0.1/24 dev eth0 # 1th device
 sudo ip addr add 10.0.0.2/24 dev eth0 # 2th device
 ```
 9. Run worker nodes on worker devices:
-```
+```sh
 sudo nice -n -20 ./main worker --port 9998
 ```
 10. Run root node on the root device:
@@ -142,6 +144,41 @@ To add more worker nodes, just add more addresses to the `--workers` argument.
 ```
 
 [Share your results](https://github.com/b4rtaz/distributed-llama/discussions)!
+
+## 💻 How to Run on Debian x86_64
+
+x86_64 CPUs are not optimized yet but still you can observe a significant speedup when you run Distributed Llama on multiple devices.
+
+1. Install Git and G++:
+```sh
+sudo apt install git build-essential
+```
+2. Clone this repository:
+```sh
+git clone https://github.com/b4rtaz/distributed-llama.git
+```
+3. Compile Distributed Llama:
+```sh
+make main
+```
+4. Download the `tokenizer.bin` file from the [llama2.c](https://github.com/karpathy/llama2.c) repository.
+```sh
+wget https://github.com/karpathy/llama2.c/raw/master/tokenizer.bin
+```
+5. Download converted weights from your Google Drive. To get the file ID you need to share the file ("Anyone with the link") and copy the ID from the URL.
+```sh
+sudo apt install python pip
+pip install gdown
+gdown https://drive.google.com/uc?id=<FILE_ID>
+```
+6. Run worker nodes on worker devices:
+```sh
+sudo nice -n -20 ./main worker --port 9998
+```
+7. Run worker nodes on worker devices:
+```sh
+sudo nice -n -20 ./main inference --model ../dllama_llama-2-13b_q40.bin --tokenizer ../tokenizer.bin --weights-float-type q40 --buffer-float-type f32 --prompt "Hello world" --steps 16 --nthreads 4 --workers 192.168.0.1:9998
+```
 
 ## 💡 License
 
