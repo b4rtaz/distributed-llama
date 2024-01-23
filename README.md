@@ -22,11 +22,13 @@ This project was initiated based on the [llama2.c](https://github.com/karpathy/l
 * Optimized for (weights format × buffer format):
   * ARM CPUs
     * ✅ F32 × F32
-    * ❌ F16 × F16
+    * ❌ F16 × F32
+    * ❌ Q40 × F32
     * ✅ Q40 × Q80
   * x86_64 AVX2 CPUs
     * ❌ F32 × F32
-    * ❌ F16 × F16
+    * ❌ F16 × F32
+    * ❌ Q40 × F32
     * ⚠️ Q40 × Q80 (partial optimization)
 
 **Supported models**
