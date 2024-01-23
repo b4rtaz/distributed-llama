@@ -1,5 +1,6 @@
 #include <cstring>
 #include <cstdint>
+#include <cstdio>
 #include <cmath>
 #include <cassert>
 #include "utils.hpp"
