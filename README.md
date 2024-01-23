@@ -19,9 +19,15 @@ This project was initiated based on the [llama2.c](https://github.com/karpathy/l
 * This project is a proof of concept, it's not optimized for production usage.
 * You can run Distributed Llama only on 1, 2, 4... 2^n devices.
 * The project supports only the inference mode, the chat mode is not supported.
-* Optimized for:
-  * ✅ ARM CPUs
-  * ❌ x86_64 CPUs (Q40xF32 mode works but is slow)
+* Optimized for (weights format × buffer format):
+  * ARM CPUs
+    * ✅ F32 × F32
+    * ❌ F16 × F16
+    * ✅ Q40 × Q80
+  * x86_64 AVX2 CPUs
+    * ❌ F32 × F32
+    * ❌ F16 × F16
+    * ⚠️ Q40 × Q80 (partial optimization)
 
 **Supported models**
 * Llama 2 7B
@@ -134,7 +140,7 @@ sudo nice -n -20 ./main worker --port 9998
 ```
 10. Run root node on the root device:
 ```sh
-sudo nice -n -20 ./main inference --model ../dllama_llama-2-13b_q40.bin --tokenizer ../tokenizer.bin --weights-float-type q40 --buffer-float-type q80 --prompt "Hello world" --steps 16 --nthreads 4 --workers 10.0.0.2:9998
+sudo nice -n -20 ./main inference --model ../dllama_llama-2-7b_q40.bin --tokenizer ../tokenizer.bin --weights-float-type q40 --buffer-float-type q80 --prompt "Hello world" --steps 16 --nthreads 4 --workers 10.0.0.2:9998
 ```
 
 To add more worker nodes, just add more addresses to the `--workers` argument.
@@ -145,9 +151,9 @@ To add more worker nodes, just add more addresses to the `--workers` argument.
 
 [Share your results](https://github.com/b4rtaz/distributed-llama/discussions)!
 
-## 💻 How to Run on Debian x86_64
+## 💻 How to Run on MacOS or Linux
 
-x86_64 CPUs are not optimized yet but still you can observe a significant speedup when you run Distributed Llama on multiple devices.
+You need to have x86_64 AVX2 CPU or ARM CPU. Different devices may have different CPUs.
 
 1. Install Git and G++:
 ```sh
@@ -177,7 +183,7 @@ sudo nice -n -20 ./main worker --port 9998
 ```
 7. Run worker nodes on worker devices:
 ```sh
-sudo nice -n -20 ./main inference --model ../dllama_llama-2-13b_q40.bin --tokenizer ../tokenizer.bin --weights-float-type q40 --buffer-float-type f32 --prompt "Hello world" --steps 16 --nthreads 4 --workers 192.168.0.1:9998
+sudo nice -n -20 ./main inference --model ../dllama_llama-2-7b_q40.bin --tokenizer ../tokenizer.bin --weights-float-type q40 --buffer-float-type q80 --prompt "Hello world" --steps 16 --nthreads 4 --workers 192.168.0.1:9998
 ```
 
 ## 💡 License
