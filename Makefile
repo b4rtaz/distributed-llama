@@ -1,5 +1,5 @@
 CXX = g++
-CXXFLAGS = -std=c++11 -Werror -O3
+CXXFLAGS = -std=c++11 -Werror -O3 -march=native -mtune=native
 
 utils: src/utils.cpp
 	$(CXX) $(CXXFLAGS) -c src/utils.cpp -o utils.o

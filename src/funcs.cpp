@@ -7,6 +7,57 @@
 
 #if defined(__ARM_NEON)
     #include <arm_neon.h>
+#elif defined(__AVX2__)
+    #include <immintrin.h>
+#endif
+
+#if defined(__AVX2__)
+    #define MM256_SET_M128I(a, b) _mm256_insertf128_si256(_mm256_castsi128_si256(b), (a), 1)
+
+    static inline __m256i bytes_from_nibbles_32(const uint8_t* rsi) {
+        // Load 16 bytes from memory
+        __m128i tmpl = _mm_loadu_si128((const __m128i *)rsi);
+        __m128i tmph = _mm_srli_epi16(tmpl, 4);
+        const __m128i lowMask = _mm_set1_epi8(0xF);
+        tmpl = _mm_and_si128(lowMask, tmpl);
+        tmph = _mm_and_si128(lowMask, tmph);
+        return MM256_SET_M128I(tmph, tmpl);
+    }
+
+    static inline float hsum_float_8(const __m256 x) {
+        __m128 res = _mm256_extractf128_ps(x, 1);
+        res = _mm_add_ps(res, _mm256_castps256_ps128(x));
+        res = _mm_add_ps(res, _mm_movehl_ps(res, res));
+        res = _mm_add_ss(res, _mm_movehdup_ps(res));
+        return _mm_cvtss_f32(res);
+    }
+
+    // add int16_t pairwise and return as float vector
+    static inline __m256 sum_i16_pairs_float(const __m128i xh, const __m128i xl) {
+        const __m128i ones = _mm_set1_epi16(1);
+        const __m128i summed_pairsl = _mm_madd_epi16(ones, xl);
+        const __m128i summed_pairsh = _mm_madd_epi16(ones, xh);
+        const __m256i summed_pairs = MM256_SET_M128I(summed_pairsh, summed_pairsl);
+        return _mm256_cvtepi32_ps(summed_pairs);
+    }
+
+    // multiply int8_t, add results pairwise twice and return as float vector
+    static inline __m256 mul_sum_i8_pairs_float(const __m256i x, const __m256i y) {
+        const __m128i xl = _mm256_castsi256_si128(x);
+        const __m128i xh = _mm256_extractf128_si256(x, 1);
+        const __m128i yl = _mm256_castsi256_si128(y);
+        const __m128i yh = _mm256_extractf128_si256(y, 1);
+        // Get absolute values of x vectors
+        const __m128i axl = _mm_sign_epi8(xl, xl);
+        const __m128i axh = _mm_sign_epi8(xh, xh);
+        // Sign the values of the y vectors
+        const __m128i syl = _mm_sign_epi8(yl, xl);
+        const __m128i syh = _mm_sign_epi8(yh, xh);
+        // Perform multiplication and create 16-bit values
+        const __m128i dotl = _mm_maddubs_epi16(axl, syl);
+        const __m128i doth = _mm_maddubs_epi16(axh, syh);
+        return sum_i16_pairs_float(doth, dotl);
+    }
 #endif
 
 void softmax(float* x, const int size) {
@@ -252,6 +303,30 @@ void matmulQ40vQ80(MatmulThreadInfo* a) {
 #endif
         }
         a->output[d] = vaddvq_f32(sumv0) + vaddvq_f32(sumv1);
+    }
+#elif defined(__AVX2__)
+    for (int d = a->ds; d < a->de; d++) {
+        __m256 acc = _mm256_setzero_ps();
+
+        for (int j = 0; j < n; j++) {
+            /* Compute combined scale for the block */
+            const __m256 cd = _mm256_set1_ps( convertF16ToF32(w[d * n + j].d) * convertF16ToF32(input[j].d) );
+
+            __m256i bx = bytes_from_nibbles_32(w[d * n + j].qs);
+
+            // Now we have a vector with bytes in [ 0 .. 15 ] interval. Offset them into [ -8 .. +7 ] interval.
+            const __m256i off = _mm256_set1_epi8( 8 );
+            bx = _mm256_sub_epi8(bx, off);
+
+            __m256i by = _mm256_loadu_si256((const __m256i *)input[j].qs);
+
+            const __m256 q = mul_sum_i8_pairs_float(bx, by);
+
+            /* Multiply q with scale and accumulate */
+            acc = _mm256_fmadd_ps( cd, q, acc );
+        }
+
+        a->output[d] = hsum_float_8(acc);
     }
 #else
     printf("matmulQ40vQ80 - not implemented\n");
