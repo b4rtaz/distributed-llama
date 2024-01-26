@@ -93,7 +93,7 @@ All tests below utilized Q40 weights and a Q80 buffer. The generation time encom
 ```sh
 cd converter && pip install -r requirements.txt
 ```
-4. Convert weights to Distributed Llama format. This will take a bit of time.
+4. Convert weights to Distributed Llama format. This will take a bit of time. The script requires Python 3.
 ```sh
 python converter.py /path/to/llama-2-7b q40
 ```
