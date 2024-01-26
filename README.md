@@ -138,7 +138,7 @@ sudo ip addr add 10.0.0.2/24 dev eth0 # 2th device
 ```
 9. Run worker nodes on worker devices:
 ```sh
-sudo nice -n -20 ./main worker --port 9998
+sudo nice -n -20 ./main worker --port 9998 --nthreads 4
 ```
 10. Run root node on the root device:
 ```sh
@@ -181,7 +181,7 @@ gdown https://drive.google.com/uc?id=<FILE_ID>
 ```
 6. Run worker nodes on worker devices:
 ```sh
-sudo nice -n -20 ./main worker --port 9998
+sudo nice -n -20 ./main worker --port 9998 --nthreads 4
 ```
 7. Run worker nodes on worker devices:
 ```sh
