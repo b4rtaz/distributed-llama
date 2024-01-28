@@ -208,3 +208,17 @@ sudo nice -n -20 ./main inference --model ../dllama_llama-2-7b_q40.bin --tokeniz
 ## 💡 License
 
 This project is released under the MIT license.
+
+## 📖 Citation
+
+```
+@misc{dllama,
+  author = {Bartłomiej Tadych},
+  title = {Distributed Llama},
+  year = {2024},
+  publisher = {GitHub},
+  journal = {GitHub repository},
+  howpublished = {\url{https://github.com/b4rtaz/distributed-llama}},
+  commit = {7eb77ca93ec0d502e28d36b6fb20039b449cbea4}
+}
+```
