@@ -47,6 +47,8 @@ You always need the root node and you can add 2^n - 1 worker nodes to speed up t
 
 ### Average Single Token Generation Time
 
+All tests below utilized Q40 weights and a Q80 buffer. The generation time encompasses the inference time, network transfer time, sampling time, and multi-thread synchronization time. Number of samples: 16.
+
 **Raspberry Pi 4B 8 GB**
 
 <p align="center">
@@ -54,13 +56,25 @@ You always need the root node and you can add 2^n - 1 worker nodes to speed up t
   <sub><sup>8 x Raspberry Pi 4B 8GB</sup></sub>
 </p>
 
-All tests below utilized Q40 weights and a Q80 buffer. The generation time encompasses the inference time, network transfer time, sampling time, and multi-thread synchronization time. Number of samples: 16. All Raspberry Pi units were connected via Gigabit Ethernet to the TP-Link LS1008G Switch.
+All Raspberry Pi units were connected via Gigabit Ethernet to the TP-Link LS1008G Switch.
 
 | Model       | 1 x RasPi 4B 8 GB                                                   | 2 x RasPi 4B 8 GB                                                     | 4 x RasPi 4B 8 GB                                                                    | 8 x RasPi 4B 8 GB                                                    |
 |-------------|---------------------------------------------------------------------|-----------------------------------------------------------------------|--------------------------------------------------------------------------------------|----------------------------------------------------------------------|
 | Llama 2 7B  | **1312.50 ms**<br><sub><sup>(I: 1307.94 ms, T: 1.81 ms)</sup></sub> | **793.69 ms**<br><sub><sup>(I: 739.00 ms, T: 52.50 ms)</sup></sub>    | **494.00 ms** 🔥               <br><sub><sup>(I: 458.81 ms, T: 34.06 ms)</sup></sub> | **588.19 ms**<br><sub><sup>(I: 296.69 ms, T: 289.75 ms)</sup></sub>  |
 | Llama 2 13B | <sub><sup>Not enough RAM</sup></sub>                                | **1497.19 ms**<br><sub><sup>(I: 1465.06 ms, T: 30.88 ms)</sup></sub>  | **848.19 ms** 🔥<br><sub><sup>(I: 746.88 ms, T: 99.50 ms)</sup></sub>                | **1114.88 ms**<br><sub><sup>(I: 460.8 ms, T: 652.88 ms)</sup></sub>  |
 | Llama 2 70B | <sub><sup>Not enough RAM</sup></sub>                                | <sub><sup>Not enough RAM</sup></sub>                                  | <sub><sup>Not enough RAM</sup></sub>                                                 | **4842.81 ms** 🔥<br><sub><sup>(I: 2121.94 ms, T: 2719.62 ms)</sup></sub> |
+
+<sub><sup>I - inference time of the root node, T - network transfer time</sup></sub>
+
+**x86_64 CPU Cloud Server**
+
+All tests below were conducted on c3d-highcpu-30 (30 vCPU, 15 core, 59 GB memory) VMs in Google Cloud. [More details](https://github.com/b4rtaz/distributed-llama/discussions/9).
+
+| Model       | 1 x VM                                                              | 2 x VM                                                                | 4 x VM                                                                               |
+|-------------|---------------------------------------------------------------------|-----------------------------------------------------------------------|--------------------------------------------------------------------------------------|
+| Llama 2 7B  | **101.81 ms**<br><sub><sup>(I: 101.06 ms, T: 0.19 ms)</sup></sub>   | **69.69 ms**<br><sub><sup>(I: 61.50 ms, T: 7.62 ms)</sup></sub>       | **53.69 ms** 🔥<br><sub><sup>(I: 40.25 ms, T: 12.81 ms)</sup></sub>                  |
+| Llama 2 13B | **184.19 ms**<br><sub><sup>(I: 182.88 ms, T: 0.69 ms)</sup></sub>   | **115.38 ms**<br><sub><sup>(I: 107.12 ms, T: 7.81 ms)</sup></sub>     | **86.81 ms** 🔥<br><sub><sup>(I: 66.25 ms, T: 19.94 ms)</sup></sub>                  |
+| Llama 2 70B | **909.69 ms**<br><sub><sup>(I: 907.25 ms, T: 1.75 ms)</sup></sub>   | **501.38 ms**<br><sub><sup>(I: 475.50 ms, T: 25.00 ms)</sup></sub>    | **293.06 ms** 🔥<br><sub><sup>(I: 264.00 ms, T: 28.50 ms)</sup></sub>                  |
 
 <sub><sup>I - inference time of the root node, T - network transfer time</sup></sub>
 
@@ -72,6 +86,7 @@ All tests below utilized Q40 weights and a Q80 buffer. The generation time encom
 |-------------|------------------------------------------------------------------|------------------------------------------------------------------|------------------------------------------------------------------|
 | Llama 2 7B  | **4192 kB**<br><sub><sup>(S: 2224 kB, R: 1968 kB)</sup></sub>    | **10656 kB**<br><sub><sup>(S: 7704 kB, R: 2952 kB)</sup></sub>   | **22624 kB**<br><sub><sup>(S: 19180 kB, R: 3444 kB)</sup></sub> |
 | Llama 2 13B | **6560 kB**<br><sub><sup>(S: 3480 kB, R: 3080 kB)</sup></sub>    | **16680 kB**<br><sub><sup>(S: 12060 kB, R: 4620 kB)</sup></sub>  | **35420 kB**<br><sub><sup>(S: 30030 kB, R: 5390 kB)</sup></sub>  |
+| Llama 2 13B |                                                                  |                                                                  | **56160 kB**<br><sub><sup>(S: 43200 kB, R: 12960 kB)</sup></sub>  |
 
 <sub><sup>S - sent data from the root node to workers, R - received data by the root node from workers</sup></sub>
 
@@ -187,6 +202,8 @@ sudo nice -n -20 ./main worker --port 9998 --nthreads 4
 ```sh
 sudo nice -n -20 ./main inference --model ../dllama_llama-2-7b_q40.bin --tokenizer ../tokenizer.bin --weights-float-type q40 --buffer-float-type q80 --prompt "Hello world" --steps 16 --nthreads 4 --workers 192.168.0.1:9998
 ```
+
+[Share your results](https://github.com/b4rtaz/distributed-llama/discussions)!
 
 ## 💡 License
 
