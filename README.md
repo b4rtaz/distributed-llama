@@ -86,7 +86,7 @@ All tests below were conducted on c3d-highcpu-30 (30 vCPU, 15 core, 59 GB memory
 |-------------|------------------------------------------------------------------|------------------------------------------------------------------|------------------------------------------------------------------|
 | Llama 2 7B  | **4192 kB**<br><sub><sup>(S: 2224 kB, R: 1968 kB)</sup></sub>    | **10656 kB**<br><sub><sup>(S: 7704 kB, R: 2952 kB)</sup></sub>   | **22624 kB**<br><sub><sup>(S: 19180 kB, R: 3444 kB)</sup></sub> |
 | Llama 2 13B | **6560 kB**<br><sub><sup>(S: 3480 kB, R: 3080 kB)</sup></sub>    | **16680 kB**<br><sub><sup>(S: 12060 kB, R: 4620 kB)</sup></sub>  | **35420 kB**<br><sub><sup>(S: 30030 kB, R: 5390 kB)</sup></sub>  |
-| Llama 2 13B |                                                                  |                                                                  | **56160 kB**<br><sub><sup>(S: 43200 kB, R: 12960 kB)</sup></sub>  |
+| Llama 2 70B |                                                                  |                                                                  | **56160 kB**<br><sub><sup>(S: 43200 kB, R: 12960 kB)</sup></sub>  |
 
 <sub><sup>S - sent data from the root node to workers, R - received data by the root node from workers</sup></sub>
 
