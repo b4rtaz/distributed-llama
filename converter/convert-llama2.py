@@ -40,15 +40,15 @@ def writeQuantizedQ40Tensor(file, x):
         file.write(buffer)
         nBytes += len(buffer)
     t1 = time.time()
-    print(f'Quantized {x.shape[0] * 4} bytes into {nBytes} bytes in {t1 - t0:.2f} s')
+    print(f'Quantized tensor to {nBytes} bytes in {t1 - t0:.2f} s')
 
 def writeTensor(file, tensor, floatType):
     d = tensor.detach().cpu().view(-1)
-    if (floatType == 'float16'):
+    if (floatType == 'f16'):
         d = d.to(torch.float16).numpy().astype(np.float16)
         b = struct.pack(f'{len(d)}e', *d)
         file.write(b)
-    elif (floatType == 'float32'):
+    elif (floatType == 'f32'):
         d = d.to(torch.float32).numpy().astype(np.float32)
         b = struct.pack(f'{len(d)}f', *d)
         file.write(b)
@@ -139,7 +139,7 @@ def convert(modelPath, outputPath, targetFloatType):
                 layerName.endswith('.ffn_norm.weight') or
                 layerName == 'norm.weight'
             )
-            floatType = 'float32' if isAlwaysF32 else targetFloatType
+            floatType = 'f32' if isAlwaysF32 else targetFloatType
 
             tensors = models[layerName]
             if len(tensors) == 1 or len(tensors[0].shape) == 1:
@@ -155,7 +155,7 @@ def convert(modelPath, outputPath, targetFloatType):
     outFile.close()
 
 def usage():
-    print('Usage: python convert.py <modelPath> <targetFloatType>')
+    print('Usage: python convert-llama2.py <modelPath> <targetFloatType>')
     exit(1)
 
 if __name__ == '__main__':
@@ -165,7 +165,7 @@ if __name__ == '__main__':
     modelPath = sys.argv[1]
     targetFloatType = sys.argv[2]
 
-    if (not modelPath or not targetFloatType in ['float16', 'float32', 'q40']):
+    if (not modelPath or not targetFloatType in ['f16', 'f32', 'q40']):
         usage()
 
     modelName = modelPath.split('/')[-1]

@@ -35,6 +35,7 @@ This project was initiated based on the [llama2.c](https://github.com/karpathy/l
 * Llama 2 7B
 * Llama 2 13B
 * Llama 2 70B
+* Llama 2 compatible models
 
 **Architecture**<br />
 The project is split up into two parts:
@@ -102,7 +103,7 @@ All tests below were conducted on c3d-highcpu-30 (30 vCPU, 15 core, 59 GB memory
 
 ## 🔨 How to Convert Llama 2 Weights
 
-1. Download [Llama 2](https://github.com/facebookresearch/llama) weights. This project supports 7B, 13B and 70B models. This project doesn't support chat models.
+1. Download [Llama 2](https://github.com/facebookresearch/llama) weights from Meta. This project supports 7B, 13B and 70B models. This project doesn't support chat models.
 2. Open the `llama-2-7b/params.json` file and replace `"vocab_size": -1` to `"vocab_size": 32000`.
 3. Install dependencies of the converter:
 ```sh
@@ -110,16 +111,34 @@ cd converter && pip install -r requirements.txt
 ```
 4. Convert weights to Distributed Llama format. This will take a bit of time. The script requires Python 3.
 ```sh
-python converter.py /path/to/llama-2-7b q40
+python convert-llama2.py /path/to/meta/llama-2-7b q40
 ```
 
 In the table below, you can find the expected size of the converted weights with different floating-point types.
 
 | Model       | Original size | Float32  | Float16  | Q40      |
 |-------------|---------------|----------|----------|----------|
-| Llama 2 7B  | 13.48 GB      |          |          | 3.95 GB  |
+| Llama 2 7B  | 13.48 GB      | 25.10GB  |          | 3.95 GB  |
 | Llama 2 13B | 26.03 GB      |          |          | 7.35 GB  |
 | Llama 2 70B | 137.97 GB     |          |          | 36.98 GB |
+
+## 🔨 How to Convert .bin Weights
+
+You can convert weights compatible with [llama2.c](https://github.com/karpathy/llama2.c) to the Distributed Llama format. The legacy converter converts weights only to Float32 format.
+
+1. Download weights.
+```
+wget https://huggingface.co/karpathy/tinyllamas/resolve/main/stories42M.bin
+wget https://huggingface.co/karpathy/tinyllamas/resolve/main/stories110M.bin
+```
+2. Install dependencies of the converter:
+```sh
+cd converter && pip install -r requirements.txt
+```
+3. Convert weights to Distributed Llama format.
+```sh
+python convert-legacy.py stories42M.bin true
+```
 
 ## 📟 How to Run on Raspberry Pi Devices
 
@@ -142,20 +161,21 @@ git clone https://github.com/b4rtaz/distributed-llama.git
 ```sh
 make main
 ```
-7. Download the `tokenizer.bin` file from the [llama2.c](https://github.com/karpathy/llama2.c) repository.
+7. Download the `tokenizer.bin` file from the [llama2.c](https://github.com/karpathy/llama2.c) repository to the root device.
 ```
 wget https://github.com/karpathy/llama2.c/raw/master/tokenizer.bin
 ```
-8. Optional: assign static IP addresses.
+8. Transfer converted weights to the root device.
+9. Optional: assign static IP addresses.
 ```sh
 sudo ip addr add 10.0.0.1/24 dev eth0 # 1th device
 sudo ip addr add 10.0.0.2/24 dev eth0 # 2th device
 ```
-9. Run worker nodes on worker devices:
+10. Run worker nodes on worker devices:
 ```sh
 sudo nice -n -20 ./main worker --port 9998 --nthreads 4
 ```
-10. Run root node on the root device:
+11. Run root node on the root device:
 ```sh
 sudo nice -n -20 ./main inference --model ../dllama_llama-2-7b_q40.bin --tokenizer ../tokenizer.bin --weights-float-type q40 --buffer-float-type q80 --prompt "Hello world" --steps 16 --nthreads 4 --workers 10.0.0.2:9998
 ```
