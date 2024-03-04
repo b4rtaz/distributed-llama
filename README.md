@@ -4,9 +4,6 @@
 
 [![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/b4rtaz/distributed-llama/.github%2Fworkflows%2Fmain.yml?style=flat-square)](https://github.com/b4rtaz/distributed-llama/actions) [![License: MIT](https://img.shields.io/github/license/mashape/apistatus.svg?style=flat-square)](/LICENSE) [![X: b4rtaz](https://img.shields.io/twitter/follow/b4rtaz.svg?style=social)](https://x.com/b4rtaz)
 
-> [!IMPORTANT]
-> This project currently supports inference only via CPU. To help advance the project with features like GPU support, please consider supporting us on [🚀 Patreon](https://www.patreon.com/distributed_llama).
-
 Run LLMs on weak devices or make powerful devices even more powerful by distributing the workload and dividing the RAM usage. This project proves that it's possible split the workload of LLMs across multiple devices and achieve a significant speedup. Distributed Llama allows you to run huge LLMs in-house. The project uses TCP sockets to synchronize the state. You can easily configure your AI cluster by using a home router.
 
 <p align="center">
@@ -67,6 +64,14 @@ All Raspberry Pi units were connected via Gigabit Ethernet to the TP-Link LS1008
 | Llama 2 7B  | **1312.50 ms**<br><sub><sup>(I: 1307.94 ms, T: 1.81 ms)</sup></sub> | **793.69 ms**<br><sub><sup>(I: 739.00 ms, T: 52.50 ms)</sup></sub>    | **494.00 ms** 🔥               <br><sub><sup>(I: 458.81 ms, T: 34.06 ms)</sup></sub> | **588.19 ms**<br><sub><sup>(I: 296.69 ms, T: 289.75 ms)</sup></sub>  |
 | Llama 2 13B | <sub><sup>Not enough RAM</sup></sub>                                | **1497.19 ms**<br><sub><sup>(I: 1465.06 ms, T: 30.88 ms)</sup></sub>  | **848.19 ms** 🔥<br><sub><sup>(I: 746.88 ms, T: 99.50 ms)</sup></sub>                | **1114.88 ms**<br><sub><sup>(I: 460.8 ms, T: 652.88 ms)</sup></sub>  |
 | Llama 2 70B | <sub><sup>Not enough RAM</sup></sub>                                | <sub><sup>Not enough RAM</sup></sub>                                  | <sub><sup>Not enough RAM</sup></sub>                                                 | **4842.81 ms** 🔥<br><sub><sup>(I: 2121.94 ms, T: 2719.62 ms)</sup></sub> |
+
+<sub><sup>I - inference time of the root node, T - network transfer time</sup></sub>
+
+**Raspberry Pi 5 8GB**
+
+| Model       | 1 x RasPi 5 8 GB                                                    |
+|-------------|---------------------------------------------------------------------|
+| Llama 2 7B  | **436.25 ms**<br><sub><sup>(I: 433.31 ms, T: 2.19 ms) by [@segabor](https://github.com/b4rtaz/distributed-llama/issues/8#issuecomment-1913588926)</sup></sub> |
 
 <sub><sup>I - inference time of the root node, T - network transfer time</sup></sub>
 
