@@ -84,4 +84,4 @@ docker-3-worker-inference:
 	@make docker-worker-run 
 	@make docker-worker-run WORKER_ID=2
 	@make docker-worker-run WORKER_ID=3
-	@make docker-inference-run WORKERS="172.18.0.2:9997 172.18.0.3:9997 172.18.0.4:9997"
+	@make docker-inference-run WORKERS="$(WORKERS)"

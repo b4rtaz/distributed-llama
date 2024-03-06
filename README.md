@@ -244,8 +244,8 @@ make docker-inference-build
 ```sh
 # 1 worker + inference
 make docker-1-worker-inference
-# 3 workers + inference
-make docker-3-worker-inference
+# 3 workers + inference like this:
+make docker-3-worker-inference WORKERS="172.18.0.2:9997 172.18.0.3:9997 172.18.0.4:9997"
 ```
 
 [Share your results](https://github.com/b4rtaz/distributed-llama/discussions)!
