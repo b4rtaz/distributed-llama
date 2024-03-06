@@ -231,6 +231,23 @@ sudo nice -n -20 ./main worker --port 9998 --nthreads 4
 sudo nice -n -20 ./main inference --model ../dllama_llama-2-7b_q40.bin --tokenizer ../tokenizer.bin --weights-float-type q40 --buffer-float-type q80 --prompt "Hello world" --steps 16 --nthreads 4 --workers 192.168.0.1:9998
 ```
 
+## 💻 How to Run on Docker
+need install docker, more detail see [Dockerfile](./Dockerfile) and [Makefile](./Makefile)
+1. build docker image
+```sh
+# build worker image
+make docker-worker-build
+# build inference image
+make docker-inference-build
+```
+2. run docker container
+```sh
+# 1 worker + inference
+make docker-1-worker-inference
+# 3 workers + inference
+make docker-3-worker-inference
+```
+
 [Share your results](https://github.com/b4rtaz/distributed-llama/discussions)!
 
 ## 💡 License
