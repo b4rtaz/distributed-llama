@@ -226,7 +226,7 @@ gdown https://drive.google.com/uc?id=<FILE_ID>
 ```sh
 sudo nice -n -20 ./main worker --port 9998 --nthreads 4
 ```
-7. Run worker nodes on worker devices:
+7. Run root node on the root device:
 ```sh
 sudo nice -n -20 ./main inference --model ../dllama_llama-2-7b_q40.bin --tokenizer ../tokenizer.bin --weights-float-type q40 --buffer-float-type q80 --prompt "Hello world" --steps 16 --nthreads 4 --workers 192.168.0.1:9998
 ```
