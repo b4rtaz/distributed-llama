@@ -41,14 +41,15 @@ private:
     ProbIndex* probindex; // buffer used in top-p sampling
     float temperature;
     float topp;
-    unsigned long long rng_state;
+    unsigned long long rngState;
 
 public:
-    Sampler(int vocab_size, float temperature, float topp, unsigned long long rng_seed);
+    Sampler(int vocab_size, float temperature, float topp, unsigned long long rngSeed);
     ~Sampler();
     int sample(float* logits);
 };
 
-void generate(TransformerSpec* spec, Inference* inference, SocketPool* socketPool, char* tokenizerPath, float temperature, float topp, int steps, char* prompt);
+void generate(TransformerSpec* spec, Inference* inference, SocketPool* socketPool, Tokenizer* tokenizer, Sampler* sampler, int steps, char* prompt);
+void chat(Inference* inference, Tokenizer *tokenizer, Sampler *sampler, char *cliUserPrompt, char *cliSystemPrompt, int steps);
 
 #endif

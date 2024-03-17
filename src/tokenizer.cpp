@@ -6,6 +6,7 @@
 #include <sys/mman.h>
 #include <ctype.h>
 #include <ctime>
+#include <cassert>
 #include "funcs.hpp"
 #include "utils.hpp"
 #include "tokenizer.hpp"
@@ -286,11 +287,23 @@ int sample_topp(float* probabilities, int n, float topp, ProbIndex* probindex, f
     return probindex[last_idx].index; // in case of rounding errors
 }
 
-Sampler::Sampler(int vocab_size, float temperature, float topp, unsigned long long rng_seed) {
+void readStdin(const char* guide, char* buffer, size_t bufsize) {
+    fflush(stdin);
+    // read a line from stdin, up to but not including \n
+    printf("%s", guide);
+    if (fgets(buffer, bufsize, stdin) != NULL) {
+        size_t len = strlen(buffer);
+        if (len > 0 && buffer[len - 1] == '\n') {
+            buffer[len - 1] = '\0'; // strip newline
+        }
+    }
+}
+
+Sampler::Sampler(int vocab_size, float temperature, float topp, unsigned long long rngSeed) {
     this->vocab_size = vocab_size;
     this->temperature = temperature;
     this->topp = topp;
-    this->rng_state = rng_seed;
+    this->rngState = rngSeed;
     // buffer only used with nucleus sampling; may not need but it's ~small
     probindex = new ProbIndex[vocab_size];
 }
@@ -311,7 +324,7 @@ int Sampler::sample(float* logits) {
         // apply softmax to the logits to get the probabilities for next token
         softmax(logits, vocab_size);
         // flip a (float) coin (this is our source of entropy for sampling)
-        float coin = randomF32(&rng_state);
+        float coin = randomF32(&rngState);
         // we sample from this distribution to get the next token
         if (topp <= 0 || topp >= 1) {
             // simply sample from the predicted probability distribution
@@ -324,19 +337,13 @@ int Sampler::sample(float* logits) {
     return next;
 }
 
-void generate(TransformerSpec* spec, Inference* inference, SocketPool* socketPool, char* tokenizerPath, float temperature, float topp, int steps, char* prompt) {
-    unsigned long long rngSeed = (unsigned int)time(NULL);
-
-    Tokenizer tokenizer(tokenizerPath, spec->vocabSize);
-    Sampler sampler(spec->vocabSize, temperature, topp, rngSeed);
-
-    char emptyPrompt[] = "";
-    if (prompt == NULL) { prompt = emptyPrompt; }
+void generate(TransformerSpec* spec, Inference* inference, SocketPool* socketPool, Tokenizer* tokenizer, Sampler* sampler, int steps, char* prompt) {
+    assert(prompt != NULL);
 
     // encode the (string) prompt into tokens sequence
     int numPromptTokens = 0;
     int* promptTokens = (int*)malloc((strlen(prompt)+3) * sizeof(int)); // +3 for '\0', ?BOS, ?EOS
-    tokenizer.encode(prompt, 1, 0, promptTokens, &numPromptTokens);
+    tokenizer->encode(prompt, 1, 0, promptTokens, &numPromptTokens);
     if (numPromptTokens < 1) {
         fprintf(stderr, "something is wrong, expected at least 1 prompt token\n");
         exit(EXIT_FAILURE);
@@ -368,7 +375,7 @@ void generate(TransformerSpec* spec, Inference* inference, SocketPool* socketPoo
             next = promptTokens[pos + 1];
         } else {
             // otherwise sample the next token from the logits
-            next = sampler.sample(logits);
+            next = sampler->sample(logits);
         }
         pos++;
 
@@ -382,7 +389,7 @@ void generate(TransformerSpec* spec, Inference* inference, SocketPool* socketPoo
         if (next == 1) { break; }
 
         // print the token as string, decode it with the Tokenizer object
-        char* piece = tokenizer.decode(token, next);
+        char* piece = tokenizer->decode(token, next);
     
         printf("🔶 G %4ld ms I %4ld ms T %4ld ms S %6ld kB R %6ld kB ", generationTime, inferenceTime, transferTime, sentBytes / 1024, recvBytes / 1024);
         safePrintf(piece); // same as printf("%s", piece), but skips "unsafe" bytes
@@ -397,4 +404,88 @@ void generate(TransformerSpec* spec, Inference* inference, SocketPool* socketPoo
     printf("Avg generation time: %.2f ms\n", totalGenerationTime / (double)pos);
     printf("Avg inference time:  %.2f ms\n", totalInferenceTime / (double)pos);
     printf("Avg transfer time:   %.2f ms\n", totalTransferTime / (double)pos);
+}
+
+void chat(Inference* inference, Tokenizer *tokenizer, Sampler *sampler, char *cliUserPrompt, char *cliSystemPrompt, int steps) {
+    // buffers for reading the system prompt and user prompt from stdin
+    // you'll notice they are soomewhat haphazardly and unsafely set atm
+    char systemPrompt[512];
+    char userPrompt[512];
+    const size_t renderedPromptSize = 1152;
+    char renderedPrompt[renderedPromptSize];
+    int numPromptTokens = 0;
+    int* promptTokens = (int*)malloc(1152 * sizeof(int));
+    int userIdx;
+
+    // start the main loop
+    int8_t userTurn = 1; // user starts
+    int next;        // will store the next token in the sequence
+    int token;       // stores the current token to feed into the transformer
+    int prev_token;
+    int pos = 0;     // position in the sequence
+    while (pos < steps) {
+        // when it is the user's turn to contribute tokens to the dialog...
+        if (userTurn) {
+            // get the (optional) system prompt at position 0
+            if (pos == 0) {
+                // at position 0, the user can also contribute a system prompt
+                if (cliSystemPrompt == NULL) {
+                    // system prompt was not passed in, attempt to get it from stdin
+                    readStdin("💻 Enter system prompt (optional): ", systemPrompt, sizeof(systemPrompt));
+                } else {
+                    // system prompt was passed in, use it
+                    strcpy(systemPrompt, cliSystemPrompt);
+                }
+            }
+            // get the user prompt
+            if (pos == 0 && cliUserPrompt != NULL) {
+                // user prompt for position 0 was passed in, use it
+                strcpy(userPrompt, cliUserPrompt);
+            } else {
+                // otherwise get user prompt from stdin
+                readStdin("👱 User: ", userPrompt, sizeof(userPrompt));
+            }
+            // render user/system prompts into the Llama 2 Chat schema
+            if (pos == 0 && systemPrompt[0] != '\0') {
+                char systemTemplate[] = "[INST] <<SYS>>\n%s\n<</SYS>>\n\n%s [/INST]";
+                snprintf(renderedPrompt, renderedPromptSize, systemTemplate, systemPrompt, userPrompt);
+            } else {
+                char userTemplate[] = "[INST] %s [/INST]";
+                snprintf(renderedPrompt, renderedPromptSize, userTemplate, userPrompt);
+            }
+            // encode the rendered prompt into tokens
+            tokenizer->encode(renderedPrompt, 1, 0, promptTokens, &numPromptTokens);
+            userIdx = 0; // reset the user index
+            userTurn = 0;
+            printf("🤖 Assistant: ");
+        }
+
+        // determine the token to pass into the transformer next
+        if (userIdx < numPromptTokens) {
+            // if we are still processing the input prompt, force the next prompt token
+            token = promptTokens[userIdx++];
+        } else {
+            // otherwise use the next token sampled from previous turn
+            token = next;
+        }
+        // EOS (=2) token ends the Assistant turn
+        if (token == 2) {
+            userTurn = 1;
+        }
+
+        // forward the transformer to get logits for the next token
+        float* logits = inference->infer(token, pos);
+        next = sampler->sample(logits);
+        pos++;
+
+        if (userIdx >= numPromptTokens && next != 2) {
+            // the Assistant is responding, so print its output
+            char* piece = tokenizer->decode(token, next);
+            safePrintf(piece); // same as printf("%s", piece), but skips "unsafe" bytes
+            fflush(stdout);
+        }
+        if (next == 2) { printf("\n"); }
+    }
+    printf("\n");
+    free(promptTokens);
 }

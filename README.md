@@ -18,7 +18,6 @@ This project was initiated based on the [llama2.c](https://github.com/karpathy/l
 **Known limitations**
 * This project is a proof of concept, it's not optimized for production usage.
 * You can run Distributed Llama only on 1, 2, 4... 2^n devices.
-* The project supports only the inference mode, the chat mode is not supported.
 * Optimized for (weights format × buffer format):
   * ARM CPUs
     * ✅ F32 × F32
@@ -32,9 +31,7 @@ This project was initiated based on the [llama2.c](https://github.com/karpathy/l
     * ⚠️ Q40 × Q80 (partial optimization)
 
 **Supported models**
-* Llama 2 7B
-* Llama 2 13B
-* Llama 2 70B
+* Llama 2 (7B, 13B, 70B) chat and non-chat versions,
 * Llama 2 compatible models
 
 **Architecture**<br />
@@ -111,7 +108,7 @@ All tests below were conducted on c3d-highcpu-30 (30 vCPU, 15 core, 59 GB memory
 
 ## 🔨 How to Convert Llama 2 Weights
 
-1. Download [Llama 2](https://github.com/facebookresearch/llama) weights from Meta. This project supports 7B, 13B and 70B models. This project doesn't support chat models.
+1. Download [Llama 2](https://github.com/facebookresearch/llama) weights from Meta. This project supports 7B, 7B-chat, 13B, 13B-chat, 70B and 70B-chat models.
 2. Open the `llama-2-7b/params.json` file and replace `"vocab_size": -1` to `"vocab_size": 32000`.
 3. Install dependencies of the converter:
 ```sh
@@ -229,6 +226,11 @@ sudo nice -n -20 ./main worker --port 9998 --nthreads 4
 7. Run worker nodes on worker devices:
 ```sh
 sudo nice -n -20 ./main inference --model ../dllama_llama-2-7b_q40.bin --tokenizer ../tokenizer.bin --weights-float-type q40 --buffer-float-type q80 --prompt "Hello world" --steps 16 --nthreads 4 --workers 192.168.0.1:9998
+```
+
+8. To run the root node in the chat mode:
+```sh
+sudo nice -n -20 ./main chat --model ../dllama_llama-2-7b-chat_q40.bin --tokenizer ../tokenizer.bin --weights-float-type q40 --buffer-float-type q80 --nthreads 4 --workers 192.168.0.1:9998
 ```
 
 [Share your results](https://github.com/b4rtaz/distributed-llama/discussions)!

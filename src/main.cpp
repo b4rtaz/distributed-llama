@@ -29,33 +29,47 @@ struct ProgramArgs {
     int port;
 };
 
-int usage() {
-    printf("Invalid usage\n");
-    // TODO
+int usage(const char* reason) {
+    printf("Invalid usage: %s\n", reason);
     return EXIT_FAILURE;
 }
 
-int inference(ProgramArgs* args) {
-    if (args->modelPath == NULL || args->tokenizerPath == NULL || args->prompt == NULL) {
-        return usage();
+int inferenceOrChat(ProgramArgs* args, bool isChat) {
+    if (args->modelPath == NULL) {
+        return usage("Model is required");
+    }
+    if (args->tokenizerPath == NULL) {
+        return usage("Tokenizer is required");
+    }
+    if (!isChat && args->prompt == NULL) {
+        return usage("Prompt is required");
     }
 
     SocketPool* socketPool = SocketPool::connect(args->nWorkers, args->workerHosts, args->workerPorts);
     unsigned int nSlices = args->nWorkers + 1;
+    unsigned long long rngSeed = (unsigned int)time(NULL);
 
     TransformerSpec spec = Transformer::loadSpecFromFile(args->modelPath, nSlices, args->weightsFloatType, args->bufferFloatType);
 
     int steps = args->steps;
-    if (steps > spec.seqLen) {
+    if (steps < 0) {
+        steps = spec.seqLen;
+    } else if (steps > spec.seqLen) {
         steps = spec.seqLen;
     }
 
     Transformer transformer = Transformer::loadRootFromFile(args->modelPath, &spec, socketPool);
     Inference inference = Inference(args->nThreads, &transformer, socketPool);
+    Tokenizer tokenizer(args->tokenizerPath, spec.vocabSize);
+    Sampler sampler(spec.vocabSize, args->temperature, args->topp, rngSeed);
 
     socketPool->enableTurbo();
 
-    generate(&spec, &inference, socketPool, args->tokenizerPath, args->temperature, args->topp, steps, args->prompt);
+    if (isChat) {
+        chat(&inference, &tokenizer, &sampler, NULL, NULL, steps);
+    } else {
+        generate(&spec, &inference, socketPool, &tokenizer, &sampler, steps, args->prompt);
+    }
 
     delete socketPool;
 
@@ -64,7 +78,7 @@ int inference(ProgramArgs* args) {
 
 int worker(ProgramArgs* args) {
     if (args->port < 1024) {
-        return usage();
+        return usage("Invalid port");
     }
 
     Socket socket = Socket::accept(args->port);
@@ -103,7 +117,7 @@ int main(int argc, char *argv[]) {
     args.port = 9990;
     args.temperature = 0.8f;
     args.topp = 0.9f;
-    args.steps = 64;
+    args.steps = -1;
 
     if (argc > 1) {
         args.mode = argv[1];
@@ -161,10 +175,12 @@ int main(int argc, char *argv[]) {
 
     if (args.mode != NULL) {
         if (strcmp(args.mode, "inference") == 0) {
-            return inference(&args);
+            return inferenceOrChat(&args, false);
+        } else if (strcmp(args.mode, "chat") == 0) {
+            return inferenceOrChat(&args, true);
         } else if (strcmp(args.mode, "worker") == 0) {
             return worker(&args);
         }
     }
-    return usage();
+    return usage("Unknown mode");
 }
