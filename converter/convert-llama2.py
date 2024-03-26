@@ -1,73 +1,13 @@
 import os
 import sys
-import struct
 import json
 import torch
 import math
-import time
 import numpy as np
+from writer import writeTensor, writeHeader 
 from pathlib import Path
 
 LAYER_CHUNK_SIZE = 48
-
-def writeQuantizedQ40Tensor(file, x):
-    t0 = time.time()
-    x = x.to(torch.float32).numpy().astype(np.float32)
-    blockSize = 32
-    blockHalfSize = blockSize // 2
-    assert(x.shape[0] % blockSize == 0)
-    groups = x.reshape(-1, blockSize)
-    gmax = np.max(groups, axis=1)
-    gmin = np.min(groups, axis=1)
-    deltas = np.divide(np.where(-gmin > gmax, gmin, gmax), -8)
-    deltas16 = deltas.astype(np.float16)
-    ids = np.where(deltas != 0, 1.0 / deltas, 0)
-    groups = np.add(groups * ids[:, np.newaxis], 8.5)
-    groups = np.where(groups < 15, groups, 15)
-
-    nBytes = 0
-    block = [0] * blockHalfSize
-    for groupIndex in range(0, len(groups)):
-        group = groups[groupIndex]
-        delta16 = deltas16[groupIndex]
-
-        for i in range(0, blockHalfSize):
-            x0 = int(group[i])
-            x1 = int(group[i + blockHalfSize])
-            block[i] = (x0 & 0xF) | ((x1 & 0xF) << 4)
-
-        buffer = struct.pack(f'e{blockHalfSize}B', delta16, *block)
-        file.write(buffer)
-        nBytes += len(buffer)
-    t1 = time.time()
-    print(f'Quantized tensor to {nBytes} bytes in {t1 - t0:.2f} s')
-
-def writeTensor(file, tensor, floatType):
-    d = tensor.detach().cpu().view(-1)
-    if (floatType == 'f16'):
-        d = d.to(torch.float16).numpy().astype(np.float16)
-        b = struct.pack(f'{len(d)}e', *d)
-        file.write(b)
-    elif (floatType == 'f32'):
-        d = d.to(torch.float32).numpy().astype(np.float32)
-        b = struct.pack(f'{len(d)}f', *d)
-        file.write(b)
-    elif (floatType == 'q40'):
-        writeQuantizedQ40Tensor(file, d)
-    else:
-        raise Exception('Unknown float type')
-
-def writeHeader(file, params):
-    header = struct.pack('iiiiiii',
-        params['dim'],
-        params['hidden_dim'],
-        params['n_layers'],
-        params['n_heads'],
-        params['n_kv_heads'],
-        params['vocab_size'],
-        params['max_seq_len'])
-    file.write(header)
-    print(params)
 
 def convert(modelPath, outputPath, targetFloatType):
     paramsPath = os.path.join(modelPath, 'params.json')

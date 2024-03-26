@@ -64,11 +64,18 @@ TransformerSpec Transformer::loadSpecFromFile(const char* path, const unsigned i
         exit(EXIT_FAILURE);
     }
 
+    if (header.magic != 0xABCD01) {
+        printf("This is not a correct model file\n");
+        exit(EXIT_FAILURE);
+    }
+
     spec.dim = header.dim;
     spec.hiddenDim = header.hiddenDim;
     spec.nLayers = header.nLayers;
     spec.nHeads = header.nHeads;
     spec.nKvHeads = header.nKvHeads;
+    spec.nExperts = header.nExperts;
+    spec.nActiveExperts = header.nActiveExperts;
     spec.vocabSize = abs(header.vocabSize);
     spec.seqLen = header.seqLen;
     spec.headSize = spec.dim / spec.nHeads;
@@ -82,6 +89,8 @@ TransformerSpec Transformer::loadSpecFromFile(const char* path, const unsigned i
     printf("💡 nLayers: %d\n", spec.nLayers);
     printf("💡 nHeads: %d\n", spec.nHeads);
     printf("💡 nKvHeads: %d\n", spec.nKvHeads);
+    printf("💡 nExperts: %d\n", spec.nExperts);
+    printf("💡 nActiveExperts: %d\n", spec.nActiveExperts);
     printf("💡 vocabSize: %d\n", spec.vocabSize);
     printf("💡 seqLen: %d\n", spec.seqLen);
     printf("💡 nSlices: %d\n", spec.nSlices);
@@ -189,12 +198,18 @@ Transformer::~Transformer() {
 
 TransformerBlock::TransformerBlock(TransformerSpec* spec, uint8_t sliceIndex) {
     this->sliceIndex = sliceIndex;
+    this->spec = spec;
+
     if (IS_ROOT_SLICE(sliceIndex)) {
         rmsAttBytes = spec->dim * sizeof(float);
         rmsAtt = (float*)NEW_BUFFER(rmsAttBytes);
         rmsFfnBytes = spec->dim * sizeof(float);
         rmsFfn = (float*)NEW_BUFFER(rmsFfnBytes);
-
+        rmsMoeBytes = spec->dim * sizeof(float);
+        rmsMoe = (float*)NEW_BUFFER(rmsAttBytes);
+        rmsFfn2Bytes = spec->dim * sizeof(float);
+        rmsFfn2 = (float*)NEW_BUFFER(rmsFfn2Bytes);
+    
         keyCache = (float*)NEW_BUFFER(spec->seqLen * spec->kvDim * sizeof(float));
         valueCache = (float*)NEW_BUFFER(spec->seqLen * spec->kvDim * sizeof(float));
         att = (float*)NEW_BUFFER(spec->nHeads * spec->seqLen * sizeof(float));
@@ -204,19 +219,43 @@ TransformerBlock::TransformerBlock(TransformerSpec* spec, uint8_t sliceIndex) {
     k0Slice = new MatmulSlice(spec->weightsFloatType, spec->nSlices, spec->dim, spec->kvDim);
     v0Slice = new MatmulSlice(spec->weightsFloatType, spec->nSlices, spec->dim, spec->kvDim);
     wo0Slice = new MatmulSlice(spec->weightsFloatType, spec->nSlices, spec->dim, spec->dim);
-    w10Slice = new MatmulSlice(spec->weightsFloatType, spec->nSlices, spec->dim, spec->hiddenDim);
-    w20Slice = new MatmulSlice(spec->weightsFloatType, spec->nSlices, spec->hiddenDim, spec->dim);
-    w30Slice = new MatmulSlice(spec->weightsFloatType, spec->nSlices, spec->dim, spec->hiddenDim);
 
     q0 = NEW_BUFFER(q0Slice->sliceBytes);
     k0 = NEW_BUFFER(k0Slice->sliceBytes);
     v0 = NEW_BUFFER(v0Slice->sliceBytes);
     wo0 = NEW_BUFFER(wo0Slice->sliceBytes);
-    w10 = NEW_BUFFER(w10Slice->sliceBytes);
-    w20 = NEW_BUFFER(w20Slice->sliceBytes);
-    w30 = NEW_BUFFER(w30Slice->sliceBytes);
 
-    hb20 = (float*)NEW_BUFFER(w30Slice->d0 * sizeof(float));
+    if (spec->nExperts > 0) {
+        moeUpSlice = new MatmulSlice(spec->weightsFloatType, spec->nSlices, spec->dim, spec->hiddenDim);
+        moeGateSlice = new MatmulSlice(spec->weightsFloatType, spec->nSlices, spec->dim, spec->hiddenDim);
+        moeDownSlice = new MatmulSlice(spec->weightsFloatType, spec->nSlices, spec->hiddenDim, spec->dim);
+
+        moeRouterBytes = getBatchBytes(spec->weightsFloatType, spec->dim, spec->nExperts);
+        moeRouter = NEW_BUFFER(moeRouterBytes);
+        moeRouterProbs = (float*)NEW_BUFFER(spec->nExperts * sizeof(float));
+        moeRouterIndexes = (int*)new int[spec->nExperts];
+        moeUp = new char*[spec->nExperts];
+        moeGate = new char*[spec->nExperts];
+        moeDown = new char*[spec->nExperts];
+
+        for (int e = 0; e < spec->nExperts; e++) {
+            moeUp[e] = NEW_BUFFER(moeUpSlice->bytes);
+            moeGate[e] = NEW_BUFFER(moeGateSlice->bytes);
+            moeDown[e] = NEW_BUFFER(moeDownSlice->bytes);
+        }
+
+        hd = (float*)NEW_BUFFER(moeGateSlice->d0 * sizeof(float));
+    } else {
+        w10Slice = new MatmulSlice(spec->weightsFloatType, spec->nSlices, spec->dim, spec->hiddenDim);
+        w20Slice = new MatmulSlice(spec->weightsFloatType, spec->nSlices, spec->hiddenDim, spec->dim);
+        w30Slice = new MatmulSlice(spec->weightsFloatType, spec->nSlices, spec->dim, spec->hiddenDim);
+
+        w10 = NEW_BUFFER(w10Slice->sliceBytes);
+        w20 = NEW_BUFFER(w20Slice->sliceBytes);
+        w30 = NEW_BUFFER(w30Slice->sliceBytes);
+
+        hd = (float*)NEW_BUFFER(w30Slice->d0 * sizeof(float));
+    }
 }
 
 TransformerBlock::~TransformerBlock() {
@@ -232,19 +271,39 @@ TransformerBlock::~TransformerBlock() {
     delete k0Slice;
     delete v0Slice;
     delete wo0Slice;
-    delete w10Slice;
-    delete w20Slice;
-    delete w30Slice;
 
     FREE_BUFFER(q0);
     FREE_BUFFER(k0);
     FREE_BUFFER(v0);
     FREE_BUFFER(wo0);
-    FREE_BUFFER(w10);
-    FREE_BUFFER(w20);
-    FREE_BUFFER(w30);
 
-    FREE_BUFFER(hb20);
+    if (spec->nExperts > 0) {
+        delete moeUpSlice;
+        delete moeGateSlice;
+        delete moeDownSlice;
+
+        for (int e = 0; e < spec->nExperts; e++) {
+            FREE_BUFFER(moeUp[e]);
+            FREE_BUFFER(moeGate[e]);
+            FREE_BUFFER(moeDown[e]);
+        }
+
+        FREE_BUFFER(moeRouter);
+        FREE_BUFFER(moeRouterProbs);
+        FREE_BUFFER(moeRouterIndexes);
+        delete[] moeUp;
+        delete[] moeGate;
+        delete[] moeDown;
+    } else {
+        delete w10Slice;
+        delete w20Slice;
+        delete w30Slice;
+
+        FREE_BUFFER(w10);
+        FREE_BUFFER(w20);
+        FREE_BUFFER(w30);
+        FREE_BUFFER(hd);
+    }
 }
 
 static size_t loadSlicedMatmulWeights(uint8_t nSlices, MatmulSlice* slice, char* weights, char* weights0, SocketPool* socketPool) {
@@ -323,25 +382,40 @@ Transformer Transformer::loadRoot(char* data, TransformerSpec* spec, SocketPool*
         memcpy(block->rmsFfn, w, block->rmsFfnBytes);
         w += block->rmsFfnBytes;
 
+        memcpy(block->rmsMoe, w, block->rmsMoeBytes);
+        w += block->rmsMoeBytes;
+
+        memcpy(block->rmsFfn2, w, block->rmsFfn2Bytes);
+        w += block->rmsFfn2Bytes;
+
         w += loadSlicedMatmulWeights(spec->nSlices, block->q0Slice, w, block->q0, socketPool);
         w += loadSlicedMatmulWeights(spec->nSlices, block->k0Slice, w, block->k0, socketPool);
         w += loadSlicedMatmulWeights(spec->nSlices, block->v0Slice, w, block->v0, socketPool);
         w += loadSlicedMatmulWeights(spec->nSlices, block->wo0Slice, w, block->wo0, socketPool);
-        w += loadSlicedMatmulWeights(spec->nSlices, block->w10Slice, w, block->w10, socketPool);
-        w += loadSlicedMatmulWeights(spec->nSlices, block->w20Slice, w, block->w20, socketPool);
-        w += loadSlicedMatmulWeights(spec->nSlices, block->w30Slice, w, block->w30, socketPool);
+
+        if (spec->nExperts > 0) {
+            memcpy(block->moeRouter, w, block->moeRouterBytes);
+            w += block->moeRouterBytes;
+
+            for (int e = 0; e < spec->nExperts; e++) {
+                w += loadSlicedMatmulWeights(spec->nSlices, block->moeUpSlice, w, block->moeUp[e], socketPool);
+                w += loadSlicedMatmulWeights(spec->nSlices, block->moeGateSlice, w, block->moeGate[e], socketPool);
+                w += loadSlicedMatmulWeights(spec->nSlices, block->moeDownSlice, w, block->moeDown[e], socketPool);
+            }
+        } else {
+            w += loadSlicedMatmulWeights(spec->nSlices, block->w10Slice, w, block->w10, socketPool);
+            w += loadSlicedMatmulWeights(spec->nSlices, block->w20Slice, w, block->w20, socketPool);
+            w += loadSlicedMatmulWeights(spec->nSlices, block->w30Slice, w, block->w30, socketPool);
+        }
     }
 
     memcpy(transformer.rmsFinal, w, transformer.rmsFinalBytes);
     w += transformer.rmsFinalBytes;
 
-    w += (spec->seqLen * spec->headSize / 2) * sizeof(float); // skip what used to be freq_cis_real (for RoPE)
-    w += (spec->seqLen * spec->headSize / 2) * sizeof(float); // skip what used to be freq_cis_imag (for RoPE)
-
     memcpy(transformer.wcls, w, transformer.wclsBytes);
     w += transformer.wclsBytes;
 
-    size_t missedBytes = (long)(w - data) - spec->fileSize + sizeof(TransformerFileHeader);
+    long missedBytes = (long)(w - data) - spec->fileSize + sizeof(TransformerFileHeader);
     if (missedBytes != 0) {
         printf("Missed %ld bytes\n", missedBytes);
         exit(EXIT_FAILURE);

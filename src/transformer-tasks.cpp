@@ -322,29 +322,160 @@ int rmfFfn(TASK_ARGS) {
     TASK_VARIABLES;
 
     if (threadIndex == 0) {
-
-
         float* xb2 = (float*)transformer->buffer->getUnit(TB_SLICED_XB2);
-        float* xb = (float*)transformer->buffer->getUnit(TB_UNIT_XB);
-        float* x = (float*)transformer->x;
-
-        for (int i = 0; i < spec->dim; i++) {
-            x[i] += xb2[i];
-        }
-        transformer->rms = rms(x, spec->dim);
+        transformer->rms = rms(xb2, spec->dim);
     }
     return TASK_CONTINUE;
 }
 
 int rmfFfnNorm(TASK_ARGS) {
     TASK_VARIABLES;
-    float* xb = (float*)transformer->buffer->getUnit(TB_UNIT_XB);
-    float* x = (float*)transformer->x;
+    float* xb2 = (float*)transformer->buffer->getUnit(TB_SLICED_XB2);
+    // float* xb = (float*)transformer->buffer->getUnit(TB_UNIT_XB);
+    // float* x = (float*)transformer->x;
 
-    rmsnorm(xb, x, transformer->rms, block->rmsFfn, spec->dim, nThreads, threadIndex);
+    rmsnorm(xb2, xb2, transformer->rms, block->rmsFfn, spec->dim, nThreads, threadIndex);
     return TASK_CONTINUE;
 }
 
+int rmfFfnNormJoin(TASK_ARGS) {
+    TASK_VARIABLES;
+
+    if (threadIndex == 0) {
+        float* xb2 = (float*)transformer->buffer->getUnit(TB_SLICED_XB2);
+        for (int i = 0; i < spec->dim; i++) {
+            transformer->x[i] += xb2[i];
+        }
+
+        float xRms = rms(transformer->x, spec->dim);
+        float* xb = (float*)transformer->buffer->getUnit(TB_UNIT_XB);
+        rmsnorm(xb, transformer->x, xRms, block->rmsMoe, spec->dim, 1, 0);
+    }
+    return TASK_CONTINUE;
+}
+
+int moeRouter(TASK_ARGS) {
+    TASK_VARIABLES;
+
+    float* xb = (float*)transformer->buffer->getUnit(TB_UNIT_XB);
+    matmul(spec->weightsFloatType, spec->bufferFloatType, block->moeRouterProbs, xb, block->moeRouter, spec->dim, spec->nExperts, nThreads, threadIndex);
+    return TASK_CONTINUE;
+}
+
+int moeRouterSoftmax(TASK_ARGS) {
+    TASK_VARIABLES;
+    if (threadIndex == 0) {
+        softmax(block->moeRouterProbs, spec->nExperts);
+    }
+    return TASK_CONTINUE;
+}
+
+int moeTopk(TASK_ARGS) {
+    TASK_VARIABLES;
+    if (threadIndex == 0) {
+        assert(spec->nActiveExperts == 2); // TODO
+        float* probs = block->moeRouterProbs;
+
+        int best0i = -1;
+        int best1i = -1;
+        float best0v;
+        float best1v;
+        for (int i = 0; i < spec->nExperts; i++) {
+            float prob = probs[i];
+            if (best0i == -1 || best0v < prob) {
+                if ((best0i != -1 && best1i == -1) || best1v < best0v) {
+                    best1v = best0v;
+                    best1i = best0i;
+                }
+                best0i = i;
+                best0v = prob;
+            } else if (best1i == -1 || best1v < prob) {
+                best1i = i;
+                best1v = prob;
+            }
+        }
+
+        block->moeRouterIndexes[0] = best0i;
+        block->moeRouterIndexes[1] = best1i;
+
+        printf("topk: %d %f %d %f\n", best0i, probs[best0i], best1i, probs[best1i]);
+    }
+    return TASK_CONTINUE;
+}
+
+int moeNormWeights(TASK_ARGS) {
+    TASK_VARIABLES;
+    if (threadIndex == 0) {
+        float sum = 0.0;
+        int i;
+        for (i = 0; i < spec->nActiveExperts; i++) {
+            sum += block->moeRouterProbs[block->moeRouterIndexes[i]];
+        }
+        for (i = 0; i < spec->nActiveExperts; i++) {
+            block->moeRouterProbs[block->moeRouterIndexes[i]] /= sum;
+        }
+    }
+    return TASK_CONTINUE;
+}
+
+float gelu(float x) {
+    return 0.5f * x * (1.0f + tanhf(0.79788456080286535587989211986876f * x * (1.0f + 0.044715f * x * x)));
+}
+
+int moeTODO(TASK_ARGS) {
+    TASK_VARIABLES;
+
+    if (threadIndex == 0) {
+        float* xb = (float*)transformer->buffer->getUnit(TB_UNIT_XB);
+
+        float* hd2 = new float[spec->hiddenDim];
+        float* temp = new float[spec->dim];
+        float* temp2 = new float[spec->dim];
+
+        for (int ae = 0; ae < spec->nActiveExperts; ae++) {
+            int e = block->moeRouterIndexes[ae];
+            float weight = block->moeRouterProbs[e];
+
+            matmul(spec->weightsFloatType, spec->bufferFloatType, block->hd, xb, block->moeUp[e], spec->dim, spec->hiddenDim, 1, threadIndex);
+            matmul(spec->weightsFloatType, spec->bufferFloatType, hd2, xb, block->moeGate[e], spec->dim, spec->hiddenDim, 1, threadIndex);
+
+            for (int i = 0; i < spec->hiddenDim; i++) {
+                // GeLU
+                float x = hd2[i];
+                block->hd[i] *= gelu(x);
+            }
+
+            float* fo = ae == 0 ? temp : temp2;
+            matmul(spec->weightsFloatType, spec->bufferFloatType, fo, block->hd, block->moeDown[e], spec->hiddenDim, spec->dim, 1, threadIndex);
+            for (int i = 0; i < spec->dim; i++) {
+                fo[i] *= weight;
+            }
+            if (ae > 0) {
+                for (int i = 0; i < spec->dim; i++) {
+                    temp[i] += temp2[i];
+                }
+            }
+        }
+        for (int i = 0; i < spec->dim; i++) {
+            xb[i] = temp[i];
+        }
+
+        delete[] hd2;
+        delete[] temp;
+        delete[] temp2;
+
+        float rms2 = rms(xb, spec->dim);
+        rmsnorm(xb, xb, rms2, block->rmsFfn2, spec->dim, 1, threadIndex);
+
+        for (int i = 0; i < spec->dim; i++) {
+            transformer->x[i] += xb[i];
+        }
+    }
+
+    return TASK_CONTINUE;
+}
+
+/*
 int quantizeRmfFfn(TASK_ARGS) {
     TASK_VARIABLES;
     quantizeUnitBuffer(nThreads, threadIndex, ctx, TB_UNIT_XB, TB_UNIT_XB_QUANTIZED);
@@ -438,7 +569,7 @@ int mergeFfn2(TASK_ARGS) {
         }
     }
     return TASK_CONTINUE;
-}
+}*/
 
 int nextBlock(TASK_ARGS) {
     TASK_VARIABLES;
@@ -473,11 +604,20 @@ int rmsFinalNorm(TASK_ARGS) {
 
 int finalize(TASK_ARGS) {
     TASK_VARIABLES;
-
     if (ctx->finalize) {
         float* x = transformer->x;
         matmul(spec->weightsFloatType, F32, transformer->logits, x, transformer->wcls, spec->dim, spec->vocabSize, nThreads, threadIndex);
         return TASK_STOP;
+    }
+    return TASK_CONTINUE;
+}
+
+int finalize2(TASK_ARGS) {
+    TASK_VARIABLES;
+    if (ctx->finalize && threadIndex == 0) {
+        for (int i = 0; i < spec->vocabSize; i++) {
+            transformer->x[i] *= 0.5773502691896257f;
+        }
     }
     return TASK_CONTINUE;
 }
@@ -500,7 +640,14 @@ static TaskLoopTask inferenceTasks[] = {
     { dequantizeAtt, TASK_TYPE_INFERENCE },
     { rmfFfn, TASK_TYPE_INFERENCE },
     { rmfFfnNorm, TASK_TYPE_INFERENCE },
-    { quantizeRmfFfn, TASK_TYPE_INFERENCE },
+    { rmfFfnNormJoin, TASK_TYPE_INFERENCE },
+
+    { moeRouter, TASK_TYPE_INFERENCE },
+    { moeRouterSoftmax, TASK_TYPE_INFERENCE },
+    { moeTopk, TASK_TYPE_INFERENCE },
+    { moeNormWeights, TASK_TYPE_INFERENCE },
+    { moeTODO, TASK_TYPE_INFERENCE },
+    /*{ quantizeRmfFfn, TASK_TYPE_INFERENCE },
     { syncRmfFfn, TASK_TYPE_TRANSFER },
     { ffn, TASK_TYPE_INFERENCE },
     { quantizeFfnA, TASK_TYPE_INFERENCE },
@@ -510,11 +657,13 @@ static TaskLoopTask inferenceTasks[] = {
     { quantizeFfn2, TASK_TYPE_INFERENCE },
     { syncFfn2, TASK_TYPE_TRANSFER },
     { dequantizeFfn2, TASK_TYPE_INFERENCE },
-    { mergeFfn2, TASK_TYPE_INFERENCE },
+    { mergeFfn2, TASK_TYPE_INFERENCE },*/
+
     { nextBlock, TASK_TYPE_INFERENCE },
     { rmsFinal, TASK_TYPE_INFERENCE },
     { rmsFinalNorm, TASK_TYPE_INFERENCE },
     { finalize, TASK_TYPE_INFERENCE },
+    { finalize2, TASK_TYPE_INFERENCE },
 };
 
 TaskLoopTask* Inference::tasks = inferenceTasks;
@@ -538,6 +687,11 @@ float* Inference::infer(int token, int pos) {
     float* contentRow = ((float*)transformer->tokenEmbeddingTable) + token * transformer->spec->dim;
     memcpy(transformer->x, contentRow, transformer->spec->dim * sizeof(float));
 
+    // grok
+    for (int i = 0; i < transformer->spec->dim; i++) {
+        transformer->x[i] *= 78.38367176906169f;
+    }
+
     context.finalize = false;
     context.currentBlockIndex = 0;
 
@@ -560,7 +714,7 @@ static TaskLoopTask workerTasks[] = {
     { att, TASK_TYPE_INFERENCE },
     { quantizeAtt, TASK_TYPE_INFERENCE },
     { syncAtt, TASK_TYPE_TRANSFER },
-    { syncRmfFfn, TASK_TYPE_TRANSFER },
+    /*{ syncRmfFfn, TASK_TYPE_TRANSFER },
     { ffn, TASK_TYPE_INFERENCE },
     { quantizeFfnA, TASK_TYPE_INFERENCE },
     { syncFfnA, TASK_TYPE_TRANSFER },
@@ -568,7 +722,7 @@ static TaskLoopTask workerTasks[] = {
     { ffn2, TASK_TYPE_INFERENCE },
     { quantizeFfn2, TASK_TYPE_INFERENCE },
     { syncFfn2, TASK_TYPE_TRANSFER },
-    { nextBlock, TASK_TYPE_INFERENCE },
+    { nextBlock, TASK_TYPE_INFERENCE },*/
 };
 
 TaskLoopTask* Worker::tasks = workerTasks;

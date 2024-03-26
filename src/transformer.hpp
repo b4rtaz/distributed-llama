@@ -21,11 +21,14 @@ public:
 };
 
 struct TransformerFileHeader {
+    int magic;
     int dim;
     int hiddenDim;
     int nLayers;
     int nHeads;
     int nKvHeads;
+    int nExperts;
+    int nActiveExperts;
     int vocabSize;
     int seqLen;
 };
@@ -37,6 +40,8 @@ struct TransformerSpec {
     int nHeads;
     int headSize;
     int nKvHeads;
+    int nExperts;
+    int nActiveExperts;
     int seqLen;
     int hiddenDim;
     int kvDim;
@@ -50,11 +55,16 @@ struct TransformerSpec {
 class TransformerBlock {
 public:
     uint8_t sliceIndex;
+    TransformerSpec *spec;
 
     size_t rmsAttBytes;
     float* rmsAtt;
     size_t rmsFfnBytes;
     float* rmsFfn;
+    size_t rmsMoeBytes;
+    float* rmsMoe;
+    size_t rmsFfn2Bytes;
+    float* rmsFfn2;
 
     char* q0;
     MatmulSlice* q0Slice;
@@ -63,6 +73,7 @@ public:
     char* v0;
     MatmulSlice* v0Slice;
     char* wo0;
+
     MatmulSlice* wo0Slice;
     char* w10;
     MatmulSlice* w10Slice;
@@ -70,11 +81,22 @@ public:
     MatmulSlice* w20Slice;
     char* w30;
     MatmulSlice* w30Slice;
+    float* hd;
+
+    char* moeRouter;
+    size_t moeRouterBytes;
+    char** moeUp;
+    MatmulSlice* moeUpSlice;
+    char** moeGate;
+    MatmulSlice* moeGateSlice;
+    char** moeDown;
+    MatmulSlice* moeDownSlice;
+    float* moeRouterProbs;
+    int* moeRouterIndexes;
 
     float* keyCache;
     float* valueCache;
     float* att;
-    float* hb20;
 
     TransformerBlock(TransformerSpec* spec, uint8_t sliceIndex);
     ~TransformerBlock();
