@@ -418,60 +418,56 @@ int moeNormWeights(TASK_ARGS) {
     return TASK_CONTINUE;
 }
 
-float gelu(float x) {
-    return 0.5f * x * (1.0f + tanhf(0.79788456080286535587989211986876f * x * (1.0f + 0.044715f * x * x)));
-}
-
-int moeTODO(TASK_ARGS) {
+int moeMatmul(TASK_ARGS) {
     TASK_VARIABLES;
 
-    if (threadIndex == 0) {
-        float* xb = (float*)transformer->buffer->getUnit(TB_UNIT_XB);
+    float* xb = (float*)transformer->buffer->getUnit(TB_UNIT_XB);
 
-        float* hd2 = new float[spec->hiddenDim];
-        float* temp = new float[spec->dim];
-        float* temp2 = new float[spec->dim];
+    for (int ae = 0; ae < spec->nActiveExperts; ae++) {
+        int e = block->moeRouterIndexes[ae];
+        float weight = block->moeRouterProbs[e];
 
-        for (int ae = 0; ae < spec->nActiveExperts; ae++) {
-            int e = block->moeRouterIndexes[ae];
-            float weight = block->moeRouterProbs[e];
+        matmul(spec->weightsFloatType, spec->bufferFloatType, block->expertUp, xb, block->moeUp[e], spec->dim, spec->hiddenDim, nThreads, threadIndex);
+        matmul(spec->weightsFloatType, spec->bufferFloatType, block->expertGate, xb, block->moeGate[e], spec->dim, spec->hiddenDim, nThreads, threadIndex);
 
-            matmul(spec->weightsFloatType, spec->bufferFloatType, block->hd, xb, block->moeUp[e], spec->dim, spec->hiddenDim, 1, threadIndex);
-            matmul(spec->weightsFloatType, spec->bufferFloatType, hd2, xb, block->moeGate[e], spec->dim, spec->hiddenDim, 1, threadIndex);
+        gelu(block->expertGate, spec->hiddenDim, nThreads, threadIndex);
+        mul(block->expertUp, block->expertGate, spec->hiddenDim, nThreads, threadIndex);
 
-            for (int i = 0; i < spec->hiddenDim; i++) {
-                // GeLU
-                float x = hd2[i];
-                block->hd[i] *= gelu(x);
-            }
+        float* fo = ae == 0 ? block->expertDown0 : block->expertDown1;
+        matmul(spec->weightsFloatType, spec->bufferFloatType, fo, block->expertUp, block->moeDown[e], spec->hiddenDim, spec->dim, nThreads, threadIndex);
 
-            float* fo = ae == 0 ? temp : temp2;
-            matmul(spec->weightsFloatType, spec->bufferFloatType, fo, block->hd, block->moeDown[e], spec->hiddenDim, spec->dim, 1, threadIndex);
-            for (int i = 0; i < spec->dim; i++) {
-                fo[i] *= weight;
-            }
-            if (ae > 0) {
-                for (int i = 0; i < spec->dim; i++) {
-                    temp[i] += temp2[i];
-                }
-            }
-        }
-        for (int i = 0; i < spec->dim; i++) {
-            xb[i] = temp[i];
-        }
+        mulScalar(fo, weight, spec->dim, nThreads, threadIndex);
 
-        delete[] hd2;
-        delete[] temp;
-        delete[] temp2;
-
-        float rms2 = rms(xb, spec->dim);
-        rmsnorm(xb, xb, rms2, block->rmsFfn2, spec->dim, 1, threadIndex);
-
-        for (int i = 0; i < spec->dim; i++) {
-            transformer->x[i] += xb[i];
+        if (ae > 0) {
+            add(block->expertDown0, block->expertDown1, spec->dim, nThreads, threadIndex);
         }
     }
 
+    add(xb, block->expertDown0, spec->dim, nThreads, threadIndex);
+
+    return TASK_CONTINUE;
+}
+
+int moeRms(TASK_ARGS) {
+    TASK_VARIABLES;
+    if (threadIndex == 0) {
+        float* xb = (float*)transformer->buffer->getUnit(TB_UNIT_XB);
+        transformer->rms = rms(xb, spec->dim);
+    }
+    return TASK_CONTINUE;
+}
+
+int moeRmsNorm(TASK_ARGS) {
+    TASK_VARIABLES;
+    float* xb = (float*)transformer->buffer->getUnit(TB_UNIT_XB);
+    rmsnorm(xb, xb, transformer->rms, block->rmsFfn2, spec->dim, nThreads, threadIndex);
+    return TASK_CONTINUE;
+}
+
+int moeAdd(TASK_ARGS) {
+    TASK_VARIABLES;
+    float* xb = (float*)transformer->buffer->getUnit(TB_UNIT_XB);
+    add(transformer->x, xb, spec->dim, nThreads, threadIndex);
     return TASK_CONTINUE;
 }
 
@@ -646,7 +642,10 @@ static TaskLoopTask inferenceTasks[] = {
     { moeRouterSoftmax, TASK_TYPE_INFERENCE },
     { moeTopk, TASK_TYPE_INFERENCE },
     { moeNormWeights, TASK_TYPE_INFERENCE },
-    { moeTODO, TASK_TYPE_INFERENCE },
+    { moeMatmul, TASK_TYPE_INFERENCE },
+    { moeRms, TASK_TYPE_INFERENCE },
+    { moeRmsNorm, TASK_TYPE_INFERENCE },
+    { moeAdd, TASK_TYPE_INFERENCE },
     /*{ quantizeRmfFfn, TASK_TYPE_INFERENCE },
     { syncRmfFfn, TASK_TYPE_TRANSFER },
     { ffn, TASK_TYPE_INFERENCE },

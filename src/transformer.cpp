@@ -244,7 +244,10 @@ TransformerBlock::TransformerBlock(TransformerSpec* spec, uint8_t sliceIndex) {
             moeDown[e] = NEW_BUFFER(moeDownSlice->bytes);
         }
 
-        hd = (float*)NEW_BUFFER(moeGateSlice->d0 * sizeof(float));
+        expertUp = (float*)NEW_BUFFER(moeUpSlice->d0 * sizeof(float));
+        expertGate = (float*)NEW_BUFFER(moeGateSlice->d0 * sizeof(float));
+        expertDown0 = (float*)NEW_BUFFER(moeDownSlice->d0 * sizeof(float));
+        expertDown1 = (float*)NEW_BUFFER(moeDownSlice->d0 * sizeof(float));
     } else {
         w10Slice = new MatmulSlice(spec->weightsFloatType, spec->nSlices, spec->dim, spec->hiddenDim);
         w20Slice = new MatmulSlice(spec->weightsFloatType, spec->nSlices, spec->hiddenDim, spec->dim);
@@ -254,7 +257,7 @@ TransformerBlock::TransformerBlock(TransformerSpec* spec, uint8_t sliceIndex) {
         w20 = NEW_BUFFER(w20Slice->sliceBytes);
         w30 = NEW_BUFFER(w30Slice->sliceBytes);
 
-        hd = (float*)NEW_BUFFER(w30Slice->d0 * sizeof(float));
+        // hd = (float*)NEW_BUFFER(w30Slice->d0 * sizeof(float));
     }
 }
 
@@ -294,6 +297,11 @@ TransformerBlock::~TransformerBlock() {
         delete[] moeUp;
         delete[] moeGate;
         delete[] moeDown;
+
+        FREE_BUFFER(expertUp);
+        FREE_BUFFER(expertGate);
+        FREE_BUFFER(expertDown0);
+        FREE_BUFFER(expertDown1);
     } else {
         delete w10Slice;
         delete w20Slice;
@@ -302,7 +310,7 @@ TransformerBlock::~TransformerBlock() {
         FREE_BUFFER(w10);
         FREE_BUFFER(w20);
         FREE_BUFFER(w30);
-        FREE_BUFFER(hd);
+        // FREE_BUFFER(hd);
     }
 }
 

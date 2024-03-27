@@ -81,7 +81,7 @@ public:
     MatmulSlice* w20Slice;
     char* w30;
     MatmulSlice* w30Slice;
-    float* hd;
+
 
     char* moeRouter;
     size_t moeRouterBytes;
@@ -93,6 +93,11 @@ public:
     MatmulSlice* moeDownSlice;
     float* moeRouterProbs;
     int* moeRouterIndexes;
+
+    float* expertUp;
+    float* expertGate;
+    float* expertDown0;
+    float* expertDown1;
 
     float* keyCache;
     float* valueCache;

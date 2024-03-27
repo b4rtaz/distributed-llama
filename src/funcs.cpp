@@ -393,3 +393,51 @@ float dotProduct(const float* a, const float* b, const int size) {
     return sum;
 #endif
 }
+
+#define SQRT_2_OVER_PI 0.79788456080286535587989211986876f
+#define GELU_COEF_A 0.044715f
+
+void gelu(float* t, int n, unsigned int nThreads, unsigned int threadIndex) {
+    assert(n % nThreads == 0);
+    int m = n / nThreads;
+    int start = m * threadIndex;
+    int end = start + m;
+
+    for (int i = start; i < end; i++) {
+        float x = t[i];
+        t[i] = 0.5f * x * (1.0f + tanhf(SQRT_2_OVER_PI * x * (1.0f + GELU_COEF_A * x * x)));
+    }
+}
+
+void mul(float* output, float* input, int n, unsigned int nThreads, unsigned int threadIndex) {
+    assert(n % nThreads == 0);
+    int m = n / nThreads;
+    int start = m * threadIndex;
+    int end = start + m;
+
+    for (int i = start; i < end; i++) {
+        output[i] *= input[i];
+    }
+}
+
+void mulScalar(float* output, float c, int n, unsigned int nThreads, unsigned int threadIndex) {
+    assert(n % nThreads == 0);
+    int m = n / nThreads;
+    int start = m * threadIndex;
+    int end = start + m;
+
+    for (int i = start; i < end; i++) {
+        output[i] *= c;
+    }
+}
+
+void add(float* output, float* input, int n, unsigned int nThreads, unsigned int threadIndex) {
+    assert(n % nThreads == 0);
+    int m = n / nThreads;
+    int start = m * threadIndex;
+    int end = start + m;
+
+    for (int i = start; i < end; i++) {
+        output[i] += input[i];
+    }
+}
