@@ -331,8 +331,6 @@ int rmfFfn(TASK_ARGS) {
 int rmfFfnNorm(TASK_ARGS) {
     TASK_VARIABLES;
     float* xb2 = (float*)transformer->buffer->getUnit(TB_SLICED_XB2);
-    // float* xb = (float*)transformer->buffer->getUnit(TB_UNIT_XB);
-    // float* x = (float*)transformer->x;
 
     rmsnorm(xb2, xb2, transformer->rms, block->rmsFfn, spec->dim, nThreads, threadIndex);
     return TASK_CONTINUE;
@@ -341,22 +339,28 @@ int rmfFfnNorm(TASK_ARGS) {
 int rmfFfnNormJoin(TASK_ARGS) {
     TASK_VARIABLES;
 
-    if (threadIndex == 0) {
-        float* xb2 = (float*)transformer->buffer->getUnit(TB_SLICED_XB2);
-        for (int i = 0; i < spec->dim; i++) {
-            transformer->x[i] += xb2[i];
-        }
+    float* xb2 = (float*)transformer->buffer->getUnit(TB_SLICED_XB2);
+    add(transformer->x, xb2, spec->dim, nThreads, threadIndex);
+    return TASK_CONTINUE;
+}
 
-        float xRms = rms(transformer->x, spec->dim);
-        float* xb = (float*)transformer->buffer->getUnit(TB_UNIT_XB);
-        rmsnorm(xb, transformer->x, xRms, block->rmsMoe, spec->dim, 1, 0);
+int moeRms(TASK_ARGS) {
+    TASK_VARIABLES;
+    if (threadIndex == 0) {
+        transformer->rms = rms(transformer->x, spec->dim);
     }
+    return TASK_CONTINUE;
+}
+
+int moeRmsNorm(TASK_ARGS) {
+    TASK_VARIABLES;
+    float* xb = (float*)transformer->buffer->getUnit(TB_UNIT_XB);
+    rmsnorm(xb, transformer->x, transformer->rms, block->rmsMoe, spec->dim, nThreads, threadIndex);
     return TASK_CONTINUE;
 }
 
 int moeRouter(TASK_ARGS) {
     TASK_VARIABLES;
-
     float* xb = (float*)transformer->buffer->getUnit(TB_UNIT_XB);
     matmul(spec->weightsFloatType, spec->bufferFloatType, block->moeRouterProbs, xb, block->moeRouter, spec->dim, spec->nExperts, nThreads, threadIndex);
     return TASK_CONTINUE;
@@ -374,14 +378,14 @@ int moeTopk(TASK_ARGS) {
     TASK_VARIABLES;
     if (threadIndex == 0) {
         assert(spec->nActiveExperts == 2); // TODO
-        float* probs = block->moeRouterProbs;
+        uint8_t* indexes = (uint8_t*)transformer->buffer->getUnit(TB_UNIT_MOE_INDEXES);
 
         int best0i = -1;
         int best1i = -1;
         float best0v;
         float best1v;
         for (int i = 0; i < spec->nExperts; i++) {
-            float prob = probs[i];
+            float prob = block->moeRouterProbs[i];
             if (best0i == -1 || best0v < prob) {
                 if ((best0i != -1 && best1i == -1) || best1v < best0v) {
                     best1v = best0v;
@@ -395,10 +399,8 @@ int moeTopk(TASK_ARGS) {
             }
         }
 
-        block->moeRouterIndexes[0] = best0i;
-        block->moeRouterIndexes[1] = best1i;
-
-        printf("topk: %d %f %d %f\n", best0i, probs[best0i], best1i, probs[best1i]);
+        indexes[0] = (uint8_t)best0i;
+        indexes[1] = (uint8_t)best1i;
     }
     return TASK_CONTINUE;
 }
@@ -406,26 +408,45 @@ int moeTopk(TASK_ARGS) {
 int moeNormWeights(TASK_ARGS) {
     TASK_VARIABLES;
     if (threadIndex == 0) {
+        uint8_t* indexes = (uint8_t*)transformer->buffer->getUnit(TB_UNIT_MOE_INDEXES);
+        float* weights = (float*)transformer->buffer->getUnit(TB_UNIT_MOE_WEIGHTS);
+
         float sum = 0.0;
         int i;
         for (i = 0; i < spec->nActiveExperts; i++) {
-            sum += block->moeRouterProbs[block->moeRouterIndexes[i]];
+            sum += block->moeRouterProbs[indexes[i]];
         }
         for (i = 0; i < spec->nActiveExperts; i++) {
-            block->moeRouterProbs[block->moeRouterIndexes[i]] /= sum;
+            weights[i] = block->moeRouterProbs[indexes[i]] / sum;
         }
     }
+    return TASK_CONTINUE;
+}
+
+int quantizeMoe(TASK_ARGS) {
+    TASK_VARIABLES;
+    quantizeUnitBuffer(nThreads, threadIndex, ctx, TB_UNIT_XB, TB_UNIT_XB_QUANTIZED);
+    return TASK_CONTINUE;
+}
+
+int syncMoe(TASK_ARGS) {
+    TASK_VARIABLES;
+    syncUnitBuffer(nThreads, threadIndex, ctx, TB_UNIT_XB_QUANTIZED);
+    syncUnitBuffer(nThreads, threadIndex, ctx, TB_UNIT_MOE_INDEXES);
+    syncUnitBuffer(nThreads, threadIndex, ctx, TB_UNIT_MOE_WEIGHTS);
     return TASK_CONTINUE;
 }
 
 int moeMatmul(TASK_ARGS) {
     TASK_VARIABLES;
 
+    uint8_t* indexes = (uint8_t*)transformer->buffer->getUnit(TB_UNIT_MOE_INDEXES);
+    float* weights = (float*)transformer->buffer->getUnit(TB_UNIT_MOE_WEIGHTS);
     float* xb = (float*)transformer->buffer->getUnit(TB_UNIT_XB);
 
     for (int ae = 0; ae < spec->nActiveExperts; ae++) {
-        int e = block->moeRouterIndexes[ae];
-        float weight = block->moeRouterProbs[e];
+        uint8_t e = indexes[ae];
+        float weight = weights[ae];
 
         matmul(spec->weightsFloatType, spec->bufferFloatType, block->expertUp, xb, block->moeUp[e], spec->dim, spec->hiddenDim, nThreads, threadIndex);
         matmul(spec->weightsFloatType, spec->bufferFloatType, block->expertGate, xb, block->moeGate[e], spec->dim, spec->hiddenDim, nThreads, threadIndex);
@@ -444,11 +465,10 @@ int moeMatmul(TASK_ARGS) {
     }
 
     add(xb, block->expertDown0, spec->dim, nThreads, threadIndex);
-
     return TASK_CONTINUE;
 }
 
-int moeRms(TASK_ARGS) {
+int moeRmsFinal(TASK_ARGS) {
     TASK_VARIABLES;
     if (threadIndex == 0) {
         float* xb = (float*)transformer->buffer->getUnit(TB_UNIT_XB);
@@ -457,7 +477,7 @@ int moeRms(TASK_ARGS) {
     return TASK_CONTINUE;
 }
 
-int moeRmsNorm(TASK_ARGS) {
+int moeRmsNormFinal(TASK_ARGS) {
     TASK_VARIABLES;
     float* xb = (float*)transformer->buffer->getUnit(TB_UNIT_XB);
     rmsnorm(xb, xb, transformer->rms, block->rmsFfn2, spec->dim, nThreads, threadIndex);
@@ -470,102 +490,6 @@ int moeAdd(TASK_ARGS) {
     add(transformer->x, xb, spec->dim, nThreads, threadIndex);
     return TASK_CONTINUE;
 }
-
-/*
-int quantizeRmfFfn(TASK_ARGS) {
-    TASK_VARIABLES;
-    quantizeUnitBuffer(nThreads, threadIndex, ctx, TB_UNIT_XB, TB_UNIT_XB_QUANTIZED);
-    return TASK_CONTINUE;
-}
-
-int syncRmfFfn(TASK_ARGS) {
-    TASK_VARIABLES;
-    syncUnitBuffer(nThreads, threadIndex, ctx, TB_UNIT_XB_QUANTIZED);
-    return TASK_CONTINUE;
-}
-
-int ffn(TASK_ARGS) {
-    TASK_VARIABLES;
-
-    float* xb = (float*)transformer->buffer->getUnit(TB_UNIT_XB_QUANTIZED);
-    float* hb0 = (float*)transformer->buffer->getSliced(TB_SLICED_HB, transformer->sliceIndex);
-
-    matmul(spec->weightsFloatType, spec->bufferFloatType, hb0, xb, block->w10, block->w10Slice->n, block->w10Slice->d0, nThreads, threadIndex);
-    matmul(spec->weightsFloatType, spec->bufferFloatType, block->hb20, xb, block->w30, block->w30Slice->n, block->w30Slice->d0, nThreads, threadIndex);
-
-    // SwiGLU non-linearity
-    int d00 = block->w10Slice->d0 / nThreads;
-    int d0Offset = d00 * threadIndex;
-    for (int i = 0; i < d00; i++) {
-        float val = hb0[i + d0Offset];
-        // silu(x)=x*σ(x), where σ(x) is the logistic sigmoid
-        val *= (1.0f / (1.0f + expf(-val)));
-        // elementwise multiply with w3(x)
-        val *= block->hb20[i + d0Offset];
-        hb0[i + d0Offset] = val;
-    }
-    return TASK_CONTINUE;
-}
-
-int quantizeFfnA(TASK_ARGS) {
-    TASK_VARIABLES;
-    quantizeSlicedBuffer(nThreads, threadIndex, ctx, true, TB_SLICED_HB, TB_SLICED_HB_QUANTIZED);
-    return TASK_CONTINUE;
-}
-
-int syncFfnA(TASK_ARGS) {
-    TASK_VARIABLES;
-    syncSliceOfSlicedBuffer(nThreads, threadIndex, ctx, TB_SLICED_HB_QUANTIZED);
-    return TASK_CONTINUE;
-}
-
-int syncFfnB(TASK_ARGS) {
-    TASK_VARIABLES;
-    syncMissingSlicesOfSlicedBuffer(nThreads, threadIndex, ctx, TB_SLICED_HB_QUANTIZED);
-    return TASK_CONTINUE;
-}
-
-int ffn2(TASK_ARGS) {
-    TASK_VARIABLES;
-
-    float *hb = (float*)transformer->buffer->getUnit(TB_SLICED_HB_QUANTIZED);
-    float *xb2 = (float*)transformer->buffer->getSliced(TB_SLICED_XB2, transformer->sliceIndex);
-
-    matmul(spec->weightsFloatType, spec->bufferFloatType, xb2, hb, block->w20, block->w20Slice->n, block->w20Slice->d0, nThreads, threadIndex);
-    return TASK_CONTINUE;
-}
-
-int quantizeFfn2(TASK_ARGS) {
-    TASK_VARIABLES;
-    quantizeSlicedBuffer(nThreads, threadIndex, ctx, false, TB_SLICED_XB2, TB_SLICED_XB2_QUANTIZED);
-    return TASK_CONTINUE;
-}
-
-int syncFfn2(TASK_ARGS) {
-    TASK_VARIABLES;
-    syncSliceOfSlicedBuffer(nThreads, threadIndex, ctx, TB_SLICED_XB2_QUANTIZED);
-    return TASK_CONTINUE;
-}
-
-int dequantizeFfn2(TASK_ARGS) {
-    TASK_VARIABLES;
-    dequantizeSlicedBuffer(nThreads, threadIndex, ctx, false, TB_SLICED_XB2_QUANTIZED, TB_SLICED_XB2);
-    return TASK_CONTINUE;
-}
-
-int mergeFfn2(TASK_ARGS) {
-    TASK_VARIABLES;
-
-    if (threadIndex == 0) {
-        float* x = transformer->x;
-        float* xb2 = (float*)transformer->buffer->getUnit(TB_SLICED_XB2);
-
-        for (int i = 0; i < spec->dim; i++) {
-            x[i] += xb2[i];
-        }
-    }
-    return TASK_CONTINUE;
-}*/
 
 int nextBlock(TASK_ARGS) {
     TASK_VARIABLES;
@@ -603,17 +527,15 @@ int finalize(TASK_ARGS) {
     if (ctx->finalize) {
         float* x = transformer->x;
         matmul(spec->weightsFloatType, F32, transformer->logits, x, transformer->wcls, spec->dim, spec->vocabSize, nThreads, threadIndex);
-        return TASK_STOP;
     }
     return TASK_CONTINUE;
 }
 
 int finalize2(TASK_ARGS) {
     TASK_VARIABLES;
-    if (ctx->finalize && threadIndex == 0) {
-        for (int i = 0; i < spec->vocabSize; i++) {
-            transformer->x[i] *= 0.5773502691896257f;
-        }
+    if (ctx->finalize) {
+        mulScalar(transformer->logits, 0.5773502691896257f, spec->vocabSize, nThreads, threadIndex);
+        return TASK_STOP;
     }
     return TASK_CONTINUE;
 }
@@ -638,26 +560,19 @@ static TaskLoopTask inferenceTasks[] = {
     { rmfFfnNorm, TASK_TYPE_INFERENCE },
     { rmfFfnNormJoin, TASK_TYPE_INFERENCE },
 
+    { moeRms, TASK_TYPE_INFERENCE },
+    { moeRmsNorm, TASK_TYPE_INFERENCE },
     { moeRouter, TASK_TYPE_INFERENCE },
     { moeRouterSoftmax, TASK_TYPE_INFERENCE },
     { moeTopk, TASK_TYPE_INFERENCE },
     { moeNormWeights, TASK_TYPE_INFERENCE },
+    { quantizeMoe, TASK_TYPE_INFERENCE },
+    { syncMoe, TASK_TYPE_TRANSFER },
     { moeMatmul, TASK_TYPE_INFERENCE },
-    { moeRms, TASK_TYPE_INFERENCE },
-    { moeRmsNorm, TASK_TYPE_INFERENCE },
-    { moeAdd, TASK_TYPE_INFERENCE },
-    /*{ quantizeRmfFfn, TASK_TYPE_INFERENCE },
-    { syncRmfFfn, TASK_TYPE_TRANSFER },
-    { ffn, TASK_TYPE_INFERENCE },
-    { quantizeFfnA, TASK_TYPE_INFERENCE },
-    { syncFfnA, TASK_TYPE_TRANSFER },
-    { syncFfnB, TASK_TYPE_TRANSFER },
-    { ffn2, TASK_TYPE_INFERENCE },
-    { quantizeFfn2, TASK_TYPE_INFERENCE },
-    { syncFfn2, TASK_TYPE_TRANSFER },
-    { dequantizeFfn2, TASK_TYPE_INFERENCE },
-    { mergeFfn2, TASK_TYPE_INFERENCE },*/
+    { moeRmsFinal, TASK_TYPE_INFERENCE },
+    { moeRmsNormFinal, TASK_TYPE_INFERENCE },
 
+    { moeAdd, TASK_TYPE_INFERENCE },
     { nextBlock, TASK_TYPE_INFERENCE },
     { rmsFinal, TASK_TYPE_INFERENCE },
     { rmsFinalNorm, TASK_TYPE_INFERENCE },

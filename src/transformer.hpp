@@ -92,7 +92,6 @@ public:
     char** moeDown;
     MatmulSlice* moeDownSlice;
     float* moeRouterProbs;
-    int* moeRouterIndexes;
 
     float* expertUp;
     float* expertGate;
@@ -107,7 +106,9 @@ public:
     ~TransformerBlock();
 };
 
-#define TB_LENGTH 12
+#define TB_LENGTH 14
+#define TB_NO_PAIRS 2
+
 #define TB_UNIT_XB 0
 #define TB_UNIT_XB_QUANTIZED 1
 #define TB_SLICED_XB2 2
@@ -120,6 +121,8 @@ public:
 #define TB_SLICED_V_QUANTIZED 9
 #define TB_SLICED_HB 10
 #define TB_SLICED_HB_QUANTIZED 11
+#define TB_UNIT_MOE_INDEXES 12
+#define TB_UNIT_MOE_WEIGHTS 13
 
 class TransformerBuffer {
 public:

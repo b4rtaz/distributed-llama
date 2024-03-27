@@ -119,8 +119,20 @@ TransformerBuffer::TransformerBuffer(TransformerSpec* spec) {
     bufferBytes[TB_SLICED_V] = spec->kvDim * sizeof(float);
     bufferBytes[TB_SLICED_V_QUANTIZED] = getBatchBytes(spec->bufferFloatType, spec->kvDim, 1);
     bufferBytes[TB_SLICED_HB] = spec->hiddenDim * sizeof(float);
-    bufferBytes[TB_SLICED_HB_QUANTIZED] = getBatchBytes(spec->bufferFloatType, spec->hiddenDim, 1);
-    for (int i = 0; i < TB_LENGTH; i += 2) {
+
+    if (spec->nActiveExperts > 0) {
+        bufferBytes[TB_UNIT_MOE_INDEXES] = spec->nActiveExperts * sizeof(uint8_t);
+        bufferBytes[TB_UNIT_MOE_WEIGHTS] = spec->nActiveExperts * sizeof(float);
+
+        buffers[TB_UNIT_MOE_INDEXES] = NEW_BUFFER(bufferBytes[TB_UNIT_MOE_INDEXES]);
+        buffers[TB_UNIT_MOE_WEIGHTS] = NEW_BUFFER(bufferBytes[TB_UNIT_MOE_WEIGHTS]);
+    } else {
+        bufferBytes[TB_UNIT_MOE_INDEXES] = 0;
+        bufferBytes[TB_UNIT_MOE_WEIGHTS] = 0;
+    }
+
+    for (int i = 0; i < TB_LENGTH - TB_NO_PAIRS; i += 2) {
+        int bytes = bufferBytes[i];
         buffers[i] = NEW_BUFFER(bufferBytes[i]);
         if (spec->bufferFloatType == F32) {
             buffers[i + 1] = buffers[i];
@@ -131,11 +143,18 @@ TransformerBuffer::TransformerBuffer(TransformerSpec* spec) {
 }
 
 TransformerBuffer::~TransformerBuffer() {
-    for (int i = 0; i < TB_LENGTH; i += 2) {
-        if (buffers[i] != buffers[i + 1]) {
-            FREE_BUFFER(buffers[i + 1]);
+    if (bufferBytes[TB_UNIT_MOE_INDEXES] > 0 && bufferBytes[TB_UNIT_MOE_WEIGHTS] > 0) {
+        FREE_BUFFER(buffers[TB_UNIT_MOE_INDEXES]);
+        FREE_BUFFER(buffers[TB_UNIT_MOE_WEIGHTS]);
+    }
+
+    for (int i = 0; i < TB_LENGTH - TB_NO_PAIRS; i += 2) {
+        if (bufferBytes[i] > 0) {
+            if (buffers[i] != buffers[i + 1]) {
+                FREE_BUFFER(buffers[i + 1]);
+            }
+            FREE_BUFFER(buffers[i]);
         }
-        FREE_BUFFER(buffers[i]);
     }
     delete[] bufferBytes;
     delete[] buffers;
@@ -233,7 +252,6 @@ TransformerBlock::TransformerBlock(TransformerSpec* spec, uint8_t sliceIndex) {
         moeRouterBytes = getBatchBytes(spec->weightsFloatType, spec->dim, spec->nExperts);
         moeRouter = NEW_BUFFER(moeRouterBytes);
         moeRouterProbs = (float*)NEW_BUFFER(spec->nExperts * sizeof(float));
-        moeRouterIndexes = (int*)new int[spec->nExperts];
         moeUp = new char*[spec->nExperts];
         moeGate = new char*[spec->nExperts];
         moeDown = new char*[spec->nExperts];
@@ -293,7 +311,6 @@ TransformerBlock::~TransformerBlock() {
 
         FREE_BUFFER(moeRouter);
         FREE_BUFFER(moeRouterProbs);
-        FREE_BUFFER(moeRouterIndexes);
         delete[] moeUp;
         delete[] moeGate;
         delete[] moeDown;
