@@ -423,13 +423,13 @@ int moeNormWeights(TASK_ARGS) {
     return TASK_CONTINUE;
 }
 
-int quantizeMoe(TASK_ARGS) {
+int quantizeMoeInput(TASK_ARGS) {
     TASK_VARIABLES;
     quantizeUnitBuffer(nThreads, threadIndex, ctx, TB_UNIT_XB, TB_UNIT_XB_QUANTIZED);
     return TASK_CONTINUE;
 }
 
-int syncMoe(TASK_ARGS) {
+int syncMoeInput(TASK_ARGS) {
     TASK_VARIABLES;
     syncUnitBuffer(nThreads, threadIndex, ctx, TB_UNIT_XB_QUANTIZED);
     syncUnitBuffer(nThreads, threadIndex, ctx, TB_UNIT_MOE_INDEXES);
@@ -437,34 +437,129 @@ int syncMoe(TASK_ARGS) {
     return TASK_CONTINUE;
 }
 
-int moeMatmul(TASK_ARGS) {
+int moeBlock0(TASK_ARGS) {
     TASK_VARIABLES;
 
     uint8_t* indexes = (uint8_t*)transformer->buffer->getUnit(TB_UNIT_MOE_INDEXES);
+    float* xb = (float*)transformer->buffer->getUnit(TB_UNIT_XB_QUANTIZED);
+    float* hb = (float*)transformer->buffer->getSliced(TB_SLICED_HB, transformer->sliceIndex);
+
+    for (int ae = 0; ae < spec->nActiveExperts; ae++) {
+        uint8_t e = indexes[ae];
+
+        float* expertUp = &hb[block->moeUp0Slice->d0 * ae];
+        float* expertGate = &block->expertGate[block->moeGate0Slice->d0 * ae];
+        matmul(spec->weightsFloatType, spec->bufferFloatType, expertUp, xb, block->moeUp[e], block->moeUp0Slice->n, block->moeUp0Slice->d0, nThreads, threadIndex);
+        matmul(spec->weightsFloatType, spec->bufferFloatType, expertGate, xb, block->moeGate[e], block->moeGate0Slice->n, block->moeGate0Slice->d0, nThreads, threadIndex);
+    }
+    return TASK_CONTINUE;
+}
+
+int moeBlock1(TASK_ARGS) {
+    TASK_VARIABLES;
+    float* hb = (float*)transformer->buffer->getSliced(TB_SLICED_HB, transformer->sliceIndex);
+
+    for (int ae = 0; ae < spec->nActiveExperts; ae++) {
+        float* expertUp = &hb[block->moeUp0Slice->d0 * ae];
+        float* expertGate = &block->expertGate[block->moeGate0Slice->d0 * ae];
+
+        gelu(expertGate, block->moeGate0Slice->d0, nThreads, threadIndex);
+        mul(expertUp, expertGate, block->moeGate0Slice->d0, nThreads, threadIndex);
+    }
+    return TASK_CONTINUE;
+}
+
+int quantizeMoeMul(TASK_ARGS) {
+    TASK_VARIABLES;
+    quantizeSlicedBuffer(nThreads, threadIndex, ctx, true, TB_SLICED_HB, TB_SLICED_HB_QUANTIZED);
+    return TASK_CONTINUE;
+}
+
+int syncMoeMulA(TASK_ARGS) {
+    TASK_VARIABLES;
+    syncSliceOfSlicedBuffer(nThreads, threadIndex, ctx, TB_SLICED_HB_QUANTIZED);
+    return TASK_CONTINUE;
+}
+
+int syncMoeMulRearrange(TASK_ARGS) {
+    TASK_VARIABLES;
+
+    if (threadIndex == 0 && spec->nSlices > 1) {
+        size_t rowBytes = getBatchBytes(spec->bufferFloatType, spec->hiddenDim, 1);
+        size_t dBytes = getBatchBytes(spec->bufferFloatType, block->moeUp0Slice->d0, 1);
+
+        char* hbq = transformer->buffer->getUnit(TB_SLICED_HB_QUANTIZED);
+        size_t bufferBytes = transformer->buffer->getUnitBytes(TB_SLICED_HB_QUANTIZED);
+        char* buffer = new char[bufferBytes];
+
+        for (int s = 0; s < spec->nSlices; s++) {
+            for (int ae = 0; ae < spec->nActiveExperts; ae++) {
+                memcpy(&buffer[ae * rowBytes + s * dBytes], &hbq[s * rowBytes + ae * dBytes], dBytes);
+            }
+        }
+
+        memcpy(hbq, buffer, rowBytes * spec->nActiveExperts);
+        delete[] buffer;
+    }
+    return TASK_CONTINUE;
+}
+
+int syncMoeMulB(TASK_ARGS) {
+    TASK_VARIABLES;
+    syncUnitBuffer(nThreads, threadIndex, ctx, TB_SLICED_HB_QUANTIZED);
+    return TASK_CONTINUE;
+}
+
+int moeBlock2(TASK_ARGS) {
+    TASK_VARIABLES;
+
+    float* xb2 = (float*)transformer->buffer->getSliced(TB_SLICED_XB2, transformer->sliceIndex);
+    char* hbq = transformer->buffer->getUnit(TB_SLICED_HB_QUANTIZED);
+    size_t rowBytes = getBatchBytes(spec->bufferFloatType, spec->hiddenDim, 1);
+
+    uint8_t* indexes = (uint8_t*)transformer->buffer->getUnit(TB_UNIT_MOE_INDEXES);
     float* weights = (float*)transformer->buffer->getUnit(TB_UNIT_MOE_WEIGHTS);
-    float* xb = (float*)transformer->buffer->getUnit(TB_UNIT_XB);
 
     for (int ae = 0; ae < spec->nActiveExperts; ae++) {
         uint8_t e = indexes[ae];
         float weight = weights[ae];
+    
+        char* expertUp = &hbq[rowBytes * ae];
+        float* expertDown = ae == 0 ? xb2 : &block->expertDown[block->moeDown0Slice->d0 * (ae - 1)];
 
-        matmul(spec->weightsFloatType, spec->bufferFloatType, block->expertUp, xb, block->moeUp[e], spec->dim, spec->hiddenDim, nThreads, threadIndex);
-        matmul(spec->weightsFloatType, spec->bufferFloatType, block->expertGate, xb, block->moeGate[e], spec->dim, spec->hiddenDim, nThreads, threadIndex);
+        matmul(spec->weightsFloatType, spec->bufferFloatType, expertDown, expertUp, block->moeDown[e], block->moeDown0Slice->n, block->moeDown0Slice->d0, nThreads, threadIndex);
 
-        gelu(block->expertGate, spec->hiddenDim, nThreads, threadIndex);
-        mul(block->expertUp, block->expertGate, spec->hiddenDim, nThreads, threadIndex);
-
-        float* fo = ae == 0 ? block->expertDown0 : block->expertDown1;
-        matmul(spec->weightsFloatType, spec->bufferFloatType, fo, block->expertUp, block->moeDown[e], spec->hiddenDim, spec->dim, nThreads, threadIndex);
-
-        mulScalar(fo, weight, spec->dim, nThreads, threadIndex);
-
+        mulScalar(expertDown, weight, block->moeDown0Slice->d0, nThreads, threadIndex);
         if (ae > 0) {
-            add(block->expertDown0, block->expertDown1, spec->dim, nThreads, threadIndex);
+            add(xb2, expertDown, block->moeDown0Slice->d0, nThreads, threadIndex);
         }
     }
+    return TASK_CONTINUE;
+}
 
-    add(xb, block->expertDown0, spec->dim, nThreads, threadIndex);
+int quantizeMoeOutput(TASK_ARGS) {
+    TASK_VARIABLES;
+    quantizeSlicedBuffer(nThreads, threadIndex, ctx, false, TB_SLICED_XB2, TB_SLICED_XB2_QUANTIZED);
+    return TASK_CONTINUE;
+}
+
+int syncMoeOutput(TASK_ARGS) {
+    TASK_VARIABLES;
+    syncSliceOfSlicedBuffer(nThreads, threadIndex, ctx, TB_SLICED_XB2_QUANTIZED);
+    return TASK_CONTINUE;
+}
+
+int dequantizeMoeOutput(TASK_ARGS) {
+    TASK_VARIABLES;
+    dequantizeSlicedBuffer(nThreads, threadIndex, ctx, false, TB_SLICED_XB2_QUANTIZED, TB_SLICED_XB2);
+    return TASK_CONTINUE;
+}
+
+int moeJoin(TASK_ARGS) {
+    TASK_VARIABLES;
+    float* xb = (float*)transformer->buffer->getUnit(TB_UNIT_XB);
+    float* xb2 = (float*)transformer->buffer->getUnit(TB_SLICED_XB2);
+    add(xb, xb2, spec->dim, nThreads, threadIndex);
     return TASK_CONTINUE;
 }
 
@@ -566,13 +661,23 @@ static TaskLoopTask inferenceTasks[] = {
     { moeRouterSoftmax, TASK_TYPE_INFERENCE },
     { moeTopk, TASK_TYPE_INFERENCE },
     { moeNormWeights, TASK_TYPE_INFERENCE },
-    { quantizeMoe, TASK_TYPE_INFERENCE },
-    { syncMoe, TASK_TYPE_TRANSFER },
-    { moeMatmul, TASK_TYPE_INFERENCE },
+    { quantizeMoeInput, TASK_TYPE_INFERENCE },
+    { syncMoeInput, TASK_TYPE_TRANSFER },
+    { moeBlock0, TASK_TYPE_INFERENCE },
+    { moeBlock1, TASK_TYPE_INFERENCE },
+    { quantizeMoeMul, TASK_TYPE_INFERENCE },
+    { syncMoeMulA, TASK_TYPE_INFERENCE },
+    { syncMoeMulRearrange, TASK_TYPE_INFERENCE },
+    { syncMoeMulB, TASK_TYPE_INFERENCE },
+    { moeBlock2, TASK_TYPE_INFERENCE },
+    { quantizeMoeOutput, TASK_TYPE_INFERENCE },
+    { syncMoeOutput, TASK_TYPE_TRANSFER },
+    { dequantizeMoeOutput, TASK_TYPE_INFERENCE },
+    { moeJoin, TASK_TYPE_INFERENCE },
     { moeRmsFinal, TASK_TYPE_INFERENCE },
     { moeRmsNormFinal, TASK_TYPE_INFERENCE },
-
     { moeAdd, TASK_TYPE_INFERENCE },
+
     { nextBlock, TASK_TYPE_INFERENCE },
     { rmsFinal, TASK_TYPE_INFERENCE },
     { rmsFinalNorm, TASK_TYPE_INFERENCE },
@@ -628,15 +733,18 @@ static TaskLoopTask workerTasks[] = {
     { att, TASK_TYPE_INFERENCE },
     { quantizeAtt, TASK_TYPE_INFERENCE },
     { syncAtt, TASK_TYPE_TRANSFER },
-    /*{ syncRmfFfn, TASK_TYPE_TRANSFER },
-    { ffn, TASK_TYPE_INFERENCE },
-    { quantizeFfnA, TASK_TYPE_INFERENCE },
-    { syncFfnA, TASK_TYPE_TRANSFER },
-    { syncFfnB, TASK_TYPE_TRANSFER },
-    { ffn2, TASK_TYPE_INFERENCE },
-    { quantizeFfn2, TASK_TYPE_INFERENCE },
-    { syncFfn2, TASK_TYPE_TRANSFER },
-    { nextBlock, TASK_TYPE_INFERENCE },*/
+
+    { syncMoeInput, TASK_TYPE_TRANSFER },
+    { moeBlock0, TASK_TYPE_INFERENCE },
+    { moeBlock1, TASK_TYPE_INFERENCE },
+    { quantizeMoeMul, TASK_TYPE_INFERENCE },
+    { syncMoeMulA, TASK_TYPE_INFERENCE },
+    { syncMoeMulB, TASK_TYPE_INFERENCE },
+    { moeBlock2, TASK_TYPE_INFERENCE },
+    { quantizeMoeOutput, TASK_TYPE_INFERENCE },
+    { syncMoeOutput, TASK_TYPE_TRANSFER },
+
+    { nextBlock, TASK_TYPE_INFERENCE }
 };
 
 TaskLoopTask* Worker::tasks = workerTasks;

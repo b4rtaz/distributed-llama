@@ -85,18 +85,16 @@ public:
 
     char* moeRouter;
     size_t moeRouterBytes;
+    MatmulSlice* moeUp0Slice;
     char** moeUp;
-    MatmulSlice* moeUpSlice;
+    MatmulSlice* moeGate0Slice;
     char** moeGate;
-    MatmulSlice* moeGateSlice;
+    MatmulSlice* moeDown0Slice;
     char** moeDown;
-    MatmulSlice* moeDownSlice;
     float* moeRouterProbs;
 
-    float* expertUp;
     float* expertGate;
-    float* expertDown0;
-    float* expertDown1;
+    float* expertDown;
 
     float* keyCache;
     float* valueCache;

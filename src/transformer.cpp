@@ -118,7 +118,12 @@ TransformerBuffer::TransformerBuffer(TransformerSpec* spec) {
     bufferBytes[TB_SLICED_K_QUANTIZED] = getBatchBytes(spec->bufferFloatType, spec->kvDim, 1);
     bufferBytes[TB_SLICED_V] = spec->kvDim * sizeof(float);
     bufferBytes[TB_SLICED_V_QUANTIZED] = getBatchBytes(spec->bufferFloatType, spec->kvDim, 1);
-    bufferBytes[TB_SLICED_HB] = spec->hiddenDim * sizeof(float);
+
+    int nHb = (spec->nActiveExperts > 0)
+        ? spec->hiddenDim * spec->nActiveExperts
+        : spec->hiddenDim;
+    bufferBytes[TB_SLICED_HB] = nHb * sizeof(float);
+    bufferBytes[TB_SLICED_HB_QUANTIZED] = getBatchBytes(spec->bufferFloatType, nHb, 1);
 
     if (spec->nActiveExperts > 0) {
         bufferBytes[TB_UNIT_MOE_INDEXES] = spec->nActiveExperts * sizeof(uint8_t);
@@ -245,9 +250,9 @@ TransformerBlock::TransformerBlock(TransformerSpec* spec, uint8_t sliceIndex) {
     wo0 = NEW_BUFFER(wo0Slice->sliceBytes);
 
     if (spec->nExperts > 0) {
-        moeUpSlice = new MatmulSlice(spec->weightsFloatType, spec->nSlices, spec->dim, spec->hiddenDim);
-        moeGateSlice = new MatmulSlice(spec->weightsFloatType, spec->nSlices, spec->dim, spec->hiddenDim);
-        moeDownSlice = new MatmulSlice(spec->weightsFloatType, spec->nSlices, spec->hiddenDim, spec->dim);
+        moeUp0Slice = new MatmulSlice(spec->weightsFloatType, spec->nSlices, spec->dim, spec->hiddenDim);
+        moeGate0Slice = new MatmulSlice(spec->weightsFloatType, spec->nSlices, spec->dim, spec->hiddenDim);
+        moeDown0Slice = new MatmulSlice(spec->weightsFloatType, spec->nSlices, spec->hiddenDim, spec->dim);
 
         moeRouterBytes = getBatchBytes(spec->weightsFloatType, spec->dim, spec->nExperts);
         moeRouter = NEW_BUFFER(moeRouterBytes);
@@ -257,15 +262,13 @@ TransformerBlock::TransformerBlock(TransformerSpec* spec, uint8_t sliceIndex) {
         moeDown = new char*[spec->nExperts];
 
         for (int e = 0; e < spec->nExperts; e++) {
-            moeUp[e] = NEW_BUFFER(moeUpSlice->bytes);
-            moeGate[e] = NEW_BUFFER(moeGateSlice->bytes);
-            moeDown[e] = NEW_BUFFER(moeDownSlice->bytes);
+            moeUp[e] = NEW_BUFFER(moeUp0Slice->bytes);
+            moeGate[e] = NEW_BUFFER(moeGate0Slice->bytes);
+            moeDown[e] = NEW_BUFFER(moeDown0Slice->bytes);
         }
 
-        expertUp = (float*)NEW_BUFFER(moeUpSlice->d0 * sizeof(float));
-        expertGate = (float*)NEW_BUFFER(moeGateSlice->d0 * sizeof(float));
-        expertDown0 = (float*)NEW_BUFFER(moeDownSlice->d0 * sizeof(float));
-        expertDown1 = (float*)NEW_BUFFER(moeDownSlice->d0 * sizeof(float));
+        expertGate = (float*)NEW_BUFFER(moeGate0Slice->d0 * spec->nExperts * sizeof(float));
+        expertDown = (float*)NEW_BUFFER(moeDown0Slice->d0 * (spec->nExperts - 1) * sizeof(float));
     } else {
         w10Slice = new MatmulSlice(spec->weightsFloatType, spec->nSlices, spec->dim, spec->hiddenDim);
         w20Slice = new MatmulSlice(spec->weightsFloatType, spec->nSlices, spec->hiddenDim, spec->dim);
@@ -299,9 +302,9 @@ TransformerBlock::~TransformerBlock() {
     FREE_BUFFER(wo0);
 
     if (spec->nExperts > 0) {
-        delete moeUpSlice;
-        delete moeGateSlice;
-        delete moeDownSlice;
+        delete moeUp0Slice;
+        delete moeGate0Slice;
+        delete moeDown0Slice;
 
         for (int e = 0; e < spec->nExperts; e++) {
             FREE_BUFFER(moeUp[e]);
@@ -315,10 +318,8 @@ TransformerBlock::~TransformerBlock() {
         delete[] moeGate;
         delete[] moeDown;
 
-        FREE_BUFFER(expertUp);
         FREE_BUFFER(expertGate);
-        FREE_BUFFER(expertDown0);
-        FREE_BUFFER(expertDown1);
+        FREE_BUFFER(expertDown);
     } else {
         delete w10Slice;
         delete w20Slice;
@@ -423,9 +424,9 @@ Transformer Transformer::loadRoot(char* data, TransformerSpec* spec, SocketPool*
             w += block->moeRouterBytes;
 
             for (int e = 0; e < spec->nExperts; e++) {
-                w += loadSlicedMatmulWeights(spec->nSlices, block->moeUpSlice, w, block->moeUp[e], socketPool);
-                w += loadSlicedMatmulWeights(spec->nSlices, block->moeGateSlice, w, block->moeGate[e], socketPool);
-                w += loadSlicedMatmulWeights(spec->nSlices, block->moeDownSlice, w, block->moeDown[e], socketPool);
+                w += loadSlicedMatmulWeights(spec->nSlices, block->moeUp0Slice, w, block->moeUp[e], socketPool);
+                w += loadSlicedMatmulWeights(spec->nSlices, block->moeGate0Slice, w, block->moeGate[e], socketPool);
+                w += loadSlicedMatmulWeights(spec->nSlices, block->moeDown0Slice, w, block->moeDown[e], socketPool);
             }
         } else {
             w += loadSlicedMatmulWeights(spec->nSlices, block->w10Slice, w, block->w10, socketPool);
@@ -469,9 +470,19 @@ Transformer Transformer::loadSlice(TransformerSpec* spec, Socket* socket) {
         blockBytes += readSlicedMatmulWeights(block->k0Slice, block->k0, socket);
         blockBytes += readSlicedMatmulWeights(block->v0Slice, block->v0, socket);
         blockBytes += readSlicedMatmulWeights(block->wo0Slice, block->wo0, socket);
-        blockBytes += readSlicedMatmulWeights(block->w10Slice, block->w10, socket);
-        blockBytes += readSlicedMatmulWeights(block->w20Slice, block->w20, socket);
-        blockBytes += readSlicedMatmulWeights(block->w30Slice, block->w30, socket);
+
+        if (spec->nExperts > 0) {
+            for (int e = 0; e < spec->nExperts; e++) {
+                blockBytes += readSlicedMatmulWeights(block->moeUp0Slice, block->moeUp[e], socket);
+                blockBytes += readSlicedMatmulWeights(block->moeGate0Slice, block->moeGate[e], socket);
+                blockBytes += readSlicedMatmulWeights(block->moeDown0Slice, block->moeDown[e], socket);
+            }
+        } else {
+            blockBytes += readSlicedMatmulWeights(block->w10Slice, block->w10, socket);
+            blockBytes += readSlicedMatmulWeights(block->w20Slice, block->w20, socket);
+            blockBytes += readSlicedMatmulWeights(block->w30Slice, block->w30, socket);
+        }
+
         float kbs = blockBytes / (float)(timeMs() - t0);
         printf("⏩ Received %ld bytes for block %d (%.0f kB/s)\n", blockBytes, i, kbs);
     }
