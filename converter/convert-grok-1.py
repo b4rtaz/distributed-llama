@@ -42,7 +42,6 @@ def writeLayer(outFile, layerName, targetFloatType):
     writeTensor(outFile, tensor, targetFloatType)
 
 def convert(targetFloatType, outputFileName):
-    targetFloatType = 'q40'
     outputFileName = f'dllama_grok_{targetFloatType}.bin'
     outFile = open(outputFileName, 'wb')
 
