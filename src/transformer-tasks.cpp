@@ -362,7 +362,7 @@ int moeRmsNorm(TASK_ARGS) {
 int moeRouter(TASK_ARGS) {
     TASK_VARIABLES;
     float* xb = (float*)transformer->buffer->getUnit(TB_UNIT_XB);
-    matmul(spec->weightsFloatType, spec->bufferFloatType, block->moeRouterProbs, xb, block->moeRouter, spec->dim, spec->nExperts, nThreads, threadIndex);
+    matmul(spec->weightsFloatType, F32, block->moeRouterProbs, xb, block->moeRouter, spec->dim, spec->nExperts, nThreads, threadIndex);
     return TASK_CONTINUE;
 }
 

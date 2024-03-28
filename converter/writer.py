@@ -3,6 +3,9 @@ import torch
 import time
 import numpy as np
 
+def isFloatTypeSupported(type):
+    return type in ['f16', 'f32', 'q40']
+
 def writeQuantizedQ40Tensor(file, x):
     t0 = time.time()
     x = x.to(torch.float32).numpy().astype(np.float32)
