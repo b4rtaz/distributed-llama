@@ -68,11 +68,6 @@ def convert(targetFloatType, outputFileName):
     writeLayer(outFile, 'transformer.in_out_embed.weight', 'f32')
 
     for index in range(1, params['n_layers'] + 1):
-        writeLayer(outFile, f'transformer.decoder_layer.{index}.rms_norm.weight', 'f32')
-        writeLayer(outFile, f'transformer.decoder_layer.{index}.rms_norm_1.weight', 'f32')
-        writeLayer(outFile, f'transformer.decoder_layer.{index}.rms_norm_2.weight', 'f32')
-        writeLayer(outFile, f'transformer.decoder_layer.{index}.rms_norm_3.weight', 'f32')
-
         writeLayer(outFile, f'transformer.decoder_layer.{index}.multi_head_attention.query.weight', targetFloatType)
         writeLayer(outFile, f'transformer.decoder_layer.{index}.multi_head_attention.key.weight', targetFloatType)
         writeLayer(outFile, f'transformer.decoder_layer.{index}.multi_head_attention.value.weight', targetFloatType)
@@ -81,8 +76,13 @@ def convert(targetFloatType, outputFileName):
         writeLayer(outFile, f'transformer.decoder_layer.{index}.router.weight', targetFloatType)
         for e in range(params['n_experts']):
             writeLayer(outFile, f'transformer.decoder_layer.{index}.moe.{e}.linear_v.weight', targetFloatType) # up
-            writeLayer(outFile, f'transformer.decoder_layer.{index}.moe.{e}.linear.weight', targetFloatType) # gate
             writeLayer(outFile, f'transformer.decoder_layer.{index}.moe.{e}.linear_1.weight', targetFloatType) # down
+            writeLayer(outFile, f'transformer.decoder_layer.{index}.moe.{e}.linear.weight', targetFloatType) # gate
+
+        writeLayer(outFile, f'transformer.decoder_layer.{index}.rms_norm.weight', 'f32')
+        writeLayer(outFile, f'transformer.decoder_layer.{index}.rms_norm_1.weight', 'f32')
+        writeLayer(outFile, f'transformer.decoder_layer.{index}.rms_norm_2.weight', 'f32')
+        writeLayer(outFile, f'transformer.decoder_layer.{index}.rms_norm_3.weight', 'f32')
 
     #### pytorch_model-00019-of-00019.bin
     loadModel(19)
