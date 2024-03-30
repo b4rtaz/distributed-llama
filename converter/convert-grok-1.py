@@ -75,7 +75,7 @@ def convert(targetFloatType, outputFileName):
 
     writeLayer(outFile, 'transformer.in_out_embed.weight', 'f32')
 
-    for index in range(1, params['n_layers'] + 1):
+    for index in range(0, params['n_layers']):
         writeLayer(outFile, f'transformer.decoder_layer.{index}.multi_head_attention.query.weight', targetFloatType)
         writeLayer(outFile, f'transformer.decoder_layer.{index}.multi_head_attention.key.weight', targetFloatType)
         writeLayer(outFile, f'transformer.decoder_layer.{index}.multi_head_attention.value.weight', targetFloatType)
