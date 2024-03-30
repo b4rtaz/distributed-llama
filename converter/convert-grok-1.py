@@ -1,3 +1,4 @@
+import gc
 import torch
 import sys
 import os
@@ -9,24 +10,26 @@ currentFileIndex = None
 model = None
 folderPath = None
 
+def unloadModel():
+    global model
+    if model:
+       del model
+       model = None
+       gc.collect()
+
 def loadModel(index):
     global currentFileIndex
     global model
     global folderPath
     if (currentFileIndex == index):
         return
-    if model:
-        del model
+    unloadModel()
     fileName = f'pytorch_model-000{str(index).zfill(2)}-of-00019.bin'
     filePath = os.path.join(folderPath, fileName)
     print(f'💿 Loading file {fileName}...')
     model = torch.load(filePath, map_location='cpu')
     currentFileIndex = index
 
-def unloadModel():
-    global model
-    if model:
-       del model
 
 def writeLayer(outFile, layerName, targetFloatType):
     global currentFileIndex
