@@ -28,6 +28,7 @@ def loadModel(index):
     filePath = os.path.join(folderPath, fileName)
     print(f'💿 Loading file {fileName}...')
     model = torch.load(filePath, map_location='cpu')
+    print(f'Found layers: {list(model.keys())}')
     currentFileIndex = index
 
 
