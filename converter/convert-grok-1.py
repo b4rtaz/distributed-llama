@@ -8,6 +8,7 @@ from writer import isFloatTypeSupported, writeTensor, writeHeader
 
 currentFileIndex = None
 model = None
+layerMap = {}
 folderPath = None
 
 def unloadModel():
@@ -20,6 +21,7 @@ def unloadModel():
 def loadModel(index):
     global currentFileIndex
     global model
+    global layerMap
     global folderPath
     if (currentFileIndex == index):
         return
@@ -28,16 +30,22 @@ def loadModel(index):
     filePath = os.path.join(folderPath, fileName)
     print(f'💿 Loading file {fileName}...')
     model = torch.load(filePath, map_location='cpu')
-    print(f'Found layers: {list(model.keys())}')
+    layerNames = list(model.keys())
+    for layerName in layerNames:
+        layerMap[layerName] = index
+    print(f'Found layers: {layerNames}')
     currentFileIndex = index
-
 
 def writeLayer(outFile, layerName, targetFloatType):
     global currentFileIndex
     global model
+    global layerMap
 
     if (not layerName in model):
-        loadModel(currentFileIndex + 1)
+        if (layerName in layerMap):
+            loadModel(layerMap[layerName])
+        else:
+            loadModel(currentFileIndex + 1)
     if (not layerName in model):
         raise Exception(f'Cannot load {layerName}')
 
@@ -76,8 +84,8 @@ def convert(targetFloatType, outputFileName):
         writeLayer(outFile, f'transformer.decoder_layer.{index}.router.weight', targetFloatType)
         for e in range(params['n_experts']):
             writeLayer(outFile, f'transformer.decoder_layer.{index}.moe.{e}.linear_v.weight', targetFloatType) # up
-            writeLayer(outFile, f'transformer.decoder_layer.{index}.moe.{e}.linear_1.weight', targetFloatType) # down
             writeLayer(outFile, f'transformer.decoder_layer.{index}.moe.{e}.linear.weight', targetFloatType) # gate
+            writeLayer(outFile, f'transformer.decoder_layer.{index}.moe.{e}.linear_1.weight', targetFloatType) # down
 
         writeLayer(outFile, f'transformer.decoder_layer.{index}.rms_norm.weight', 'f32')
         writeLayer(outFile, f'transformer.decoder_layer.{index}.rms_norm_1.weight', 'f32')
