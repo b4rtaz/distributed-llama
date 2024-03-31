@@ -402,18 +402,6 @@ Transformer Transformer::loadRoot(char* data, TransformerSpec* spec, SocketPool*
     for (int i = 0; i < spec->nLayers; i++) {
         TransformerBlock* block = transformer.blocks[i];
 
-        memcpy(block->rmsAtt, w, block->rmsAttBytes);
-        w += block->rmsAttBytes;
-
-        memcpy(block->rmsFfn, w, block->rmsFfnBytes);
-        w += block->rmsFfnBytes;
-
-        memcpy(block->rmsMoe, w, block->rmsMoeBytes);
-        w += block->rmsMoeBytes;
-
-        memcpy(block->rmsFfn2, w, block->rmsFfn2Bytes);
-        w += block->rmsFfn2Bytes;
-
         w += loadSlicedMatmulWeights(spec->nSlices, block->q0Slice, w, block->q0, socketPool);
         w += loadSlicedMatmulWeights(spec->nSlices, block->k0Slice, w, block->k0, socketPool);
         w += loadSlicedMatmulWeights(spec->nSlices, block->v0Slice, w, block->v0, socketPool);
@@ -433,6 +421,18 @@ Transformer Transformer::loadRoot(char* data, TransformerSpec* spec, SocketPool*
             w += loadSlicedMatmulWeights(spec->nSlices, block->w20Slice, w, block->w20, socketPool);
             w += loadSlicedMatmulWeights(spec->nSlices, block->w30Slice, w, block->w30, socketPool);
         }
+
+        memcpy(block->rmsAtt, w, block->rmsAttBytes);
+        w += block->rmsAttBytes;
+
+        memcpy(block->rmsFfn, w, block->rmsFfnBytes);
+        w += block->rmsFfnBytes;
+
+        memcpy(block->rmsMoe, w, block->rmsMoeBytes);
+        w += block->rmsMoeBytes;
+
+        memcpy(block->rmsFfn2, w, block->rmsFfn2Bytes);
+        w += block->rmsFfn2Bytes;
     }
 
     memcpy(transformer.rmsFinal, w, transformer.rmsFinalBytes);
