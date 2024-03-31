@@ -36,7 +36,7 @@ public:
     TaskLoopTask* tasks;
     void* userData;
     std::atomic_uint currentTaskIndex;
-    std::atomic_bool stop;
+    std::atomic_uint stopTaskIndex;
     std::atomic_uint doneThreadCount;
     unsigned int lastTime;
     unsigned int* executionTime;
