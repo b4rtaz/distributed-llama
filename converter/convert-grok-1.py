@@ -54,7 +54,6 @@ def writeLayer(outFile, layerName, targetFloatType):
     writeTensor(outFile, tensor, targetFloatType)
 
 def convert(targetFloatType, outputFileName):
-    outputFileName = f'dllama_grok_{targetFloatType}.bin'
     outFile = open(outputFileName, 'wb')
 
     params = {
@@ -117,7 +116,7 @@ if __name__ == '__main__':
 
     folderPath = sys.argv[1]
     targetFloatType = sys.argv[2]
-    outputFileName = f'dllama_grok_{targetFloatType}.bin'
+    outputFileName = f'dllama-grok-1-{targetFloatType}.bin'
 
     if not isFloatTypeSupported(targetFloatType):
         print('Float type is not supported')
