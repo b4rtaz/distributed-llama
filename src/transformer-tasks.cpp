@@ -203,6 +203,28 @@ int dequantizeQkv(TASK_ARGS) {
     return TASK_CONTINUE;
 }
 
+// source: https://github.com/karpathy/llama2.c/pull/408
+void ropeFalcon(float* q, float* k, TransformerSpec* spec, int pos) {
+    for (int i = 0; i < spec->nHeads; i++) {
+        for (int j = 0; j < spec->headSize / 2; j++) {
+            float freq = 1.0f / powf(10000.0f, 2.0f * (float)j / (float)spec->headSize);
+            float val = pos * freq;
+            float fcr = cosf(val);
+            float fci = sinf(val);
+            float q0 = q[i * spec->headSize + j];
+            float q1 = q[i * spec->headSize + j + spec->headSize / 2];
+            q[i * spec->headSize + j] = q0 * fcr - q1 * fci;
+            q[i * spec->headSize + j + spec->headSize / 2] = q0 * fci + q1 * fcr;
+            if (i < spec->nKvHeads) {
+                float k0 = k[i * spec->headSize + j];
+                float k1 = k[i * spec->headSize + j + spec->headSize / 2];
+                k[i * spec->headSize + j] = k0 * fcr - k1 * fci;
+                k[i * spec->headSize + j + spec->headSize / 2] = k0 * fci + k1 * fcr;
+            }
+        }
+    }
+}
+
 int multiheadAtt(TASK_ARGS) {
     TASK_VARIABLES;
     if (threadIndex != 0) {
@@ -224,6 +246,8 @@ int multiheadAtt(TASK_ARGS) {
     memcpy(k, transformer->buffer->getUnit(TB_SLICED_K), dim * sizeof(float));
     memcpy(v, transformer->buffer->getUnit(TB_SLICED_V), dim * sizeof(float));
 
+    ropeFalcon(q, k, spec, pos);
+    /*
     // RoPE relative positional encoding: complex-valued rotate q and k in each head
     for (int i = 0; i < dim; i+=2) {
         int head_dim = i % headSize;
@@ -240,6 +264,7 @@ int multiheadAtt(TASK_ARGS) {
             vec[i+1] = v0 * fci + v1 * fcr;
         }
     }
+    */
 
     // multihead attention. iterate over all heads
     int h;
@@ -555,34 +580,26 @@ int dequantizeMoeOutput(TASK_ARGS) {
     return TASK_CONTINUE;
 }
 
-int moeJoin(TASK_ARGS) {
-    TASK_VARIABLES;
-    float* xb = (float*)transformer->buffer->getUnit(TB_UNIT_XB);
-    float* xb2 = (float*)transformer->buffer->getUnit(TB_SLICED_XB2);
-    add(xb, xb2, spec->dim, nThreads, threadIndex);
-    return TASK_CONTINUE;
-}
-
 int moeRmsFinal(TASK_ARGS) {
     TASK_VARIABLES;
     if (threadIndex == 0) {
-        float* xb = (float*)transformer->buffer->getUnit(TB_UNIT_XB);
-        transformer->rms = rms(xb, spec->dim);
+        float* xb2 = (float*)transformer->buffer->getUnit(TB_SLICED_XB2);
+        transformer->rms = rms(xb2, spec->dim);
     }
     return TASK_CONTINUE;
 }
 
 int moeRmsNormFinal(TASK_ARGS) {
     TASK_VARIABLES;
-    float* xb = (float*)transformer->buffer->getUnit(TB_UNIT_XB);
-    rmsnorm(xb, xb, transformer->rms, block->rmsFfn2, spec->dim, nThreads, threadIndex);
+    float* xb2 = (float*)transformer->buffer->getUnit(TB_SLICED_XB2);
+    rmsnorm(xb2, xb2, transformer->rms, block->rmsFfn2, spec->dim, nThreads, threadIndex);
     return TASK_CONTINUE;
 }
 
 int moeAdd(TASK_ARGS) {
     TASK_VARIABLES;
-    float* xb = (float*)transformer->buffer->getUnit(TB_UNIT_XB);
-    add(transformer->x, xb, spec->dim, nThreads, threadIndex);
+    float* xb2 = (float*)transformer->buffer->getUnit(TB_SLICED_XB2);
+    add(transformer->x, xb2, spec->dim, nThreads, threadIndex);
     return TASK_CONTINUE;
 }
 
@@ -673,7 +690,6 @@ static TaskLoopTask inferenceTasks[] = {
     { quantizeMoeOutput, TASK_TYPE_INFERENCE },
     { syncMoeOutput, TASK_TYPE_TRANSFER },
     { dequantizeMoeOutput, TASK_TYPE_INFERENCE },
-    { moeJoin, TASK_TYPE_INFERENCE },
     { moeRmsFinal, TASK_TYPE_INFERENCE },
     { moeRmsNormFinal, TASK_TYPE_INFERENCE },
     { moeAdd, TASK_TYPE_INFERENCE },
