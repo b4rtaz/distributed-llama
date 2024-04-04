@@ -250,8 +250,7 @@ TransformerBlock::TransformerBlock(TransformerSpec* spec, uint8_t sliceIndex) {
     wo0 = NEW_BUFFER(wo0Slice->sliceBytes);
 
     if (spec->nExperts > 0) {
-        moeUp0Slice = new MatmulSlice(spec->weightsFloatType, spec->nSlices, spec->dim, spec->hiddenDim);
-        moeGate0Slice = new MatmulSlice(spec->weightsFloatType, spec->nSlices, spec->dim, spec->hiddenDim);
+        moeUpAndGate0Slice = new MatmulSlice(spec->weightsFloatType, spec->nSlices, spec->dim, spec->hiddenDim);
         moeDown0Slice = new MatmulSlice(spec->weightsFloatType, spec->nSlices, spec->hiddenDim, spec->dim);
 
         moeRouterBytes = getBatchBytes(spec->weightsFloatType, spec->dim, spec->nExperts);
@@ -262,12 +261,12 @@ TransformerBlock::TransformerBlock(TransformerSpec* spec, uint8_t sliceIndex) {
         moeDown = new char*[spec->nExperts];
 
         for (int e = 0; e < spec->nExperts; e++) {
-            moeUp[e] = NEW_BUFFER(moeUp0Slice->bytes);
-            moeGate[e] = NEW_BUFFER(moeGate0Slice->bytes);
-            moeDown[e] = NEW_BUFFER(moeDown0Slice->bytes);
+            moeUp[e] = NEW_BUFFER(moeUpAndGate0Slice->sliceBytes);
+            moeGate[e] = NEW_BUFFER(moeUpAndGate0Slice->sliceBytes);
+            moeDown[e] = NEW_BUFFER(moeDown0Slice->sliceBytes);
         }
 
-        expertGate = (float*)NEW_BUFFER(moeGate0Slice->d0 * spec->nExperts * sizeof(float));
+        expertGate = (float*)NEW_BUFFER(moeUpAndGate0Slice->d0 * spec->nExperts * sizeof(float));
         expertDown = (float*)NEW_BUFFER(moeDown0Slice->d0 * (spec->nExperts - 1) * sizeof(float));
     } else {
         w10Slice = new MatmulSlice(spec->weightsFloatType, spec->nSlices, spec->dim, spec->hiddenDim);
@@ -302,8 +301,7 @@ TransformerBlock::~TransformerBlock() {
     FREE_BUFFER(wo0);
 
     if (spec->nExperts > 0) {
-        delete moeUp0Slice;
-        delete moeGate0Slice;
+        delete moeUpAndGate0Slice;
         delete moeDown0Slice;
 
         for (int e = 0; e < spec->nExperts; e++) {
@@ -412,8 +410,8 @@ Transformer Transformer::loadRoot(char* data, TransformerSpec* spec, SocketPool*
             w += block->moeRouterBytes;
 
             for (int e = 0; e < spec->nExperts; e++) {
-                w += loadSlicedMatmulWeights(spec->nSlices, block->moeUp0Slice, w, block->moeUp[e], socketPool);
-                w += loadSlicedMatmulWeights(spec->nSlices, block->moeGate0Slice, w, block->moeGate[e], socketPool);
+                w += loadSlicedMatmulWeights(spec->nSlices, block->moeUpAndGate0Slice, w, block->moeUp[e], socketPool);
+                w += loadSlicedMatmulWeights(spec->nSlices, block->moeUpAndGate0Slice, w, block->moeGate[e], socketPool);
                 w += loadSlicedMatmulWeights(spec->nSlices, block->moeDown0Slice, w, block->moeDown[e], socketPool);
             }
         } else {
@@ -473,8 +471,8 @@ Transformer Transformer::loadSlice(TransformerSpec* spec, Socket* socket) {
 
         if (spec->nExperts > 0) {
             for (int e = 0; e < spec->nExperts; e++) {
-                blockBytes += readSlicedMatmulWeights(block->moeUp0Slice, block->moeUp[e], socket);
-                blockBytes += readSlicedMatmulWeights(block->moeGate0Slice, block->moeGate[e], socket);
+                blockBytes += readSlicedMatmulWeights(block->moeUpAndGate0Slice, block->moeUp[e], socket);
+                blockBytes += readSlicedMatmulWeights(block->moeUpAndGate0Slice, block->moeGate[e], socket);
                 blockBytes += readSlicedMatmulWeights(block->moeDown0Slice, block->moeDown[e], socket);
             }
         } else {

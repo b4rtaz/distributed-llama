@@ -472,10 +472,10 @@ int moeBlock0(TASK_ARGS) {
     for (int ae = 0; ae < spec->nActiveExperts; ae++) {
         uint8_t e = indexes[ae];
 
-        float* expertUp = &hb[block->moeUp0Slice->d0 * ae];
-        float* expertGate = &block->expertGate[block->moeGate0Slice->d0 * ae];
-        matmul(spec->weightsFloatType, spec->bufferFloatType, expertUp, xb, block->moeUp[e], block->moeUp0Slice->n, block->moeUp0Slice->d0, nThreads, threadIndex);
-        matmul(spec->weightsFloatType, spec->bufferFloatType, expertGate, xb, block->moeGate[e], block->moeGate0Slice->n, block->moeGate0Slice->d0, nThreads, threadIndex);
+        float* expertUp = &hb[block->moeUpAndGate0Slice->d0 * ae];
+        float* expertGate = &block->expertGate[block->moeUpAndGate0Slice->d0 * ae];
+        matmul(spec->weightsFloatType, spec->bufferFloatType, expertUp, xb, block->moeUp[e], block->moeUpAndGate0Slice->n, block->moeUpAndGate0Slice->d0, nThreads, threadIndex);
+        matmul(spec->weightsFloatType, spec->bufferFloatType, expertGate, xb, block->moeGate[e], block->moeUpAndGate0Slice->n, block->moeUpAndGate0Slice->d0, nThreads, threadIndex);
     }
     return TASK_CONTINUE;
 }
@@ -485,11 +485,11 @@ int moeBlock1(TASK_ARGS) {
     float* hb = (float*)transformer->buffer->getSliced(TB_SLICED_HB, transformer->sliceIndex);
 
     for (int ae = 0; ae < spec->nActiveExperts; ae++) {
-        float* expertUp = &hb[block->moeUp0Slice->d0 * ae];
-        float* expertGate = &block->expertGate[block->moeGate0Slice->d0 * ae];
+        float* expertUp = &hb[block->moeUpAndGate0Slice->d0 * ae];
+        float* expertGate = &block->expertGate[block->moeUpAndGate0Slice->d0 * ae];
 
-        gelu(expertGate, block->moeGate0Slice->d0, nThreads, threadIndex);
-        mul(expertUp, expertGate, block->moeGate0Slice->d0, nThreads, threadIndex);
+        gelu(expertGate, block->moeUpAndGate0Slice->d0, nThreads, threadIndex);
+        mul(expertUp, expertGate, block->moeUpAndGate0Slice->d0, nThreads, threadIndex);
     }
     return TASK_CONTINUE;
 }
@@ -510,20 +510,22 @@ int syncMoeMulRearrange(TASK_ARGS) {
     TASK_VARIABLES;
 
     if (threadIndex == 0 && spec->nSlices > 1) {
-        size_t rowBytes = getBatchBytes(spec->bufferFloatType, spec->hiddenDim, 1);
-        size_t dBytes = getBatchBytes(spec->bufferFloatType, block->moeUp0Slice->d0, 1);
-
         char* hbq = transformer->buffer->getUnit(TB_SLICED_HB_QUANTIZED);
         size_t bufferBytes = transformer->buffer->getUnitBytes(TB_SLICED_HB_QUANTIZED);
+        size_t bufferSliceBytes = transformer->buffer->getSlicedBytes(TB_SLICED_HB_QUANTIZED);
+
+        size_t moeUpBytes = bufferBytes / spec->nActiveExperts;
+        size_t moeUp0SliceBytes = getBatchBytes(spec->bufferFloatType, block->moeUpAndGate0Slice->d0, 1);
+
         char* buffer = new char[bufferBytes];
 
         for (int s = 0; s < spec->nSlices; s++) {
             for (int ae = 0; ae < spec->nActiveExperts; ae++) {
-                memcpy(&buffer[ae * rowBytes + s * dBytes], &hbq[s * rowBytes + ae * dBytes], dBytes);
+                memcpy(&buffer[ae * moeUpBytes + s * moeUp0SliceBytes], &hbq[s * bufferSliceBytes + ae * moeUp0SliceBytes], moeUp0SliceBytes);
             }
         }
 
-        memcpy(hbq, buffer, rowBytes * spec->nActiveExperts);
+        memcpy(hbq, buffer, bufferBytes);
         delete[] buffer;
     }
     return TASK_CONTINUE;
@@ -548,7 +550,7 @@ int moeBlock2(TASK_ARGS) {
     for (int ae = 0; ae < spec->nActiveExperts; ae++) {
         uint8_t e = indexes[ae];
         float weight = weights[ae];
-    
+
         char* expertUp = &hbq[rowBytes * ae];
         float* expertDown = ae == 0 ? xb2 : &block->expertDown[block->moeDown0Slice->d0 * (ae - 1)];
 

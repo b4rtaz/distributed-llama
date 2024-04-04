@@ -85,9 +85,8 @@ public:
 
     char* moeRouter;
     size_t moeRouterBytes;
-    MatmulSlice* moeUp0Slice;
+    MatmulSlice* moeUpAndGate0Slice;
     char** moeUp;
-    MatmulSlice* moeGate0Slice;
     char** moeGate;
     MatmulSlice* moeDown0Slice;
     char** moeDown;
