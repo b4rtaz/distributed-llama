@@ -91,8 +91,10 @@ TransformerSpec Transformer::loadSpecFromFile(const char* path, const unsigned i
     printf("💡 nLayers: %d\n", spec.nLayers);
     printf("💡 nHeads: %d\n", spec.nHeads);
     printf("💡 nKvHeads: %d\n", spec.nKvHeads);
-    printf("💡 nExperts: %d\n", spec.nExperts);
-    printf("💡 nActiveExperts: %d\n", spec.nActiveExperts);
+    if (spec.nExperts > 0) {
+        printf("💡 nExperts: %d\n", spec.nExperts);
+        printf("💡 nActiveExperts: %d\n", spec.nActiveExperts);
+    }
     printf("💡 vocabSize: %d\n", spec.vocabSize);
     printf("💡 seqLen: %d\n", spec.seqLen);
     printf("💡 nSlices: %d\n", spec.nSlices);
