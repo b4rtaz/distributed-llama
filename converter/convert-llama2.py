@@ -18,6 +18,9 @@ def convert(modelPath, outputPath, targetFloatType):
         params['n_kv_heads'] = params.get('n_kv_heads') or params['n_heads']
         params['head_size'] = params['dim'] / params['n_heads']
         params['max_seq_len'] = 2048
+        params['arch_type'] = 0xABCD00
+        params['n_experts'] = 0
+        params['n_active_experts'] = 0
 
     modelPaths = sorted(list(Path(modelPath).glob('consolidated.*.pth')))
     nSlices = len(modelPaths)
@@ -25,8 +28,6 @@ def convert(modelPath, outputPath, targetFloatType):
     layers = []
     layers.append('tok_embeddings.weight')
     for layerIndex in range(0, params['n_layers']):
-        layers.append(f'layers.{layerIndex}.attention_norm.weight')
-        layers.append(f'layers.{layerIndex}.ffn_norm.weight')
         layers.append(f'layers.{layerIndex}.attention.wq.weight')
         layers.append(f'layers.{layerIndex}.attention.wk.weight')
         layers.append(f'layers.{layerIndex}.attention.wv.weight')
@@ -34,8 +35,9 @@ def convert(modelPath, outputPath, targetFloatType):
         layers.append(f'layers.{layerIndex}.feed_forward.w1.weight')
         layers.append(f'layers.{layerIndex}.feed_forward.w2.weight')
         layers.append(f'layers.{layerIndex}.feed_forward.w3.weight')
+        layers.append(f'layers.{layerIndex}.attention_norm.weight')
+        layers.append(f'layers.{layerIndex}.ffn_norm.weight')
     layers.append('norm.weight')
-    layers.append('rope.freqs')
     layers.append('output.weight')
 
     isHeaderWrote = False
@@ -63,9 +65,6 @@ def convert(modelPath, outputPath, targetFloatType):
 
         for layerName in chunkLayerNames:
             if layerName == 'rope.freqs':
-                nBytes = int(params['max_seq_len'] * (params['head_size'] / 2) * 4)
-                outFile.seek(nBytes, 1) # freq_cis_real (for RoPE)
-                outFile.seek(nBytes, 1) # freq_cis_imag (for RoPE)
                 continue
 
             isAxis1 = (

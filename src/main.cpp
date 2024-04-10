@@ -5,7 +5,8 @@
 #include "utils.hpp"
 #include "socket.hpp"
 #include "transformer.hpp"
-#include "transformer-tasks.hpp"
+#include "tasks.hpp"
+#include "grok1-tasks.hpp"
 #include "tokenizer.hpp"
 
 struct ProgramArgs {
@@ -59,7 +60,7 @@ int inferenceOrChat(ProgramArgs* args, bool isChat) {
     }
 
     Transformer transformer = Transformer::loadRootFromFile(args->modelPath, &spec, socketPool);
-    Inference inference = Inference(args->nThreads, &transformer, socketPool);
+    Inference inference = Inference(&Grok1::arch, args->nThreads, &transformer, socketPool);
 
     bool bos = false; // TODO: llama2: true?, grok: false?
     bool eos = false;
@@ -90,7 +91,7 @@ int worker(ProgramArgs* args) {
 
     socket.enableTurbo();
 
-    Worker worker = Worker(args->nThreads, &transformer, &socket);
+    Worker worker = Worker(&Grok1::arch, args->nThreads, &transformer, &socket);
     worker.work();
 
     return EXIT_SUCCESS;

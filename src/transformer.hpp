@@ -20,8 +20,13 @@ public:
     long mergeOutputs(uint8_t sliceIndex, float* output, float* output0);
 };
 
+enum TransformerArchType {
+    LLAMA2 = 0xABCD00,
+    GROK1 = 0xABCD01
+};
+
 struct TransformerFileHeader {
-    int magic;
+    TransformerArchType archType;
     int dim;
     int hiddenDim;
     int nLayers;
@@ -35,6 +40,7 @@ struct TransformerFileHeader {
 
 struct TransformerSpec {
     size_t fileSize;
+    TransformerArchType archType;
     int dim;
     int nLayers;
     int nHeads;
@@ -94,6 +100,8 @@ public:
 
     float* expertGate;
     float* expertDown;
+
+    float* hb20;
 
     float* keyCache;
     float* valueCache;

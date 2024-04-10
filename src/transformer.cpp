@@ -64,7 +64,7 @@ TransformerSpec Transformer::loadSpecFromFile(const char* path, const unsigned i
         exit(EXIT_FAILURE);
     }
 
-    if (header.magic != 0xABCD01) {
+    if (header.archType != LLAMA2 || header.archType != GROK1) {
         printf("This is not a correct model file\n");
         exit(EXIT_FAILURE);
     }
@@ -249,7 +249,7 @@ TransformerBlock::TransformerBlock(TransformerSpec* spec, uint8_t sliceIndex) {
     v0 = NEW_BUFFER(v0Slice->sliceBytes);
     wo0 = NEW_BUFFER(wo0Slice->sliceBytes);
 
-    if (spec->nExperts > 0) {
+    if (spec->archType == GROK1) {
         moeUpAndGate0Slice = new MatmulSlice(spec->weightsFloatType, spec->nSlices, spec->dim, spec->hiddenDim);
         moeDown0Slice = new MatmulSlice(spec->weightsFloatType, spec->nSlices, spec->hiddenDim, spec->dim);
 
@@ -277,7 +277,7 @@ TransformerBlock::TransformerBlock(TransformerSpec* spec, uint8_t sliceIndex) {
         w20 = NEW_BUFFER(w20Slice->sliceBytes);
         w30 = NEW_BUFFER(w30Slice->sliceBytes);
 
-        // hd = (float*)NEW_BUFFER(w30Slice->d0 * sizeof(float));
+        hb20 = (float*)NEW_BUFFER(w30Slice->d0 * sizeof(float));
     }
 }
 
@@ -300,7 +300,7 @@ TransformerBlock::~TransformerBlock() {
     FREE_BUFFER(v0);
     FREE_BUFFER(wo0);
 
-    if (spec->nExperts > 0) {
+    if (spec->archType == GROK1) {
         delete moeUpAndGate0Slice;
         delete moeDown0Slice;
 
@@ -326,7 +326,8 @@ TransformerBlock::~TransformerBlock() {
         FREE_BUFFER(w10);
         FREE_BUFFER(w20);
         FREE_BUFFER(w30);
-        // FREE_BUFFER(hd);
+
+        FREE_BUFFER(hb20);
     }
 }
 
@@ -405,7 +406,7 @@ Transformer Transformer::loadRoot(char* data, TransformerSpec* spec, SocketPool*
         w += loadSlicedMatmulWeights(spec->nSlices, block->v0Slice, w, block->v0, socketPool);
         w += loadSlicedMatmulWeights(spec->nSlices, block->wo0Slice, w, block->wo0, socketPool);
 
-        if (spec->nExperts > 0) {
+        if (spec->archType == GROK1) {
             memcpy(block->moeRouter, w, block->moeRouterBytes);
             w += block->moeRouterBytes;
 
@@ -426,11 +427,13 @@ Transformer Transformer::loadRoot(char* data, TransformerSpec* spec, SocketPool*
         memcpy(block->rmsFfn, w, block->rmsFfnBytes);
         w += block->rmsFfnBytes;
 
-        memcpy(block->rmsMoe, w, block->rmsMoeBytes);
-        w += block->rmsMoeBytes;
+        if (spec->archType == GROK1) {
+            memcpy(block->rmsMoe, w, block->rmsMoeBytes);
+            w += block->rmsMoeBytes;
 
-        memcpy(block->rmsFfn2, w, block->rmsFfn2Bytes);
-        w += block->rmsFfn2Bytes;
+            memcpy(block->rmsFfn2, w, block->rmsFfn2Bytes);
+            w += block->rmsFfn2Bytes;
+        }
     }
 
     memcpy(transformer.rmsFinal, w, transformer.rmsFinalBytes);

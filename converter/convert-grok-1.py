@@ -57,6 +57,7 @@ def convert(targetFloatType, outputFileName):
     outFile = open(outputFileName, 'wb')
 
     params = {
+        'arch_type': 0xABCD01,
         'dim': 6144,
         'hidden_dim': 32768,
         'n_layers': 64,

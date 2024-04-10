@@ -60,7 +60,7 @@ def writeTensor(file, tensor, floatType):
 
 def writeHeader(file, params):
     header = struct.pack('iiiiiiiiii',
-        0xABCD01, # magic
+        params['arch_type'],
         params['dim'],
         params['hidden_dim'],
         params['n_layers'],
