@@ -9,6 +9,7 @@
 #include "transformer.hpp"
 #include <unistd.h>
 
+#define ALLOC_WEIGHTS true
 #define IS_ROOT_SLICE(sliceIndex) (sliceIndex == 0)
 
 MatmulSlice::MatmulSlice(FloatType type, int nSlices, int n, int d) {
@@ -195,11 +196,13 @@ Transformer::Transformer(TransformerSpec* spec, uint8_t sliceIndex) {
 
     if (IS_ROOT_SLICE(sliceIndex)) {
         tokenEmbeddingTableBytes = spec->vocabSize * spec->dim * sizeof(float);
-        tokenEmbeddingTable = NEW_BUFFER(tokenEmbeddingTableBytes);
         rmsFinalBytes = spec->dim * sizeof(float);
-        rmsFinal = NEW_BUFFER(rmsFinalBytes);
         wclsBytes = getBatchBytes(spec->weightsFloatType, spec->vocabSize, spec->dim);
+#if ALLOC_WEIGHTS
+        tokenEmbeddingTable = NEW_BUFFER(tokenEmbeddingTableBytes);
+        rmsFinal = NEW_BUFFER(rmsFinalBytes);
         wcls = NEW_BUFFER(wclsBytes);
+#endif
         x = (float*)NEW_BUFFER(spec->dim * sizeof(float));
         logits = (float*)NEW_BUFFER(spec->vocabSize * sizeof(float));
     }
@@ -213,9 +216,11 @@ Transformer::~Transformer() {
     delete[] blocks;
 
     if (IS_ROOT_SLICE(sliceIndex)) {
+#if ALLOC_WEIGHTS
         FREE_BUFFER(tokenEmbeddingTable);
         FREE_BUFFER(rmsFinal);
         FREE_BUFFER(wcls);
+#endif
         FREE_BUFFER(x);
         FREE_BUFFER(logits);
     }
@@ -227,13 +232,17 @@ TransformerBlock::TransformerBlock(TransformerSpec* spec, uint8_t sliceIndex) {
 
     if (IS_ROOT_SLICE(sliceIndex)) {
         rmsAttBytes = spec->dim * sizeof(float);
-        rmsAtt = (float*)NEW_BUFFER(rmsAttBytes);
         rmsFfnBytes = spec->dim * sizeof(float);
-        rmsFfn = (float*)NEW_BUFFER(rmsFfnBytes);
         rmsMoeBytes = spec->dim * sizeof(float);
-        rmsMoe = (float*)NEW_BUFFER(rmsAttBytes);
         rmsFfn2Bytes = spec->dim * sizeof(float);
-        rmsFfn2 = (float*)NEW_BUFFER(rmsFfn2Bytes);
+#if ALLOC_WEIGHTS
+        rmsAtt = (float*)NEW_BUFFER(rmsAttBytes);
+        rmsFfn = (float*)NEW_BUFFER(rmsFfnBytes);
+        if (spec->archType == GROK1) {
+            rmsMoe = (float*)NEW_BUFFER(rmsAttBytes);
+            rmsFfn2 = (float*)NEW_BUFFER(rmsFfn2Bytes);
+        }
+#endif
     
         keyCache = (float*)NEW_BUFFER(spec->seqLen * spec->kvDim * sizeof(float));
         valueCache = (float*)NEW_BUFFER(spec->seqLen * spec->kvDim * sizeof(float));
@@ -245,28 +254,33 @@ TransformerBlock::TransformerBlock(TransformerSpec* spec, uint8_t sliceIndex) {
     v0Slice = new MatmulSlice(spec->weightsFloatType, spec->nSlices, spec->dim, spec->kvDim);
     wo0Slice = new MatmulSlice(spec->weightsFloatType, spec->nSlices, spec->dim, spec->dim);
 
+#if ALLOC_WEIGHTS
     q0 = NEW_BUFFER(q0Slice->sliceBytes);
     k0 = NEW_BUFFER(k0Slice->sliceBytes);
     v0 = NEW_BUFFER(v0Slice->sliceBytes);
     wo0 = NEW_BUFFER(wo0Slice->sliceBytes);
+#endif
 
     if (spec->archType == GROK1) {
         moeUpAndGate0Slice = new MatmulSlice(spec->weightsFloatType, spec->nSlices, spec->dim, spec->hiddenDim);
         moeDown0Slice = new MatmulSlice(spec->weightsFloatType, spec->nSlices, spec->hiddenDim, spec->dim);
 
         moeRouterBytes = getBatchBytes(spec->weightsFloatType, spec->dim, spec->nExperts);
-        moeRouter = NEW_BUFFER(moeRouterBytes);
         moeRouterProbs = (float*)NEW_BUFFER(spec->nExperts * sizeof(float));
+
         moeUp = new char*[spec->nExperts];
         moeGate = new char*[spec->nExperts];
         moeDown = new char*[spec->nExperts];
+
+#if ALLOC_WEIGHTS
+        moeRouter = NEW_BUFFER(moeRouterBytes);
 
         for (int e = 0; e < spec->nExperts; e++) {
             moeUp[e] = NEW_BUFFER(moeUpAndGate0Slice->sliceBytes);
             moeGate[e] = NEW_BUFFER(moeUpAndGate0Slice->sliceBytes);
             moeDown[e] = NEW_BUFFER(moeDown0Slice->sliceBytes);
         }
-
+#endif
         expertGate = (float*)NEW_BUFFER(moeUpAndGate0Slice->d0 * spec->nExperts * sizeof(float));
         expertDown = (float*)NEW_BUFFER(moeDown0Slice->d0 * (spec->nExperts - 1) * sizeof(float));
     } else {
@@ -274,9 +288,11 @@ TransformerBlock::TransformerBlock(TransformerSpec* spec, uint8_t sliceIndex) {
         w20Slice = new MatmulSlice(spec->weightsFloatType, spec->nSlices, spec->hiddenDim, spec->dim);
         w30Slice = new MatmulSlice(spec->weightsFloatType, spec->nSlices, spec->dim, spec->hiddenDim);
 
+#if ALLOC_WEIGHTS
         w10 = NEW_BUFFER(w10Slice->sliceBytes);
         w20 = NEW_BUFFER(w20Slice->sliceBytes);
         w30 = NEW_BUFFER(w30Slice->sliceBytes);
+#endif
 
         hb20 = (float*)NEW_BUFFER(w30Slice->d0 * sizeof(float));
     }
@@ -284,8 +300,14 @@ TransformerBlock::TransformerBlock(TransformerSpec* spec, uint8_t sliceIndex) {
 
 TransformerBlock::~TransformerBlock() {
     if (IS_ROOT_SLICE(sliceIndex)) {
+#if ALLOC_WEIGHTS
         FREE_BUFFER(rmsAtt);
         FREE_BUFFER(rmsFfn);
+        if (spec->archType == GROK1) {
+            FREE_BUFFER(rmsMoe);
+            FREE_BUFFER(rmsFfn2);
+        }
+#endif
         FREE_BUFFER(keyCache);
         FREE_BUFFER(valueCache);
         FREE_BUFFER(att);
@@ -296,15 +318,18 @@ TransformerBlock::~TransformerBlock() {
     delete v0Slice;
     delete wo0Slice;
 
+#if ALLOC_WEIGHTS
     FREE_BUFFER(q0);
     FREE_BUFFER(k0);
     FREE_BUFFER(v0);
     FREE_BUFFER(wo0);
+#endif
 
     if (spec->archType == GROK1) {
         delete moeUpAndGate0Slice;
         delete moeDown0Slice;
 
+#if ALLOC_WEIGHTS
         for (int e = 0; e < spec->nExperts; e++) {
             FREE_BUFFER(moeUp[e]);
             FREE_BUFFER(moeGate[e]);
@@ -312,10 +337,11 @@ TransformerBlock::~TransformerBlock() {
         }
 
         FREE_BUFFER(moeRouter);
-        FREE_BUFFER(moeRouterProbs);
+#endif
         delete[] moeUp;
         delete[] moeGate;
         delete[] moeDown;
+        FREE_BUFFER(moeRouterProbs);
 
         FREE_BUFFER(expertGate);
         FREE_BUFFER(expertDown);
@@ -324,15 +350,18 @@ TransformerBlock::~TransformerBlock() {
         delete w20Slice;
         delete w30Slice;
 
+#if ALLOC_WEIGHTS
         FREE_BUFFER(w10);
         FREE_BUFFER(w20);
         FREE_BUFFER(w30);
+#endif
 
         FREE_BUFFER(hb20);
     }
 }
 
-static size_t loadSlicedMatmulWeights(uint8_t nSlices, MatmulSlice* slice, char* weights, char* weights0, SocketPool* socketPool) {
+static size_t loadSlicedMatmulWeights(uint8_t nSlices, MatmulSlice* slice, char* weights, char** weights0, SocketPool* socketPool) {
+#if ALLOC_WEIGHTS
     if (nSlices > 1) {
         char* temp = NEW_BUFFER(slice->bytes);
         memcpy(temp, weights, slice->bytes);
@@ -340,10 +369,10 @@ static size_t loadSlicedMatmulWeights(uint8_t nSlices, MatmulSlice* slice, char*
         size_t loadedBytes = 0;
         for (uint8_t s = 0; s < nSlices; s++) {
             uint8_t sliceIndex = (s + 1) % nSlices; // Root slice must be loaded last because we want keep root weights in the memory.
-            loadedBytes += slice->splitWeights(sliceIndex, temp, weights0);
+            loadedBytes += slice->splitWeights(sliceIndex, temp, *weights0);
             if (sliceIndex > 0) {
                 unsigned int socketIndex = sliceIndex - 1;
-                socketPool->write(socketIndex, weights0, slice->sliceBytes);
+                socketPool->write(socketIndex, *weights0, slice->sliceBytes);
             }
         }
 
@@ -351,10 +380,24 @@ static size_t loadSlicedMatmulWeights(uint8_t nSlices, MatmulSlice* slice, char*
         FREE_BUFFER(temp);
         return loadedBytes;
     } else {
-        size_t loadedBytes = slice->splitWeights(0, weights, weights0);
+        size_t loadedBytes = slice->splitWeights(0, weights, *weights0);
         assert(loadedBytes == slice->bytes);
         return loadedBytes;
     }
+#else
+    assert(nSlices == 1);
+    *weights0 = weights;
+    return slice->bytes;
+#endif
+}
+
+static size_t loadRootMatmulWeights(char** target, char* source, size_t bytes) {
+#if ALLOC_WEIGHTS
+    memcpy(*target, source, bytes);
+#else
+    *target = source;
+#endif
+    return bytes;
 }
 
 static size_t readSlicedMatmulWeights(MatmulSlice* slice, char* weights0, Socket* socket) {
@@ -375,8 +418,12 @@ Transformer Transformer::loadRootFromFile(const char* path, TransformerSpec* spe
     }
     char* weights = data + sizeof(TransformerFileHeader);
     Transformer transformer = Transformer::loadRoot(weights, spec, socketPool);
+#if ALLOC_WEIGHTS
     munmap(data, spec->fileSize);
     close(fd);
+#else
+    // TODO: handler should be released in deconstructor
+#endif
     return transformer;
 }
 
@@ -396,52 +443,41 @@ Transformer Transformer::loadRoot(char* data, TransformerSpec* spec, SocketPool*
 
     char* w = data;
 
-    memcpy(transformer.tokenEmbeddingTable, w, transformer.tokenEmbeddingTableBytes);
-    w += transformer.tokenEmbeddingTableBytes;
+    w += loadRootMatmulWeights(&transformer.tokenEmbeddingTable, w, transformer.tokenEmbeddingTableBytes);
 
     for (int i = 0; i < spec->nLayers; i++) {
         TransformerBlock* block = transformer.blocks[i];
 
-        w += loadSlicedMatmulWeights(spec->nSlices, block->q0Slice, w, block->q0, socketPool);
-        w += loadSlicedMatmulWeights(spec->nSlices, block->k0Slice, w, block->k0, socketPool);
-        w += loadSlicedMatmulWeights(spec->nSlices, block->v0Slice, w, block->v0, socketPool);
-        w += loadSlicedMatmulWeights(spec->nSlices, block->wo0Slice, w, block->wo0, socketPool);
+        w += loadSlicedMatmulWeights(spec->nSlices, block->q0Slice, w, &block->q0, socketPool);
+        w += loadSlicedMatmulWeights(spec->nSlices, block->k0Slice, w, &block->k0, socketPool);
+        w += loadSlicedMatmulWeights(spec->nSlices, block->v0Slice, w, &block->v0, socketPool);
+        w += loadSlicedMatmulWeights(spec->nSlices, block->wo0Slice, w, &block->wo0, socketPool);
 
         if (spec->archType == GROK1) {
-            memcpy(block->moeRouter, w, block->moeRouterBytes);
-            w += block->moeRouterBytes;
+            w += loadRootMatmulWeights(&block->moeRouter, w, block->moeRouterBytes);
 
             for (int e = 0; e < spec->nExperts; e++) {
-                w += loadSlicedMatmulWeights(spec->nSlices, block->moeUpAndGate0Slice, w, block->moeUp[e], socketPool);
-                w += loadSlicedMatmulWeights(spec->nSlices, block->moeUpAndGate0Slice, w, block->moeGate[e], socketPool);
-                w += loadSlicedMatmulWeights(spec->nSlices, block->moeDown0Slice, w, block->moeDown[e], socketPool);
+                w += loadSlicedMatmulWeights(spec->nSlices, block->moeUpAndGate0Slice, w, &block->moeUp[e], socketPool);
+                w += loadSlicedMatmulWeights(spec->nSlices, block->moeUpAndGate0Slice, w, &block->moeGate[e], socketPool);
+                w += loadSlicedMatmulWeights(spec->nSlices, block->moeDown0Slice, w, &block->moeDown[e], socketPool);
             }
         } else {
-            w += loadSlicedMatmulWeights(spec->nSlices, block->w10Slice, w, block->w10, socketPool);
-            w += loadSlicedMatmulWeights(spec->nSlices, block->w20Slice, w, block->w20, socketPool);
-            w += loadSlicedMatmulWeights(spec->nSlices, block->w30Slice, w, block->w30, socketPool);
+            w += loadSlicedMatmulWeights(spec->nSlices, block->w10Slice, w, &block->w10, socketPool);
+            w += loadSlicedMatmulWeights(spec->nSlices, block->w20Slice, w, &block->w20, socketPool);
+            w += loadSlicedMatmulWeights(spec->nSlices, block->w30Slice, w, &block->w30, socketPool);
         }
 
-        memcpy(block->rmsAtt, w, block->rmsAttBytes);
-        w += block->rmsAttBytes;
-
-        memcpy(block->rmsFfn, w, block->rmsFfnBytes);
-        w += block->rmsFfnBytes;
+        w += loadRootMatmulWeights((char**)&block->rmsAtt, w, block->rmsAttBytes);
+        w += loadRootMatmulWeights((char**)&block->rmsFfn, w, block->rmsFfnBytes);
 
         if (spec->archType == GROK1) {
-            memcpy(block->rmsMoe, w, block->rmsMoeBytes);
-            w += block->rmsMoeBytes;
-
-            memcpy(block->rmsFfn2, w, block->rmsFfn2Bytes);
-            w += block->rmsFfn2Bytes;
+            w += loadRootMatmulWeights((char**)&block->rmsMoe, w, block->rmsMoeBytes);
+            w += loadRootMatmulWeights((char**)&block->rmsFfn2, w, block->rmsFfn2Bytes);
         }
     }
 
-    memcpy(transformer.rmsFinal, w, transformer.rmsFinalBytes);
-    w += transformer.rmsFinalBytes;
-
-    memcpy(transformer.wcls, w, transformer.wclsBytes);
-    w += transformer.wclsBytes;
+    w += loadRootMatmulWeights(&transformer.rmsFinal, w, transformer.rmsFinalBytes);
+    w += loadRootMatmulWeights(&transformer.wcls, w, transformer.wclsBytes);
 
     long missedBytes = (long)(w - data) - spec->fileSize + sizeof(TransformerFileHeader);
     if (missedBytes != 0) {
