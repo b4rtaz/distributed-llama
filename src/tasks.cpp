@@ -1,5 +1,6 @@
 #include "tasks.hpp"
 #include <cassert>
+#include <cstring>
 
 void syncUnitBuffer(unsigned int nThreads, unsigned int threadIndex, TransformerContext* ctx, uint8_t bufferIndex) {
     char* buffer = ctx->transformer->buffer->getUnit(bufferIndex);
