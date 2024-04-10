@@ -3,8 +3,6 @@
 
 #include "tasks.hpp"
 
-int nextBlock(TASK_ARGS);
-
 class Grok1 {
     public:
         static TransformerArch arch;

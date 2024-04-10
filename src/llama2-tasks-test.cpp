@@ -524,7 +524,7 @@ float expectedOutput[4096] = {
     1.00493455, 1.00216055, 1.02500832, 1.01412213, 0.997673035, 1.01922369, 1.01705575, 1.01369667,
 };
 
-int stopTask(unsigned int nThreads, unsigned int threadIndex, void* userData) {
+int stop(unsigned int nThreads, unsigned int threadIndex, void* userData) {
     return TASK_STOP;
 }
 
@@ -571,7 +571,9 @@ int main() {
 
     TaskLoopTask* tasks = new TaskLoopTask[Llama2::arch.inference.nTasks];
     memcpy(tasks, Llama2::arch.inference.tasks, sizeof(TaskLoopTask) * Llama2::arch.inference.nTasks);
-    tasks[Llama2::arch.inference.nTasks - 2].handler = stopTask; // Replaces nextBlock() with stopTask()
+
+    assert(tasks[Llama2::arch.inference.nTasks - 4].handler == llamaNextBlock);
+    tasks[Llama2::arch.inference.nTasks - 4].handler = stop;
 
     int nThreads = 4;
     TransformerContext context;

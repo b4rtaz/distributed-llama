@@ -64,11 +64,12 @@ TransformerSpec Transformer::loadSpecFromFile(const char* path, const unsigned i
         exit(EXIT_FAILURE);
     }
 
-    if (header.archType != LLAMA2 || header.archType != GROK1) {
+    if (header.archType != LLAMA2 && header.archType != GROK1) {
         printf("This is not a correct model file\n");
         exit(EXIT_FAILURE);
     }
 
+    spec.archType = header.archType;
     spec.dim = header.dim;
     spec.hiddenDim = header.hiddenDim;
     spec.nLayers = header.nLayers;

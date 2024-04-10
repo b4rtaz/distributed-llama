@@ -6,6 +6,7 @@
 #include "socket.hpp"
 #include "transformer.hpp"
 #include "tasks.hpp"
+#include "llama2-tasks.hpp"
 #include "grok1-tasks.hpp"
 #include "tokenizer.hpp"
 
@@ -35,6 +36,13 @@ int usage(const char* reason) {
     return EXIT_FAILURE;
 }
 
+TransformerArch* getArch(TransformerArchType archType) {
+    if (archType == LLAMA2) return &Llama2::arch;
+    if (archType == GROK1) return &Grok1::arch;
+    printf("Unsupported arch type: %d\n", archType);
+    exit(EXIT_FAILURE);
+}
+
 int inferenceOrChat(ProgramArgs* args, bool isChat) {
     if (args->modelPath == NULL) {
         return usage("Model is required");
@@ -51,6 +59,7 @@ int inferenceOrChat(ProgramArgs* args, bool isChat) {
     unsigned long long rngSeed = (unsigned int)time(NULL);
 
     TransformerSpec spec = Transformer::loadSpecFromFile(args->modelPath, nSlices, args->weightsFloatType, args->bufferFloatType);
+    TransformerArch* arch = getArch(spec.archType);
 
     int steps = args->steps;
     if (steps < 0) {
@@ -60,7 +69,7 @@ int inferenceOrChat(ProgramArgs* args, bool isChat) {
     }
 
     Transformer transformer = Transformer::loadRootFromFile(args->modelPath, &spec, socketPool);
-    Inference inference = Inference(&Grok1::arch, args->nThreads, &transformer, socketPool);
+    Inference inference = Inference(arch, args->nThreads, &transformer, socketPool);
 
     bool bos = false; // TODO: llama2: true?, grok: false?
     bool eos = false;
@@ -88,10 +97,11 @@ int worker(ProgramArgs* args) {
     Socket socket = Socket::accept(args->port);
     TransformerSpec spec;
     Transformer transformer = Transformer::loadSlice(&spec, &socket);
+    TransformerArch* arch = getArch(spec.archType);
 
     socket.enableTurbo();
 
-    Worker worker = Worker(&Grok1::arch, args->nThreads, &transformer, &socket);
+    Worker worker = Worker(arch, args->nThreads, &transformer, &socket);
     worker.work();
 
     return EXIT_SUCCESS;

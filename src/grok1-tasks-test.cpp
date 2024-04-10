@@ -7,6 +7,7 @@
 #include "funcs.hpp"
 #include "transformer.hpp"
 #include "tasks.hpp"
+#include "llama2-tasks.hpp"
 #include "grok1-tasks.hpp"
 
 float expectedOutput_0_4[] = { 0.00940248929, 0.0191232786, 0.0147766126, 0.0102868658 };
@@ -68,7 +69,7 @@ int main() {
 
     TaskLoopTask* tasks = new TaskLoopTask[Grok1::arch.inference.nTasks];
     memcpy(tasks, Grok1::arch.inference.tasks, sizeof(TaskLoopTask) * Grok1::arch.inference.nTasks);
-    assert(tasks[Grok1::arch.inference.nTasks - 5].handler == nextBlock);
+    assert(tasks[Grok1::arch.inference.nTasks - 5].handler == llamaNextBlock);
     tasks[Grok1::arch.inference.nTasks - 5].handler = stopTask;
 
     int nThreads = 4;
