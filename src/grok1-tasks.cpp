@@ -307,6 +307,14 @@ int grokMoeAdd(TASK_ARGS) {
     return TASK_CONTINUE;
 }
 
+int grokFinalize(TASK_ARGS) {
+    TASK_VARIABLES;
+    if (ctx->finalize) {
+        matmul(spec->weightsFloatType, F32, transformer->logits, transformer->x, transformer->wcls, spec->dim, spec->vocabSize, nThreads, threadIndex);
+    }
+    return TASK_CONTINUE;
+}
+
 int grokFinalize2(TASK_ARGS) {
     TASK_VARIABLES;
     if (ctx->finalize) {
@@ -363,7 +371,7 @@ static TaskLoopTask inferenceTasks[] = {
     { llamaNextBlock, TASK_TYPE_INFERENCE },
     { llamaRmsFinal, TASK_TYPE_INFERENCE },
     { llamaRmsFinalNorm, TASK_TYPE_INFERENCE },
-    { llamaFinalize, TASK_TYPE_INFERENCE },
+    { grokFinalize, TASK_TYPE_INFERENCE },
     { grokFinalize2, TASK_TYPE_INFERENCE },
 };
 
