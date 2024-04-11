@@ -11,14 +11,20 @@ socket: src/socket.cpp
 	$(CXX) $(CXXFLAGS) -c src/socket.cpp -o socket.o
 transformer: src/utils.cpp
 	$(CXX) $(CXXFLAGS) -c src/transformer.cpp -o transformer.o
-transformer-tasks: src/transformer-tasks.cpp
-	$(CXX) $(CXXFLAGS) -c src/transformer-tasks.cpp -o transformer-tasks.o
+tasks: src/tasks.cpp
+	$(CXX) $(CXXFLAGS) -c src/tasks.cpp -o tasks.o
+llama2-tasks: src/llama2-tasks.cpp
+	$(CXX) $(CXXFLAGS) -c src/llama2-tasks.cpp -o llama2-tasks.o
+grok1-tasks: src/grok1-tasks.cpp
+	$(CXX) $(CXXFLAGS) -c src/grok1-tasks.cpp -o grok1-tasks.o
 tokenizer: src/tokenizer.cpp
 	$(CXX) $(CXXFLAGS) -c src/tokenizer.cpp -o tokenizer.o
 
-main: src/main.cpp utils quants funcs socket transformer transformer-tasks tokenizer
-	$(CXX) $(CXXFLAGS) src/main.cpp -o main utils.o quants.o funcs.o socket.o transformer.o transformer-tasks.o tokenizer.o -lpthread
+main: src/main.cpp utils quants funcs socket transformer tasks llama2-tasks grok1-tasks tokenizer
+	$(CXX) $(CXXFLAGS) src/main.cpp -o main utils.o quants.o funcs.o socket.o transformer.o tasks.o llama2-tasks.o grok1-tasks.o tokenizer.o -lpthread
 quants-test: src/quants.cpp utils quants
 	$(CXX) $(CXXFLAGS) src/quants-test.cpp -o quants-test utils.o quants.o -lpthread
-transformer-tasks-test: src/transformer-tasks-test.cpp utils quants funcs socket transformer transformer-tasks tokenizer
-	$(CXX) $(CXXFLAGS) src/transformer-tasks-test.cpp -o transformer-tasks-test utils.o quants.o funcs.o socket.o transformer.o transformer-tasks.o tokenizer.o -lpthread
+llama2-tasks-test: src/llama2-tasks-test.cpp utils quants funcs socket transformer llama2-tasks tokenizer
+	$(CXX) $(CXXFLAGS) src/llama2-tasks-test.cpp -o llama2-tasks-test utils.o quants.o funcs.o socket.o transformer.o tasks.o llama2-tasks.o tokenizer.o -lpthread
+grok1-tasks-test: src/grok1-tasks-test.cpp utils quants funcs socket transformer llama2-tasks grok1-tasks tokenizer
+	$(CXX) $(CXXFLAGS) src/grok1-tasks-test.cpp -o grok1-tasks-test utils.o quants.o funcs.o socket.o transformer.o tasks.o llama2-tasks.o grok1-tasks.o tokenizer.o -lpthread

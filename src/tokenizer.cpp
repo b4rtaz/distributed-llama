@@ -29,9 +29,11 @@ void safePrintf(char *piece) {
     printf("%s", piece);
 }
 
-Tokenizer::Tokenizer(char* tokenizerPath, int vocab_size) {
+Tokenizer::Tokenizer(char* tokenizerPath, int vocab_size, bool bos, bool eos) {
     // i should have written the vocab_size into the tokenizer file... sigh
     this->vocab_size = vocab_size;
+    this->bos = bos;
+    this->eos = eos;
     // malloc space to hold the scores and the strings
     vocab = (char**)malloc(vocab_size * sizeof(char*));
     vocab_scores = (float*)malloc(vocab_size * sizeof(float));
@@ -88,7 +90,7 @@ int str_lookup(char *str, TokenIndex *sorted_vocab, int vocab_size) {
     return res != NULL ? res->id : -1;
 }
 
-void Tokenizer::encode(char *text, int8_t bos, int8_t eos, int *tokens, int *n_tokens) {
+void Tokenizer::encode(char *text, int *tokens, int *n_tokens) {
     // encode the string text (input) into an upper-bound preallocated tokens[] array
     // bos != 0 means prepend the BOS token (=1), eos != 0 means append the EOS token (=2)
     if (text == NULL) { fprintf(stderr, "cannot encode NULL text\n"); exit(EXIT_FAILURE); }
@@ -343,7 +345,7 @@ void generate(TransformerSpec* spec, Inference* inference, SocketPool* socketPoo
     // encode the (string) prompt into tokens sequence
     int numPromptTokens = 0;
     int* promptTokens = (int*)malloc((strlen(prompt)+3) * sizeof(int)); // +3 for '\0', ?BOS, ?EOS
-    tokenizer->encode(prompt, 1, 0, promptTokens, &numPromptTokens);
+    tokenizer->encode(prompt, promptTokens, &numPromptTokens);
     if (numPromptTokens < 1) {
         fprintf(stderr, "something is wrong, expected at least 1 prompt token\n");
         exit(EXIT_FAILURE);
@@ -454,7 +456,7 @@ void chat(Inference* inference, Tokenizer *tokenizer, Sampler *sampler, char *cl
                 snprintf(renderedPrompt, renderedPromptSize, userTemplate, userPrompt);
             }
             // encode the rendered prompt into tokens
-            tokenizer->encode(renderedPrompt, 1, 0, promptTokens, &numPromptTokens);
+            tokenizer->encode(renderedPrompt, promptTokens, &numPromptTokens);
             userIdx = 0; // reset the user index
             userTurn = 0;
             printf("🤖 Assistant: ");

@@ -2,7 +2,7 @@
 #define TOKENIZER_HPP
 
 #include <cstdio>
-#include "transformer-tasks.hpp"
+#include "tasks.hpp"
 
 void safePrintf(char *piece);
 
@@ -13,6 +13,8 @@ typedef struct {
 
 class Tokenizer {
 private:
+    bool bos;
+    bool eos;
     char** vocab;
     float* vocab_scores;
     TokenIndex *sorted_vocab;
@@ -21,9 +23,9 @@ private:
     unsigned char byte_pieces[512]; // stores all single-byte strings
 
 public:
-    Tokenizer(char* tokenizer_path, int vocab_size);
+    Tokenizer(char* tokenizer_path, int vocab_size, bool bos, bool eos);
     ~Tokenizer();
-    void encode(char *text, int8_t bos, int8_t eos, int *tokens, int *n_tokens);
+    void encode(char *text, int *tokens, int *n_tokens);
     char* decode(int prev_token, int token);
 };
 

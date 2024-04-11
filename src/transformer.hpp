@@ -20,23 +20,34 @@ public:
     long mergeOutputs(uint8_t sliceIndex, float* output, float* output0);
 };
 
+enum TransformerArchType {
+    LLAMA2 = 0xABCD00,
+    GROK1 = 0xABCD01
+};
+
 struct TransformerFileHeader {
+    TransformerArchType archType;
     int dim;
     int hiddenDim;
     int nLayers;
     int nHeads;
     int nKvHeads;
+    int nExperts;
+    int nActiveExperts;
     int vocabSize;
     int seqLen;
 };
 
 struct TransformerSpec {
     size_t fileSize;
+    TransformerArchType archType;
     int dim;
     int nLayers;
     int nHeads;
     int headSize;
     int nKvHeads;
+    int nExperts;
+    int nActiveExperts;
     int seqLen;
     int hiddenDim;
     int kvDim;
@@ -50,11 +61,16 @@ struct TransformerSpec {
 class TransformerBlock {
 public:
     uint8_t sliceIndex;
+    TransformerSpec *spec;
 
     size_t rmsAttBytes;
     float* rmsAtt;
     size_t rmsFfnBytes;
     float* rmsFfn;
+    size_t rmsMoeBytes;
+    float* rmsMoe;
+    size_t rmsFfn2Bytes;
+    float* rmsFfn2;
 
     char* q0;
     MatmulSlice* q0Slice;
@@ -63,6 +79,7 @@ public:
     char* v0;
     MatmulSlice* v0Slice;
     char* wo0;
+
     MatmulSlice* wo0Slice;
     char* w10;
     MatmulSlice* w10Slice;
@@ -71,16 +88,32 @@ public:
     char* w30;
     MatmulSlice* w30Slice;
 
+
+    char* moeRouter;
+    size_t moeRouterBytes;
+    MatmulSlice* moeUpAndGate0Slice;
+    char** moeUp;
+    char** moeGate;
+    MatmulSlice* moeDown0Slice;
+    char** moeDown;
+    float* moeRouterProbs;
+
+    float* expertGate;
+    float* expertDown;
+
+    float* hb20;
+
     float* keyCache;
     float* valueCache;
     float* att;
-    float* hb20;
 
     TransformerBlock(TransformerSpec* spec, uint8_t sliceIndex);
     ~TransformerBlock();
 };
 
-#define TB_LENGTH 12
+#define TB_LENGTH 14
+#define TB_NO_PAIRS 2
+
 #define TB_UNIT_XB 0
 #define TB_UNIT_XB_QUANTIZED 1
 #define TB_SLICED_XB2 2
@@ -93,6 +126,8 @@ public:
 #define TB_SLICED_V_QUANTIZED 9
 #define TB_SLICED_HB 10
 #define TB_SLICED_HB_QUANTIZED 11
+#define TB_UNIT_MOE_INDEXES 12
+#define TB_UNIT_MOE_WEIGHTS 13
 
 class TransformerBuffer {
 public:

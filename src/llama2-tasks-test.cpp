@@ -6,7 +6,8 @@
 #include "utils.hpp"
 #include "funcs.hpp"
 #include "transformer.hpp"
-#include "transformer-tasks.hpp"
+#include "tasks.hpp"
+#include "llama2-tasks.hpp"
 
 float expectedOutput[4096] = {
     1.01638556, 1.01242816, 1.01587915, 1.00391173, 1.01278269, 1.00372863, 1.01289952, 1.00231564, 
@@ -523,12 +524,13 @@ float expectedOutput[4096] = {
     1.00493455, 1.00216055, 1.02500832, 1.01412213, 0.997673035, 1.01922369, 1.01705575, 1.01369667,
 };
 
-int stopTask(unsigned int nThreads, unsigned int threadIndex, void* userData) {
+int stop(unsigned int nThreads, unsigned int threadIndex, void* userData) {
     return TASK_STOP;
 }
 
 int main() {
     TransformerSpec spec;
+    spec.archType = LLAMA2;
     spec.dim = 4096;
     spec.nLayers = 1;
     spec.headSize = 128;
@@ -537,21 +539,28 @@ int main() {
     spec.hiddenDim = 11008;
     spec.nHeads = spec.dim / spec.headSize;
     spec.kvDim = (spec.dim * spec.nKvHeads) / spec.nHeads;
+    spec.nExperts = 0;
+    spec.nActiveExperts = 0;
     spec.vocabSize = 32000;
     spec.weightsFloatType = F32;
     spec.bufferFloatType = F32;
     spec.nSlices = 1;
 
-    size_t beforeBlockBytes = 524288000;
+    size_t beforeBlockBytes = /* embedding */ 524288000;
     size_t blockBytes       = 809533440;
-    size_t afterBlockBytes  = 525352960;
+    size_t afterBlockBytes  = /* norm */ 16384 + /* embedding */ 524288000;
     spec.fileSize = beforeBlockBytes + blockBytes + afterBlockBytes + sizeof(TransformerFileHeader);
-    char* data = NEW_BUFFER(beforeBlockBytes + blockBytes + afterBlockBytes);
+    size_t dataSize = beforeBlockBytes + blockBytes + afterBlockBytes;
+    char* data = NEW_BUFFER(dataSize);
+    memset(data, 0, dataSize);
 
-    long blockNumbers = blockBytes / sizeof(float);
-    float* block = (float*)&data[beforeBlockBytes];
     unsigned long long state = 800000010L;
-    for (int i = 0; i < blockNumbers; i++) block[i] = randomF32(&state) / 120.0;
+    float* mmData = (float*)&data[beforeBlockBytes];
+    float* rmsData = (float*)&data[beforeBlockBytes + blockBytes - spec.dim * 2 * sizeof(float)];
+    for (int i = 0; i < spec.dim * 2; i++) rmsData[i] = randomF32(&state) / 120.0;
+
+    int mm = (blockBytes - spec.dim * 2 * sizeof(float)) / sizeof(float);
+    for (int i = 0; i < mm; i++) mmData[i] = randomF32(&state) / 120.0;
 
     SocketPool socketPool(0, NULL);
     Transformer transformer = Transformer::loadRoot((char*)data, &spec, &socketPool);
@@ -560,9 +569,11 @@ int main() {
     float* x = transformer.x;
     for (int i = 0; i < spec.dim; i++) x[i] = randomF32(&state) / 120.0;
 
-    TaskLoopTask* tasks = new TaskLoopTask[Inference::nTasks];
-    memcpy(tasks, Inference::tasks, sizeof(TaskLoopTask) * Inference::nTasks);
-    tasks[Inference::nTasks - 2].handler = stopTask; // Replaces nextBlock() with stopTask()
+    TaskLoopTask* tasks = new TaskLoopTask[Llama2::arch.inference.nTasks];
+    memcpy(tasks, Llama2::arch.inference.tasks, sizeof(TaskLoopTask) * Llama2::arch.inference.nTasks);
+
+    assert(tasks[Llama2::arch.inference.nTasks - 4].handler == llamaNextBlock);
+    tasks[Llama2::arch.inference.nTasks - 4].handler = stop;
 
     int nThreads = 4;
     TransformerContext context;
@@ -571,7 +582,7 @@ int main() {
     context.socket = NULL;
     context.socketPool = &socketPool;
 
-    TaskLoop loop(nThreads, Inference::nTasks, TASK_N_TYPES, tasks, &context);
+    TaskLoop loop(nThreads, Llama2::arch.inference.nTasks, TASK_N_TYPES, tasks, &context);
     long t0 = timeMs();
     loop.run();
     long t1 = timeMs();

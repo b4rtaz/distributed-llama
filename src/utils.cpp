@@ -59,8 +59,8 @@ TaskLoop::~TaskLoop() {
 
 void TaskLoop::run() {
     currentTaskIndex.exchange(0);
+    stopTaskIndex.exchange(0);
     doneThreadCount.exchange(0);
-    stop.exchange(false);
 
     unsigned int i;
     lastTime = timeMs();
@@ -88,14 +88,18 @@ void* TaskLoop::threadHandler(void* arg) {
     TaskLoop* loop = context->loop;
     unsigned int threadIndex = context->threadIndex;
 
-    while (loop->stop.load() == false) {
+    while (true) {
         const unsigned int currentTaskIndex = loop->currentTaskIndex.load();
+        if (currentTaskIndex != 0 && currentTaskIndex == loop->stopTaskIndex.load()) {
+            break;
+        }
+
         const TaskLoopTask* task = &loop->tasks[currentTaskIndex % loop->nTasks];
 
         int result = task->handler(loop->nThreads, threadIndex, loop->userData);
 
         if (result == TASK_STOP) {
-            loop->stop = true;
+            loop->stopTaskIndex.store(currentTaskIndex + 1);
         }
 
         int currentCount = loop->doneThreadCount.fetch_add(1);
