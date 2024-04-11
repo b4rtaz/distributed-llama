@@ -8,15 +8,14 @@ Run LLMs on weak devices or make powerful devices even more powerful by distribu
 
 <p align="center">
   <img src=".github/8raspi.jpg" width="50%" alt="Distributed Llama running on 8 Raspberry Pi 4B devices" /><br />
-  <sub><sup>Distributed Llama running on 8 Raspberry Pi 4B devices</sup></sub>
+  <sub><sup>Distributed Llama running Llama 2 70B on 8 Raspberry Pi 4B devices</sup></sub>
 </p>
 
-This project was initiated based on the [llama2.c](https://github.com/karpathy/llama2.c) repository. Big thanks to [@karpathy](https://github.com/karpathy) and other contributors. Most ARM optimizations come from the [llama.cpp](https://github.com/ggerganov/llama.cpp) project.
+**Supported models:**
+* Llama 2 (7B, 13B, 70B) chat and non-chat versions,
+* Grok-1 (314B).
 
-📃 [Read the report](https://raw.githubusercontent.com/b4rtaz/distributed-llama/main/report/report.pdf)
-
-**Known limitations**
-* This project is a proof of concept, it's not optimized for production usage.
+**Known limitations:**
 * You can run Distributed Llama only on 1, 2, 4... 2^n devices.
 * Optimized for (weights format × buffer format):
   * ARM CPUs
@@ -29,10 +28,6 @@ This project was initiated based on the [llama2.c](https://github.com/karpathy/l
     * ❌ F16 × F32
     * ❌ Q40 × F32
     * ⚠️ Q40 × Q80 (partial optimization)
-
-**Supported models**
-* Llama 2 (7B, 13B, 70B) chat and non-chat versions,
-* Llama 2 compatible models
 
 **Architecture**<br />
 The project is split up into two parts:
@@ -106,7 +101,7 @@ All tests below were conducted on c3d-highcpu-30 (30 vCPU, 15 core, 59 GB memory
 
 <sub><sup>S - sent data from the root node to workers, R - received data by the root node from workers</sup></sub>
 
-## 🔨 How to Convert Llama 2 Weights
+## 🔨 Download & Convert Llama 2
 
 1. Download [Llama 2](https://github.com/facebookresearch/llama) weights from Meta. This project supports 7B, 7B-chat, 13B, 13B-chat, 70B and 70B-chat models.
 2. Open the `llama-2-7b/params.json` file and replace `"vocab_size": -1` to `"vocab_size": 32000`.
@@ -118,6 +113,10 @@ cd converter && pip install -r requirements.txt
 ```sh
 python convert-llama2.py /path/to/meta/llama-2-7b q40
 ```
+5. Download the `tokenizer.bin` file from the [llama2.c](https://github.com/karpathy/llama2.c) repository.
+```
+wget https://github.com/karpathy/llama2.c/raw/master/tokenizer.bin
+```
 
 In the table below, you can find the expected size of the converted weights with different floating-point types.
 
@@ -127,23 +126,14 @@ In the table below, you can find the expected size of the converted weights with
 | Llama 2 13B | 26.03 GB      |          |          | 7.35 GB  |
 | Llama 2 70B | 137.97 GB     |          |          | 36.98 GB |
 
-## 🔨 How to Convert .bin Weights
+## 🔨 Download Grok-1 Weights
 
-You can convert weights compatible with [llama2.c](https://github.com/karpathy/llama2.c) to the Distributed Llama format. The legacy converter converts weights only to Float32 format.
-
-1. Download weights.
+1. Download quantized (Q40) weights from https://huggingface.co/b4rtaz/grok-1-dllama (180GB).
+2. Merge split models files into single file:
 ```
-wget https://huggingface.co/karpathy/tinyllamas/resolve/main/stories42M.bin
-wget https://huggingface.co/karpathy/tinyllamas/resolve/main/stories110M.bin
+cat dllama-grok-1-q40.binaa dllama-grok-1-q40.binab dllama-grok-1-q40.binac dllama-grok-1-q40.binad dllama-grok-1-q40.binae dllama-grok-1-q40.binaf dllama-grok-1-q40.binag dllama-grok-1-q40.binah dllama-grok-1-q40.binai > dllama-grok-1-q40-final.bin
 ```
-2. Install dependencies of the converter:
-```sh
-cd converter && pip install -r requirements.txt
-```
-3. Convert weights to Distributed Llama format.
-```sh
-python convert-legacy.py stories42M.bin true
-```
+3. The tokenizer file is already added to this repository: `tokenizers/grok-1-tokenizer.t`.
 
 ## 📟 How to Run on Raspberry Pi Devices
 
@@ -166,21 +156,17 @@ git clone https://github.com/b4rtaz/distributed-llama.git
 ```sh
 make main
 ```
-7. Download the `tokenizer.bin` file from the [llama2.c](https://github.com/karpathy/llama2.c) repository to the root device.
-```
-wget https://github.com/karpathy/llama2.c/raw/master/tokenizer.bin
-```
-8. Transfer converted weights to the root device.
-9. Optional: assign static IP addresses.
+7. Transfer weights and the tokenizer file to the root device.
+8. Optional: assign static IP addresses.
 ```sh
 sudo ip addr add 10.0.0.1/24 dev eth0 # 1th device
 sudo ip addr add 10.0.0.2/24 dev eth0 # 2th device
 ```
-10. Run worker nodes on worker devices:
+9. Run worker nodes on worker devices:
 ```sh
 sudo nice -n -20 ./main worker --port 9998 --nthreads 4
 ```
-11. Run root node on the root device:
+10. Run root node on the root device:
 ```sh
 sudo nice -n -20 ./main inference --model ../dllama_llama-2-7b_q40.bin --tokenizer ../tokenizer.bin --weights-float-type q40 --buffer-float-type q80 --prompt "Hello world" --steps 16 --nthreads 4 --workers 10.0.0.2:9998
 ```
@@ -209,26 +195,16 @@ git clone https://github.com/b4rtaz/distributed-llama.git
 ```sh
 make main
 ```
-4. Download the `tokenizer.bin` file from the [llama2.c](https://github.com/karpathy/llama2.c) repository.
-```sh
-wget https://github.com/karpathy/llama2.c/raw/master/tokenizer.bin
-```
-5. Download converted weights from your Google Drive. To get the file ID you need to share the file ("Anyone with the link") and copy the ID from the URL.
-```sh
-sudo apt install python pip
-pip install gdown
-gdown https://drive.google.com/uc?id=<FILE_ID>
-```
-6. Run worker nodes on worker devices:
+4. Transfer weights and the tokenizer file to the root node.
+5. Run worker nodes on worker devices:
 ```sh
 sudo nice -n -20 ./main worker --port 9998 --nthreads 4
 ```
-7. Run worker nodes on worker devices:
+6. Run root node on the root device:
 ```sh
 sudo nice -n -20 ./main inference --model ../dllama_llama-2-7b_q40.bin --tokenizer ../tokenizer.bin --weights-float-type q40 --buffer-float-type q80 --prompt "Hello world" --steps 16 --nthreads 4 --workers 192.168.0.1:9998
 ```
-
-8. To run the root node in the chat mode:
+7. To run the root node in the chat mode:
 ```sh
 sudo nice -n -20 ./main chat --model ../dllama_llama-2-7b-chat_q40.bin --tokenizer ../tokenizer.bin --weights-float-type q40 --buffer-float-type q80 --nthreads 4 --workers 192.168.0.1:9998
 ```

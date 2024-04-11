@@ -71,7 +71,7 @@ int inferenceOrChat(ProgramArgs* args, bool isChat) {
     Transformer transformer = Transformer::loadRootFromFile(args->modelPath, &spec, socketPool);
     Inference inference = Inference(arch, args->nThreads, &transformer, socketPool);
 
-    bool bos = false; // TODO: llama2: true?, grok: false?
+    bool bos = spec.archType == LLAMA2;
     bool eos = false;
     Tokenizer tokenizer(args->tokenizerPath, spec.vocabSize, bos, eos);
     Sampler sampler(spec.vocabSize, args->temperature, args->topp, rngSeed);
