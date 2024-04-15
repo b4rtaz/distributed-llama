@@ -65,7 +65,7 @@ TransformerSpec Transformer::loadSpecFromFile(const char* path, const unsigned i
         exit(EXIT_FAILURE);
     }
 
-    if (header.archType != LLAMA2 && header.archType != GROK1) {
+    if (header.archType != LLAMA2 && header.archType != GROK1 && header.archType != MIXTRAL) {
         printf("This is not a correct model file\n");
         exit(EXIT_FAILURE);
     }
@@ -241,11 +241,11 @@ TransformerBlock::TransformerBlock(TransformerSpec* spec, uint8_t sliceIndex) {
         rmsAtt = (float*)NEW_BUFFER(rmsAttBytes);
         rmsFfn = (float*)NEW_BUFFER(rmsFfnBytes);
         if (spec->archType == GROK1) {
-            rmsMoe = (float*)NEW_BUFFER(rmsAttBytes);
+            rmsMoe = (float*)NEW_BUFFER(rmsMoeBytes);
             rmsFfn2 = (float*)NEW_BUFFER(rmsFfn2Bytes);
         }
 #endif
-    
+
         keyCache = (float*)NEW_BUFFER(spec->seqLen * spec->kvDim * sizeof(float));
         valueCache = (float*)NEW_BUFFER(spec->seqLen * spec->kvDim * sizeof(float));
         att = (float*)NEW_BUFFER(spec->nHeads * spec->seqLen * sizeof(float));
@@ -263,7 +263,7 @@ TransformerBlock::TransformerBlock(TransformerSpec* spec, uint8_t sliceIndex) {
     wo0 = NEW_BUFFER(wo0Slice->sliceBytes);
 #endif
 
-    if (spec->archType == GROK1) {
+    if (spec->nExperts > 0) {
         moeUpAndGate0Slice = new MatmulSlice(spec->weightsFloatType, spec->nSlices, spec->dim, spec->hiddenDim);
         moeDown0Slice = new MatmulSlice(spec->weightsFloatType, spec->nSlices, spec->hiddenDim, spec->dim);
 
@@ -327,7 +327,7 @@ TransformerBlock::~TransformerBlock() {
     FREE_BUFFER(wo0);
 #endif
 
-    if (spec->archType == GROK1) {
+    if (spec->nExperts > 0) {
         delete moeUpAndGate0Slice;
         delete moeDown0Slice;
 
@@ -455,7 +455,7 @@ Transformer Transformer::loadRoot(char* data, TransformerSpec* spec, SocketPool*
         w += loadSlicedMatmulWeights(spec->nSlices, block->v0Slice, w, &block->v0, socketPool);
         w += loadSlicedMatmulWeights(spec->nSlices, block->wo0Slice, w, &block->wo0, socketPool);
 
-        if (spec->archType == GROK1) {
+        if (spec->nExperts > 0) {
             w += loadRootMatmulWeights(&block->moeRouter, w, block->moeRouterBytes);
 
             for (int e = 0; e < spec->nExperts; e++) {

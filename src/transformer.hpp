@@ -22,7 +22,8 @@ public:
 
 enum TransformerArchType {
     LLAMA2 = 0xABCD00,
-    GROK1 = 0xABCD01
+    GROK1 = 0xABCD01,
+    MIXTRAL = 0xABCD02
 };
 
 struct TransformerFileHeader {

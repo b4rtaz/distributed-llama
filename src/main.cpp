@@ -8,6 +8,7 @@
 #include "tasks.hpp"
 #include "llama2-tasks.hpp"
 #include "grok1-tasks.hpp"
+#include "mixtral-tasks.hpp"
 #include "tokenizer.hpp"
 
 struct ProgramArgs {
@@ -39,6 +40,7 @@ int usage(const char* reason) {
 TransformerArch* getArch(TransformerArchType archType) {
     if (archType == LLAMA2) return &Llama2::arch;
     if (archType == GROK1) return &Grok1::arch;
+    if (archType == MIXTRAL) return &Mixtral::arch;
     printf("Unsupported arch type: %d\n", archType);
     exit(EXIT_FAILURE);
 }
@@ -71,7 +73,7 @@ int inferenceOrChat(ProgramArgs* args, bool isChat) {
     Transformer transformer = Transformer::loadRootFromFile(args->modelPath, &spec, socketPool);
     Inference inference = Inference(arch, args->nThreads, &transformer, socketPool);
 
-    bool bos = spec.archType == LLAMA2;
+    bool bos = spec.archType == LLAMA2 || spec.archType == MIXTRAL;
     bool eos = false;
     Tokenizer tokenizer(args->tokenizerPath, spec.vocabSize, bos, eos);
     Sampler sampler(spec.vocabSize, args->temperature, args->topp, rngSeed);
