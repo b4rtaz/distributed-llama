@@ -83,8 +83,8 @@ def convert(targetFloatType, outputFileName):
 
         writeLayer(outFile, f'model.layers.{index}.block_sparse_moe.gate.weight', targetFloatType)
         for e in range(params['n_experts']):
-            writeLayer(outFile, f'model.layers.{index}.block_sparse_moe.experts.{e}.w1.weight', targetFloatType) # up
-            writeLayer(outFile, f'model.layers.{index}.block_sparse_moe.experts.{e}.w3.weight', targetFloatType) # gate
+            writeLayer(outFile, f'model.layers.{index}.block_sparse_moe.experts.{e}.w3.weight', targetFloatType) # up
+            writeLayer(outFile, f'model.layers.{index}.block_sparse_moe.experts.{e}.w1.weight', targetFloatType) # gate
             writeLayer(outFile, f'model.layers.{index}.block_sparse_moe.experts.{e}.w2.weight', targetFloatType) # down
 
         writeLayer(outFile, f'model.layers.{index}.input_layernorm.weight', 'f32')
