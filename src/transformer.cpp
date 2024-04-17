@@ -65,7 +65,7 @@ TransformerSpec Transformer::loadSpecFromFile(const char* path, const unsigned i
         exit(EXIT_FAILURE);
     }
 
-    if (header.archType != LLAMA2 && header.archType != GROK1 && header.archType != MIXTRAL) {
+    if (header.archType != LLAMA2 && header.archType != GROK1 && header.archType != MIXTRAL_8x22B) {
         printf("This is not a correct model file\n");
         exit(EXIT_FAILURE);
     }
@@ -78,13 +78,20 @@ TransformerSpec Transformer::loadSpecFromFile(const char* path, const unsigned i
     spec.nKvHeads = header.nKvHeads;
     spec.nExperts = header.nExperts;
     spec.nActiveExperts = header.nActiveExperts;
-    spec.vocabSize = abs(header.vocabSize);
+    spec.vocabSize = header.vocabSize;
     spec.seqLen = header.seqLen;
     spec.headSize = spec.dim / spec.nHeads;
     spec.kvDim = (spec.dim * spec.nKvHeads) / spec.nHeads;
     spec.weightsFloatType = weightsFloatType;
     spec.bufferFloatType = bufferFloatType;
     spec.nSlices = nSlices;
+    if (header.archType == MIXTRAL_8x22B) {
+        spec.hiddenAct = SILU;
+        spec.ropeTheta = 1000000.0f;
+    } else {
+        spec.hiddenAct = GELU;
+        spec.ropeTheta = 10000.0f;
+    }
 
     printf("💡 dim: %d\n", spec.dim);
     printf("💡 hiddenDim: %d\n", spec.hiddenDim);

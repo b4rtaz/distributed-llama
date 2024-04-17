@@ -23,7 +23,12 @@ public:
 enum TransformerArchType {
     LLAMA2 = 0xABCD00,
     GROK1 = 0xABCD01,
-    MIXTRAL = 0xABCD02
+    MIXTRAL_8x22B = 0xABCD02
+};
+
+enum TransformerHiddenAct {
+    SILU,
+    GELU
 };
 
 struct TransformerFileHeader {
@@ -51,8 +56,10 @@ struct TransformerSpec {
     int nActiveExperts;
     int seqLen;
     int hiddenDim;
+    TransformerHiddenAct hiddenAct;
     int kvDim;
     int vocabSize;
+    float ropeTheta;
 
     FloatType weightsFloatType;
     FloatType bufferFloatType;

@@ -14,10 +14,10 @@ void initInference(TransformerContext* context) {
 }
 
 // source: https://github.com/karpathy/llama2.c/pull/408
-void ropeFalcon(float* q, float* k, TransformerSpec* spec, int pos) {
+void ropeFalcon(float* q, float* k, TransformerSpec* spec, int pos, float theta) {
     for (int i = 0; i < spec->nHeads; i++) {
         for (int j = 0; j < spec->headSize / 2; j++) {
-            float freq = 1.0f / powf(10000.0f, 2.0f * (float)j / (float)spec->headSize);
+            float freq = 1.0f / powf(theta, 2.0f * (float)j / (float)spec->headSize);
             float val = pos * freq;
             float fcr = cosf(val);
             float fci = sinf(val);
@@ -41,7 +41,7 @@ int grokMultiheadAttRope(TASK_ARGS) {
         float* q = (float*)transformer->buffer->getUnit(TB_SLICED_Q);    
         float* xb = (float*)transformer->buffer->getUnit(TB_UNIT_XB);
         float* k = block->keyCache + transformer->pos * spec->kvDim;
-        ropeFalcon(q, k, spec, transformer->pos);
+        ropeFalcon(q, k, spec, transformer->pos, spec->ropeTheta);
     }
     return TASK_CONTINUE;
 }
@@ -190,7 +190,11 @@ int grokMoeBlock1(TASK_ARGS) {
         float* expertUp = &hb[block->moeUpAndGate0Slice->d0 * ae];
         float* expertGate = &block->expertGate[block->moeUpAndGate0Slice->d0 * ae];
 
-        gelu(expertGate, block->moeUpAndGate0Slice->d0, nThreads, threadIndex);
+        if (spec->hiddenAct == SILU) {
+            silu(expertGate, block->moeUpAndGate0Slice->d0, nThreads, threadIndex);
+        } else if (spec->hiddenAct == GELU) {
+            gelu(expertGate, block->moeUpAndGate0Slice->d0, nThreads, threadIndex);
+        }
         mul(expertUp, expertGate, block->moeUpAndGate0Slice->d0, nThreads, threadIndex);
     }
     return TASK_CONTINUE;
