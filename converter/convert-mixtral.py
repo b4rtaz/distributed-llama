@@ -67,6 +67,8 @@ def convert(targetFloatType, outputFileName):
         'n_active_experts': 2,
         'vocab_size': 32000,
         'max_seq_len': 65536,
+        'hidden_act': 1, # silu
+        'rope_theta': 1000000
     }
     writeHeader(outFile, params)
 

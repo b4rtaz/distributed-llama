@@ -40,7 +40,7 @@ int usage(const char* reason) {
 TransformerArch* getArch(TransformerArchType archType) {
     if (archType == LLAMA2) return &Llama2::arch;
     if (archType == GROK1) return &Grok1::arch;
-    if (archType == MIXTRAL_8x22B) return &Mixtral::arch;
+    if (archType == MIXTRAL) return &Mixtral::arch;
     printf("Unsupported arch type: %d\n", archType);
     exit(EXIT_FAILURE);
 }
@@ -73,7 +73,7 @@ int inferenceOrChat(ProgramArgs* args, bool isChat) {
     Transformer transformer = Transformer::loadRootFromFile(args->modelPath, &spec, socketPool);
     Inference inference = Inference(arch, args->nThreads, &transformer, socketPool);
 
-    bool bos = spec.archType == LLAMA2 || spec.archType == MIXTRAL_8x22B;
+    bool bos = spec.archType == LLAMA2 || spec.archType == MIXTRAL;
     bool eos = false;
     Tokenizer tokenizer(args->tokenizerPath, spec.vocabSize, bos, eos);
     Sampler sampler(spec.vocabSize, args->temperature, args->topp, rngSeed);

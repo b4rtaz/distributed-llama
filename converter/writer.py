@@ -59,16 +59,31 @@ def writeTensor(file, tensor, floatType):
         raise Exception('Unknown float type')
 
 def writeHeader(file, params):
-    header = struct.pack('iiiiiiiiii',
-        params['arch_type'],
-        params['dim'],
-        params['hidden_dim'],
-        params['n_layers'],
-        params['n_heads'],
-        params['n_kv_heads'],
-        params['n_experts'],
-        params['n_active_experts'],
-        params['vocab_size'],
-        params['max_seq_len'])
+    headerKeys = {
+        'version': 0,
+        'arch_type': 1,
+        'dim': 2,
+        'hidden_dim': 3,
+        'n_layers': 4,
+        'n_heads': 5,
+        'n_kv_heads': 6,
+        'n_experts': 7,
+        'n_active_experts': 8,
+        'vocab_size': 9,
+        'max_seq_len': 10,
+        'hidden_act': 11,
+        'rope_theta': 12,
+    }
+    header = struct.pack('i', 0xABABCDAB)
+
+    data = b''
+    for key in params:
+        if key in headerKeys:
+            data += struct.pack('ii', headerKeys[key], params[key])
+        else:
+            print(f'Unknown header key: {key}')
+
+    header += struct.pack('i', len(header) * 2 + len(data))
     file.write(header)
+    file.write(data)
     print(params)
