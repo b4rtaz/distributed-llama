@@ -409,6 +409,18 @@ void gelu(float* t, int n, unsigned int nThreads, unsigned int threadIndex) {
     }
 }
 
+void silu(float* t, int n, unsigned int nThreads, unsigned int threadIndex) {
+    assert(n % nThreads == 0);
+    int m = n / nThreads;
+    int start = m * threadIndex;
+    int end = start + m;
+
+    for (int i = start; i < end; i++) {
+        float x = t[i];
+        t[i] = x / (1.0f + expf(-x));
+    }
+}
+
 void mul(float* output, float* input, int n, unsigned int nThreads, unsigned int threadIndex) {
     assert(n % nThreads == 0);
     int m = n / nThreads;
@@ -425,7 +437,7 @@ void mulScalar(float* output, float c, int n, unsigned int nThreads, unsigned in
     int m = n / nThreads;
     int start = m * threadIndex;
     int end = start + m;
-
+    
     for (int i = start; i < end; i++) {
         output[i] *= c;
     }

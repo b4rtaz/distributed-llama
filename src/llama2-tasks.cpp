@@ -200,10 +200,7 @@ int llamaRmfFfn(TASK_ARGS) {
     TASK_VARIABLES;
 
     if (threadIndex == 0) {
-
-
         float* xb2 = (float*)transformer->buffer->getUnit(TB_SLICED_XB2);
-        float* xb = (float*)transformer->buffer->getUnit(TB_UNIT_XB);
         float* x = (float*)transformer->x;
 
         for (int i = 0; i < spec->dim; i++) {

@@ -12,7 +12,7 @@ static TaskLoopTask inferenceTasks[] = {
     { llamaSyncQkv, TASK_TYPE_TRANSFER },
     { llamaDequantizeQkv, TASK_TYPE_INFERENCE },
     { llamaMultiheadAtt, TASK_TYPE_INFERENCE },
-    { llamaMultiheadAttRope, TASK_TYPE_INFERENCE },
+    { grokMultiheadAttRope, TASK_TYPE_INFERENCE },
     { llamaMultiheadAttJoin, TASK_TYPE_INFERENCE },
     { llamaQuantizeMultiheadAtt, TASK_TYPE_INFERENCE },
     { llamaSyncMultiheadAtt, TASK_TYPE_TRANSFER },
