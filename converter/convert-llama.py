@@ -21,6 +21,8 @@ def convert(modelPath, outputPath, targetFloatType):
         params['arch_type'] = 0xABCD00
         params['n_experts'] = 0
         params['n_active_experts'] = 0
+        if ('rope_theta' in params):
+            params['rope_theta'] = int(params['rope_theta'])
 
     modelPaths = sorted(list(Path(modelPath).glob('consolidated.*.pth')))
     nSlices = len(modelPaths)
@@ -94,7 +96,7 @@ def convert(modelPath, outputPath, targetFloatType):
     outFile.close()
 
 def usage():
-    print('Usage: python convert-llama2.py <modelPath> <targetFloatType>')
+    print('Usage: python convert-llama.py <modelPath> <targetFloatType>')
     exit(1)
 
 if __name__ == '__main__':
@@ -108,7 +110,7 @@ if __name__ == '__main__':
         usage()
 
     modelName = modelPath.split('/')[-1]
-    outputFileName = f'dllama_{modelName}_{targetFloatType}.bin'
+    outputFileName = f'dllama_{modelName.lower()}_{targetFloatType}.bin'
 
     print(f'Model name: {modelName}')
     print(f'Target float type: {targetFloatType}')

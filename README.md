@@ -13,6 +13,7 @@ Run LLMs on weak devices or make powerful devices even more powerful by distribu
 
 **Supported models:**
 * Llama 2 (7B, 13B, 70B) chat and non-chat versions,
+* Llama 3,
 * Grok-1 (314B).
 
 **Known limitations:**
@@ -101,39 +102,11 @@ All tests below were conducted on c3d-highcpu-30 (30 vCPU, 15 core, 59 GB memory
 
 <sub><sup>S - sent data from the root node to workers, R - received data by the root node from workers</sup></sub>
 
-## 🔨 Download & Convert Llama 2
+## Download Model and Run
 
-1. Download [Llama 2](https://github.com/facebookresearch/llama) weights from Meta. This project supports 7B, 7B-chat, 13B, 13B-chat, 70B and 70B-chat models.
-2. Open the `llama-2-7b/params.json` file and replace `"vocab_size": -1` to `"vocab_size": 32000`.
-3. Install dependencies of the converter:
-```sh
-cd converter && pip install -r requirements.txt
-```
-4. Convert weights to Distributed Llama format. This will take a bit of time. The script requires Python 3.
-```sh
-python convert-llama2.py /path/to/meta/llama-2-7b q40
-```
-5. Download the `tokenizer.bin` file from the [llama2.c](https://github.com/karpathy/llama2.c) repository.
-```
-wget https://github.com/karpathy/llama2.c/raw/master/tokenizer.bin
-```
-
-In the table below, you can find the expected size of the converted weights with different floating-point types.
-
-| Model       | Original size | Float32  | Float16  | Q40      |
-|-------------|---------------|----------|----------|----------|
-| Llama 2 7B  | 13.48 GB      | 25.10GB  |          | 3.95 GB  |
-| Llama 2 13B | 26.03 GB      |          |          | 7.35 GB  |
-| Llama 2 70B | 137.97 GB     |          |          | 36.98 GB |
-
-## 🔨 Download Grok-1 Weights
-
-1. Download quantized (Q40) weights from https://huggingface.co/b4rtaz/grok-1-dllama (180GB).
-2. Merge split models files into single file:
-```
-cat dllama-grok-1-q40.binaa dllama-grok-1-q40.binab dllama-grok-1-q40.binac dllama-grok-1-q40.binad dllama-grok-1-q40.binae dllama-grok-1-q40.binaf dllama-grok-1-q40.binag dllama-grok-1-q40.binah dllama-grok-1-q40.binai > dllama-grok-1-q40-final.bin
-```
-3. The tokenizer file is already added to this repository: `tokenizers/grok-1-tokenizer.t`.
+* [How to Run Llama 2](./docs/LLAMA.md#how-to-run-llama-2)
+* [How to Run Llama 3](./docs/LLAMA.md#how-to-run-llama-3)
+* [How to Run Grok-1](./docs/GROK.md)
 
 ## 📟 How to Run on Raspberry Pi Devices
 

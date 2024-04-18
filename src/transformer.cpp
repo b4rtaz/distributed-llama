@@ -106,10 +106,8 @@ TransformerSpec Transformer::loadSpecFromFile(const char* path, const unsigned i
             else if (key == VOCAB_SIZE) spec.vocabSize = value;
             else if (key == SEQ_LEN) spec.seqLen = value;
             else if (key == HIDDEN_ACT) spec.hiddenAct = (TransformerHiddenAct)value;
-            else if (key == ROPE_THETA) {
-                if (value == 10000) spec.ropeTheta = 10000.0f;
-                else if (value == 1000000) spec.ropeTheta = 1000000.0f;
-            } else {
+            else if (key == ROPE_THETA) spec.ropeTheta = (float)value;
+            else {
                 throw std::runtime_error("Unsupported header key");
             }
         }

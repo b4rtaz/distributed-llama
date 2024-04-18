@@ -94,7 +94,7 @@ int llamaMultiheadAttRope(TASK_ARGS) {
         // RoPE relative positional encoding: complex-valued rotate q and k in each head
         for (int i = 0; i < spec->dim; i+=2) {
             int head_dim = i % spec->headSize;
-            float freq = 1.0f / powf(10000.0f, head_dim / (float)spec->headSize);
+            float freq = 1.0f / powf(spec->ropeTheta, head_dim / (float)spec->headSize);
             float val = transformer->pos * freq;
             float fcr = cosf(val);
             float fci = sinf(val);
