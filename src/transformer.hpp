@@ -20,13 +20,23 @@ public:
     long mergeOutputs(uint8_t sliceIndex, float* output, float* output0);
 };
 
-enum TransformerArchType {
-    LLAMA2 = 0xABCD00,
-    GROK1 = 0xABCD01
+enum TransformerHeaderKey {
+    VERSION = 0,
+    ARCH_TYPE = 1,
+    DIM = 2,
+    HIDDEN_DIM = 3,
+    N_LAYERS = 4,
+    N_HEADS = 5,
+    N_KV_HEADS = 6,
+    N_EXPERTS = 7,
+    N_ACTIVE_EXPERTS = 8,
+    VOCAB_SIZE = 9,
+    SEQ_LEN = 10,
+    HIDDEN_ACT = 11,
+    ROPE_THETA = 12,
 };
 
-struct TransformerFileHeader {
-    TransformerArchType archType;
+struct TransformerFileOldHeader {
     int dim;
     int hiddenDim;
     int nLayers;
@@ -38,8 +48,21 @@ struct TransformerFileHeader {
     int seqLen;
 };
 
+enum TransformerArchType {
+    LLAMA2 = 0xABCD00,
+    GROK1 = 0xABCD01,
+    MIXTRAL = 0xABCD02
+};
+
+enum TransformerHiddenAct {
+    GELU = 0,
+    SILU = 1,
+};
+
 struct TransformerSpec {
+    size_t headerSize;
     size_t fileSize;
+    int version;
     TransformerArchType archType;
     int dim;
     int nLayers;
@@ -50,8 +73,10 @@ struct TransformerSpec {
     int nActiveExperts;
     int seqLen;
     int hiddenDim;
+    TransformerHiddenAct hiddenAct;
     int kvDim;
     int vocabSize;
+    float ropeTheta;
 
     FloatType weightsFloatType;
     FloatType bufferFloatType;

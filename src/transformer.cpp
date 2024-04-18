@@ -8,6 +8,7 @@
 #include "socket.hpp"
 #include "transformer.hpp"
 #include <unistd.h>
+#include <stdexcept>
 
 #define ALLOC_WEIGHTS true
 #define IS_ROOT_SLICE(sliceIndex) (sliceIndex == 0)
@@ -52,40 +53,85 @@ long MatmulSlice::mergeOutputs(uint8_t sliceIndex, float* output, float* output0
 
 TransformerSpec Transformer::loadSpecFromFile(const char* path, const unsigned int nSlices, FloatType weightsFloatType, FloatType bufferFloatType) {
     TransformerSpec spec;
+    memset(&spec, 0, sizeof(TransformerSpec));
+    spec.hiddenAct = GELU;
+    spec.ropeTheta = 10000.0f;
+
     FILE* fd = fopen(path, "rb");
     if (fd == NULL) {
-        printf("Cannot open file %s\n", path);
-        exit(EXIT_FAILURE);
+        throw std::runtime_error("Cannot open model file");
     }
 
-    TransformerFileHeader header;
-    size_t hs = fread(&header, sizeof(TransformerFileHeader), 1, fd);
-    if (hs != 1) {
-        printf("Cannot read header\n");
-        exit(EXIT_FAILURE);
+    int magic;
+    if (fread(&magic, sizeof(int), 1, fd) != 1) {
+        throw std::runtime_error("Cannot read magic value");
+    }
+    if (magic == 0xABCD00 || magic == 0xABCD01) {
+        TransformerFileOldHeader header;
+        if (fread(&header, sizeof(header), 1, fd) != 1) {
+            throw std::runtime_error("Cannot read header");
+        }
+        spec.headerSize = sizeof(int) + sizeof(TransformerFileOldHeader);
+        spec.archType = (TransformerArchType)magic;
+        spec.dim = header.dim;
+        spec.hiddenDim = header.hiddenDim;
+        spec.nLayers = header.nLayers;
+        spec.nHeads = header.nHeads;
+        spec.nKvHeads = header.nKvHeads;
+        spec.nExperts = header.nExperts;
+        spec.nActiveExperts = header.nActiveExperts;
+        spec.vocabSize = header.vocabSize;
+        spec.seqLen = header.seqLen;
+    } else if (magic == 0xABABCDAB) {
+        if (fread(&spec.headerSize, sizeof(int), 1, fd) != 1) {
+            throw std::runtime_error("Cannot read header size");
+        }
+        int buffer[spec.headerSize];
+        if (fread(&buffer, spec.headerSize, 1, fd) != 1) {
+            throw std::runtime_error("Cannot read header values");
+        }
+        int nKv = (spec.headerSize - 2 * sizeof(int)) / sizeof(int);
+        for (int i = 0; i < nKv; i += 2) {
+            int key = buffer[i];
+            int value = buffer[i + 1];
+            if (key == VERSION) spec.version = value;
+            else if (key == ARCH_TYPE) spec.archType = (TransformerArchType)value;
+            else if (key == DIM) spec.dim = value;
+            else if (key == HIDDEN_DIM) spec.hiddenDim = value;
+            else if (key == N_LAYERS) spec.nLayers = value;
+            else if (key == N_HEADS) spec.nHeads = value;
+            else if (key == N_KV_HEADS) spec.nKvHeads = value;
+            else if (key == N_EXPERTS) spec.nExperts = value;
+            else if (key == N_ACTIVE_EXPERTS) spec.nActiveExperts = value;
+            else if (key == VOCAB_SIZE) spec.vocabSize = value;
+            else if (key == SEQ_LEN) spec.seqLen = value;
+            else if (key == HIDDEN_ACT) spec.hiddenAct = (TransformerHiddenAct)value;
+            else if (key == ROPE_THETA) {
+                if (value == 10000) spec.ropeTheta = 10000.0f;
+                else if (value == 1000000) spec.ropeTheta = 1000000.0f;
+            } else {
+                throw std::runtime_error("Unsupported header key");
+            }
+        }
+    } else {
+        throw std::runtime_error("Unsupported model file");
     }
 
-    if (header.archType != LLAMA2 && header.archType != GROK1) {
-        printf("This is not a correct model file\n");
-        exit(EXIT_FAILURE);
-    }
-
-    spec.archType = header.archType;
-    spec.dim = header.dim;
-    spec.hiddenDim = header.hiddenDim;
-    spec.nLayers = header.nLayers;
-    spec.nHeads = header.nHeads;
-    spec.nKvHeads = header.nKvHeads;
-    spec.nExperts = header.nExperts;
-    spec.nActiveExperts = header.nActiveExperts;
-    spec.vocabSize = abs(header.vocabSize);
-    spec.seqLen = header.seqLen;
     spec.headSize = spec.dim / spec.nHeads;
     spec.kvDim = (spec.dim * spec.nKvHeads) / spec.nHeads;
     spec.weightsFloatType = weightsFloatType;
     spec.bufferFloatType = bufferFloatType;
     spec.nSlices = nSlices;
 
+    if (spec.archType == LLAMA2) {
+        printf("💡 arch: llama2\n");
+    } else if (spec.archType == GROK1) {
+        printf("💡 arch: grok1\n");
+    } else if (spec.archType == MIXTRAL) {
+        printf("💡 arch: mixtral\n");
+    } else {
+        throw std::runtime_error("Unsupported architecture");
+    }
     printf("💡 dim: %d\n", spec.dim);
     printf("💡 hiddenDim: %d\n", spec.hiddenDim);
     printf("💡 nLayers: %d\n", spec.nLayers);
@@ -98,6 +144,7 @@ TransformerSpec Transformer::loadSpecFromFile(const char* path, const unsigned i
     printf("💡 vocabSize: %d\n", spec.vocabSize);
     printf("💡 seqLen: %d\n", spec.seqLen);
     printf("💡 nSlices: %d\n", spec.nSlices);
+    printf("💡 ropeTheta: %.1f\n", spec.ropeTheta);
 
     fseek(fd, 0, SEEK_END);
     size_t fileSize = ftell(fd);
@@ -241,11 +288,11 @@ TransformerBlock::TransformerBlock(TransformerSpec* spec, uint8_t sliceIndex) {
         rmsAtt = (float*)NEW_BUFFER(rmsAttBytes);
         rmsFfn = (float*)NEW_BUFFER(rmsFfnBytes);
         if (spec->archType == GROK1) {
-            rmsMoe = (float*)NEW_BUFFER(rmsAttBytes);
+            rmsMoe = (float*)NEW_BUFFER(rmsMoeBytes);
             rmsFfn2 = (float*)NEW_BUFFER(rmsFfn2Bytes);
         }
 #endif
-    
+
         keyCache = (float*)NEW_BUFFER(spec->seqLen * spec->kvDim * sizeof(float));
         valueCache = (float*)NEW_BUFFER(spec->seqLen * spec->kvDim * sizeof(float));
         att = (float*)NEW_BUFFER(spec->nHeads * spec->seqLen * sizeof(float));
@@ -263,7 +310,7 @@ TransformerBlock::TransformerBlock(TransformerSpec* spec, uint8_t sliceIndex) {
     wo0 = NEW_BUFFER(wo0Slice->sliceBytes);
 #endif
 
-    if (spec->archType == GROK1) {
+    if (spec->nExperts > 0) {
         moeUpAndGate0Slice = new MatmulSlice(spec->weightsFloatType, spec->nSlices, spec->dim, spec->hiddenDim);
         moeDown0Slice = new MatmulSlice(spec->weightsFloatType, spec->nSlices, spec->hiddenDim, spec->dim);
 
@@ -327,7 +374,7 @@ TransformerBlock::~TransformerBlock() {
     FREE_BUFFER(wo0);
 #endif
 
-    if (spec->archType == GROK1) {
+    if (spec->nExperts > 0) {
         delete moeUpAndGate0Slice;
         delete moeDown0Slice;
 
@@ -418,7 +465,7 @@ Transformer Transformer::loadRootFromFile(const char* path, TransformerSpec* spe
         printf("Mmap failed!\n");
         exit(EXIT_FAILURE);
     }
-    char* weights = data + sizeof(TransformerFileHeader);
+    char* weights = data + spec->headerSize;
     Transformer transformer = Transformer::loadRoot(weights, spec, socketPool);
 #if ALLOC_WEIGHTS
     munmap(data, spec->fileSize);
@@ -455,7 +502,7 @@ Transformer Transformer::loadRoot(char* data, TransformerSpec* spec, SocketPool*
         w += loadSlicedMatmulWeights(spec->nSlices, block->v0Slice, w, &block->v0, socketPool);
         w += loadSlicedMatmulWeights(spec->nSlices, block->wo0Slice, w, &block->wo0, socketPool);
 
-        if (spec->archType == GROK1) {
+        if (spec->nExperts > 0) {
             w += loadRootMatmulWeights(&block->moeRouter, w, block->moeRouterBytes);
 
             for (int e = 0; e < spec->nExperts; e++) {
@@ -481,7 +528,7 @@ Transformer Transformer::loadRoot(char* data, TransformerSpec* spec, SocketPool*
     w += loadRootMatmulWeights(&transformer.rmsFinal, w, transformer.rmsFinalBytes);
     w += loadRootMatmulWeights(&transformer.wcls, w, transformer.wclsBytes);
 
-    long missedBytes = (long)(w - data) - spec->fileSize + sizeof(TransformerFileHeader);
+    long missedBytes = (long)(w - data) - spec->fileSize + spec->headerSize;
     if (missedBytes != 0) {
         printf("Missed %ld bytes\n", missedBytes);
         exit(EXIT_FAILURE);
