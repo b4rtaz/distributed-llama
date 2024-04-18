@@ -32,6 +32,7 @@ void compare(float* a, float* b, int n) {
 
 int main() {
     TransformerSpec spec;
+    spec.headerSize = sizeof(TransformerFileOldHeader) + sizeof(int);
     spec.archType = GROK1;
     spec.dim = 6144;
     spec.nLayers = 1;
@@ -51,7 +52,7 @@ int main() {
     size_t beforeBlockBytes = spec.dim * spec.vocabSize * sizeof(float);
     size_t blockBytes = 956596224;
     size_t afterBlockBytes  = (spec.dim + spec.dim * spec.vocabSize) * sizeof(float);
-    spec.fileSize = sizeof(TransformerFileHeader) + beforeBlockBytes + blockBytes + afterBlockBytes;
+    spec.fileSize = spec.headerSize + beforeBlockBytes + blockBytes + afterBlockBytes;
 
     char* weights = NEW_BUFFER(beforeBlockBytes + blockBytes + afterBlockBytes);
     long nFloats = blockBytes / sizeof(float);

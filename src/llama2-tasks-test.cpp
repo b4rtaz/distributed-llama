@@ -530,6 +530,7 @@ int stop(unsigned int nThreads, unsigned int threadIndex, void* userData) {
 
 int main() {
     TransformerSpec spec;
+    spec.headerSize = sizeof(TransformerFileOldHeader) + sizeof(int);
     spec.archType = LLAMA2;
     spec.dim = 4096;
     spec.nLayers = 1;
@@ -549,7 +550,7 @@ int main() {
     size_t beforeBlockBytes = /* embedding */ 524288000;
     size_t blockBytes       = 809533440;
     size_t afterBlockBytes  = /* norm */ 16384 + /* embedding */ 524288000;
-    spec.fileSize = beforeBlockBytes + blockBytes + afterBlockBytes + sizeof(TransformerFileHeader);
+    spec.fileSize = beforeBlockBytes + blockBytes + afterBlockBytes + spec.headerSize;
     size_t dataSize = beforeBlockBytes + blockBytes + afterBlockBytes;
     char* data = NEW_BUFFER(dataSize);
     memset(data, 0, dataSize);

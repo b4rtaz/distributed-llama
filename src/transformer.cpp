@@ -8,6 +8,7 @@
 #include "socket.hpp"
 #include "transformer.hpp"
 #include <unistd.h>
+#include <stdexcept>
 
 #define ALLOC_WEIGHTS true
 #define IS_ROOT_SLICE(sliceIndex) (sliceIndex == 0)
@@ -58,15 +59,18 @@ TransformerSpec Transformer::loadSpecFromFile(const char* path, const unsigned i
 
     FILE* fd = fopen(path, "rb");
     if (fd == NULL) {
-        printf("Cannot open file %s\n", path);
-        exit(EXIT_FAILURE);
+        throw std::runtime_error("Cannot open model file");
     }
 
     int magic;
-    fread(&magic, sizeof(int), 1, fd);
+    if (fread(&magic, sizeof(int), 1, fd) != 1) {
+        throw std::runtime_error("Cannot read magic value");
+    }
     if (magic == 0xABCD00 || magic == 0xABCD01) {
         TransformerFileOldHeader header;
-        fread(&header, sizeof(header), 1, fd);
+        if (fread(&header, sizeof(header), 1, fd) != 1) {
+            throw std::runtime_error("Cannot read header");
+        }
         spec.headerSize = sizeof(int) + sizeof(TransformerFileOldHeader);
         spec.archType = (TransformerArchType)magic;
         spec.dim = header.dim;
@@ -79,13 +83,17 @@ TransformerSpec Transformer::loadSpecFromFile(const char* path, const unsigned i
         spec.vocabSize = header.vocabSize;
         spec.seqLen = header.seqLen;
     } else if (magic == 0xABABCDAB) {
-        fread(&spec.headerSize, sizeof(int), 1, fd);
-        int buffer[2];
+        if (fread(&spec.headerSize, sizeof(int), 1, fd) != 1) {
+            throw std::runtime_error("Cannot read header size");
+        }
+        int buffer[spec.headerSize];
+        if (fread(&buffer, spec.headerSize, 1, fd) != 1) {
+            throw std::runtime_error("Cannot read header values");
+        }
         int nKv = (spec.headerSize - 2 * sizeof(int)) / sizeof(int);
         for (int i = 0; i < nKv; i += 2) {
-            fread(&buffer, sizeof(int), 2, fd);
-            int key = buffer[0];
-            int value = buffer[1];
+            int key = buffer[i];
+            int value = buffer[i + 1];
             if (key == VERSION) spec.version = value;
             else if (key == ARCH_TYPE) spec.archType = (TransformerArchType)value;
             else if (key == DIM) spec.dim = value;
@@ -102,15 +110,14 @@ TransformerSpec Transformer::loadSpecFromFile(const char* path, const unsigned i
                 if (value == 10000) spec.ropeTheta = 10000.0f;
                 else if (value == 1000000) spec.ropeTheta = 1000000.0f;
             } else {
-                printf("Unknown key: %d\n", key);
-                exit(EXIT_FAILURE);
+                throw std::runtime_error("Unsupported header key");
             }
         }
     } else {
-        printf("This is not a correct model file\n");
-        exit(EXIT_FAILURE);
+        throw std::runtime_error("Unsupported model file");
     }
 
+    spec.headSize = spec.dim / spec.nHeads;
     spec.kvDim = (spec.dim * spec.nKvHeads) / spec.nHeads;
     spec.weightsFloatType = weightsFloatType;
     spec.bufferFloatType = bufferFloatType;
@@ -123,8 +130,7 @@ TransformerSpec Transformer::loadSpecFromFile(const char* path, const unsigned i
     } else if (spec.archType == MIXTRAL) {
         printf("💡 arch: mixtral\n");
     } else {
-        printf("Unsupported architecture\n");
-        exit(EXIT_FAILURE);
+        throw std::runtime_error("Unsupported architecture");
     }
     printf("💡 dim: %d\n", spec.dim);
     printf("💡 hiddenDim: %d\n", spec.hiddenDim);
