@@ -82,7 +82,7 @@ TransformerSpec Transformer::loadSpecFromFile(const char* path, const unsigned i
         spec.nActiveExperts = header.nActiveExperts;
         spec.vocabSize = header.vocabSize;
         spec.seqLen = header.seqLen;
-    } else if (magic == 0xABABCDAB) {
+    } else if (magic == 0xA00ABCD) {
         if (fread(&spec.headerSize, sizeof(int), 1, fd) != 1) {
             throw std::runtime_error("Cannot read header size");
         }

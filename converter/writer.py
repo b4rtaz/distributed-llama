@@ -74,7 +74,7 @@ def writeHeader(file, params):
         'hidden_act': 11,
         'rope_theta': 12,
     }
-    header = struct.pack('i', 0xABABCDAB)
+    header = struct.pack('i', 0xA00ABCD)
 
     data = b''
     for key in params:
