@@ -4,7 +4,9 @@
 #include <cstdio>
 #include "tasks.hpp"
 
+bool isSafePiece(char *piece);
 void safePrintf(char *piece);
+void readStdin(const char* guide, char* buffer, size_t bufsize);
 
 typedef struct {
     char *str;
@@ -50,8 +52,5 @@ public:
     ~Sampler();
     int sample(float* logits);
 };
-
-void generate(TransformerSpec* spec, Inference* inference, SocketPool* socketPool, Tokenizer* tokenizer, Sampler* sampler, int steps, char* prompt);
-void chat(Inference* inference, Tokenizer *tokenizer, Sampler *sampler, char *cliUserPrompt, char *cliSystemPrompt, int steps);
 
 #endif

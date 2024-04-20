@@ -6,26 +6,36 @@
 #include <errno.h>
 #include <string.h>
 #include <fcntl.h>
+#include <unistd.h>
 #include "socket.hpp"
+#include <stdexcept>
 
 #define SOCKET_LAST_ERRCODE errno
 #define SOCKET_LAST_ERROR strerror(errno)
 
-static inline void setNotBlocking(int socket) {
-    int status = fcntl(socket, F_SETFL, fcntl(status, F_GETFL, 0) | O_NONBLOCK);
-    if (status == -1) {
-        printf("Error setting socket to non-blocking\n");
-        exit(EXIT_FAILURE);
+static inline void setNotBlocking(int socket, bool enabled) {
+    int flags = fcntl(socket, F_GETFL, 0);
+    if (enabled) {
+        flags |= O_NONBLOCK;
+    } else {
+        flags = flags & (~O_NONBLOCK);
     }
+    if (fcntl(socket, F_SETFL, flags) < 0)
+        throw std::runtime_error("Error setting socket to non-blocking");
 }
 
 static inline void setNoDelay(int socket) {
     int flag = 1;
-    int status = setsockopt(socket, IPPROTO_TCP, TCP_NODELAY, (char*)&flag, sizeof(int));
-    if (status == -1) {
-        printf("Error setting socket to no-delay\n");
-        exit(EXIT_FAILURE);
-    }
+    if (setsockopt(socket, IPPROTO_TCP, TCP_NODELAY, (char*)&flag, sizeof(int)) < 0)
+        throw std::runtime_error("Error setting socket to no-delay");
+}
+
+static inline void disableReuse(int socket) {
+    int flag = 0;
+    if (setsockopt(socket, SOL_SOCKET, SO_REUSEADDR, (char*)&flag, sizeof(int)) < 0)
+        throw std::runtime_error("Error disabling SO_REUSEADDR");
+    if (setsockopt(socket, SOL_SOCKET, SO_REUSEPORT, (char*)&flag, sizeof(int)) < 0)
+        throw std::runtime_error("Error disabling SO_REUSEPORT");
 }
 
 static inline void writeSocket(int socket, const char* data, size_t size) {
@@ -35,11 +45,9 @@ static inline void writeSocket(int socket, const char* data, size_t size) {
             if (SOCKET_LAST_ERRCODE == EAGAIN) {
                 continue;
             }
-            printf("Error sending data %d (%s)\n", SOCKET_LAST_ERRCODE, SOCKET_LAST_ERROR);
-            exit(EXIT_FAILURE);
+            throw WriteSocketException(SOCKET_LAST_ERRCODE, SOCKET_LAST_ERROR);
         } else if (s == 0) {
-            printf("Error sending data: socket closed\n");
-            exit(EXIT_FAILURE);
+            throw WriteSocketException(0, "Socket closed");
         }
         size -= s;
         data = (char*)data + s;
@@ -53,15 +61,23 @@ static inline void readSocket(int socket, char* data, size_t size) {
             if (SOCKET_LAST_ERRCODE == EAGAIN) {
                 continue;
             }
-            printf("Error receiving data %d (%s)\n", SOCKET_LAST_ERRCODE, SOCKET_LAST_ERROR);
-            exit(EXIT_FAILURE);
+            throw ReadSocketException(SOCKET_LAST_ERRCODE, SOCKET_LAST_ERROR);
         } else if (r == 0) {
-            printf("Error receiving data: socket closed\n");
-            exit(EXIT_FAILURE);
+            throw ReadSocketException(0, "Socket closed");
         }
         data = (char*)data + r;
         size -= r;
     }
+}
+
+ReadSocketException::ReadSocketException(int code, const char* message) {
+    this->code = code;
+    this->message = message;
+}
+
+WriteSocketException::WriteSocketException(int code, const char* message) {
+    this->code = code;
+    this->message = message;
 }
 
 SocketPool* SocketPool::connect(unsigned int nSockets, char** hosts, int* ports) {
@@ -75,17 +91,16 @@ SocketPool* SocketPool::connect(unsigned int nSockets, char** hosts, int* ports)
         addr.sin_port = htons(ports[i]);
 
         int clientSocket = socket(AF_INET, SOCK_STREAM, 0);
-        if (clientSocket < 0) {
-            printf("Error creating socket\n");
-            exit(EXIT_FAILURE);
-        }
+        if (clientSocket < 0)
+            throw std::runtime_error("Cannot create socket");
 
         int connectResult = ::connect(clientSocket, (struct sockaddr*)&addr, sizeof(addr));
         if (connectResult != 0) {
             printf("Cannot connect to %s:%d (%s)\n", hosts[i], ports[i], SOCKET_LAST_ERROR);
-            exit(EXIT_FAILURE);
+            throw std::runtime_error("Cannot connect");
         }
 
+        setNoDelay(clientSocket);
         sockets[i] = clientSocket;
     }
     return new SocketPool(nSockets, sockets);
@@ -104,10 +119,9 @@ SocketPool::~SocketPool() {
     }
 }
 
-void SocketPool::enableTurbo() {
+void SocketPool::setNotBlocking(bool enabled) {
     for (unsigned int i = 0; i < nSockets; i++) {
-        setNotBlocking(sockets[i]);
-        setNoDelay(sockets[i]);
+        ::setNotBlocking(sockets[i], enabled);
     }
 }
 
@@ -142,11 +156,9 @@ void SocketPool::writeMany(unsigned int n, SocketIo* ios) {
                     if (SOCKET_LAST_ERRCODE == EAGAIN) {
                         continue;
                     }
-                    printf("Error sending data %d (%s)\n", SOCKET_LAST_ERRCODE, SOCKET_LAST_ERROR);
-                    exit(EXIT_FAILURE);
+                    throw WriteSocketException(SOCKET_LAST_ERRCODE, SOCKET_LAST_ERROR);
                 } else if (s == 0) {
-                    printf("Error sending data: socket closed\n");
-                    exit(EXIT_FAILURE);
+                    throw WriteSocketException(0, "Socket closed");
                 }
                 io->size -= s;
                 io->data = (char*)io->data + s;
@@ -174,11 +186,9 @@ void SocketPool::readMany(unsigned int n, SocketIo* ios) {
                     if (SOCKET_LAST_ERRCODE == EAGAIN) {
                         continue;
                     }
-                    printf("Error receiving data %d (%s)\n", SOCKET_LAST_ERRCODE, SOCKET_LAST_ERROR);
-                    exit(EXIT_FAILURE);
+                    throw ReadSocketException(SOCKET_LAST_ERRCODE, SOCKET_LAST_ERROR);
                 } else if (r == 0) {
-                    printf("Error receiving data: socket closed\n");
-                    exit(EXIT_FAILURE);
+                    throw ReadSocketException(0, "Socket closed");
                 }
                 io->size -= r;
                 io->data = (char*)io->data + r;
@@ -201,10 +211,8 @@ Socket Socket::accept(int port) {
     struct sockaddr_in clientAddr;
 
     serverSocket = ::socket(AF_INET, SOCK_STREAM, 0);
-    if (serverSocket < 0) {
-        printf("Error creating socket\n");
-        exit(EXIT_FAILURE);
-    }
+    if (serverSocket < 0)
+        throw std::runtime_error("Cannot create socket");
 
     memset(&serverAddr, 0, sizeof(serverAddr));
     serverAddr.sin_family = AF_INET;
@@ -214,7 +222,7 @@ Socket Socket::accept(int port) {
     int bindResult = bind(serverSocket, (struct sockaddr*)&serverAddr, sizeof(serverAddr));
     if (bindResult < 0) {
         printf("Cannot bind %s:%d\n", host, port);
-        exit(EXIT_FAILURE);
+        throw std::runtime_error("Cannot bind port");
     }
 
     int listenResult = listen(serverSocket, 1);
@@ -226,14 +234,15 @@ Socket Socket::accept(int port) {
 
     socklen_t clientAddrSize = sizeof(clientAddr);
     int clientSocket = ::accept(serverSocket, (struct sockaddr*)&clientAddr, &clientAddrSize);
-    if (clientSocket < 0) {
-        printf("Error accepting connection\n");
-        exit(EXIT_FAILURE);
-    }
+    if (clientSocket < 0)
+        throw std::runtime_error("Error accepting connection");
+
+    disableReuse(serverSocket);
+    shutdown(serverSocket, 2);
+    close(serverSocket);
+    setNoDelay(clientSocket);
 
     printf("Client connected\n");
-
-    shutdown(serverSocket, 2);
     return Socket(clientSocket);
 }
 
@@ -243,11 +252,11 @@ Socket::Socket(int socket) {
 
 Socket::~Socket() {
     shutdown(socket, 2);
+    close(socket);
 }
 
-void Socket::enableTurbo() {
-    setNotBlocking(socket);
-    setNoDelay(socket);
+void Socket::setNotBlocking(bool enabled) {
+    ::setNotBlocking(socket, enabled);
 }
 
 void Socket::write(const char* data, size_t size) {

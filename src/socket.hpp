@@ -3,6 +3,20 @@
 
 #include <atomic>
 #include <cstddef>
+#include <exception>
+
+class ReadSocketException : public std::exception {
+public:
+    int code;
+    const char* message;
+    ReadSocketException(int code, const char* message);
+};
+class WriteSocketException : public std::exception {
+public:
+    int code;
+    const char* message;
+    WriteSocketException(int code, const char* message);
+};
 
 struct SocketIo {
     unsigned int socketIndex;
@@ -24,7 +38,7 @@ public:
     SocketPool(unsigned int nSockets, int* sockets);
     ~SocketPool();
 
-    void enableTurbo();
+    void setNotBlocking(bool enabled);
     void write(unsigned int socketIndex, const char* data, size_t size);
     void read(unsigned int socketIndex, char* data, size_t size);
     void writeMany(unsigned int n, SocketIo* ios);
@@ -42,7 +56,7 @@ public:
     Socket(int socket);
     ~Socket();
 
-    void enableTurbo();
+    void setNotBlocking(bool enabled);
     void write(const char* data, size_t size);
     void read(char* data, size_t size);
 };
