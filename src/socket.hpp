@@ -27,6 +27,7 @@ struct SocketIo {
 class SocketPool {
 private:
     int* sockets;
+    bool* isNonBlocking;
     std::atomic_uint sentBytes;
     std::atomic_uint recvBytes;
 
@@ -38,7 +39,6 @@ public:
     SocketPool(unsigned int nSockets, int* sockets);
     ~SocketPool();
 
-    void setNotBlocking(bool enabled);
     void write(unsigned int socketIndex, const char* data, size_t size);
     void read(unsigned int socketIndex, char* data, size_t size);
     void writeMany(unsigned int n, SocketIo* ios);
@@ -49,16 +49,23 @@ public:
 class Socket {
 private:
     int socket;
+    bool isNonBlocking;
 
 public:
-    static Socket accept(int port);
-
     Socket(int socket);
     ~Socket();
 
-    void setNotBlocking(bool enabled);
     void write(const char* data, size_t size);
     void read(char* data, size_t size);
+};
+
+class SocketServer {
+private:
+    int socket;
+public:
+    SocketServer(int port);
+    ~SocketServer();
+    Socket accept();
 };
 
 #endif

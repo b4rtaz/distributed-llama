@@ -206,9 +206,10 @@ void simpleServer(Inference* inference, SocketPool* socketPool, Tokenizer *token
     int header[2];
     char output[8192]; // TODO: possible overflow if long context
 
+    SocketServer server(args->port);
     while (true) {
         try {
-            Socket client = Socket::accept(args->port);
+            Socket client = server.accept();
             while (true) {
                 outputPos = 0;
                 printf("⏳");
@@ -227,8 +228,6 @@ void simpleServer(Inference* inference, SocketPool* socketPool, Tokenizer *token
                 int nPromptTokens;
                 int promptTokens[promptSize + 3];
                 tokenizer->encode(prompt, promptTokens, &nPromptTokens);
-
-                socketPool->setNotBlocking(true);
 
                 int token = promptTokens[0];
                 int maxPos = nPromptTokens + maxTokens;
@@ -255,8 +254,6 @@ void simpleServer(Inference* inference, SocketPool* socketPool, Tokenizer *token
                         break;
                     }
                 }
-
-                socketPool->setNotBlocking(false);
 
                 output[outputPos] = 0;
                 client.write((char*)&outputPos, sizeof(int));
@@ -300,8 +297,6 @@ int run(ProgramArgs* args, void (*program)(Inference* inference, SocketPool* soc
     Tokenizer tokenizer(args->tokenizerPath, spec.vocabSize, bos, eos);
     Sampler sampler(spec.vocabSize, args->temperature, args->topp, rngSeed);
 
-    socketPool->setNotBlocking(true);
-
     program(&inference, socketPool, &tokenizer, &sampler, args, &spec);
 
     delete socketPool;
@@ -313,12 +308,11 @@ int worker(ProgramArgs* args) {
         return usage("Invalid port");
     }
 
-    Socket socket = Socket::accept(args->port);
+    SocketServer server(args->port);
+    Socket socket = server.accept();
     TransformerSpec spec;
     Transformer transformer = Transformer::loadSlice(&spec, &socket);
     TransformerArch* arch = getArch(spec.archType);
-
-    socket.setNotBlocking(true);
 
     Worker worker = Worker(arch, args->nThreads, &transformer, &socket);
     worker.work();
