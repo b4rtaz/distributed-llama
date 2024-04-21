@@ -524,10 +524,6 @@ float expectedOutput[4096] = {
     1.00493455, 1.00216055, 1.02500832, 1.01412213, 0.997673035, 1.01922369, 1.01705575, 1.01369667,
 };
 
-int stop(unsigned int nThreads, unsigned int threadIndex, void* userData) {
-    return TASK_STOP;
-}
-
 int main() {
     TransformerSpec spec;
     spec.headerSize = sizeof(TransformerFileOldHeader) + sizeof(int);
@@ -570,11 +566,7 @@ int main() {
     float* x = transformer.x;
     for (int i = 0; i < spec.dim; i++) x[i] = randomF32(&state) / 120.0;
 
-    TaskLoopTask* tasks = new TaskLoopTask[Llama2::arch.inference.nTasks];
-    memcpy(tasks, Llama2::arch.inference.tasks, sizeof(TaskLoopTask) * Llama2::arch.inference.nTasks);
-
-    assert(tasks[Llama2::arch.inference.nTasks - 4].handler == llamaNextBlock);
-    tasks[Llama2::arch.inference.nTasks - 4].handler = stop;
+    TransformerArch arch = buildLlama2Arch(&spec);
 
     int nThreads = 4;
     TransformerContext context;
@@ -583,7 +575,7 @@ int main() {
     context.socket = NULL;
     context.socketPool = &socketPool;
 
-    TaskLoop loop(nThreads, Llama2::arch.inference.nTasks, TASK_N_TYPES, tasks, &context);
+    TaskLoop loop(nThreads, arch.inference.nTasks, TASK_N_TYPES, arch.inference.tasks, &context);
     long t0 = timeMs();
     loop.run();
     long t1 = timeMs();

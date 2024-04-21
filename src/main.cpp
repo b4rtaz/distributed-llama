@@ -38,11 +38,11 @@ int usage(const char* reason) {
     return EXIT_FAILURE;
 }
 
-TransformerArch* getArch(TransformerArchType archType) {
-    if (archType == LLAMA2) return &Llama2::arch;
-    if (archType == GROK1) return &Grok1::arch;
-    if (archType == MIXTRAL) return &Mixtral::arch;
-    printf("Unsupported arch type: %d\n", archType);
+TransformerArch getArch(TransformerSpec* spec) {
+    if (spec->archType == LLAMA2) return buildLlama2Arch(spec);
+    if (spec->archType == GROK1) return buildGrok1Arch(spec);
+    if (spec->archType == MIXTRAL) return buildMixtralArch(spec);
+    printf("Unsupported arch type: %d\n", spec->archType);
     exit(EXIT_FAILURE);
 }
 
@@ -212,7 +212,7 @@ void simpleServer(Inference* inference, SocketPool* socketPool, Tokenizer *token
             Socket client = server.accept();
             while (true) {
                 outputPos = 0;
-                printf("⏳");
+                printf("⏳\n");
                 fflush(stdout);
 
                 client.read((char*)&header, sizeof(int) * 2);
@@ -222,7 +222,7 @@ void simpleServer(Inference* inference, SocketPool* socketPool, Tokenizer *token
                 char prompt[promptSize + 1];
                 client.read(prompt, promptSize);
                 prompt[promptSize] = 0;
-                printf("🚧 %s ", prompt);
+                printf("🚧 %s", prompt);
                 fflush(stdout);
 
                 int nPromptTokens;
@@ -280,7 +280,7 @@ int run(ProgramArgs* args, void (*program)(Inference* inference, SocketPool* soc
     unsigned long long rngSeed = (unsigned int)time(NULL);
 
     TransformerSpec spec = Transformer::loadSpecFromFile(args->modelPath, nSlices, args->weightsFloatType, args->bufferFloatType);
-    TransformerArch* arch = getArch(spec.archType);
+    TransformerArch arch = getArch(&spec);
 
     int steps = args->steps;
     if (steps < 0) {
@@ -290,7 +290,7 @@ int run(ProgramArgs* args, void (*program)(Inference* inference, SocketPool* soc
     }
 
     Transformer transformer = Transformer::loadRootFromFile(args->modelPath, &spec, socketPool);
-    Inference inference = Inference(arch, args->nThreads, &transformer, socketPool);
+    Inference inference = Inference(&arch, args->nThreads, &transformer, socketPool);
 
     bool bos = spec.archType == LLAMA2 || spec.archType == MIXTRAL;
     bool eos = false;
@@ -312,9 +312,9 @@ int worker(ProgramArgs* args) {
     Socket socket = server.accept();
     TransformerSpec spec;
     Transformer transformer = Transformer::loadSlice(&spec, &socket);
-    TransformerArch* arch = getArch(spec.archType);
+    TransformerArch arch = getArch(&spec);
 
-    Worker worker = Worker(arch, args->nThreads, &transformer, &socket);
+    Worker worker = Worker(&arch, args->nThreads, &transformer, &socket);
     worker.work();
 
     return EXIT_SUCCESS;

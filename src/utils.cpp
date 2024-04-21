@@ -48,6 +48,7 @@ TaskLoop::TaskLoop(unsigned int nThreads, unsigned int nTasks, unsigned int nTyp
     threads = new TaskLoopThread[nThreads];
     for (unsigned int i = 0; i < nThreads; i++) {
         threads[i].threadIndex = i;
+        threads[i].nTasks = nTasks;
         threads[i].loop = this;
     }
 }
@@ -59,7 +60,6 @@ TaskLoop::~TaskLoop() {
 
 void TaskLoop::run() {
     currentTaskIndex.exchange(0);
-    stopTaskIndex.exchange(0);
     doneThreadCount.exchange(0);
 
     unsigned int i;
@@ -90,17 +90,13 @@ void* TaskLoop::threadHandler(void* arg) {
 
     while (true) {
         const unsigned int currentTaskIndex = loop->currentTaskIndex.load();
-        if (currentTaskIndex != 0 && currentTaskIndex == loop->stopTaskIndex.load()) {
+        if (currentTaskIndex == context->nTasks) {
             break;
         }
 
         const TaskLoopTask* task = &loop->tasks[currentTaskIndex % loop->nTasks];
 
-        int result = task->handler(loop->nThreads, threadIndex, loop->userData);
-
-        if (result == TASK_STOP) {
-            loop->stopTaskIndex.store(currentTaskIndex + 1);
-        }
+        task->handler(loop->nThreads, threadIndex, loop->userData);
 
         int currentCount = loop->doneThreadCount.fetch_add(1);
 
@@ -118,6 +114,6 @@ void* TaskLoop::threadHandler(void* arg) {
         }
     }
 
-    // printf("@ Thread %d stopped at step %d\n", threadIndex, unsigned(state->currentTaskIndex));
+    // printf("@ Thread %d stopped at step %d\n", threadIndex, unsigned(loop->currentTaskIndex));
     return 0;
 }

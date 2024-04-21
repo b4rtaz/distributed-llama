@@ -3,35 +3,32 @@
 
 #include "tasks.hpp"
 
-int grokMultiheadAttRope(TASK_ARGS);
-int grokRmfFfn(TASK_ARGS);
-int grokRmfFfnNorm(TASK_ARGS);
-int grokRmfFfnNormJoin(TASK_ARGS);
-int grokMoeRms(TASK_ARGS);
-int grokMoeRmsNorm(TASK_ARGS);
-int grokMoeRouter(TASK_ARGS);
-int grokMoeRouterSoftmax(TASK_ARGS);
-int grokMoeTopk(TASK_ARGS);
-int grokMoeNormWeights(TASK_ARGS);
-int grokQuantizeMoeInput(TASK_ARGS);
-int grokSyncMoeInput(TASK_ARGS);
-int grokMoeBlock0(TASK_ARGS);
-int grokMoeBlock1(TASK_ARGS);
-int grokQuantizeMoeMul(TASK_ARGS);
-int grokSyncMoeMulA(TASK_ARGS);
-int grokSyncMoeMulRearrange(TASK_ARGS);
-int grokSyncMoeMulB(TASK_ARGS);
-int grokMoeBlock2(TASK_ARGS);
-int grokQuantizeMoeOutput(TASK_ARGS);
-int grokSyncMoeOutput(TASK_ARGS);
-int grokDequantizeMoeOutput(TASK_ARGS);
-int grokMoeRmsFinal(TASK_ARGS);
-int grokMoeRmsNormFinal(TASK_ARGS);
-int grokMoeAdd(TASK_ARGS);
+void grokMultiheadAttRope(TASK_ARGS);
+void grokRmfFfn(TASK_ARGS);
+void grokRmfFfnNorm(TASK_ARGS);
+void grokRmfFfnNormJoin(TASK_ARGS);
+void grokMoeRms(TASK_ARGS);
+void grokMoeRmsNorm(TASK_ARGS);
+void grokMoeRouter(TASK_ARGS);
+void grokMoeRouterSoftmax(TASK_ARGS);
+void grokMoeTopk(TASK_ARGS);
+void grokMoeNormWeights(TASK_ARGS);
+void grokQuantizeMoeInput(TASK_ARGS);
+void grokSyncMoeInput(TASK_ARGS);
+void grokMoeBlock0(TASK_ARGS);
+void grokMoeBlock1(TASK_ARGS);
+void grokQuantizeMoeMul(TASK_ARGS);
+void grokSyncMoeMulA(TASK_ARGS);
+void grokSyncMoeMulRearrange(TASK_ARGS);
+void grokSyncMoeMulB(TASK_ARGS);
+void grokMoeBlock2(TASK_ARGS);
+void grokQuantizeMoeOutput(TASK_ARGS);
+void grokSyncMoeOutput(TASK_ARGS);
+void grokDequantizeMoeOutput(TASK_ARGS);
+void grokMoeRmsFinal(TASK_ARGS);
+void grokMoeRmsNormFinal(TASK_ARGS);
+void grokMoeAdd(TASK_ARGS);
 
-class Grok1 {
-    public:
-        static TransformerArch arch;
-};
+TransformerArch buildGrok1Arch(TransformerSpec* spec);
 
 #endif

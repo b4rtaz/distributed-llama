@@ -8,9 +8,9 @@
 #include "llama2-tasks.hpp"
 #include "grok1-tasks.hpp"
 
-void initInference(TransformerContext* context) {
-    Transformer* transformer = context->transformer;
-    mulScalar(transformer->x, 78.38367176906169f, transformer->spec->dim, 1, 0);
+void grokMulInput(TASK_ARGS) {
+    TASK_VARIABLES;
+    mulScalar(transformer->x, 78.38367176906169f, transformer->spec->dim, nThreads, threadIndex);
 }
 
 // source: https://github.com/karpathy/llama2.c/pull/408
@@ -35,7 +35,7 @@ void ropeFalcon(float* q, float* k, TransformerSpec* spec, int pos, float theta)
     }
 }
 
-int grokMultiheadAttRope(TASK_ARGS) {
+void grokMultiheadAttRope(TASK_ARGS) {
     TASK_VARIABLES;
     if (threadIndex == 0) {
         float* q = (float*)transformer->buffer->getUnit(TB_SLICED_Q);    
@@ -43,65 +43,57 @@ int grokMultiheadAttRope(TASK_ARGS) {
         float* k = block->keyCache + transformer->pos * spec->kvDim;
         ropeFalcon(q, k, spec, transformer->pos, spec->ropeTheta);
     }
-    return TASK_CONTINUE;
 }
 
-int grokRmfFfn(TASK_ARGS) {
+void grokRmfFfn(TASK_ARGS) {
     TASK_VARIABLES;
     if (threadIndex == 0) {
         float* xb2 = (float*)transformer->buffer->getUnit(TB_SLICED_XB2);
         transformer->rms = rms(xb2, spec->dim);
     }
-    return TASK_CONTINUE;
 }
 
-int grokRmfFfnNorm(TASK_ARGS) {
+void grokRmfFfnNorm(TASK_ARGS) {
     TASK_VARIABLES;
     float* xb2 = (float*)transformer->buffer->getUnit(TB_SLICED_XB2);
 
     rmsnorm(xb2, xb2, transformer->rms, block->rmsFfn, spec->dim, nThreads, threadIndex);
-    return TASK_CONTINUE;
 }
 
-int grokRmfFfnNormJoin(TASK_ARGS) {
+void grokRmfFfnNormJoin(TASK_ARGS) {
     TASK_VARIABLES;
 
     float* xb2 = (float*)transformer->buffer->getUnit(TB_SLICED_XB2);
     add(transformer->x, xb2, spec->dim, nThreads, threadIndex);
-    return TASK_CONTINUE;
 }
 
-int grokMoeRms(TASK_ARGS) {
+void grokMoeRms(TASK_ARGS) {
     TASK_VARIABLES;
     if (threadIndex == 0) {
         transformer->rms = rms(transformer->x, spec->dim);
     }
-    return TASK_CONTINUE;
 }
 
-int grokMoeRmsNorm(TASK_ARGS) {
+void grokMoeRmsNorm(TASK_ARGS) {
     TASK_VARIABLES;
     float* xb = (float*)transformer->buffer->getUnit(TB_UNIT_XB);
     rmsnorm(xb, transformer->x, transformer->rms, block->rmsMoe, spec->dim, nThreads, threadIndex);
-    return TASK_CONTINUE;
 }
 
-int grokMoeRouter(TASK_ARGS) {
+void grokMoeRouter(TASK_ARGS) {
     TASK_VARIABLES;
     float* xb = (float*)transformer->buffer->getUnit(TB_UNIT_XB);
     matmul(spec->weightsFloatType, F32, block->moeRouterProbs, xb, block->moeRouter, spec->dim, spec->nExperts, nThreads, threadIndex);
-    return TASK_CONTINUE;
 }
 
-int grokMoeRouterSoftmax(TASK_ARGS) {
+void grokMoeRouterSoftmax(TASK_ARGS) {
     TASK_VARIABLES;
     if (threadIndex == 0) {
         softmax(block->moeRouterProbs, spec->nExperts);
     }
-    return TASK_CONTINUE;
 }
 
-int grokMoeTopk(TASK_ARGS) {
+void grokMoeTopk(TASK_ARGS) {
     TASK_VARIABLES;
     if (threadIndex == 0) {
         assert(spec->nActiveExperts == 2); // TODO
@@ -129,10 +121,9 @@ int grokMoeTopk(TASK_ARGS) {
         indexes[0] = (uint8_t)best0i;
         indexes[1] = (uint8_t)best1i;
     }
-    return TASK_CONTINUE;
 }
 
-int grokMoeNormWeights(TASK_ARGS) {
+void grokMoeNormWeights(TASK_ARGS) {
     TASK_VARIABLES;
     if (threadIndex == 0) {
         uint8_t* indexes = (uint8_t*)transformer->buffer->getUnit(TB_UNIT_MOE_INDEXES);
@@ -147,24 +138,21 @@ int grokMoeNormWeights(TASK_ARGS) {
             weights[i] = block->moeRouterProbs[indexes[i]] / sum;
         }
     }
-    return TASK_CONTINUE;
 }
 
-int grokQuantizeMoeInput(TASK_ARGS) {
+void grokQuantizeMoeInput(TASK_ARGS) {
     TASK_VARIABLES;
     quantizeUnitBuffer(nThreads, threadIndex, ctx, TB_UNIT_XB, TB_UNIT_XB_QUANTIZED);
-    return TASK_CONTINUE;
 }
 
-int grokSyncMoeInput(TASK_ARGS) {
+void grokSyncMoeInput(TASK_ARGS) {
     TASK_VARIABLES;
     syncUnitBuffer(nThreads, threadIndex, ctx, TB_UNIT_XB_QUANTIZED);
     syncUnitBuffer(nThreads, threadIndex, ctx, TB_UNIT_MOE_INDEXES);
     syncUnitBuffer(nThreads, threadIndex, ctx, TB_UNIT_MOE_WEIGHTS);
-    return TASK_CONTINUE;
 }
 
-int grokMoeBlock0(TASK_ARGS) {
+void grokMoeBlock0(TASK_ARGS) {
     TASK_VARIABLES;
 
     uint8_t* indexes = (uint8_t*)transformer->buffer->getUnit(TB_UNIT_MOE_INDEXES);
@@ -179,10 +167,9 @@ int grokMoeBlock0(TASK_ARGS) {
         matmul(spec->weightsFloatType, spec->bufferFloatType, expertUp, xb, block->moeUp[e], block->moeUpAndGate0Slice->n, block->moeUpAndGate0Slice->d0, nThreads, threadIndex);
         matmul(spec->weightsFloatType, spec->bufferFloatType, expertGate, xb, block->moeGate[e], block->moeUpAndGate0Slice->n, block->moeUpAndGate0Slice->d0, nThreads, threadIndex);
     }
-    return TASK_CONTINUE;
 }
 
-int grokMoeBlock1(TASK_ARGS) {
+void grokMoeBlock1(TASK_ARGS) {
     TASK_VARIABLES;
     float* hb = (float*)transformer->buffer->getSliced(TB_SLICED_HB, transformer->sliceIndex);
 
@@ -197,22 +184,19 @@ int grokMoeBlock1(TASK_ARGS) {
         }
         mul(expertUp, expertGate, block->moeUpAndGate0Slice->d0, nThreads, threadIndex);
     }
-    return TASK_CONTINUE;
 }
 
-int grokQuantizeMoeMul(TASK_ARGS) {
+void grokQuantizeMoeMul(TASK_ARGS) {
     TASK_VARIABLES;
     quantizeSlicedBuffer(nThreads, threadIndex, ctx, true, TB_SLICED_HB, TB_SLICED_HB_QUANTIZED);
-    return TASK_CONTINUE;
 }
 
-int grokSyncMoeMulA(TASK_ARGS) {
+void grokSyncMoeMulA(TASK_ARGS) {
     TASK_VARIABLES;
     syncSliceOfSlicedBuffer(nThreads, threadIndex, ctx, TB_SLICED_HB_QUANTIZED);
-    return TASK_CONTINUE;
 }
 
-int grokSyncMoeMulRearrange(TASK_ARGS) {
+void grokSyncMoeMulRearrange(TASK_ARGS) {
     TASK_VARIABLES;
 
     if (threadIndex == 0 && spec->nSlices > 1) {
@@ -234,16 +218,14 @@ int grokSyncMoeMulRearrange(TASK_ARGS) {
         memcpy(hbq, buffer, bufferBytes);
         delete[] buffer;
     }
-    return TASK_CONTINUE;
 }
 
-int grokSyncMoeMulB(TASK_ARGS) {
+void grokSyncMoeMulB(TASK_ARGS) {
     TASK_VARIABLES;
     syncUnitBuffer(nThreads, threadIndex, ctx, TB_SLICED_HB_QUANTIZED);
-    return TASK_CONTINUE;
 }
 
-int grokMoeBlock2(TASK_ARGS) {
+void grokMoeBlock2(TASK_ARGS) {
     TASK_VARIABLES;
 
     float* xb2 = (float*)transformer->buffer->getSliced(TB_SLICED_XB2, transformer->sliceIndex);
@@ -267,149 +249,135 @@ int grokMoeBlock2(TASK_ARGS) {
             add(xb2, expertDown, block->moeDown0Slice->d0, nThreads, threadIndex);
         }
     }
-    return TASK_CONTINUE;
 }
 
-int grokQuantizeMoeOutput(TASK_ARGS) {
+void grokQuantizeMoeOutput(TASK_ARGS) {
     TASK_VARIABLES;
     quantizeSlicedBuffer(nThreads, threadIndex, ctx, false, TB_SLICED_XB2, TB_SLICED_XB2_QUANTIZED);
-    return TASK_CONTINUE;
 }
 
-int grokSyncMoeOutput(TASK_ARGS) {
+void grokSyncMoeOutput(TASK_ARGS) {
     TASK_VARIABLES;
     syncSliceOfSlicedBuffer(nThreads, threadIndex, ctx, TB_SLICED_XB2_QUANTIZED);
-    return TASK_CONTINUE;
 }
 
-int grokDequantizeMoeOutput(TASK_ARGS) {
+void grokDequantizeMoeOutput(TASK_ARGS) {
     TASK_VARIABLES;
     dequantizeSlicedBuffer(nThreads, threadIndex, ctx, false, TB_SLICED_XB2_QUANTIZED, TB_SLICED_XB2);
-    return TASK_CONTINUE;
 }
 
-int grokMoeRmsFinal(TASK_ARGS) {
+void grokMoeRmsFinal(TASK_ARGS) {
     TASK_VARIABLES;
     if (threadIndex == 0) {
         float* xb2 = (float*)transformer->buffer->getUnit(TB_SLICED_XB2);
         transformer->rms = rms(xb2, spec->dim);
     }
-    return TASK_CONTINUE;
 }
 
-int grokMoeRmsNormFinal(TASK_ARGS) {
+void grokMoeRmsNormFinal(TASK_ARGS) {
     TASK_VARIABLES;
     float* xb2 = (float*)transformer->buffer->getUnit(TB_SLICED_XB2);
     rmsnorm(xb2, xb2, transformer->rms, block->rmsFfn2, spec->dim, nThreads, threadIndex);
-    return TASK_CONTINUE;
 }
 
-int grokMoeAdd(TASK_ARGS) {
+void grokMoeAdd(TASK_ARGS) {
     TASK_VARIABLES;
     float* xb2 = (float*)transformer->buffer->getUnit(TB_SLICED_XB2);
     add(transformer->x, xb2, spec->dim, nThreads, threadIndex);
-    return TASK_CONTINUE;
 }
 
-int grokFinalize(TASK_ARGS) {
+void grokFinalize(TASK_ARGS) {
     TASK_VARIABLES;
-    if (ctx->finalize) {
-        matmul(spec->weightsFloatType, F32, transformer->logits, transformer->x, transformer->wcls, spec->dim, spec->vocabSize, nThreads, threadIndex);
-    }
-    return TASK_CONTINUE;
+    matmul(spec->weightsFloatType, F32, transformer->logits, transformer->x, transformer->wcls, spec->dim, spec->vocabSize, nThreads, threadIndex);
 }
 
-int grokFinalize2(TASK_ARGS) {
+void grokFinalize2(TASK_ARGS) {
     TASK_VARIABLES;
-    if (ctx->finalize) {
-        mulScalar(transformer->logits, 0.5773502691896257f, spec->vocabSize, nThreads, threadIndex);
-        return TASK_STOP;
-    }
-    return TASK_CONTINUE;
+    mulScalar(transformer->logits, 0.5773502691896257f, spec->vocabSize, nThreads, threadIndex);
 }
 
-static TaskLoopTask inferenceTasks[] = {
-    { llamaRmsAtt, TASK_TYPE_INFERENCE },
-    { llamaRmsAttNorm, TASK_TYPE_INFERENCE },
-    { llamaQuantizeRmsAtt, TASK_TYPE_INFERENCE },
-    { llamaSyncRmsAtt, TASK_TYPE_TRANSFER },
-    { llamaQkv, TASK_TYPE_INFERENCE },
-    { llamaQuantizeQkv, TASK_TYPE_INFERENCE },
-    { llamaSyncQkv, TASK_TYPE_TRANSFER },
-    { llamaDequantizeQkv, TASK_TYPE_INFERENCE },
-    { llamaMultiheadAtt, TASK_TYPE_INFERENCE },
-    { grokMultiheadAttRope, TASK_TYPE_INFERENCE },
-    { llamaMultiheadAttJoin, TASK_TYPE_INFERENCE },
-    { llamaQuantizeMultiheadAtt, TASK_TYPE_INFERENCE },
-    { llamaSyncMultiheadAtt, TASK_TYPE_TRANSFER },
-    { llamaAtt, TASK_TYPE_INFERENCE },
-    { llamaQuantizeAtt, TASK_TYPE_INFERENCE },
-    { llamaSyncAtt, TASK_TYPE_TRANSFER },
-    { llamaDequantizeAtt, TASK_TYPE_INFERENCE },
-    { grokRmfFfn, TASK_TYPE_INFERENCE },
-    { grokRmfFfnNorm, TASK_TYPE_INFERENCE },
-    { grokRmfFfnNormJoin, TASK_TYPE_INFERENCE },
+TransformerArch buildGrok1Arch(TransformerSpec* spec) {
+    TransformerArch a;
 
-    { grokMoeRms, TASK_TYPE_INFERENCE },
-    { grokMoeRmsNorm, TASK_TYPE_INFERENCE },
-    { grokMoeRouter, TASK_TYPE_INFERENCE },
-    { grokMoeRouterSoftmax, TASK_TYPE_INFERENCE },
-    { grokMoeTopk, TASK_TYPE_INFERENCE },
-    { grokMoeNormWeights, TASK_TYPE_INFERENCE },
-    { grokQuantizeMoeInput, TASK_TYPE_INFERENCE },
-    { grokSyncMoeInput, TASK_TYPE_TRANSFER },
-    { grokMoeBlock0, TASK_TYPE_INFERENCE },
-    { grokMoeBlock1, TASK_TYPE_INFERENCE },
-    { grokQuantizeMoeMul, TASK_TYPE_INFERENCE },
-    { grokSyncMoeMulA, TASK_TYPE_INFERENCE },
-    { grokSyncMoeMulRearrange, TASK_TYPE_INFERENCE },
-    { grokSyncMoeMulB, TASK_TYPE_INFERENCE },
-    { grokMoeBlock2, TASK_TYPE_INFERENCE },
-    { grokQuantizeMoeOutput, TASK_TYPE_INFERENCE },
-    { grokSyncMoeOutput, TASK_TYPE_TRANSFER },
-    { grokDequantizeMoeOutput, TASK_TYPE_INFERENCE },
-    { grokMoeRmsFinal, TASK_TYPE_INFERENCE },
-    { grokMoeRmsNormFinal, TASK_TYPE_INFERENCE },
-    { grokMoeAdd, TASK_TYPE_INFERENCE },
+    // inference
 
-    { llamaNextBlock, TASK_TYPE_INFERENCE },
-    { llamaRmsFinal, TASK_TYPE_INFERENCE },
-    { llamaRmsFinalNorm, TASK_TYPE_INFERENCE },
-    { grokFinalize, TASK_TYPE_INFERENCE },
-    { grokFinalize2, TASK_TYPE_INFERENCE },
-};
+    a.I(sendPoke, TASK_TYPE_TRANSFER);
+    a.I(grokMulInput, TASK_TYPE_INFERENCE);
+    for (int i = 0; i < spec->nLayers; i++) {
+        a.I(llamaRmsAtt, TASK_TYPE_INFERENCE);
+        a.I(llamaRmsAttNorm, TASK_TYPE_INFERENCE);
+        a.I(llamaQuantizeRmsAtt, TASK_TYPE_INFERENCE);
+        a.I(llamaSyncRmsAtt, TASK_TYPE_TRANSFER);
+        a.I(llamaQkv, TASK_TYPE_INFERENCE);
+        a.I(llamaQuantizeQkv, TASK_TYPE_INFERENCE);
+        a.I(llamaSyncQkv, TASK_TYPE_TRANSFER);
+        a.I(llamaDequantizeQkv, TASK_TYPE_INFERENCE);
+        a.I(llamaMultiheadAtt, TASK_TYPE_INFERENCE);
+        a.I(grokMultiheadAttRope, TASK_TYPE_INFERENCE);
+        a.I(llamaMultiheadAttJoin, TASK_TYPE_INFERENCE);
+        a.I(llamaQuantizeMultiheadAtt, TASK_TYPE_INFERENCE);
+        a.I(llamaSyncMultiheadAtt, TASK_TYPE_TRANSFER);
+        a.I(llamaAtt, TASK_TYPE_INFERENCE);
+        a.I(llamaQuantizeAtt, TASK_TYPE_INFERENCE);
+        a.I(llamaSyncAtt, TASK_TYPE_TRANSFER);
+        a.I(llamaDequantizeAtt, TASK_TYPE_INFERENCE);
+        a.I(grokRmfFfn, TASK_TYPE_INFERENCE);
+        a.I(grokRmfFfnNorm, TASK_TYPE_INFERENCE);
+        a.I(grokRmfFfnNormJoin, TASK_TYPE_INFERENCE);
 
-static TaskLoopTask workerTasks[] = {
-    { llamaSyncRmsAtt, TASK_TYPE_TRANSFER },
-    { llamaQkv, TASK_TYPE_INFERENCE },
-    { llamaQuantizeQkv, TASK_TYPE_INFERENCE },
-    { llamaSyncQkv, TASK_TYPE_TRANSFER },
-    { llamaSyncMultiheadAtt, TASK_TYPE_TRANSFER },
-    { llamaAtt, TASK_TYPE_INFERENCE },
-    { llamaQuantizeAtt, TASK_TYPE_INFERENCE },
-    { llamaSyncAtt, TASK_TYPE_TRANSFER },
-
-    { grokSyncMoeInput, TASK_TYPE_TRANSFER },
-    { grokMoeBlock0, TASK_TYPE_INFERENCE },
-    { grokMoeBlock1, TASK_TYPE_INFERENCE },
-    { grokQuantizeMoeMul, TASK_TYPE_INFERENCE },
-    { grokSyncMoeMulA, TASK_TYPE_INFERENCE },
-    { grokSyncMoeMulB, TASK_TYPE_INFERENCE },
-    { grokMoeBlock2, TASK_TYPE_INFERENCE },
-    { grokQuantizeMoeOutput, TASK_TYPE_INFERENCE },
-    { grokSyncMoeOutput, TASK_TYPE_TRANSFER },
-
-    { llamaNextBlock, TASK_TYPE_INFERENCE }
-};
-
-TransformerArch Grok1::arch = {
-    .initInference = initInference,
-    .inference = {
-        .nTasks = sizeof(inferenceTasks) / sizeof(TaskLoopTask),
-        .tasks = inferenceTasks
-    },
-    .worker = {
-        .nTasks = sizeof(workerTasks) / sizeof(TaskLoopTask),
-        .tasks = workerTasks
+        a.I(grokMoeRms, TASK_TYPE_INFERENCE);
+        a.I(grokMoeRmsNorm, TASK_TYPE_INFERENCE);
+        a.I(grokMoeRouter, TASK_TYPE_INFERENCE);
+        a.I(grokMoeRouterSoftmax, TASK_TYPE_INFERENCE);
+        a.I(grokMoeTopk, TASK_TYPE_INFERENCE);
+        a.I(grokMoeNormWeights, TASK_TYPE_INFERENCE);
+        a.I(grokQuantizeMoeInput, TASK_TYPE_INFERENCE);
+        a.I(grokSyncMoeInput, TASK_TYPE_TRANSFER);
+        a.I(grokMoeBlock0, TASK_TYPE_INFERENCE);
+        a.I(grokMoeBlock1, TASK_TYPE_INFERENCE);
+        a.I(grokQuantizeMoeMul, TASK_TYPE_INFERENCE);
+        a.I(grokSyncMoeMulA, TASK_TYPE_INFERENCE);
+        a.I(grokSyncMoeMulRearrange, TASK_TYPE_INFERENCE);
+        a.I(grokSyncMoeMulB, TASK_TYPE_INFERENCE);
+        a.I(grokMoeBlock2, TASK_TYPE_INFERENCE);
+        a.I(grokQuantizeMoeOutput, TASK_TYPE_INFERENCE);
+        a.I(grokSyncMoeOutput, TASK_TYPE_TRANSFER);
+        a.I(grokDequantizeMoeOutput, TASK_TYPE_INFERENCE);
+        a.I(grokMoeRmsFinal, TASK_TYPE_INFERENCE);
+        a.I(grokMoeRmsNormFinal, TASK_TYPE_INFERENCE);
+        a.I(grokMoeAdd, TASK_TYPE_INFERENCE);
+        a.I(llamaNextBlock, TASK_TYPE_INFERENCE);
     }
-};
+
+    a.I(llamaRmsFinal, TASK_TYPE_INFERENCE);
+    a.I(llamaRmsFinalNorm, TASK_TYPE_INFERENCE);
+    a.I(grokFinalize, TASK_TYPE_INFERENCE);
+    a.I(grokFinalize2, TASK_TYPE_INFERENCE);
+
+    // worker
+
+    for (int i = 0; i < spec->nLayers; i++) {
+        a.W(llamaSyncRmsAtt, TASK_TYPE_TRANSFER);
+        a.W(llamaQkv, TASK_TYPE_INFERENCE);
+        a.W(llamaQuantizeQkv, TASK_TYPE_INFERENCE);
+        a.W(llamaSyncQkv, TASK_TYPE_TRANSFER);
+        a.W(llamaSyncMultiheadAtt, TASK_TYPE_TRANSFER);
+        a.W(llamaAtt, TASK_TYPE_INFERENCE);
+        a.W(llamaQuantizeAtt, TASK_TYPE_INFERENCE);
+        a.W(llamaSyncAtt, TASK_TYPE_TRANSFER);
+
+        a.W(grokSyncMoeInput, TASK_TYPE_TRANSFER);
+        a.W(grokMoeBlock0, TASK_TYPE_INFERENCE);
+        a.W(grokMoeBlock1, TASK_TYPE_INFERENCE);
+        a.W(grokQuantizeMoeMul, TASK_TYPE_INFERENCE);
+        a.W(grokSyncMoeMulA, TASK_TYPE_INFERENCE);
+        a.W(grokSyncMoeMulB, TASK_TYPE_INFERENCE);
+        a.W(grokMoeBlock2, TASK_TYPE_INFERENCE);
+        a.W(grokQuantizeMoeOutput, TASK_TYPE_INFERENCE);
+        a.W(grokSyncMoeOutput, TASK_TYPE_TRANSFER);
+
+        a.W(llamaNextBlock, TASK_TYPE_INFERENCE);
+    }
+
+    return a;
+}

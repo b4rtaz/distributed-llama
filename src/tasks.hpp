@@ -14,7 +14,6 @@ struct TransformerContext {
     Transformer* transformer;
     Socket* socket;
     SocketPool* socketPool;
-    bool finalize;
     unsigned int currentBlockIndex;
 };
 
@@ -25,11 +24,16 @@ struct TransformerTasks {
     TaskLoopTask* tasks;
 };
 
-
-struct TransformerArch {
-    InferenceInitializer* initInference;
+class TransformerArch {
+public:
     TransformerTasks inference;
     TransformerTasks worker;
+
+    TransformerArch();
+    ~TransformerArch();
+
+    void I(TaskLoopHandler* handler, unsigned int taskType);
+    void W(TaskLoopHandler* handler, unsigned int taskType);
 };
 
 #define TASK_VARIABLES \
@@ -44,10 +48,12 @@ void syncMissingSlicesOfSlicedBuffer(unsigned int nThreads, unsigned int threadI
 void quantizeUnitBuffer(unsigned int nThreads, unsigned int threadIndex, TransformerContext* ctx, uint8_t sourceBufferIndex, uint8_t targetBufferIndex);
 void quantizeSlicedBuffer(unsigned int nThreads, unsigned int threadIndex, TransformerContext* ctx, bool quantizeRootSlice, uint8_t sourceBufferIndex, uint8_t targetBufferIndex);
 void dequantizeSlicedBuffer(unsigned int nThreads, unsigned int threadIndex, TransformerContext* ctx, bool dequantizeRootSlice, uint8_t sourceBufferIndex, uint8_t targetBufferIndex);
+void sendPoke(TASK_ARGS);
 
 class Inference {
 private:
     Transformer* transformer;
+    SocketPool* socketPool;
     TransformerContext context;
     TaskLoop *taskLoop;
     TransformerArch *arch;
@@ -61,6 +67,7 @@ public:
 class Worker {
 private:
     Transformer* transformer;
+    Socket* socket;
     TransformerContext context;
     TaskLoop *taskLoop;
 public:

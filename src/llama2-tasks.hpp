@@ -3,33 +3,30 @@
 
 #include "tasks.hpp"
 
-int llamaRmsAtt(TASK_ARGS);
-int llamaRmsAttNorm(TASK_ARGS);
-int llamaQuantizeRmsAtt(TASK_ARGS);
-int llamaSyncRmsAtt(TASK_ARGS);
-int llamaQkv(TASK_ARGS);
-int llamaQuantizeQkv(TASK_ARGS);
-int llamaSyncQkv(TASK_ARGS);
-int llamaDequantizeQkv(TASK_ARGS);
-int llamaMultiheadAtt(TASK_ARGS);
-int llamaMultiheadAttRope(TASK_ARGS);
-int llamaMultiheadAttJoin(TASK_ARGS);
-int llamaQuantizeMultiheadAtt(TASK_ARGS);
-int llamaSyncMultiheadAtt(TASK_ARGS);
-int llamaAtt(TASK_ARGS);
-int llamaQuantizeAtt(TASK_ARGS);
-int llamaSyncAtt(TASK_ARGS);
-int llamaDequantizeAtt(TASK_ARGS);
-int llamaRmfFfn(TASK_ARGS);
-int llamaRmfFfnNorm(TASK_ARGS);
-int llamaNextBlock(TASK_ARGS);
-int llamaRmsFinal(TASK_ARGS);
-int llamaRmsFinalNorm(TASK_ARGS);
-int llamaFinalize(TASK_ARGS);
+void llamaRmsAtt(TASK_ARGS);
+void llamaRmsAttNorm(TASK_ARGS);
+void llamaQuantizeRmsAtt(TASK_ARGS);
+void llamaSyncRmsAtt(TASK_ARGS);
+void llamaQkv(TASK_ARGS);
+void llamaQuantizeQkv(TASK_ARGS);
+void llamaSyncQkv(TASK_ARGS);
+void llamaDequantizeQkv(TASK_ARGS);
+void llamaMultiheadAtt(TASK_ARGS);
+void llamaMultiheadAttRope(TASK_ARGS);
+void llamaMultiheadAttJoin(TASK_ARGS);
+void llamaQuantizeMultiheadAtt(TASK_ARGS);
+void llamaSyncMultiheadAtt(TASK_ARGS);
+void llamaAtt(TASK_ARGS);
+void llamaQuantizeAtt(TASK_ARGS);
+void llamaSyncAtt(TASK_ARGS);
+void llamaDequantizeAtt(TASK_ARGS);
+void llamaRmfFfn(TASK_ARGS);
+void llamaRmfFfnNorm(TASK_ARGS);
+void llamaNextBlock(TASK_ARGS);
+void llamaRmsFinal(TASK_ARGS);
+void llamaRmsFinalNorm(TASK_ARGS);
+void llamaFinalize(TASK_ARGS);
 
-class Llama2 {
-    public:
-        static TransformerArch arch;
-};
+TransformerArch buildLlama2Arch(TransformerSpec* spec);
 
 #endif

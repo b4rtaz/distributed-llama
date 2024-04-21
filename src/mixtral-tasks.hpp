@@ -3,9 +3,6 @@
 
 #include "tasks.hpp"
 
-class Mixtral {
-    public:
-        static TransformerArch arch;
-};
+TransformerArch buildMixtralArch(TransformerSpec* spec);
 
 #endif
