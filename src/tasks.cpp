@@ -2,6 +2,43 @@
 #include <cassert>
 #include <cstring>
 
+TransformerArch::TransformerArch() {
+    inference.nTasks = 0;
+    worker.nTasks = 0;
+}
+
+TransformerArch::~TransformerArch() {
+    if (inference.nTasks > 0) {
+        delete[] inference.tasks;
+    }
+    if (worker.nTasks > 0) {
+        delete[] worker.tasks;
+    }
+}
+
+void addTask(TaskLoopHandler* handler, unsigned int taskType, TransformerTasks* tasks) {
+    const int alloc = 32;
+    if (tasks->nTasks % alloc == 0) {
+        TaskLoopTask* newTasks = new TaskLoopTask[tasks->nTasks + alloc];
+        if (tasks->nTasks > 0) {
+            memcpy(newTasks, tasks->tasks, tasks->nTasks * sizeof(TaskLoopTask));
+            delete[] tasks->tasks;
+        }
+        tasks->tasks = newTasks;
+    }
+    tasks->tasks[tasks->nTasks].handler = handler;
+    tasks->tasks[tasks->nTasks].taskType = taskType;
+    tasks->nTasks++;
+}
+
+void TransformerArch::I(TaskLoopHandler* handler, unsigned int taskType) {
+    addTask(handler, taskType, &inference);
+}
+
+void TransformerArch::W(TaskLoopHandler* handler, unsigned int taskType) {
+    addTask(handler, taskType, &worker);
+}
+
 void syncUnitBuffer(unsigned int nThreads, unsigned int threadIndex, TransformerContext* ctx, uint8_t bufferIndex) {
     char* buffer = ctx->transformer->buffer->getUnit(bufferIndex);
     size_t bufferBytes = ctx->transformer->buffer->getUnitBytes(bufferIndex);
@@ -123,12 +160,37 @@ void dequantizeSlicedBuffer(unsigned int nThreads, unsigned int threadIndex, Tra
     }
 }
 
+void sendPoke(TASK_ARGS) {
+    TASK_VARIABLES;
+
+    if (ctx->socketPool != NULL) {
+        const char poke = 0x25;
+
+        unsigned int nSockets = ctx->socketPool->nSockets / nThreads + (ctx->socketPool->nSockets % nThreads > threadIndex ? 1 : 0);
+        SocketIo ios[nSockets];
+        for (int i = 0; i < nSockets; i++) {
+            ios[i].socketIndex = threadIndex + i * nThreads;
+            ios[i].data = &poke;
+            ios[i].size = sizeof(char);
+        }
+        ctx->socketPool->writeMany(nSockets, ios);
+    }
+}
+
+void waitForPoke(Socket* socket) {
+    char poke;
+    socket->read(&poke, sizeof(char));
+    assert(poke == 0x25);
+}
+
 Inference::Inference(TransformerArch* arch, unsigned int nThreads, Transformer* transformer, SocketPool* socketPool) {
     this->transformer = transformer;
+    this->socketPool = socketPool;
     this->arch = arch;
     context.transformer = transformer;
     context.socket = NULL;
     context.socketPool = socketPool;
+    assert(arch->inference.tasks[0].handler == sendPoke);
     taskLoop = new TaskLoop(nThreads, arch->inference.nTasks, TASK_N_TYPES, arch->inference.tasks, (void*)&context);
 }
 
@@ -142,12 +204,7 @@ float* Inference::infer(int token, int pos) {
     float* contentRow = ((float*)transformer->tokenEmbeddingTable) + token * transformer->spec->dim;
     memcpy(transformer->x, contentRow, transformer->spec->dim * sizeof(float));
 
-    context.finalize = false;
     context.currentBlockIndex = 0;
-
-    if (arch->initInference != NULL) {
-        arch->initInference(&context);
-    }
 
     taskLoop->run();
 
@@ -161,6 +218,7 @@ void Inference::getStats(unsigned long* inferenceTime, unsigned long* transferTi
 
 Worker::Worker(TransformerArch* arch, unsigned int nThreads, Transformer* transformer, Socket* socket) {
     this->transformer = transformer;
+    this->socket = socket;
     context.transformer = transformer;
     context.socket = socket;
     context.socketPool = NULL;
@@ -172,8 +230,10 @@ Worker::~Worker() {
 }
 
 void Worker::work() {
-    context.finalize = false;
-    context.currentBlockIndex = 0;
+    while (true) {
+        waitForPoke(socket);
 
-    taskLoop->run();
+        context.currentBlockIndex = 0;
+        taskLoop->run();
+    }
 }

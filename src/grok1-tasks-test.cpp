@@ -14,10 +14,6 @@ float expectedOutput_0_4[] = { 0.00940248929, 0.0191232786, 0.0147766126, 0.0102
 float expectedOutput_256_260[] = { 0.0191071425, 0.0134582901, 0.0146755828, 0.019181719 };
 float expectedOutput_5012_5016[] = { 0.0126675405, 0.0169415697, 0.0183475353, 0.0182626117 };
 
-int stopTask(unsigned int nThreads, unsigned int threadIndex, void* userData) {
-    return TASK_STOP;
-}
-
 void compare(float* a, float* b, int n) {
     for (int i = 0; i < n; i++) {
         if (fabs(a[i] - b[i]) > 0.00001) { // Optimization may cause some differences
@@ -68,10 +64,7 @@ int main() {
     float* x = transformer.x;
     for (int i = 0; i < spec.dim; i++) x[i] = randomF32(&state) / 100.0;
 
-    TaskLoopTask* tasks = new TaskLoopTask[Grok1::arch.inference.nTasks];
-    memcpy(tasks, Grok1::arch.inference.tasks, sizeof(TaskLoopTask) * Grok1::arch.inference.nTasks);
-    assert(tasks[Grok1::arch.inference.nTasks - 5].handler == llamaNextBlock);
-    tasks[Grok1::arch.inference.nTasks - 5].handler = stopTask;
+    TransformerArch arch = buildGrok1Arch(&spec);
 
     int nThreads = 4;
     TransformerContext context;
@@ -80,7 +73,7 @@ int main() {
     context.socket = NULL;
     context.socketPool = &socketPool;
 
-    TaskLoop loop(nThreads, Grok1::arch.inference.nTasks, TASK_N_TYPES, tasks, &context);
+    TaskLoop loop(nThreads, arch.inference.nTasks, TASK_N_TYPES, arch.inference.tasks, &context);
     long t0 = timeMs();
     loop.run();
     long t1 = timeMs();

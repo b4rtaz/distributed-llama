@@ -265,7 +265,7 @@ SocketServer::SocketServer(int port) {
     int listenResult = listen(socket, 1);
     if (listenResult != 0) {
         printf("Cannot listen %s:%d\n", host, port);
-        exit(EXIT_FAILURE);
+        throw std::runtime_error("Cannot listen port");
     }
     printf("Listening on %s:%d...\n", host, port);
 }

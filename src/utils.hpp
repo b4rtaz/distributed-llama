@@ -12,11 +12,9 @@ unsigned long timeMs();
 unsigned int randomU32(unsigned long long *state);
 float randomF32(unsigned long long *state);
 
-#define TASK_CONTINUE 0
-#define TASK_STOP -1
-
+typedef void (TaskLoopHandler)(unsigned int nThreads, unsigned int threadIndex, void* userData);
 typedef struct {
-    int (*handler)(unsigned int nThreads, unsigned int threadIndex, void* userData);
+    TaskLoopHandler* handler;
     unsigned int taskType;
 } TaskLoopTask;
 
@@ -24,6 +22,7 @@ class TaskLoop;
 
 struct TaskLoopThread {
     unsigned int threadIndex;
+    unsigned int nTasks;
     pthread_t handler;
     TaskLoop* loop;
 };
@@ -36,7 +35,6 @@ public:
     TaskLoopTask* tasks;
     void* userData;
     std::atomic_uint currentTaskIndex;
-    std::atomic_uint stopTaskIndex;
     std::atomic_uint doneThreadCount;
     unsigned int lastTime;
     unsigned int* executionTime;

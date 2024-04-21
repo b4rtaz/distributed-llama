@@ -2,82 +2,81 @@
 #include "grok1-tasks.hpp"
 #include "mixtral-tasks.hpp"
 
-static TaskLoopTask inferenceTasks[] = {
-    { llamaRmsAtt, TASK_TYPE_INFERENCE },
-    { llamaRmsAttNorm, TASK_TYPE_INFERENCE },
-    { llamaQuantizeRmsAtt, TASK_TYPE_INFERENCE },
-    { llamaSyncRmsAtt, TASK_TYPE_TRANSFER },
-    { llamaQkv, TASK_TYPE_INFERENCE },
-    { llamaQuantizeQkv, TASK_TYPE_INFERENCE },
-    { llamaSyncQkv, TASK_TYPE_TRANSFER },
-    { llamaDequantizeQkv, TASK_TYPE_INFERENCE },
-    { llamaMultiheadAtt, TASK_TYPE_INFERENCE },
-    { grokMultiheadAttRope, TASK_TYPE_INFERENCE },
-    { llamaMultiheadAttJoin, TASK_TYPE_INFERENCE },
-    { llamaQuantizeMultiheadAtt, TASK_TYPE_INFERENCE },
-    { llamaSyncMultiheadAtt, TASK_TYPE_TRANSFER },
-    { llamaAtt, TASK_TYPE_INFERENCE },
-    { llamaQuantizeAtt, TASK_TYPE_INFERENCE },
-    { llamaSyncAtt, TASK_TYPE_TRANSFER },
-    { llamaDequantizeAtt, TASK_TYPE_INFERENCE },
-    { llamaRmfFfn, TASK_TYPE_INFERENCE },
-    { llamaRmfFfnNorm, TASK_TYPE_INFERENCE },
+TransformerArch buildMixtralArch(TransformerSpec* spec) {
+    TransformerArch a;
 
-    { grokMoeRouter, TASK_TYPE_INFERENCE },
-    { grokMoeRouterSoftmax, TASK_TYPE_INFERENCE },
-    { grokMoeTopk, TASK_TYPE_INFERENCE },
-    { grokMoeNormWeights, TASK_TYPE_INFERENCE },
-    { grokQuantizeMoeInput, TASK_TYPE_INFERENCE },
-    { grokSyncMoeInput, TASK_TYPE_TRANSFER },
-    { grokMoeBlock0, TASK_TYPE_INFERENCE },
-    { grokMoeBlock1, TASK_TYPE_INFERENCE },
-    { grokQuantizeMoeMul, TASK_TYPE_INFERENCE },
-    { grokSyncMoeMulA, TASK_TYPE_INFERENCE },
-    { grokSyncMoeMulRearrange, TASK_TYPE_INFERENCE },
-    { grokSyncMoeMulB, TASK_TYPE_INFERENCE },
-    { grokMoeBlock2, TASK_TYPE_INFERENCE },
-    { grokQuantizeMoeOutput, TASK_TYPE_INFERENCE },
-    { grokSyncMoeOutput, TASK_TYPE_TRANSFER },
-    { grokDequantizeMoeOutput, TASK_TYPE_INFERENCE },
-    { grokMoeAdd, TASK_TYPE_INFERENCE },
+    // inference
 
-    { llamaNextBlock, TASK_TYPE_INFERENCE },
-    { llamaRmsFinal, TASK_TYPE_INFERENCE },
-    { llamaRmsFinalNorm, TASK_TYPE_INFERENCE },
-    { llamaFinalize, TASK_TYPE_INFERENCE },
-};
+    a.I(sendPoke, TASK_TYPE_TRANSFER);
+    for (int i = 0; i < spec->nLayers; i++) {
+        a.I(llamaRmsAtt, TASK_TYPE_INFERENCE);
+        a.I(llamaRmsAttNorm, TASK_TYPE_INFERENCE);
+        a.I(llamaQuantizeRmsAtt, TASK_TYPE_INFERENCE);
+        a.I(llamaSyncRmsAtt, TASK_TYPE_TRANSFER);
+        a.I(llamaQkv, TASK_TYPE_INFERENCE);
+        a.I(llamaQuantizeQkv, TASK_TYPE_INFERENCE);
+        a.I(llamaSyncQkv, TASK_TYPE_TRANSFER);
+        a.I(llamaDequantizeQkv, TASK_TYPE_INFERENCE);
+        a.I(llamaMultiheadAtt, TASK_TYPE_INFERENCE);
+        a.I(grokMultiheadAttRope, TASK_TYPE_INFERENCE);
+        a.I(llamaMultiheadAttJoin, TASK_TYPE_INFERENCE);
+        a.I(llamaQuantizeMultiheadAtt, TASK_TYPE_INFERENCE);
+        a.I(llamaSyncMultiheadAtt, TASK_TYPE_TRANSFER);
+        a.I(llamaAtt, TASK_TYPE_INFERENCE);
+        a.I(llamaQuantizeAtt, TASK_TYPE_INFERENCE);
+        a.I(llamaSyncAtt, TASK_TYPE_TRANSFER);
+        a.I(llamaDequantizeAtt, TASK_TYPE_INFERENCE);
+        a.I(llamaRmfFfn, TASK_TYPE_INFERENCE);
+        a.I(llamaRmfFfnNorm, TASK_TYPE_INFERENCE);
 
-static TaskLoopTask workerTasks[] = {
-    { llamaSyncRmsAtt, TASK_TYPE_TRANSFER },
-    { llamaQkv, TASK_TYPE_INFERENCE },
-    { llamaQuantizeQkv, TASK_TYPE_INFERENCE },
-    { llamaSyncQkv, TASK_TYPE_TRANSFER },
-    { llamaSyncMultiheadAtt, TASK_TYPE_TRANSFER },
-    { llamaAtt, TASK_TYPE_INFERENCE },
-    { llamaQuantizeAtt, TASK_TYPE_INFERENCE },
-    { llamaSyncAtt, TASK_TYPE_TRANSFER },
+        a.I(grokMoeRouter, TASK_TYPE_INFERENCE);
+        a.I(grokMoeRouterSoftmax, TASK_TYPE_INFERENCE);
+        a.I(grokMoeTopk, TASK_TYPE_INFERENCE);
+        a.I(grokMoeNormWeights, TASK_TYPE_INFERENCE);
+        a.I(grokQuantizeMoeInput, TASK_TYPE_INFERENCE);
+        a.I(grokSyncMoeInput, TASK_TYPE_TRANSFER);
+        a.I(grokMoeBlock0, TASK_TYPE_INFERENCE);
+        a.I(grokMoeBlock1, TASK_TYPE_INFERENCE);
+        a.I(grokQuantizeMoeMul, TASK_TYPE_INFERENCE);
+        a.I(grokSyncMoeMulA, TASK_TYPE_INFERENCE);
+        a.I(grokSyncMoeMulRearrange, TASK_TYPE_INFERENCE);
+        a.I(grokSyncMoeMulB, TASK_TYPE_INFERENCE);
+        a.I(grokMoeBlock2, TASK_TYPE_INFERENCE);
+        a.I(grokQuantizeMoeOutput, TASK_TYPE_INFERENCE);
+        a.I(grokSyncMoeOutput, TASK_TYPE_TRANSFER);
+        a.I(grokDequantizeMoeOutput, TASK_TYPE_INFERENCE);
+        a.I(grokMoeAdd, TASK_TYPE_INFERENCE);
 
-    { grokSyncMoeInput, TASK_TYPE_TRANSFER },
-    { grokMoeBlock0, TASK_TYPE_INFERENCE },
-    { grokMoeBlock1, TASK_TYPE_INFERENCE },
-    { grokQuantizeMoeMul, TASK_TYPE_INFERENCE },
-    { grokSyncMoeMulA, TASK_TYPE_INFERENCE },
-    { grokSyncMoeMulB, TASK_TYPE_INFERENCE },
-    { grokMoeBlock2, TASK_TYPE_INFERENCE },
-    { grokQuantizeMoeOutput, TASK_TYPE_INFERENCE },
-    { grokSyncMoeOutput, TASK_TYPE_TRANSFER },
-
-    { llamaNextBlock, TASK_TYPE_INFERENCE }
-};
-
-TransformerArch Mixtral::arch = {
-    .initInference = NULL,
-    .inference = {
-        .nTasks = sizeof(inferenceTasks) / sizeof(TaskLoopTask),
-        .tasks = inferenceTasks
-    },
-    .worker = {
-        .nTasks = sizeof(workerTasks) / sizeof(TaskLoopTask),
-        .tasks = workerTasks
+        a.I(llamaNextBlock, TASK_TYPE_INFERENCE);
     }
-};
+    a.I(llamaRmsFinal, TASK_TYPE_INFERENCE);
+    a.I(llamaRmsFinalNorm, TASK_TYPE_INFERENCE);
+    a.I(llamaFinalize, TASK_TYPE_INFERENCE);
+
+    // worker
+
+    for (int i = 0; i < spec->nLayers; i++) {
+        a.W(llamaSyncRmsAtt, TASK_TYPE_TRANSFER);
+        a.W(llamaQkv, TASK_TYPE_INFERENCE);
+        a.W(llamaQuantizeQkv, TASK_TYPE_INFERENCE);
+        a.W(llamaSyncQkv, TASK_TYPE_TRANSFER);
+        a.W(llamaSyncMultiheadAtt, TASK_TYPE_TRANSFER);
+        a.W(llamaAtt, TASK_TYPE_INFERENCE);
+        a.W(llamaQuantizeAtt, TASK_TYPE_INFERENCE);
+        a.W(llamaSyncAtt, TASK_TYPE_TRANSFER);
+
+        a.W(grokSyncMoeInput, TASK_TYPE_TRANSFER);
+        a.W(grokMoeBlock0, TASK_TYPE_INFERENCE);
+        a.W(grokMoeBlock1, TASK_TYPE_INFERENCE);
+        a.W(grokQuantizeMoeMul, TASK_TYPE_INFERENCE);
+        a.W(grokSyncMoeMulA, TASK_TYPE_INFERENCE);
+        a.W(grokSyncMoeMulB, TASK_TYPE_INFERENCE);
+        a.W(grokMoeBlock2, TASK_TYPE_INFERENCE);
+        a.W(grokQuantizeMoeOutput, TASK_TYPE_INFERENCE);
+        a.W(grokSyncMoeOutput, TASK_TYPE_TRANSFER);
+
+        a.W(llamaNextBlock, TASK_TYPE_INFERENCE);
+    }
+
+    return a;
+}
