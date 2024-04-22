@@ -12,9 +12,9 @@ cd converter && pip install -r requirements.txt
 ```sh
 python convert-llama.py /path/to/meta/llama-2-7b q40
 ```
-5. Download the `tokenizer.bin` file from the [llama2.c](https://github.com/karpathy/llama2.c) repository.
+5. Download the tokenizer for Llama 2:
 ```
-wget https://github.com/karpathy/llama2.c/raw/master/tokenizer.bin
+wget https://huggingface.co/b4rtaz/llama-2-distributed-llama/resolve/main/dllama-llama2-tokenizer.t
 ```
 6. Build the project:
 ```bash
@@ -22,7 +22,7 @@ make main
 ```
 7. Run:
 ```bash
-./main inference --model dllama_llama-2-7b_q40.bin --tokenizer tokenizer.bin --weights-float-type q40 --buffer-float-type q80 --prompt "Hello world" --steps 16 --nthreads 4
+./main inference --model dllama_llama-2-7b_q40.bin --tokenizer dllama-llama2-tokenizer.t --weights-float-type q40 --buffer-float-type q80 --prompt "Hello world" --steps 16 --nthreads 4
 ```
 
 In the table below, you can find the expected size of the converted weights with different floating-point types.

@@ -66,7 +66,7 @@ class DistributedLlamaClient {
 		});
 	}
 
-	generate(prompt, maxTokens = 32) {
+	generate(prompt, maxTokens = 128) {
 		return new Promise((resolve, reject) => {
 			this.queue.push({
 				prompt,
@@ -87,7 +87,7 @@ async function main() {
 	try {
 		const client = new DistributedLlamaClient('127.0.0.1', 9990);
 
-		const prompt0 = 'A Carnot heat engine is';
+		const prompt0 = 'The answer to the universe really is';
 		const response0 = await client.generate(prompt0);
 		console.log({ prompt0, response0 });
 

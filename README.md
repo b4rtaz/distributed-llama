@@ -141,7 +141,7 @@ sudo nice -n -20 ./main worker --port 9998 --nthreads 4
 ```
 10. Run root node on the root device:
 ```sh
-sudo nice -n -20 ./main inference --model ../dllama_llama-2-7b_q40.bin --tokenizer ../tokenizer.bin --weights-float-type q40 --buffer-float-type q80 --prompt "Hello world" --steps 16 --nthreads 4 --workers 10.0.0.2:9998
+sudo nice -n -20 ./main inference --model ../dllama_llama-2-7b_q40.bin --tokenizer ../dllama-llama2-tokenizer.t --weights-float-type q40 --buffer-float-type q80 --prompt "Hello world" --steps 16 --nthreads 4 --workers 10.0.0.2:9998
 ```
 
 To add more worker nodes, just add more addresses to the `--workers` argument.
@@ -175,11 +175,11 @@ sudo nice -n -20 ./main worker --port 9998 --nthreads 4
 ```
 6. Run root node on the root device:
 ```sh
-sudo nice -n -20 ./main inference --model ../dllama_llama-2-7b_q40.bin --tokenizer ../tokenizer.bin --weights-float-type q40 --buffer-float-type q80 --prompt "Hello world" --steps 16 --nthreads 4 --workers 192.168.0.1:9998
+sudo nice -n -20 ./main inference --model ../dllama_llama-2-7b_q40.bin --tokenizer ../dllama-llama2-tokenizer.t --weights-float-type q40 --buffer-float-type q80 --prompt "Hello world" --steps 16 --nthreads 4 --workers 192.168.0.1:9998
 ```
 7. To run the root node in the chat mode:
 ```sh
-sudo nice -n -20 ./main chat --model ../dllama_llama-2-7b-chat_q40.bin --tokenizer ../tokenizer.bin --weights-float-type q40 --buffer-float-type q80 --nthreads 4 --workers 192.168.0.1:9998
+sudo nice -n -20 ./main chat --model ../dllama_llama-2-7b-chat_q40.bin --tokenizer ../dllama-llama2-tokenizer.t --weights-float-type q40 --buffer-float-type q80 --nthreads 4 --workers 192.168.0.1:9998
 ```
 
 [Share your results](https://github.com/b4rtaz/distributed-llama/discussions)!

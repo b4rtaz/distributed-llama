@@ -5,12 +5,15 @@
 ```
 cat dllama-grok-1-q40.binaa dllama-grok-1-q40.binab dllama-grok-1-q40.binac dllama-grok-1-q40.binad dllama-grok-1-q40.binae dllama-grok-1-q40.binaf dllama-grok-1-q40.binag dllama-grok-1-q40.binah dllama-grok-1-q40.binai > dllama-grok-1-q40-final.bin
 ```
-3. The tokenizer file is already added to this repository: `tokenizers/grok-1-tokenizer.t`.
+3. Download the tokenizer:
+```
+wget https://huggingface.co/b4rtaz/grok-1-distributed-llama/resolve/main/dllama-grok1-tokenizer.t
+```
 4. Build the project:
 ```bash
 make main
 ```
 5. Run the model:
 ```bash
-./main inference --weights-float-type q40 --buffer-float-type q80 --prompt "Hello" --steps 128 --nthreads 8 --model dllama-grok-1-q40-final.bin --tokenizer tokenizers/grok-1-tokenizer.t
+./main inference --weights-float-type q40 --buffer-float-type q80 --prompt "Hello" --steps 128 --nthreads 8 --model dllama-grok-1-q40-final.bin --tokenizer dllama-grok1-tokenizer.t
 ```

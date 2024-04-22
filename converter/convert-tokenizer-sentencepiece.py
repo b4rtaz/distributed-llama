@@ -53,9 +53,16 @@ class Tokenizer:
  
         # write to a binary file
         # the tokenizer.bin file is the same as .model file, but .bin
-        outputPath = os.path.basename(self.model_path).replace('.model', '.t')
+        outputPath = 'dllama-' + os.path.basename(self.model_path).replace('.model', '.t')
         with open(outputPath, 'wb') as f:
-            f.write(struct.pack("I", max_token_length))
+            f.write(struct.pack('IIIiii',
+                0x567123,
+                self.n_words,
+                max_token_length,
+                self.bos_id,
+                self.eos_id,
+                self.pad_id))
+
             for bytes, score in zip(tokens, scores):
                 print(f"{bytes.decode('utf-8')} {score}")
                 f.write(struct.pack("fI", score, len(bytes)))

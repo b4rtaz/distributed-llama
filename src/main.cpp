@@ -52,7 +52,11 @@ void generate(Inference* inference, SocketPool* socketPool, Tokenizer *tokenizer
     // encode the (string) prompt into tokens sequence
     int numPromptTokens = 0;
     int* promptTokens = (int*)malloc((strlen(args->prompt) + 3) * sizeof(int)); // +3 for '\0', ?BOS, ?EOS
-    tokenizer->encode(args->prompt, promptTokens, &numPromptTokens);
+
+    // TODO: this is a hack for Grok1. We should have a more general way to handle this
+    bool addBos = spec->archType != GROK1;
+
+    tokenizer->encode(args->prompt, promptTokens, &numPromptTokens, addBos, false);
     if (numPromptTokens < 1) {
         fprintf(stderr, "something is wrong, expected at least 1 prompt token\n");
         exit(EXIT_FAILURE);
@@ -94,8 +98,10 @@ void generate(Inference* inference, SocketPool* socketPool, Tokenizer *tokenizer
         totalInferenceTime += inferenceTime;
         totalTransferTime += transferTime;
 
-        // data-dependent terminating condition: the BOS (=1) token delimits sequences
-        if (next == 1) { break; }
+        // data-dependent terminating condition: the BOS token delimits sequences
+        if (next == tokenizer->bosId) {
+            break;
+        }
 
         // print the token as string, decode it with the Tokenizer object
         char* piece = tokenizer->decode(token, next);
@@ -165,7 +171,7 @@ void chat(Inference* inference, SocketPool* socketPool, Tokenizer* tokenizer, Sa
                 snprintf(renderedPrompt, renderedPromptSize, userTemplate, userPrompt);
             }
             // encode the rendered prompt into tokens
-            tokenizer->encode(renderedPrompt, promptTokens, &numPromptTokens);
+            tokenizer->encode(renderedPrompt, promptTokens, &numPromptTokens, true, false);
             userIdx = 0; // reset the user index
             userTurn = 0;
             printf("🤖 Assistant: ");
@@ -179,8 +185,8 @@ void chat(Inference* inference, SocketPool* socketPool, Tokenizer* tokenizer, Sa
             // otherwise use the next token sampled from previous turn
             token = next;
         }
-        // EOS (=2) token ends the Assistant turn
-        if (token == 2) {
+        // EOS token ends the Assistant turn
+        if (token == tokenizer->eosId) {
             userTurn = 1;
         }
 
@@ -195,7 +201,7 @@ void chat(Inference* inference, SocketPool* socketPool, Tokenizer* tokenizer, Sa
             safePrintf(piece); // same as printf("%s", piece), but skips "unsafe" bytes
             fflush(stdout);
         }
-        if (next == 2) { printf("\n"); }
+        if (next == tokenizer->eosId) { printf("\n"); }
     }
     printf("\n");
     free(promptTokens);
@@ -227,7 +233,7 @@ void simpleServer(Inference* inference, SocketPool* socketPool, Tokenizer *token
 
                 int nPromptTokens;
                 int promptTokens[promptSize + 3];
-                tokenizer->encode(prompt, promptTokens, &nPromptTokens);
+                tokenizer->encode(prompt, promptTokens, &nPromptTokens, true, false);
 
                 int token = promptTokens[0];
                 int maxPos = nPromptTokens + maxTokens;
@@ -240,6 +246,13 @@ void simpleServer(Inference* inference, SocketPool* socketPool, Tokenizer *token
                     } else {
                         int prevToken = token;
                         token = sampler->sample(logits);
+
+                        if (token == tokenizer->bosId || token == tokenizer->eosId) {
+                            printf("🚫");
+                            fflush(stdout);
+                            break;
+                        }
+
                         char* piece = tokenizer->decode(prevToken, token);
                         if (isSafePiece(piece)) {
                             int pieceLen = strlen(piece);
@@ -248,10 +261,6 @@ void simpleServer(Inference* inference, SocketPool* socketPool, Tokenizer *token
                         }
                         safePrintf(piece);
                         fflush(stdout);
-                    }
-
-                    if (token == 1) {
-                        break;
                     }
                 }
 
@@ -282,19 +291,16 @@ int run(ProgramArgs* args, void (*program)(Inference* inference, SocketPool* soc
     TransformerSpec spec = Transformer::loadSpecFromFile(args->modelPath, nSlices, args->weightsFloatType, args->bufferFloatType);
     TransformerArch arch = getArch(&spec);
 
-    int steps = args->steps;
-    if (steps < 0) {
-        steps = spec.seqLen;
-    } else if (steps > spec.seqLen) {
-        steps = spec.seqLen;
+    if (args->steps < 0) {
+        args->steps = spec.seqLen;
+    } else if (args->steps > spec.seqLen) {
+        args->steps = spec.seqLen;
     }
 
     Transformer transformer = Transformer::loadRootFromFile(args->modelPath, &spec, socketPool);
     Inference inference = Inference(&arch, args->nThreads, &transformer, socketPool);
 
-    bool bos = spec.archType == LLAMA2 || spec.archType == MIXTRAL;
-    bool eos = false;
-    Tokenizer tokenizer(args->tokenizerPath, spec.vocabSize, bos, eos);
+    Tokenizer tokenizer(args->tokenizerPath, spec.vocabSize);
     Sampler sampler(spec.vocabSize, args->temperature, args->topp, rngSeed);
 
     program(&inference, socketPool, &tokenizer, &sampler, args, &spec);

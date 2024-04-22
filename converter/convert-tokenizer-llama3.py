@@ -26,6 +26,8 @@ specialTokens = [
     f'<|reserved_special_token_{i}|>'
     for i in range(5, nSpecialTokens - 5)
 ]
+bosId = 128000
+eosId = 128001
 
 if __name__ == '__main__':
     if (len(sys.argv) < 2):
@@ -35,21 +37,43 @@ if __name__ == '__main__':
     modelPath = sys.argv[1]
 
     with open(modelPath, 'r') as inputFile:
-        with open('llama3-tokenizer.t', 'wb') as outputFile:
+        with open('dllama-llama3-tokenizer.t', 'wb') as outputFile:
             inputLines = inputFile.readlines()
             nLines = len(inputLines)
-            outputFile.write(struct.pack('I', nLines + nSpecialTokens))
+
+            tokens = []
+            scores = []
             for line in inputLines:
                 s = line.split(' ')
                 bytes = base64.b64decode(s[0])
                 score = -float(s[1])
-                outputFile.write(struct.pack('fI', score, len(bytes)))
-                outputFile.write(bytes)
+                tokens.append(bytes)
+                scores.append(score)
+
             specialTokenIndex = nLines
             for token in specialTokens:
                 bytes = token.encode('utf-8')
                 score = -float(specialTokenIndex)
-                outputFile.write(struct.pack('fI', score, len(bytes)))
-                outputFile.write(bytes)
+                tokens.append(bytes)
+                scores.append(score)
                 specialTokenIndex += 1
-            print(f'vocab_size={specialTokenIndex}')
+
+            vocabSize = len(tokens)
+            maxTokenLength = max(len(t) for t in tokens)
+
+            outputFile.write(struct.pack('IIIiii',
+                0x567123,
+                vocabSize,
+                maxTokenLength,
+                bosId,
+                eosId,
+                -1))
+
+            for i in range(0, vocabSize):
+                outputFile.write(struct.pack('fI', scores[i], len(tokens[i])))
+                outputFile.write(tokens[i])
+
+            print(f'maxTokenLength={maxTokenLength}')
+            print(f'bosId={bosId}')
+            print(f'eosId={eosId}')
+            print(f'vocabSize={vocabSize}')

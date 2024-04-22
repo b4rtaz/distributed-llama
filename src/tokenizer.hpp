@@ -13,21 +13,31 @@ typedef struct {
     int id;
 } TokenIndex;
 
+struct TokenizerHeader {
+    unsigned int magic;
+    unsigned int vocabSize;
+    unsigned int maxTokenLength;
+    int bosId;
+    int eosId;
+    int padId;
+};
+
 class Tokenizer {
 private:
-    bool bos;
-    bool eos;
+    unsigned int maxTokenLength;
     char** vocab;
-    float* vocab_scores;
-    TokenIndex *sorted_vocab;
-    int vocab_size;
-    unsigned int max_token_length;
-    unsigned char byte_pieces[512]; // stores all single-byte strings
+    float* vocabScores;
+    TokenIndex *sortedVocab;
+    int vocabSize;
+    unsigned char bytePieces[512]; // stores all single-byte strings
 
 public:
-    Tokenizer(char* tokenizer_path, int vocab_size, bool bos, bool eos);
+    int bosId;
+    int eosId;
+
+    Tokenizer(char* tokenizer_path, int vocab_size);
     ~Tokenizer();
-    void encode(char *text, int *tokens, int *n_tokens);
+    void encode(char *text, int *tokens, int *nTokens, bool addBos, bool addEos);
     char* decode(int prev_token, int token);
 };
 
