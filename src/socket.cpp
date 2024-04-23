@@ -6,6 +6,7 @@
 #include <errno.h>
 #include <string.h>
 #include <fcntl.h>
+#include <ctime>
 #include <unistd.h>
 #include "socket.hpp"
 #include <stdexcept>
