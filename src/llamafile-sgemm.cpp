@@ -466,7 +466,7 @@ class tinyBLAS_Q0_ARM {
     }
 
     void matmul(int m, int n, int task) {
-        if (task == GGML_TASK_TYPE_COMPUTE)
+        // if (task == GGML_TASK_TYPE_COMPUTE)
             mnpack(0, m, 0, n);
     }
 
@@ -604,7 +604,7 @@ class tinyBLAS_Q0_AVX2 {
     }
 
     void matmul(int m, int n, int task) {
-        if (task == GGML_TASK_TYPE_COMPUTE)
+        // if (task == GGML_TASK_TYPE_COMPUTE)
             mnpack(0, m, 0, n);
     }
 
