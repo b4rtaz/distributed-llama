@@ -67,6 +67,7 @@ class Tokenizer:
                 print(f"{bytes.decode('utf-8')} {score}")
                 f.write(struct.pack("fI", score, len(bytes)))
                 f.write(bytes)
+        print(f'Created {outputPath}')
 
 if __name__ == "__main__":
     if (len(sys.argv) < 2):
