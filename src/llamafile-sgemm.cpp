@@ -51,6 +51,7 @@
 
 #include "llamafile-sgemm.hpp"
 #include "quants.hpp"
+#include <cassert>
 #include <algorithm>
 
 #if defined(__ARM_NEON)
