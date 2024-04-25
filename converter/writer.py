@@ -42,7 +42,9 @@ def writeQuantizedQ80Tensor(file, x):
     assert(x.shape[0] % blockSize == 0)
     groups = x.reshape(-1, blockSize)
     gmax = np.max(groups, axis=1)
-    deltas = gmax / ((1 << 7) - 1)
+    gmin = np.min(groups, axis=1)
+    gabsMax = np.where(-gmin > gmax, -gmin, gmax)
+    deltas = gabsMax / ((1 << 7) - 1)
     deltas16 = deltas.astype(np.float16)
     ids = np.where(deltas != 0, 1.0 / deltas, 0)
     groups = groups * ids[:, np.newaxis]
