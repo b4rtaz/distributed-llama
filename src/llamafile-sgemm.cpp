@@ -749,11 +749,11 @@ class tinyBLAS_Q0_AVX2 {
         }
     }
 
-    inline __m256i load(const block_q8_0 *b) {
+    inline __m256i load(const BlockQ80 *b) {
         return _mm256_loadu_si256((const __m256i *)b->qs);
     }
 
-    inline __m256i load(const block_q4_0 *b) {
+    inline __m256i load(const BlockQ40 *b) {
         return _mm256_sub_epi8(denibble(b->qs), _mm256_set1_epi8(8));
     }
 
@@ -939,9 +939,9 @@ bool llamafile_sgemm(int m, int n, int k, const void *A, int lda, const void *B,
         if (Btype != FloatType::Q80)
            return false;
 #if defined(__AVX2__) || defined(__AVX512F__)
-        tinyBLAS_Q0_AVX2<block_q8_0, block_q8_0, float> tb{
-            k, (const block_q8_0 *)A, lda,
-            (const block_q8_0 *)B, ldb,
+        tinyBLAS_Q0_AVX2<BlockQ80, BlockQ80, float> tb{
+            k, (const BlockQ80 *)A, lda,
+            (const BlockQ80 *)B, ldb,
             (float *)C, ldc,
             ith, nth};
         tb.matmul(m, n, task);
@@ -963,9 +963,9 @@ bool llamafile_sgemm(int m, int n, int k, const void *A, int lda, const void *B,
         if (Btype != FloatType::Q80)
             return false;
 #if defined(__AVX2__) || defined(__AVX512F__)
-        tinyBLAS_Q0_AVX2<block_q4_0, block_q8_0, float> tb{
-            k, (const block_q4_0 *)A, lda,
-            (const block_q8_0 *)B, ldb,
+        tinyBLAS_Q0_AVX2<BlockQ40, BlockQ80, float> tb{
+            k, (const BlockQ40 *)A, lda,
+            (const BlockQ80 *)B, ldb,
             (float *)C, ldc,
             ith, nth};
         tb.matmul(m, n, task);
