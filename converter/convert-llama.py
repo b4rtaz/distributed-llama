@@ -4,7 +4,7 @@ import json
 import torch
 import math
 import numpy as np
-from writer import writeTensor, writeHeader 
+from writer import writeTensor, writeHeader, isFloatTypeSupported
 from pathlib import Path
 
 LAYER_CHUNK_SIZE = 48
@@ -106,7 +106,7 @@ if __name__ == '__main__':
     modelPath = sys.argv[1]
     targetFloatType = sys.argv[2]
 
-    if (not modelPath or not targetFloatType in ['f16', 'f32', 'q40']):
+    if (not modelPath or not isFloatTypeSupported(targetFloatType)):
         usage()
 
     modelName = modelPath.split('/')[-1]
