@@ -524,6 +524,8 @@ float expectedOutput[4096] = {
     1.00493455, 1.00216055, 1.02500832, 1.01412213, 0.997673035, 1.01922369, 1.01705575, 1.01369667,
 };
 
+void nop(TASK_ARGS) {}
+
 int main() {
     TransformerSpec spec;
     spec.headerSize = sizeof(TransformerFileOldHeader) + sizeof(int);
@@ -542,6 +544,8 @@ int main() {
     spec.weightsFloatType = F32;
     spec.bufferFloatType = F32;
     spec.nSlices = 1;
+    spec.hiddenAct = GELU;
+    spec.ropeTheta = 10000.0f;
 
     size_t beforeBlockBytes = /* embedding */ 524288000;
     size_t blockBytes       = 809533440;
@@ -567,8 +571,11 @@ int main() {
     for (int i = 0; i < spec.dim; i++) x[i] = randomF32(&state) / 120.0;
 
     TransformerArch arch = buildLlama2Arch(&spec);
+    arch.inference.tasks[arch.inference.nTasks - 3].handler = &nop;
+    arch.inference.tasks[arch.inference.nTasks - 2].handler = &nop;
+    arch.inference.tasks[arch.inference.nTasks - 1].handler = &nop;
 
-    int nThreads = 4;
+    int nThreads = 1;
     TransformerContext context;
     context.transformer = &transformer;
     context.currentBlockIndex = 0;
