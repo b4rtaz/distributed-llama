@@ -413,8 +413,7 @@ void matmul(FloatType weightsFloatType, FloatType inputFloatType, float* output,
             matmulQ80(&s);
             return;
         }
-    }
-    if (inputFloatType == Q80) {
+    } else if (inputFloatType == Q80) {
         if (weightsFloatType == Q40) {
             matmulQ40vQ80(&s);
             return;

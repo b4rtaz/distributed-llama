@@ -6,8 +6,6 @@
 *.bin
 __pycache__
 
-quants-test
-llama2-tasks-test
-grok1-tasks-test
+*-test
 main
 run.sh

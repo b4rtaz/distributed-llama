@@ -9,6 +9,8 @@ llamafile-sgemm: src/llamafile-sgemm.cpp
 	$(CXX) $(CXXFLAGS) -c src/llamafile-sgemm.cpp -o llamafile-sgemm.o
 funcs: src/funcs.cpp
 	$(CXX) $(CXXFLAGS) -c src/funcs.cpp -o funcs.o
+funcs-test: src/funcs-test.cpp funcs
+	$(CXX) $(CXXFLAGS) src/funcs-test.cpp -o funcs-test funcs.o
 socket: src/socket.cpp
 	$(CXX) $(CXXFLAGS) -c src/socket.cpp -o socket.o
 transformer: src/utils.cpp
@@ -26,6 +28,8 @@ tokenizer: src/tokenizer.cpp
 
 main: src/main.cpp utils quants llamafile-sgemm funcs socket transformer tasks llama2-tasks grok1-tasks mixtral-tasks tokenizer
 	$(CXX) $(CXXFLAGS) src/main.cpp -o main utils.o quants.o llamafile-sgemm.o funcs.o socket.o transformer.o tasks.o llama2-tasks.o grok1-tasks.o mixtral-tasks.o tokenizer.o -lpthread
+funcs-test: src/funcs-test.cpp funcs utils quants llamafile-sgemm
+	$(CXX) $(CXXFLAGS) src/funcs-test.cpp -o funcs-test funcs.o utils.o quants.o llamafile-sgemm.o
 quants-test: src/quants.cpp utils quants
 	$(CXX) $(CXXFLAGS) src/quants-test.cpp -o quants-test utils.o quants.o -lpthread
 llama2-tasks-test: src/llama2-tasks-test.cpp utils quants llamafile-sgemm funcs socket transformer tasks llama2-tasks tokenizer
