@@ -458,12 +458,12 @@ class tinyBLAS {
 // QUANT ZERO MATRIX MULTIPLICATION
 
 #if defined(__ARM_FEATURE_DOTPROD)
-template <typename TA>
+template <typename TA, typename TB>
 class tinyBLAS_Q0_ARM {
   public:
     tinyBLAS_Q0_ARM(int64_t k,
                     const TA *A, int64_t lda,
-                    const BlockQ80 *B, int64_t ldb,
+                    const TB *B, int64_t ldb,
                     float *C, int64_t ldc,
                     int ith, int nth)
         : A(A), B(B), C(C), k(k), lda(lda), ldb(ldb), ldc(ldc), ith(ith), nth(nth) {
@@ -584,7 +584,7 @@ class tinyBLAS_Q0_ARM {
     }
 
     const TA *const A;
-    const BlockQ80 *const B;
+    const TB *const B;
     float *const C;
     const int64_t k;
     const int64_t lda;
@@ -936,6 +936,17 @@ bool llamafile_sgemm(int64_t m, int64_t n, int64_t k, const void *A, int64_t lda
     }
 
     case Q80: {
+#if defined(__ARM_FEATURE_DOTPROD)
+        if (Btype == Q40) {
+            tinyBLAS_Q0_ARM<BlockQ80, BlockQ40> tb{
+                k, (const BlockQ80 *)A, lda,
+                (const BlockQ40 *)B, ldb,
+                (float *)C, ldc,
+                ith, nth};
+            tb.matmul(m, n, task);
+            return true;
+        }
+#endif
         if (Btype != Q80)
            return false;
 #if defined(__AVX2__) || defined(__AVX512F__)
@@ -947,7 +958,7 @@ bool llamafile_sgemm(int64_t m, int64_t n, int64_t k, const void *A, int64_t lda
         tb.matmul(m, n, task);
         return true;
 #elif defined(__ARM_FEATURE_DOTPROD)
-        tinyBLAS_Q0_ARM<BlockQ80> tb{
+        tinyBLAS_Q0_ARM<BlockQ80, BlockQ80> tb{
             k, (const BlockQ80 *)A, lda,
             (const BlockQ80 *)B, ldb,
             (float *)C, ldc,
@@ -971,7 +982,7 @@ bool llamafile_sgemm(int64_t m, int64_t n, int64_t k, const void *A, int64_t lda
         tb.matmul(m, n, task);
         return true;
 #elif defined(__ARM_FEATURE_DOTPROD)
-        tinyBLAS_Q0_ARM<BlockQ40> tb{
+        tinyBLAS_Q0_ARM<BlockQ40, BlockQ80> tb{
             k, (const BlockQ40 *)A, lda,
             (const BlockQ80 *)B, ldb,
             (float *)C, ldc,
