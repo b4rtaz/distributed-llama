@@ -297,10 +297,10 @@ int run(ProgramArgs* args, void (*program)(Inference* inference, SocketPool* soc
         args->steps = spec.seqLen;
     }
 
+    Tokenizer tokenizer(args->tokenizerPath, spec.vocabSize);
     Transformer transformer = Transformer::loadRootFromFile(args->modelPath, &spec, socketPool);
     Inference inference = Inference(&arch, args->nThreads, &transformer, socketPool);
 
-    Tokenizer tokenizer(args->tokenizerPath, spec.vocabSize);
     Sampler sampler(spec.vocabSize, args->temperature, args->topp, rngSeed);
 
     program(&inference, socketPool, &tokenizer, &sampler, args, &spec);
