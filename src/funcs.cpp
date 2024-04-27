@@ -382,11 +382,15 @@ void matmulQ80vQ80(MatmulThreadInfo* a) {
 //                    1
 void matmul(FloatType weightsFloatType, FloatType inputFloatType, float* output, void* input, void* weights, int n, int d, unsigned int nThreads, unsigned int threadIndex) {
     if (llamafile_sgemm(
-        1, d, n,
-        input, n, weights, n, output, 1,
+        1, d , n / getNumbersPerBatch(weightsFloatType),
+        input, n / getNumbersPerBatch(inputFloatType),
+        weights, n / getNumbersPerBatch(weightsFloatType),
+        output, 1,
         threadIndex, nThreads, 0,
         inputFloatType, weightsFloatType, F32
-    )) return;
+    )) {
+        return;
+    }
 
     MatmulThreadInfo s;
     s.output = output;
