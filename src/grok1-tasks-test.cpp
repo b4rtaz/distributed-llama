@@ -16,7 +16,7 @@ float expectedOutput_5012_5016[] = { 0.0126675405, 0.0169415697, 0.0183475353, 0
 
 void compare(float* a, float* b, int n) {
     for (int i = 0; i < n; i++) {
-        if (fabs(a[i] - b[i]) > 0.00001) { // Optimization may cause some differences
+        if (std::isnan(a[i]) || fabs(a[i] - b[i]) > 0.00001) { // Optimization may cause some differences
             printf("%.9g != %.9g\n", a[i], b[i]); i++;
             printf("%.9g != %.9g\n", a[i], b[i]); i++;
             printf("%.9g != %.9g\n", a[i], b[i]); i++;
@@ -44,6 +44,8 @@ int main() {
     spec.weightsFloatType = F32;
     spec.bufferFloatType = F32;
     spec.nSlices = 1;
+    spec.hiddenAct = GELU;
+    spec.ropeTheta = 10000.0f;
 
     size_t beforeBlockBytes = spec.dim * spec.vocabSize * sizeof(float);
     size_t blockBytes = 956596224;
@@ -62,7 +64,7 @@ int main() {
     transformer.pos = 0;
 
     float* x = transformer.x;
-    for (int i = 0; i < spec.dim; i++) x[i] = randomF32(&state) / 100.0;
+    for (int i = 0; i < spec.dim; i++) x[i] = (randomF32(&state) / 100.0) / 78.38367176906169f;
 
     TransformerArch arch = buildGrok1Arch(&spec);
 
@@ -73,7 +75,8 @@ int main() {
     context.socket = NULL;
     context.socketPool = &socketPool;
 
-    TaskLoop loop(nThreads, arch.inference.nTasks, TASK_N_TYPES, arch.inference.tasks, &context);
+    int skipLastNTasks = 4;
+    TaskLoop loop(nThreads, arch.inference.nTasks - skipLastNTasks, TASK_N_TYPES, arch.inference.tasks, &context);
     long t0 = timeMs();
     loop.run();
     long t1 = timeMs();

@@ -274,15 +274,8 @@ void llamaDequantizeFfn2(TASK_ARGS) {
 
 void llamaMergeFfn2(TASK_ARGS) {
     TASK_VARIABLES;
-
-    if (threadIndex == 0) {
-        float* x = transformer->x;
-        float* xb2 = (float*)transformer->buffer->getUnit(TB_SLICED_XB2);
-
-        for (int i = 0; i < spec->dim; i++) {
-            x[i] += xb2[i];
-        }
-    }
+    float* xb2 = (float*)transformer->buffer->getUnit(TB_SLICED_XB2);
+    add(transformer->x, xb2, spec->dim, nThreads, threadIndex);
 }
 
 void llamaNextBlock(TASK_ARGS) {

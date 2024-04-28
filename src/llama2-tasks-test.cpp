@@ -524,8 +524,6 @@ float expectedOutput[4096] = {
     1.00493455, 1.00216055, 1.02500832, 1.01412213, 0.997673035, 1.01922369, 1.01705575, 1.01369667,
 };
 
-void nop(TASK_ARGS) {}
-
 int main() {
     TransformerSpec spec;
     spec.headerSize = sizeof(TransformerFileOldHeader) + sizeof(int);
@@ -571,18 +569,16 @@ int main() {
     for (int i = 0; i < spec.dim; i++) x[i] = randomF32(&state) / 120.0;
 
     TransformerArch arch = buildLlama2Arch(&spec);
-    arch.inference.tasks[arch.inference.nTasks - 3].handler = &nop;
-    arch.inference.tasks[arch.inference.nTasks - 2].handler = &nop;
-    arch.inference.tasks[arch.inference.nTasks - 1].handler = &nop;
 
-    int nThreads = 1;
+    int nThreads = 4;
     TransformerContext context;
     context.transformer = &transformer;
     context.currentBlockIndex = 0;
     context.socket = NULL;
     context.socketPool = &socketPool;
 
-    TaskLoop loop(nThreads, arch.inference.nTasks, TASK_N_TYPES, arch.inference.tasks, &context);
+    int skipLastNTasks = 3;
+    TaskLoop loop(nThreads, arch.inference.nTasks - skipLastNTasks, TASK_N_TYPES, arch.inference.tasks, &context);
     long t0 = timeMs();
     loop.run();
     long t1 = timeMs();
@@ -591,7 +587,7 @@ int main() {
 
     int ix = -1;
     for (int i = 0; i < spec.dim; i++) {
-        if (fabs(x[i] - expectedOutput[i]) > 0.00001) { // Optimization may cause some differences
+        if (std::isnan(x[i]) || fabs(x[i] - expectedOutput[i]) > 0.00001) { // Optimization may cause some differences
             ix = i;
             break;
         }

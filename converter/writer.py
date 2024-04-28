@@ -4,10 +4,9 @@ import time
 import numpy as np
 
 def isFloatTypeSupported(type):
-    return type in ['f16', 'f32', 'q40']
+    return type in ['f16', 'f32', 'q40', 'q80']
 
 def writeQuantizedQ40Tensor(file, x):
-    t0 = time.time()
     x = x.to(torch.float32).numpy().astype(np.float32)
     blockSize = 32
     blockHalfSize = blockSize // 2
@@ -35,28 +34,61 @@ def writeQuantizedQ40Tensor(file, x):
         buffer = struct.pack(f'e{blockHalfSize}B', delta16, *block)
         file.write(buffer)
         nBytes += len(buffer)
-    t1 = time.time()
-    print(f'Quantized tensor to {nBytes} bytes in {t1 - t0:.2f} s')
+    return nBytes
+
+def writeQuantizedQ80Tensor(file, x):
+    x = x.to(torch.float32).numpy().astype(np.float32)
+    blockSize = 32
+    assert(x.shape[0] % blockSize == 0)
+    groups = x.reshape(-1, blockSize)
+    gmax = np.max(groups, axis=1)
+    gmin = np.min(groups, axis=1)
+    gabsMax = np.where(-gmin > gmax, -gmin, gmax)
+    deltas = gabsMax / ((1 << 7) - 1)
+    deltas16 = deltas.astype(np.float16)
+    ids = np.where(deltas != 0, 1.0 / deltas, 0)
+    groups = groups * ids[:, np.newaxis]
+    groups8 = np.round(groups).astype(np.int8)
+
+    nBytes = 0
+    for groupIndex in range(0, len(groups)):
+        buffer = struct.pack(f'e{blockSize}b', deltas16[groupIndex], *groups8[groupIndex])
+        file.write(buffer)
+        nBytes += len(buffer)
+    return nBytes
 
 def writeF32Tensor(file, d):
     chunkSize = 10000
+    nBytes = 0
     for i in range(0, len(d), chunkSize):
         chunk = d[i:i+chunkSize].to(torch.float32).numpy().astype(np.float32)
         b = struct.pack(f'{len(chunk)}f', *chunk)
+        nBytes += len(b)
         file.write(b)
+    return nBytes
+
+def writeF16Tensor(file, d):
+    d = d.to(torch.float16).numpy().astype(np.float16)
+    b = struct.pack(f'{len(d)}e', *d)
+    file.write(b)
+    return len(b)
 
 def writeTensor(file, tensor, floatType):
     d = tensor.detach().cpu().view(-1)
+    t0 = time.time()
+    nBytes = 0
     if (floatType == 'f16'):
-        d = d.to(torch.float16).numpy().astype(np.float16)
-        b = struct.pack(f'{len(d)}e', *d)
-        file.write(b)
+        nBytes = writeF16Tensor(file, d)
     elif (floatType == 'f32'):
-        writeF32Tensor(file, d)
+        nBytes = writeF32Tensor(file, d)
     elif (floatType == 'q40'):
-        writeQuantizedQ40Tensor(file, d)
+        nBytes = writeQuantizedQ40Tensor(file, d)
+    elif (floatType == 'q80'):
+        nBytes = writeQuantizedQ80Tensor(file, d)
     else:
         raise Exception('Unknown float type')
+    t1 = time.time()
+    print(f'Saved {floatType} tensor in {t1 - t0:.2f}s, {nBytes} bytes')
 
 def writeHeader(file, params):
     headerKeys = {

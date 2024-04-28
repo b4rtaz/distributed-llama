@@ -233,6 +233,25 @@ void matmulQ40(MatmulThreadInfo* a) {
 #endif
 }
 
+void matmulQ80(MatmulThreadInfo* a) {
+    float* input = (float*)a->input;
+    BlockQ80* weights = (BlockQ80*)a->weights;
+    assert(a->n % QK80 == 0);
+    int nb = a->n / QK80;
+
+    for (int d = a->ds; d < a->de; d++) {
+        float sum = 0.0;
+        for (int i = 0; i < nb; i++) {
+            float s = 0.0;
+            for (int j = 0; j < QK80; j++) {
+                s += input[i * QK80 + j] * (float)weights[d * nb + i].qs[j];
+            }
+            sum += s * convertF16ToF32(weights[d * nb + i].d);
+        }
+        a->output[d] = sum;
+    }
+}
+
 void matmulQ40vQ80(MatmulThreadInfo* a) {
     const BlockQ40* w = (BlockQ40*)a->weights;
     const BlockQ80* input = (BlockQ80*)a->input;
@@ -334,6 +353,25 @@ void matmulQ40vQ80(MatmulThreadInfo* a) {
 #endif
 }
 
+void matmulQ80vQ80(MatmulThreadInfo* a) {
+    BlockQ80* input = (BlockQ80*)a->input;
+    BlockQ80* weights = (BlockQ80*)a->weights;
+    assert(a->n % QK80 == 0);
+    int nb = a->n / QK80;
+
+    for (int d = a->ds; d < a->de; d++) {
+        float sum = 0.0;
+        for (int i = 0; i < nb; i++) {
+            int s = 0;
+            for (int j = 0; j < QK80; j++) {
+                s += input[i].qs[j] * (int)weights[d * nb + i].qs[j];
+            }
+            sum += s * (convertF16ToF32(input[i].d) * convertF16ToF32(weights[d * nb + i].d));
+        }
+        a->output[d] = sum;
+    }
+}
+
 //     weights      input    output
 //   ___________     ___      ___
 //   |         |     | |      | |
@@ -363,10 +401,19 @@ void matmul(FloatType weightsFloatType, FloatType inputFloatType, float* output,
             matmulQ40(&s);
             return;
         }
-    }
-    if (inputFloatType == Q80 && weightsFloatType == Q40) {
-        matmulQ40vQ80(&s);
-        return;
+        if (weightsFloatType == Q80) {
+            matmulQ80(&s);
+            return;
+        }
+    } else if (inputFloatType == Q80) {
+        if (weightsFloatType == Q40) {
+            matmulQ40vQ80(&s);
+            return;
+        }
+        if (weightsFloatType == Q80) {
+            matmulQ80vQ80(&s);
+            return;
+        }
     }
 
     printf("Unsupported float types: %d/%d\n", weightsFloatType, inputFloatType);
