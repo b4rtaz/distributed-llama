@@ -26,8 +26,6 @@ void compare(float* a, float* b, int n) {
     }
 }
 
-void nop(TASK_ARGS) {}
-
 int main() {
     TransformerSpec spec;
     spec.headerSize = sizeof(TransformerFileOldHeader) + sizeof(int);
@@ -66,22 +64,19 @@ int main() {
     transformer.pos = 0;
 
     float* x = transformer.x;
-    for (int i = 0; i < spec.dim; i++) x[i] = randomF32(&state) / 100.0;
+    for (int i = 0; i < spec.dim; i++) x[i] = (randomF32(&state) / 100.0) / 78.38367176906169f;
 
     TransformerArch arch = buildGrok1Arch(&spec);
-    arch.inference.tasks[arch.inference.nTasks - 4].handler = &nop;
-    arch.inference.tasks[arch.inference.nTasks - 3].handler = &nop;
-    arch.inference.tasks[arch.inference.nTasks - 2].handler = &nop;
-    arch.inference.tasks[arch.inference.nTasks - 1].handler = &nop;
 
-    int nThreads = 1;
+    int nThreads = 4;
     TransformerContext context;
     context.transformer = &transformer;
     context.currentBlockIndex = 0;
     context.socket = NULL;
     context.socketPool = &socketPool;
 
-    TaskLoop loop(nThreads, arch.inference.nTasks, TASK_N_TYPES, arch.inference.tasks, &context);
+    int skipLastNTasks = 4;
+    TaskLoop loop(nThreads, arch.inference.nTasks - skipLastNTasks, TASK_N_TYPES, arch.inference.tasks, &context);
     long t0 = timeMs();
     loop.run();
     long t1 = timeMs();

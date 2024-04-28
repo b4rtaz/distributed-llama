@@ -26,10 +26,13 @@ jobs:
         run: |
           make main
           make funcs-test
+          make quants-test
           make llama2-tasks-test
           make grok1-tasks-test
       - name: funcs-test
         run: ./funcs-test
+      - name: quants-test
+        run: ./quants-test
       - name: llama2-tasks-test
         run: ./llama2-tasks-test
       - name: grok1-tasks-test
