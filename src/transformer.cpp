@@ -68,8 +68,9 @@ void initRope(float* cache, TransformerSpec* spec) {
 void rope(float* cache, float* q, float* k, TransformerSpec* spec, int pos, unsigned int nThreads, unsigned int threadIndex) {
     int halfDim = spec->dim / 2;
     int slice = halfDim / nThreads;
-    int iStart = (threadIndex * slice) * 2;
+    int iStart = (threadIndex * slice);
     int iEnd = ((nThreads - 1 == threadIndex) ? halfDim : (iStart + slice)) * 2;
+    iStart *= 2;
 
     // RoPE relative positional encoding: complex-valued rotate q and k in each head
     for (int i = iStart; i < iEnd; i += 2) {
