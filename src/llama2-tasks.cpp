@@ -110,7 +110,7 @@ void llamaMultiheadAttJoin(TASK_ARGS) {
     int nHeadsPerThread = spec->nHeads / nThreads;
 
     int hStart = threadIndex * nHeadsPerThread;
-    int hEnd = threadIndex == nThreads - 1 ? spec->nHeads : hEnd + nHeadsPerThread;
+    int hEnd = (threadIndex == nThreads - 1) ? spec->nHeads : (hStart + nHeadsPerThread);
 
     for (int h = hStart; h < hEnd; h++) {
         // get the query vector for this head
