@@ -289,7 +289,7 @@ Transformer::Transformer(TransformerSpec* spec, uint8_t sliceIndex) {
 
         // TODO: cache should be for all architectures
         if (spec->archType == LLAMA2 || spec->archType == MIXTRAL) {
-            ropeCache = (float*)NEW_BUFFER(spec->vocabSize * spec->dim * sizeof(float));
+            ropeCache = (float*)NEW_BUFFER(spec->seqLen * spec->dim * sizeof(float));
             initRope(ropeCache, spec);
         }
     }
