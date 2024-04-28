@@ -51,6 +51,40 @@ long MatmulSlice::mergeOutputs(uint8_t sliceIndex, float* output, float* output0
     return offset; // offset in floats
 }
 
+void initRope(float* cache, TransformerSpec* spec) {
+    for (int pos = 0; pos < spec->seqLen; pos++) {
+        for (int i = 0; i < spec->dim; i += 2) {
+            int head_dim = i % spec->headSize;
+            float freq = 1.0f / powf(spec->ropeTheta, head_dim / (float)spec->headSize);
+            float val = pos * freq;
+            float fcr = cosf(val);
+            float fci = sinf(val);
+            cache[pos * spec->seqLen + i] = fcr;
+            cache[pos * spec->seqLen + i + 1] = fci;
+        }
+    }
+}
+
+void rope(float* cache, float* q, float* k, TransformerSpec* spec, int pos, unsigned int nThreads, unsigned int threadIndex) {
+    int slice = spec->dim / (nThreads * 2);
+    int iStart = (threadIndex * slice) * 2;
+    int iEnd = ((nThreads - 1 == threadIndex) ? spec->dim : (iStart + slice)) * 2;
+
+    // RoPE relative positional encoding: complex-valued rotate q and k in each head
+    for (int i = iStart; i < iEnd; i += 2) {
+        float fcr = cache[pos * spec->seqLen + i];
+        float fci = cache[pos * spec->seqLen + i + 1];
+        int rotn = i < spec->kvDim ? 2 : 1; // how many vectors? 2 = q & k, 1 = q only
+        for (int _v = 0; _v < rotn; _v++) {
+            float* vec = _v == 0 ? q : k; // the vector to rotate (query or key)
+            float v0 = vec[i];
+            float v1 = vec[i+1];
+            vec[i]   = v0 * fcr - v1 * fci;
+            vec[i+1] = v0 * fci + v1 * fcr;
+        }
+    }
+}
+
 TransformerSpec Transformer::loadSpecFromFile(const char* path, const unsigned int nSlices, FloatType weightsFloatType, FloatType bufferFloatType) {
     TransformerSpec spec;
     memset(&spec, 0, sizeof(TransformerSpec));
@@ -252,6 +286,12 @@ Transformer::Transformer(TransformerSpec* spec, uint8_t sliceIndex) {
 #endif
         x = (float*)NEW_BUFFER(spec->dim * sizeof(float));
         logits = (float*)NEW_BUFFER(spec->vocabSize * sizeof(float));
+
+        // TODO: cache should be for all architectures
+        if (spec->archType == LLAMA2 || spec->archType == MIXTRAL) {
+            ropeCache = (float*)NEW_BUFFER(spec->vocabSize * spec->dim);
+            initRope(ropeCache, spec);
+        }
     }
 }
 
@@ -270,6 +310,10 @@ Transformer::~Transformer() {
 #endif
         FREE_BUFFER(x);
         FREE_BUFFER(logits);
+
+        if (spec->archType == LLAMA2 || spec->archType == MIXTRAL) {
+            FREE_BUFFER(ropeCache);
+        }
     }
 }
 

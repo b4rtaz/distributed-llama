@@ -78,27 +78,9 @@ void llamaMultiheadAtt(TASK_ARGS) {
 
 void llamaMultiheadAttRope(TASK_ARGS) {
     TASK_VARIABLES;
-    if (threadIndex == 0) {
-        float* q = (float*)transformer->buffer->getUnit(TB_SLICED_Q);
-        float* k = block->keyCache + transformer->pos * spec->kvDim;
-
-        // RoPE relative positional encoding: complex-valued rotate q and k in each head
-        for (int i = 0; i < spec->dim; i+=2) {
-            int head_dim = i % spec->headSize;
-            float freq = 1.0f / powf(spec->ropeTheta, head_dim / (float)spec->headSize);
-            float val = transformer->pos * freq;
-            float fcr = cosf(val);
-            float fci = sinf(val);
-            int rotn = i < spec->kvDim ? 2 : 1; // how many vectors? 2 = q & k, 1 = q only
-            for (int _v = 0; _v < rotn; _v++) {
-                float* vec = _v == 0 ? q : k; // the vector to rotate (query or key)
-                float v0 = vec[i];
-                float v1 = vec[i+1];
-                vec[i]   = v0 * fcr - v1 * fci;
-                vec[i+1] = v0 * fci + v1 * fcr;
-            }
-        }
-    }
+    float* q = (float*)transformer->buffer->getUnit(TB_SLICED_Q);
+    float* k = block->keyCache + transformer->pos * spec->kvDim;
+    rope(transformer->ropeCache, q, k, spec, transformer->pos, nThreads, threadIndex);
 }
 
 void llamaMultiheadAttJoin(TASK_ARGS) {

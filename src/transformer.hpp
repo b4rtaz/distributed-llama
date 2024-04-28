@@ -83,6 +83,9 @@ struct TransformerSpec {
     uint8_t nSlices;
 };
 
+void initRope(float* cache, TransformerSpec* spec);
+void rope(float* cache, float* q, float* k, TransformerSpec* spec, int pos, unsigned int nThreads, unsigned int threadIndex);
+
 class TransformerBlock {
 public:
     uint8_t sliceIndex;
@@ -186,6 +189,7 @@ public:
     int pos;
     float* x;
     float* logits;
+    float* ropeCache;
 
     ~Transformer();
 
