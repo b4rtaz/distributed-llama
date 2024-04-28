@@ -308,9 +308,15 @@ TransformerArch buildGrok1Arch(TransformerSpec* spec) {
         a.I(llamaRmsAttNorm, TASK_TYPE_INFERENCE);
         a.I(llamaQuantizeRmsAtt, TASK_TYPE_INFERENCE);
         a.I(llamaSyncRmsAtt, TASK_TYPE_TRANSFER);
-        a.I(llamaQkv, TASK_TYPE_INFERENCE);
-        a.I(llamaQuantizeQkv, TASK_TYPE_INFERENCE);
-        a.I(llamaSyncQkv, TASK_TYPE_TRANSFER);
+        a.I(llamaAttQ, TASK_TYPE_INFERENCE);
+        a.I(llamaQuantizeAttQ, TASK_TYPE_INFERENCE);
+        a.I(llamaSyncAttQ, TASK_TYPE_INFERENCE);
+        a.I(llamaAttK, TASK_TYPE_INFERENCE);
+        a.I(llamaQuantizeAttK, TASK_TYPE_INFERENCE);
+        a.I(llamaSyncAttK, TASK_TYPE_INFERENCE);
+        a.I(llamaAttV, TASK_TYPE_INFERENCE);
+        a.I(llamaQuantizeAttV, TASK_TYPE_INFERENCE);
+        a.I(llamaSyncAttV, TASK_TYPE_INFERENCE);
         a.I(llamaDequantizeQkv, TASK_TYPE_INFERENCE);
         a.I(llamaMultiheadAtt, TASK_TYPE_INFERENCE);
         a.I(grokMultiheadAttRope, TASK_TYPE_INFERENCE);
@@ -358,9 +364,15 @@ TransformerArch buildGrok1Arch(TransformerSpec* spec) {
 
     for (int i = 0; i < spec->nLayers; i++) {
         a.W(llamaSyncRmsAtt, TASK_TYPE_TRANSFER);
-        a.W(llamaQkv, TASK_TYPE_INFERENCE);
-        a.W(llamaQuantizeQkv, TASK_TYPE_INFERENCE);
-        a.W(llamaSyncQkv, TASK_TYPE_TRANSFER);
+        a.W(llamaAttQ, TASK_TYPE_INFERENCE);
+        a.W(llamaQuantizeAttQ, TASK_TYPE_INFERENCE);
+        a.W(llamaSyncAttQ, TASK_TYPE_INFERENCE);
+        a.W(llamaAttK, TASK_TYPE_INFERENCE);
+        a.W(llamaQuantizeAttK, TASK_TYPE_INFERENCE);
+        a.W(llamaSyncAttK, TASK_TYPE_INFERENCE);
+        a.W(llamaAttV, TASK_TYPE_INFERENCE);
+        a.W(llamaQuantizeAttV, TASK_TYPE_INFERENCE);
+        a.W(llamaSyncAttV, TASK_TYPE_INFERENCE);
         a.W(llamaSyncMultiheadAtt, TASK_TYPE_TRANSFER);
         a.W(llamaAtt, TASK_TYPE_INFERENCE);
         a.W(llamaQuantizeAtt, TASK_TYPE_INFERENCE);
