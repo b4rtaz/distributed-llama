@@ -179,17 +179,17 @@ void llamaDequantizeAtt(TASK_ARGS) {
     dequantizeSlicedBuffer(nThreads, threadIndex, ctx, false, TB_SLICED_XB2_QUANTIZED, TB_SLICED_XB2);    
 }
 
+void llamaMergeAtt(TASK_ARGS) {
+    TASK_VARIABLES;
+    float* xb2 = (float*)transformer->buffer->getUnit(TB_SLICED_XB2);
+    float* x = (float*)transformer->x;
+    add(x, xb2, spec->dim, nThreads, threadIndex);
+}
+
 void llamaRmfFfn(TASK_ARGS) {
     TASK_VARIABLES;
-
     if (threadIndex == 0) {
-        float* xb2 = (float*)transformer->buffer->getUnit(TB_SLICED_XB2);
-        float* x = (float*)transformer->x;
-
-        for (int i = 0; i < spec->dim; i++) {
-            x[i] += xb2[i];
-        }
-        transformer->rms = rms(x, spec->dim);
+        transformer->rms = rms(transformer->x, spec->dim);
     }
 }
 
@@ -220,17 +220,8 @@ void llamaFfn(TASK_ARGS) {
     matmul(spec->weightsFloatType, spec->bufferFloatType, hb0, xb, block->w10, block->w10Slice->n, block->w10Slice->d0, nThreads, threadIndex);
     matmul(spec->weightsFloatType, spec->bufferFloatType, block->hb20, xb, block->w30, block->w30Slice->n, block->w30Slice->d0, nThreads, threadIndex);
 
-    // SwiGLU non-linearity
-    int d00 = block->w10Slice->d0 / nThreads;
-    int d0Offset = d00 * threadIndex;
-    for (int i = 0; i < d00; i++) {
-        float val = hb0[i + d0Offset];
-        // silu(x)=x*σ(x), where σ(x) is the logistic sigmoid
-        val *= (1.0f / (1.0f + expf(-val)));
-        // elementwise multiply with w3(x)
-        val *= block->hb20[i + d0Offset];
-        hb0[i + d0Offset] = val;
-    }
+    silu(hb0, block->w10Slice->d0, nThreads, threadIndex);
+    mul(hb0, block->hb20, block->w10Slice->d0, nThreads, threadIndex);
 }
 
 void llamaQuantizeFfnA(TASK_ARGS) {
@@ -331,6 +322,7 @@ TransformerArch buildLlama2Arch(TransformerSpec* spec) {
         a.I(llamaQuantizeAtt, TASK_TYPE_INFERENCE);
         a.I(llamaSyncAtt, TASK_TYPE_TRANSFER);
         a.I(llamaDequantizeAtt, TASK_TYPE_INFERENCE);
+        a.I(llamaMergeAtt, TASK_TYPE_INFERENCE);
         a.I(llamaRmfFfn, TASK_TYPE_INFERENCE);
         a.I(llamaRmfFfnNorm, TASK_TYPE_INFERENCE);
         a.I(llamaQuantizeRmfFfn, TASK_TYPE_INFERENCE);

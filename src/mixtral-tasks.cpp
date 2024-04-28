@@ -26,6 +26,7 @@ TransformerArch buildMixtralArch(TransformerSpec* spec) {
         a.I(llamaQuantizeAtt, TASK_TYPE_INFERENCE);
         a.I(llamaSyncAtt, TASK_TYPE_TRANSFER);
         a.I(llamaDequantizeAtt, TASK_TYPE_INFERENCE);
+        a.I(llamaMergeAtt, TASK_TYPE_INFERENCE);
         a.I(llamaRmfFfn, TASK_TYPE_INFERENCE);
         a.I(llamaRmfFfnNorm, TASK_TYPE_INFERENCE);
 

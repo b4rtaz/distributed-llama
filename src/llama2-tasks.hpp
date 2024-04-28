@@ -20,6 +20,7 @@ void llamaAtt(TASK_ARGS);
 void llamaQuantizeAtt(TASK_ARGS);
 void llamaSyncAtt(TASK_ARGS);
 void llamaDequantizeAtt(TASK_ARGS);
+void llamaMergeAtt(TASK_ARGS);
 void llamaRmfFfn(TASK_ARGS);
 void llamaRmfFfnNorm(TASK_ARGS);
 void llamaNextBlock(TASK_ARGS);
