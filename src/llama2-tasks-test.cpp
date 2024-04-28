@@ -591,7 +591,7 @@ int main() {
 
     int ix = -1;
     for (int i = 0; i < spec.dim; i++) {
-        if (fabs(x[i] - expectedOutput[i]) > 0.00001) { // Optimization may cause some differences
+        if (isnan(x[i]) || fabs(x[i] - expectedOutput[i]) > 0.00001) { // Optimization may cause some differences
             ix = i;
             break;
         }

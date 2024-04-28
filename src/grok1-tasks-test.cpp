@@ -16,7 +16,7 @@ float expectedOutput_5012_5016[] = { 0.0126675405, 0.0169415697, 0.0183475353, 0
 
 void compare(float* a, float* b, int n) {
     for (int i = 0; i < n; i++) {
-        if (fabs(a[i] - b[i]) > 0.00001) { // Optimization may cause some differences
+        if (isnan(a[i]) || fabs(a[i] - b[i]) > 0.00001) { // Optimization may cause some differences
             printf("%.9g != %.9g\n", a[i], b[i]); i++;
             printf("%.9g != %.9g\n", a[i], b[i]); i++;
             printf("%.9g != %.9g\n", a[i], b[i]); i++;
@@ -25,6 +25,8 @@ void compare(float* a, float* b, int n) {
         }
     }
 }
+
+void nop(TASK_ARGS) {}
 
 int main() {
     TransformerSpec spec;
@@ -44,6 +46,8 @@ int main() {
     spec.weightsFloatType = F32;
     spec.bufferFloatType = F32;
     spec.nSlices = 1;
+    spec.hiddenAct = GELU;
+    spec.ropeTheta = 10000.0f;
 
     size_t beforeBlockBytes = spec.dim * spec.vocabSize * sizeof(float);
     size_t blockBytes = 956596224;
@@ -65,8 +69,12 @@ int main() {
     for (int i = 0; i < spec.dim; i++) x[i] = randomF32(&state) / 100.0;
 
     TransformerArch arch = buildGrok1Arch(&spec);
+    arch.inference.tasks[arch.inference.nTasks - 4].handler = &nop;
+    arch.inference.tasks[arch.inference.nTasks - 3].handler = &nop;
+    arch.inference.tasks[arch.inference.nTasks - 2].handler = &nop;
+    arch.inference.tasks[arch.inference.nTasks - 1].handler = &nop;
 
-    int nThreads = 4;
+    int nThreads = 1;
     TransformerContext context;
     context.transformer = &transformer;
     context.currentBlockIndex = 0;

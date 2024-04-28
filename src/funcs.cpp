@@ -10,7 +10,6 @@
 #elif defined(__AVX2__)
     #include <immintrin.h>
 #endif
-#include "llamafile-sgemm.hpp"
 
 #if defined(__AVX2__)
     #define MM256_SET_M128I(a, b) _mm256_insertf128_si256(_mm256_castsi128_si256(b), (a), 1)
@@ -381,17 +380,6 @@ void matmulQ80vQ80(MatmulThreadInfo* a) {
 //        n          |_|       1
 //                    1
 void matmul(FloatType weightsFloatType, FloatType inputFloatType, float* output, void* input, void* weights, int n, int d, unsigned int nThreads, unsigned int threadIndex) {
-    if (llamafile_sgemm(
-        1, d , n / getNumbersPerBatch(weightsFloatType),
-        input, n / getNumbersPerBatch(inputFloatType),
-        weights, n / getNumbersPerBatch(weightsFloatType),
-        output, 1,
-        threadIndex, nThreads, 0,
-        inputFloatType, weightsFloatType, F32
-    )) {
-        return;
-    }
-
     MatmulThreadInfo s;
     s.output = output;
     s.input = input;
