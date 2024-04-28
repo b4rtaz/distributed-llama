@@ -59,8 +59,8 @@ void initRope(float* cache, TransformerSpec* spec) {
             float val = pos * freq;
             float fcr = cosf(val);
             float fci = sinf(val);
-            cache[pos * spec->seqLen + i] = fcr;
-            cache[pos * spec->seqLen + i + 1] = fci;
+            cache[pos * spec->dim + i] = fcr;
+            cache[pos * spec->dim + i + 1] = fci;
         }
     }
 }
@@ -72,8 +72,8 @@ void rope(float* cache, float* q, float* k, TransformerSpec* spec, int pos, unsi
 
     // RoPE relative positional encoding: complex-valued rotate q and k in each head
     for (int i = iStart; i < iEnd; i += 2) {
-        float fcr = cache[pos * spec->seqLen + i];
-        float fci = cache[pos * spec->seqLen + i + 1];
+        float fcr = cache[pos * spec->dim + i];
+        float fci = cache[pos * spec->dim + i + 1];
         int rotn = i < spec->kvDim ? 2 : 1; // how many vectors? 2 = q & k, 1 = q only
         for (int _v = 0; _v < rotn; _v++) {
             float* vec = _v == 0 ? q : k; // the vector to rotate (query or key)
@@ -291,6 +291,8 @@ Transformer::Transformer(TransformerSpec* spec, uint8_t sliceIndex) {
         if (spec->archType == LLAMA2 || spec->archType == MIXTRAL) {
             ropeCache = (float*)NEW_BUFFER(spec->seqLen * spec->dim * sizeof(float));
             initRope(ropeCache, spec);
+        } else {
+            ropeCache = NULL;
         }
     }
 }
@@ -311,7 +313,7 @@ Transformer::~Transformer() {
         FREE_BUFFER(x);
         FREE_BUFFER(logits);
 
-        if (spec->archType == LLAMA2 || spec->archType == MIXTRAL) {
+        if (ropeCache != NULL) {
             FREE_BUFFER(ropeCache);
         }
     }
