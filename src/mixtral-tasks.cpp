@@ -15,13 +15,13 @@ TransformerArch buildMixtralArch(TransformerSpec* spec) {
         a.I(llamaSyncRmsAtt, TASK_TYPE_TRANSFER);
         a.I(llamaAttQ, TASK_TYPE_INFERENCE);
         a.I(llamaQuantizeAttQ, TASK_TYPE_INFERENCE);
-        a.I(llamaSyncAttQ, TASK_TYPE_INFERENCE);
+        a.I(llamaSyncAttQ, TASK_TYPE_TRANSFER);
         a.I(llamaAttK, TASK_TYPE_INFERENCE);
         a.I(llamaQuantizeAttK, TASK_TYPE_INFERENCE);
-        a.I(llamaSyncAttK, TASK_TYPE_INFERENCE);
+        a.I(llamaSyncAttK, TASK_TYPE_TRANSFER);
         a.I(llamaAttV, TASK_TYPE_INFERENCE);
         a.I(llamaQuantizeAttV, TASK_TYPE_INFERENCE);
-        a.I(llamaSyncAttV, TASK_TYPE_INFERENCE);
+        a.I(llamaSyncAttV, TASK_TYPE_TRANSFER);
         a.I(llamaDequantizeQkv, TASK_TYPE_INFERENCE);
         a.I(llamaMultiheadAtt, TASK_TYPE_INFERENCE);
         a.I(grokMultiheadAttRope, TASK_TYPE_INFERENCE);
