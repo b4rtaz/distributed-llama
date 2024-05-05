@@ -160,27 +160,23 @@ void dequantizeSlicedBuffer(unsigned int nThreads, unsigned int threadIndex, Tra
     }
 }
 
-void sendPoke(TASK_ARGS) {
+void sendPos(TASK_ARGS) {
     TASK_VARIABLES;
 
     if (ctx->socketPool != NULL) {
-        const char poke = 0x25;
-
         unsigned int nSockets = ctx->socketPool->nSockets / nThreads + (ctx->socketPool->nSockets % nThreads > threadIndex ? 1 : 0);
         SocketIo ios[nSockets];
         for (int i = 0; i < nSockets; i++) {
             ios[i].socketIndex = threadIndex + i * nThreads;
-            ios[i].data = &poke;
-            ios[i].size = sizeof(char);
+            ios[i].data = &transformer->pos;
+            ios[i].size = sizeof(pos_t);
         }
         ctx->socketPool->writeMany(nSockets, ios);
     }
 }
 
-void waitForPoke(Socket* socket) {
-    char poke;
-    socket->read(&poke, sizeof(char));
-    assert(poke == 0x25);
+void waitForPos(Transformer* transformer, Socket* socket) {
+    socket->read(&transformer->pos, sizeof(pos_t));
 }
 
 Inference::Inference(TransformerArch* arch, unsigned int nThreads, Transformer* transformer, SocketPool* socketPool) {
@@ -190,7 +186,7 @@ Inference::Inference(TransformerArch* arch, unsigned int nThreads, Transformer* 
     context.transformer = transformer;
     context.socket = NULL;
     context.socketPool = socketPool;
-    assert(arch->inference.tasks[0].handler == sendPoke);
+    assert(arch->inference.tasks[0].handler == sendPos);
     taskLoop = new TaskLoop(nThreads, arch->inference.nTasks, TASK_N_TYPES, arch->inference.tasks, (void*)&context);
 }
 
@@ -198,7 +194,7 @@ Inference::~Inference() {
     delete taskLoop;
 }
 
-float* Inference::infer(int token, int pos) {
+float* Inference::infer(int token, pos_t pos) {
     transformer->pos = pos;
 
     float* contentRow = ((float*)transformer->tokenEmbeddingTable) + token * transformer->spec->dim;
@@ -231,7 +227,7 @@ Worker::~Worker() {
 
 void Worker::work() {
     while (true) {
-        waitForPoke(socket);
+        waitForPos(transformer, socket);
 
         context.currentBlockIndex = 0;
         taskLoop->run();

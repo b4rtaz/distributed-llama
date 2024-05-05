@@ -48,7 +48,7 @@ void syncMissingSlicesOfSlicedBuffer(unsigned int nThreads, unsigned int threadI
 void quantizeUnitBuffer(unsigned int nThreads, unsigned int threadIndex, TransformerContext* ctx, uint8_t sourceBufferIndex, uint8_t targetBufferIndex);
 void quantizeSlicedBuffer(unsigned int nThreads, unsigned int threadIndex, TransformerContext* ctx, bool quantizeRootSlice, uint8_t sourceBufferIndex, uint8_t targetBufferIndex);
 void dequantizeSlicedBuffer(unsigned int nThreads, unsigned int threadIndex, TransformerContext* ctx, bool dequantizeRootSlice, uint8_t sourceBufferIndex, uint8_t targetBufferIndex);
-void sendPoke(TASK_ARGS);
+void sendPos(TASK_ARGS);
 
 class Inference {
 private:
@@ -60,7 +60,7 @@ private:
 public:
     Inference(TransformerArch* arch, unsigned int nThreads, Transformer* transformer, SocketPool* socketPool);
     ~Inference();
-    float* infer(int token, int pos);
+    float* infer(int token, pos_t pos);
     void getStats(unsigned long* inferenceTime, unsigned long* transferTime);
 };
 

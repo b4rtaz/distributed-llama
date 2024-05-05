@@ -66,7 +66,7 @@ void generate(Inference* inference, SocketPool* socketPool, Tokenizer *tokenizer
     long start = 0;  // used to time our code, only initialized after first iteration
     int next;        // will store the next token in the sequence
     int token = promptTokens[0]; // kick off with the first token in the prompt
-    int pos = 0;     // position in the sequence
+    pos_t pos = 0;     // position in the sequence
 
     unsigned long inferenceTime;
     unsigned long transferTime;
@@ -139,7 +139,7 @@ void chat(Inference* inference, SocketPool* socketPool, Tokenizer* tokenizer, Sa
     int next;        // will store the next token in the sequence
     int token;       // stores the current token to feed into the transformer
     int prev_token;
-    int pos = 0;     // position in the sequence
+    pos_t pos = 0;     // position in the sequence
     while (pos < args->steps) {
         // when it is the user's turn to contribute tokens to the dialog...
         if (userTurn) {
@@ -236,9 +236,9 @@ void simpleServer(Inference* inference, SocketPool* socketPool, Tokenizer *token
                 tokenizer->encode(prompt, promptTokens, &nPromptTokens, true, false);
 
                 int token = promptTokens[0];
-                int maxPos = nPromptTokens + maxTokens;
+                pos_t maxPos = nPromptTokens + maxTokens;
                 if (maxPos > spec->seqLen) maxPos = spec->seqLen;
-                for (int pos = 0; pos < maxPos; pos++) {
+                for (pos_t pos = 0; pos < maxPos; pos++) {
                     float* logits = inference->infer(token, pos);
 
                     if (pos < nPromptTokens - 1) {

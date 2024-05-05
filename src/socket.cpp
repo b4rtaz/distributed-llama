@@ -34,7 +34,7 @@ static inline void setNoDelay(int socket) {
         throw std::runtime_error("Error setting socket to no-delay");
 }
 
-static inline void writeSocket(int socket, const char* data, size_t size) {
+static inline void writeSocket(int socket, const void* data, size_t size) {
     while (size > 0) {
         int s = send(socket, (char*)data, size, 0);
         if (s < 0) {
@@ -50,7 +50,7 @@ static inline void writeSocket(int socket, const char* data, size_t size) {
     }
 }
 
-static inline void readSocket(bool* isNonBlocking, int socket, char* data, size_t size) {
+static inline void readSocket(bool* isNonBlocking, int socket, void* data, size_t size) {
     unsigned int attempt = 0;
     time_t startTime;
     while (size > 0) {
@@ -136,13 +136,13 @@ SocketPool::~SocketPool() {
     delete[] isNonBlocking;
 }
 
-void SocketPool::write(unsigned int socketIndex, const char* data, size_t size) {
+void SocketPool::write(unsigned int socketIndex, const void* data, size_t size) {
     assert(socketIndex >= 0 && socketIndex < nSockets);
     sentBytes += size;
     writeSocket(sockets[socketIndex], data, size);
 }
 
-void SocketPool::read(unsigned int socketIndex, char* data, size_t size) {
+void SocketPool::read(unsigned int socketIndex, void* data, size_t size) {
     assert(socketIndex >= 0 && socketIndex < nSockets);
     recvBytes += size;
     readSocket(&isNonBlocking[socketIndex], sockets[socketIndex], data, size);
@@ -236,11 +236,11 @@ Socket::~Socket() {
     close(socket);
 }
 
-void Socket::write(const char* data, size_t size) {
+void Socket::write(const void* data, size_t size) {
     writeSocket(socket, data, size);
 }
 
-void Socket::read(char* data, size_t size) {
+void Socket::read(void* data, size_t size) {
     readSocket(&isNonBlocking, socket, data, size);
 }
 
