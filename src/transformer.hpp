@@ -6,6 +6,8 @@
 #include "quants.hpp"
 #include "socket.hpp"
 
+typedef unsigned short pos_t;
+
 class MatmulSlice {
 public:
     FloatType type;
@@ -17,7 +19,6 @@ public:
 
     MatmulSlice(FloatType type, int nSlices, int n, int d);
     size_t splitWeights(uint8_t sliceIndex, char* weights, char* weights0);
-    long mergeOutputs(uint8_t sliceIndex, float* output, float* output0);
 };
 
 enum TransformerHeaderKey {
@@ -84,7 +85,7 @@ struct TransformerSpec {
 };
 
 void initRope(float* cache, TransformerSpec* spec);
-void rope(float* cache, float* q, float* k, TransformerSpec* spec, int pos, unsigned int nThreads, unsigned int threadIndex);
+void rope(float* cache, float* q, float* k, TransformerSpec* spec, pos_t pos, unsigned int nThreads, unsigned int threadIndex);
 
 class TransformerBlock {
 public:
@@ -185,8 +186,8 @@ public:
     size_t wclsBytes;
     char* wcls;
 
+    pos_t pos;
     float rms;
-    int pos;
     float* x;
     float* logits;
     float* ropeCache;

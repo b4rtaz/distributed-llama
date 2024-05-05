@@ -43,16 +43,8 @@ size_t MatmulSlice::splitWeights(uint8_t sliceIndex, char* weights, char* weight
     return copiedBytes;
 }
 
-long MatmulSlice::mergeOutputs(uint8_t sliceIndex, float* output, float* output0) {
-    long offset = this->d0 * sliceIndex;
-    for (int i = 0; i < this->d0; i++) {
-        output[offset + i] = output0[i];
-    }
-    return offset; // offset in floats
-}
-
 void initRope(float* cache, TransformerSpec* spec) {
-    for (int pos = 0; pos < spec->seqLen; pos++) {
+    for (pos_t pos = 0; pos < spec->seqLen; pos++) {
         for (int i = 0; i < spec->dim; i += 2) {
             int head_dim = i % spec->headSize;
             float freq = 1.0f / powf(spec->ropeTheta, head_dim / (float)spec->headSize);
@@ -65,7 +57,7 @@ void initRope(float* cache, TransformerSpec* spec) {
     }
 }
 
-void rope(float* cache, float* q, float* k, TransformerSpec* spec, int pos, unsigned int nThreads, unsigned int threadIndex) {
+void rope(float* cache, float* q, float* k, TransformerSpec* spec, pos_t pos, unsigned int nThreads, unsigned int threadIndex) {
     int halfDim = spec->dim / 2;
     int slice = halfDim / nThreads;
     int iStart = threadIndex * slice;

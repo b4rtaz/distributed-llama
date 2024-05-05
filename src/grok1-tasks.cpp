@@ -14,7 +14,7 @@ void grokMulInput(TASK_ARGS) {
 }
 
 // source: https://github.com/karpathy/llama2.c/pull/408
-void ropeFalcon(float* q, float* k, TransformerSpec* spec, int pos, float theta) {
+void ropeFalcon(float* q, float* k, TransformerSpec* spec, pos_t pos, float theta) {
     for (int i = 0; i < spec->nHeads; i++) {
         for (int j = 0; j < spec->headSize / 2; j++) {
             float freq = 1.0f / powf(theta, 2.0f * (float)j / (float)spec->headSize);
@@ -301,7 +301,7 @@ TransformerArch buildGrok1Arch(TransformerSpec* spec) {
 
     // inference
 
-    a.I(sendPoke, TASK_TYPE_TRANSFER);
+    a.I(sendPos, TASK_TYPE_TRANSFER);
     a.I(grokMulInput, TASK_TYPE_INFERENCE);
     for (int i = 0; i < spec->nLayers; i++) {
         a.I(llamaRmsAtt, TASK_TYPE_INFERENCE);

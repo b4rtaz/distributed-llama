@@ -286,7 +286,7 @@ TransformerArch buildLlama2Arch(TransformerSpec* spec) {
 
     // inference
 
-    a.I(sendPoke, TASK_TYPE_TRANSFER);
+    a.I(sendPos, TASK_TYPE_TRANSFER);
     for (int i = 0; i < spec->nLayers; i++) {
         a.I(llamaRmsAtt, TASK_TYPE_INFERENCE);
         a.I(llamaRmsAttNorm, TASK_TYPE_INFERENCE);
