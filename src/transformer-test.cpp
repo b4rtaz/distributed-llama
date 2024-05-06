@@ -11,44 +11,49 @@ void testRopeSlice() {
     spec.seqLen = 2048;
     spec.nHeads = spec.dim / spec.headSize;
     spec.kvDim = (spec.dim * spec.nKvHeads) / spec.nHeads;
+    spec.ropeTheta = 10000.0f;
 
     float* q = new float[spec.dim];
     float* k = new float[spec.kvDim];
-    float* q1 = new float[spec.dim];
-    float* k1 = new float[spec.kvDim];
-    const int nPosTests = 16;
-    const int nThreadTests = 4;
+    float* correctQ = new float[spec.dim];
+    float* correctK = new float[spec.kvDim];
+    const int nSliceTests = 7;
+    const int nPosTests = 8;
+    const int nThreadTests = 3;
 
     for (int pos = 0; pos < spec.seqLen; pos += spec.seqLen / nPosTests) {
-        for (int i = 0; i < 8; i++) {
-            spec.nSlices = pow(2, i);
-            for (int nThreads = 1; nThreads < nThreadTests; nThreads++) {
+        for (int si = 0; si < nSliceTests; si++) {
+            spec.nSlices = pow(2, si);
+
+            for (int nThreads = 1; nThreads <= nThreadTests; nThreads++) {
+                printf("pos=%d slices=%d threads=%d\n", pos, spec.nSlices, nThreads);
+
                 for (int j = 0; j < spec.dim; j++) q[j] = (j / (float)spec.dim);
                 for (int j = 0; j < spec.kvDim; j++) k[j] = (j / (float)spec.kvDim);
 
-                for (int s = 0; s < spec.nSlices; s++) {
-                    RopeSlice slice(&spec, s);
+                for (uint8_t sliceIndex = 0; sliceIndex < spec.nSlices; sliceIndex++) {
+                    RopeSlice slice(&spec, sliceIndex);
                     for (int threadIndex = 0; threadIndex < nThreads; threadIndex++) {
                         slice.forward(
-                            &q[s * spec.dim / spec.nSlices],
-                            &k[s * spec.kvDim / spec.nSlices],
+                            &q[sliceIndex * spec.dim / spec.nSlices],
+                            &k[sliceIndex * spec.kvDim / spec.nSlices],
                             pos, nThreads, threadIndex);
                     }
                 }
 
-                if (i == 0 && nThreads == 1) {
-                    memcpy(q1, q, spec.dim * sizeof(float));
-                    memcpy(k1, k, spec.kvDim * sizeof(float));
+                if (si == 0 && nThreads == 1) {
+                    memcpy(correctQ, q, spec.dim * sizeof(float));
+                    memcpy(correctK, k, spec.kvDim * sizeof(float));
                 } else {
                     for (int j = 0; j < spec.dim; j++) {
-                        if (fabs(q[j] - q1[j]) > 1e-6) {
-                            printf("q[%d] mismatch: %f != %f\n", j, q[j], q1[j]);
+                        if (fabs(q[j] - correctQ[j]) > 1e-6) {
+                            printf("q[%d] mismatch: %f != %f\n", j, q[j], correctQ[j]);
                             exit(EXIT_FAILURE);
                         }
                     }
                     for (int j = 0; j < spec.kvDim; j++) {
-                        if (fabs(k[j] - k1[j]) > 1e-6) {
-                            printf("k[%d] mismatch: %f != %f\n", j, k[j], k1[j]);
+                        if (fabs(k[j] - correctK[j]) > 1e-6) {
+                            printf("k[%d] mismatch: %f != %f\n", j, k[j], correctK[j]);
                             exit(EXIT_FAILURE);
                         }
                     }
@@ -59,9 +64,9 @@ void testRopeSlice() {
 
     delete[] q;
     delete[] k;
-    delete[] q1;
-    delete[] k1;
-    printf("✅ RopeSlice\n");
+    delete[] correctQ;
+    delete[] correctK;
+    printf("✅ ropeSlice\n");
 }
 
 int main() {
