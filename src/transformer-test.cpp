@@ -1,5 +1,6 @@
 #include "transformer.hpp"
 #include <cmath>
+#include <cstdio>
 
 void testRopeSlice() {
     TransformerSpec spec;
