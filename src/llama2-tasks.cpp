@@ -43,6 +43,13 @@ void llamaQkv(TASK_ARGS) {
     matmul(spec->weightsFloatType, spec->bufferFloatType, v0, xbq, block->v0, block->v0Slice->n, block->v0Slice->d0, nThreads, threadIndex);
 }
 
+void llamaRope(TASK_ARGS) {
+    TASK_VARIABLES;
+    float* q = (float*)transformer->buffer->getSliced(TB_SLICED_Q, transformer->sliceIndex);
+    float* k = (float*)transformer->buffer->getSliced(TB_SLICED_K, transformer->sliceIndex);
+    transformer->ropeSlice->forward(q, k, transformer->pos, nThreads, threadIndex);
+}
+
 void llamaQuantizeQkv(TASK_ARGS) {
     TASK_VARIABLES;
     quantizeSlicedBuffer(nThreads, threadIndex, ctx, false, TB_SLICED_Q, TB_SLICED_Q_QUANTIZED);
@@ -74,13 +81,6 @@ void llamaMultiheadAtt(TASK_ARGS) {
         memcpy(k, transformer->buffer->getUnit(TB_SLICED_K), spec->dim * sizeof(float));
         memcpy(v, transformer->buffer->getUnit(TB_SLICED_V), spec->dim * sizeof(float));
     }
-}
-
-void llamaMultiheadAttRope(TASK_ARGS) {
-    TASK_VARIABLES;
-    float* q = (float*)transformer->buffer->getUnit(TB_SLICED_Q);
-    float* k = block->keyCache + transformer->pos * spec->kvDim;
-    rope(transformer->ropeCache, q, k, spec, transformer->pos, nThreads, threadIndex);
 }
 
 void llamaMultiheadAttJoin(TASK_ARGS) {
@@ -293,11 +293,11 @@ TransformerArch buildLlama2Arch(TransformerSpec* spec) {
         a.I(llamaQuantizeRmsAtt, TASK_TYPE_INFERENCE);
         a.I(llamaSyncRmsAtt, TASK_TYPE_TRANSFER);
         a.I(llamaQkv, TASK_TYPE_INFERENCE);
+        a.I(llamaRope, TASK_TYPE_INFERENCE);
         a.I(llamaQuantizeQkv, TASK_TYPE_INFERENCE);
         a.I(llamaSyncQkv, TASK_TYPE_TRANSFER);
         a.I(llamaDequantizeQkv, TASK_TYPE_INFERENCE);
         a.I(llamaMultiheadAtt, TASK_TYPE_INFERENCE);
-        a.I(llamaMultiheadAttRope, TASK_TYPE_INFERENCE);
         a.I(llamaMultiheadAttJoin, TASK_TYPE_INFERENCE);
         a.I(llamaQuantizeMultiheadAtt, TASK_TYPE_INFERENCE);
         a.I(llamaSyncMultiheadAtt, TASK_TYPE_TRANSFER);
@@ -330,6 +330,7 @@ TransformerArch buildLlama2Arch(TransformerSpec* spec) {
     for (int i = 0; i < spec->nLayers; i++) {
         a.W(llamaSyncRmsAtt, TASK_TYPE_TRANSFER);
         a.W(llamaQkv, TASK_TYPE_INFERENCE);
+        a.I(llamaRope, TASK_TYPE_INFERENCE);
         a.W(llamaQuantizeQkv, TASK_TYPE_INFERENCE);
         a.W(llamaSyncQkv, TASK_TYPE_TRANSFER);
         a.W(llamaSyncMultiheadAtt, TASK_TYPE_TRANSFER);
