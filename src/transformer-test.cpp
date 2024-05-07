@@ -35,7 +35,11 @@ void testRopeSlice() {
                     RopeSlice slice(&spec, sliceIndex);
                     for (int threadIndex = 0; threadIndex < nThreads; threadIndex++) {
                         slice.forward(
+                            true,
                             &q[sliceIndex * spec.dim / spec.nSlices],
+                            pos, nThreads, threadIndex);
+                        slice.forward(
+                            false,
                             &k[sliceIndex * spec.kvDim / spec.nSlices],
                             pos, nThreads, threadIndex);
                     }
