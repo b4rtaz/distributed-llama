@@ -44,23 +44,34 @@ size_t MatmulSlice::splitWeights(uint8_t sliceIndex, char* weights, char* weight
 }
 
 RopeSlice::RopeSlice(TransformerSpec* spec, uint8_t sliceIndex) {
+    assert(spec->dim >= spec->kvDim);
     assert(spec->dim % spec->nSlices == 0);
-    kvDim = spec->kvDim;
-    dim0 = spec->dim / spec->nSlices;
-    assert(dim0 % 2 == 0);
-    dimOffset = dim0 * sliceIndex;
-    size_t cacheBytes = spec->seqLen * dim0 * sizeof(float);
+    assert(spec->kvDim % spec->nSlices == 0);
+
+    qDim0 = spec->dim / spec->nSlices;
+    kvDim0 = spec->kvDim / spec->nSlices;
+    assert(qDim0 % 2 == 0);
+    assert(kvDim0 % 2 == 0);
+    int kvDim0From = kvDim0 * sliceIndex;
+    int qDim0From = qDim0 * sliceIndex;
+    int qDim0To = qDim0From + qDim0;
+    qOffset = qDim0From - kvDim0From;
+    cacheDim = qDim0To - kvDim0From;
+    assert(cacheDim % 2 == 0);
+
+    size_t cacheBytes = spec->seqLen * cacheDim * sizeof(float);
     cache = (float*)NEW_BUFFER(cacheBytes);
+    printf("🕒 ropeCache: %ld bytes\n", cacheBytes);
 
     for (pos_t pos = 0; pos < spec->seqLen; pos++) {
-        for (int i = 0; i < dim0; i += 2) {
-            int headDim = (i + dimOffset) % spec->headSize;
+        for (int i = kvDim0From; i < qDim0To; i += 2) {
+            int headDim = i % spec->headSize;
             float freq = 1.0f / powf(spec->ropeTheta, headDim / (float)spec->headSize);
             float val = pos * freq;
             float fcr = cosf(val);
             float fci = sinf(val);
-            cache[pos * dim0 + i] = fcr;
-            cache[pos * dim0 + i + 1] = fci;
+            cache[pos * cacheDim + (i - kvDim0From)] = fcr;
+            cache[pos * cacheDim + (i - kvDim0From) + 1] = fci;
         }
     }
 }
@@ -69,25 +80,23 @@ RopeSlice::~RopeSlice() {
     FREE_BUFFER(cache);
 }
 
-void RopeSlice::forward(float* q, float* k, pos_t pos, unsigned int nThreads, unsigned int threadIndex) {
-    int halfDim0 = dim0 / 2;
-    int slice = halfDim0 / nThreads;
+void RopeSlice::forward(bool isQ, float* qOrV, pos_t pos, unsigned int nThreads, unsigned int threadIndex) {
+    int d0 = isQ ? qDim0 : kvDim0;
+    int offset = isQ ? qOffset : 0;
+    int halfD0 = d0 / 2;
+    int slice = halfD0 / nThreads;
     int iStart = threadIndex * slice;
-    int iEnd = (nThreads - 1 == threadIndex) ? halfDim0 : (iStart + slice);
+    int iEnd = (nThreads - 1 == threadIndex) ? halfD0 : (iStart + slice);
     iStart *= 2;
     iEnd *= 2;
 
     for (int i = iStart; i < iEnd; i += 2) {
-        float fcr = cache[pos * dim0 + i];
-        float fci = cache[pos * dim0 + i + 1];
-        int rotn = (dimOffset + i) < kvDim ? 2 : 1; // how many vectors? 2 = q & k, 1 = q only
-        for (int _v = 0; _v < rotn; _v++) {
-            float* vec = _v == 0 ? q : k; // the vector to rotate (query or key)
-            float v0 = vec[i];
-            float v1 = vec[i+1];
-            vec[i]   = v0 * fcr - v1 * fci;
-            vec[i+1] = v0 * fci + v1 * fcr;
-        }
+        float fcr = cache[pos * cacheDim + offset + i];
+        float fci = cache[pos * cacheDim + offset + i + 1];
+        float v0 = qOrV[i];
+        float v1 = qOrV[i+1];
+        qOrV[i]   = v0 * fcr - v1 * fci;
+        qOrV[i+1] = v0 * fci + v1 * fcr;
     }
 }
 

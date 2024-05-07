@@ -47,7 +47,8 @@ void llamaRope(TASK_ARGS) {
     TASK_VARIABLES;
     float* q = (float*)transformer->buffer->getSliced(TB_SLICED_Q, transformer->sliceIndex);
     float* k = (float*)transformer->buffer->getSliced(TB_SLICED_K, transformer->sliceIndex);
-    transformer->ropeSlice->forward(q, k, transformer->pos, nThreads, threadIndex);
+    transformer->ropeSlice->forward(true, q, transformer->pos, nThreads, threadIndex);
+    transformer->ropeSlice->forward(false, k, transformer->pos, nThreads, threadIndex);
 }
 
 void llamaQuantizeQkv(TASK_ARGS) {

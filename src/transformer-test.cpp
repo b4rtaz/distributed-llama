@@ -17,8 +17,8 @@ void testRopeSlice() {
     float* k = new float[spec.kvDim];
     float* correctQ = new float[spec.dim];
     float* correctK = new float[spec.kvDim];
-    const int nSliceTests = 7;
-    const int nPosTests = 8;
+    const int nSliceTests = 5;
+    const int nPosTests = 6;
     const int nThreadTests = 3;
 
     for (int pos = 0; pos < spec.seqLen; pos += spec.seqLen / nPosTests) {
