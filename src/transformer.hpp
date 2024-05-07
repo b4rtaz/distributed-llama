@@ -86,11 +86,11 @@ struct TransformerSpec {
 
 class RopeSlice {
 private:
-    int dim;
+    float* cache;
+    int kvDim;
+public:
     int dim0;
     int dimOffset;
-    float* cache;
-public:
     RopeSlice(TransformerSpec* spec, uint8_t sliceIndex);
     ~RopeSlice();
     void forward(float* q, float* k, pos_t pos, unsigned int nThreads, unsigned int threadIndex);

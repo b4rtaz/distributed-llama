@@ -45,7 +45,7 @@ size_t MatmulSlice::splitWeights(uint8_t sliceIndex, char* weights, char* weight
 
 RopeSlice::RopeSlice(TransformerSpec* spec, uint8_t sliceIndex) {
     assert(spec->dim % spec->nSlices == 0);
-    dim = spec->dim;
+    kvDim = spec->kvDim;
     dim0 = spec->dim / spec->nSlices;
     assert(dim0 % 2 == 0);
     dimOffset = dim0 * sliceIndex;
@@ -80,7 +80,7 @@ void RopeSlice::forward(float* q, float* k, pos_t pos, unsigned int nThreads, un
     for (int i = iStart; i < iEnd; i += 2) {
         float fcr = cache[pos * dim0 + i];
         float fci = cache[pos * dim0 + i + 1];
-        int rotn = (dimOffset + i) < dim ? 2 : 1; // how many vectors? 2 = q & k, 1 = q only
+        int rotn = (dimOffset + i) < kvDim ? 2 : 1; // how many vectors? 2 = q & k, 1 = q only
         for (int _v = 0; _v < rotn; _v++) {
             float* vec = _v == 0 ? q : k; // the vector to rotate (query or key)
             float v0 = vec[i];
