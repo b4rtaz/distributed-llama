@@ -86,6 +86,7 @@ struct TransformerSpec {
 
 class RopeSlice {
 private:
+    int dim;
     int dim0;
     int dimOffset;
     float* cache;
