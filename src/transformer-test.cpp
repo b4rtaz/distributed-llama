@@ -7,7 +7,7 @@ void testRopeSlice() {
     TransformerSpec spec;
     spec.dim = 4096;
     spec.headSize = 128;
-    spec.nKvHeads = 32;
+    spec.nKvHeads = 8;
     spec.seqLen = 2048;
     spec.nHeads = spec.dim / spec.headSize;
     spec.kvDim = (spec.dim * spec.nKvHeads) / spec.nHeads;

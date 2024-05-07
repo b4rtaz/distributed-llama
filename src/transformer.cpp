@@ -61,7 +61,7 @@ RopeSlice::RopeSlice(TransformerSpec* spec, uint8_t sliceIndex) {
 
     size_t cacheBytes = spec->seqLen * cacheDim * sizeof(float);
     cache = (float*)NEW_BUFFER(cacheBytes);
-    printf("🕒 ropeCache: %ld bytes\n", cacheBytes);
+    printf("🕒 ropeCache: %ld kB\n", cacheBytes / 1024);
 
     for (pos_t pos = 0; pos < spec->seqLen; pos++) {
         for (int i = kvDim0From; i < qDim0To; i += 2) {
@@ -80,7 +80,7 @@ RopeSlice::~RopeSlice() {
     FREE_BUFFER(cache);
 }
 
-void RopeSlice::forward(bool isQ, float* qOrV, pos_t pos, unsigned int nThreads, unsigned int threadIndex) {
+void RopeSlice::forward(bool isQ, float* qOrK, pos_t pos, unsigned int nThreads, unsigned int threadIndex) {
     int d0 = isQ ? qDim0 : kvDim0;
     int offset = isQ ? qOffset : 0;
     int halfD0 = d0 / 2;
@@ -93,10 +93,10 @@ void RopeSlice::forward(bool isQ, float* qOrV, pos_t pos, unsigned int nThreads,
     for (int i = iStart; i < iEnd; i += 2) {
         float fcr = cache[pos * cacheDim + offset + i];
         float fci = cache[pos * cacheDim + offset + i + 1];
-        float v0 = qOrV[i];
-        float v1 = qOrV[i+1];
-        qOrV[i]   = v0 * fcr - v1 * fci;
-        qOrV[i+1] = v0 * fci + v1 * fcr;
+        float v0 = qOrK[i];
+        float v1 = qOrK[i+1];
+        qOrK[i]   = v0 * fcr - v1 * fci;
+        qOrK[i+1] = v0 * fci + v1 * fcr;
     }
 }
 
@@ -592,7 +592,7 @@ Transformer Transformer::loadRoot(char* data, TransformerSpec* spec, SocketPool*
         exit(EXIT_FAILURE);
     }
 
-    printf("⏩ Loaded %ld bytes\n", (long)(w - data));
+    printf("⏩ Loaded %ld kB\n", (long)(w - data) / 1024);
     return transformer;
 }
 

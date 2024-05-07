@@ -94,7 +94,7 @@ private:
 public:
     RopeSlice(TransformerSpec* spec, uint8_t sliceIndex);
     ~RopeSlice();
-    void forward(bool isQ, float* qOrV, pos_t pos, unsigned int nThreads, unsigned int threadIndex);
+    void forward(bool isQ, float* qOrK, pos_t pos, unsigned int nThreads, unsigned int threadIndex);
 };
 
 class TransformerBlock {
