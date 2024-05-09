@@ -84,8 +84,18 @@ struct TransformerSpec {
     uint8_t nSlices;
 };
 
-void initRope(float* cache, TransformerSpec* spec);
-void rope(float* cache, float* q, float* k, TransformerSpec* spec, pos_t pos, unsigned int nThreads, unsigned int threadIndex);
+class RopeSlice {
+private:
+    float* cache;
+    int cacheDim;
+    int qDim0;
+    int qOffset;
+    int kvDim0;
+public:
+    RopeSlice(TransformerSpec* spec, uint8_t sliceIndex);
+    ~RopeSlice();
+    void forward(bool isQ, float* qOrK, pos_t pos, unsigned int nThreads, unsigned int threadIndex);
+};
 
 class TransformerBlock {
 public:
@@ -190,7 +200,7 @@ public:
     float rms;
     float* x;
     float* logits;
-    float* ropeCache;
+    RopeSlice* ropeSlice;
 
     ~Transformer();
 

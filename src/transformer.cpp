@@ -43,39 +43,60 @@ size_t MatmulSlice::splitWeights(uint8_t sliceIndex, char* weights, char* weight
     return copiedBytes;
 }
 
-void initRope(float* cache, TransformerSpec* spec) {
+RopeSlice::RopeSlice(TransformerSpec* spec, uint8_t sliceIndex) {
+    assert(spec->dim >= spec->kvDim);
+    assert(spec->dim % spec->nSlices == 0);
+    assert(spec->kvDim % spec->nSlices == 0);
+
+    qDim0 = spec->dim / spec->nSlices;
+    kvDim0 = spec->kvDim / spec->nSlices;
+    assert(qDim0 % 2 == 0);
+    assert(kvDim0 % 2 == 0);
+    int kvDim0From = kvDim0 * sliceIndex;
+    int qDim0From = qDim0 * sliceIndex;
+    int qDim0To = qDim0From + qDim0;
+    qOffset = qDim0From - kvDim0From;
+    cacheDim = qDim0To - kvDim0From;
+    assert(cacheDim % 2 == 0);
+
+    size_t cacheBytes = spec->seqLen * cacheDim * sizeof(float);
+    cache = (float*)NEW_BUFFER(cacheBytes);
+    printf("🕒 ropeCache: %ld kB\n", cacheBytes / 1024);
+
     for (pos_t pos = 0; pos < spec->seqLen; pos++) {
-        for (int i = 0; i < spec->dim; i += 2) {
-            int head_dim = i % spec->headSize;
-            float freq = 1.0f / powf(spec->ropeTheta, head_dim / (float)spec->headSize);
+        for (int i = kvDim0From; i < qDim0To; i += 2) {
+            int headDim = i % spec->headSize;
+            float freq = 1.0f / powf(spec->ropeTheta, headDim / (float)spec->headSize);
             float val = pos * freq;
             float fcr = cosf(val);
             float fci = sinf(val);
-            cache[pos * spec->dim + i] = fcr;
-            cache[pos * spec->dim + i + 1] = fci;
+            cache[pos * cacheDim + (i - kvDim0From)] = fcr;
+            cache[pos * cacheDim + (i - kvDim0From) + 1] = fci;
         }
     }
 }
 
-void rope(float* cache, float* q, float* k, TransformerSpec* spec, pos_t pos, unsigned int nThreads, unsigned int threadIndex) {
-    int halfDim = spec->dim / 2;
-    int slice = halfDim / nThreads;
-    int iStart = threadIndex * slice;
-    int iEnd = ((nThreads - 1 == threadIndex) ? halfDim : (iStart + slice)) * 2;
-    iStart *= 2;
+RopeSlice::~RopeSlice() {
+    FREE_BUFFER(cache);
+}
 
-    // RoPE relative positional encoding: complex-valued rotate q and k in each head
+void RopeSlice::forward(bool isQ, float* qOrK, pos_t pos, unsigned int nThreads, unsigned int threadIndex) {
+    int d0 = isQ ? qDim0 : kvDim0;
+    int offset = isQ ? qOffset : 0;
+    int halfD0 = d0 / 2;
+    int slice = halfD0 / nThreads;
+    int iStart = threadIndex * slice;
+    int iEnd = (nThreads - 1 == threadIndex) ? halfD0 : (iStart + slice);
+    iStart *= 2;
+    iEnd *= 2;
+
     for (int i = iStart; i < iEnd; i += 2) {
-        float fcr = cache[pos * spec->dim + i];
-        float fci = cache[pos * spec->dim + i + 1];
-        int rotn = i < spec->kvDim ? 2 : 1; // how many vectors? 2 = q & k, 1 = q only
-        for (int _v = 0; _v < rotn; _v++) {
-            float* vec = _v == 0 ? q : k; // the vector to rotate (query or key)
-            float v0 = vec[i];
-            float v1 = vec[i+1];
-            vec[i]   = v0 * fcr - v1 * fci;
-            vec[i+1] = v0 * fci + v1 * fcr;
-        }
+        float fcr = cache[pos * cacheDim + offset + i];
+        float fci = cache[pos * cacheDim + offset + i + 1];
+        float v0 = qOrK[i];
+        float v1 = qOrK[i+1];
+        qOrK[i]   = v0 * fcr - v1 * fci;
+        qOrK[i+1] = v0 * fci + v1 * fcr;
     }
 }
 
@@ -280,14 +301,13 @@ Transformer::Transformer(TransformerSpec* spec, uint8_t sliceIndex) {
 #endif
         x = (float*)NEW_BUFFER(spec->dim * sizeof(float));
         logits = (float*)NEW_BUFFER(spec->vocabSize * sizeof(float));
+    }
 
-        // TODO: cache should be for all architectures
-        if (spec->archType == LLAMA2 || spec->archType == MIXTRAL) {
-            ropeCache = (float*)NEW_BUFFER(spec->seqLen * spec->dim * sizeof(float));
-            initRope(ropeCache, spec);
-        } else {
-            ropeCache = NULL;
-        }
+    // TODO: cache should be for all architectures
+    if (spec->archType == LLAMA2 || spec->archType == MIXTRAL) {
+        ropeSlice = new RopeSlice(spec, sliceIndex);
+    } else {
+        ropeSlice = NULL;
     }
 }
 
@@ -306,10 +326,10 @@ Transformer::~Transformer() {
 #endif
         FREE_BUFFER(x);
         FREE_BUFFER(logits);
+    }
 
-        if (ropeCache != NULL) {
-            FREE_BUFFER(ropeCache);
-        }
+    if (ropeSlice != NULL) {
+        delete ropeSlice;
     }
 }
 
@@ -572,7 +592,7 @@ Transformer Transformer::loadRoot(char* data, TransformerSpec* spec, SocketPool*
         exit(EXIT_FAILURE);
     }
 
-    printf("⏩ Loaded %ld bytes\n", (long)(w - data));
+    printf("⏩ Loaded %ld kB\n", (long)(w - data) / 1024);
     return transformer;
 }
 

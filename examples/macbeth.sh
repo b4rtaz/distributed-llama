@@ -68,138 +68,128 @@ They smack of honour both. Go get him surgeons. 65
 Who comes here?"
 
 GENERATED="Malcolm. The worthy Thane of Ross.
-Duncan. What a haste looks through a troop? and when may
-No sooner had this battle fought, than, ingrate and ungracious! 70
-Who leap'd my back, and thence hasten'd me away,
-And follows so he wins. 
+Duncan. What a haste looks through a duel's wounds! 70
+Some must be pac'd. 
+[Exit Ross]
+See this encounter is like to the poring
+On of a beggar's story, told by one
+That means to pluck upon the heart the strings
+And draw the tears thriftily. 75
+[Enter Lennox]
+How goes the night, boy?
 
-Malcolm. As I do live, my lord, so happily prosper I, without this blow might have o'erpaid the world: 75
-He loves our Majesty as boundlessly as we
-Muster ourselves, and make a full battalion. 
-Duncan. Then enter, sir, and alone with me great battles 80
-I'll strain upon thy forehead, to this day
-It is a faith, and makes the fire that burn in my veins: 
-Thou hast it now, king, afield to-morrow. 
-God be wi' you, father. 
+Lennox. The night is long that none should wake.
 
-Duncan. Farewell, farewell! or let me hear from you. 85
-[Exeunt] 
+Duncan. You do not need to stare. The Moor
+To know the man. 'Tis the Moors devices. 80
+[Exit Lennox]
+By the happy right of mine own hands,
+Strike all that live in this poor thing of mine.
+'Tis calld the Eyrie, and I am sick at heart.
+As hellish-devils do the damned souls
+O'their bad lives, thus ill-breveted, linger
+O'er lamps and forks and other instruments
+That prove the stages of the night. 90
+Good sir, take note; I bid you farewell:
+Come sleep, and cut short this nitty romance.
+[He sleeps.]
+If cravens, I bear them like the Minion of the moon,
+With tiptoe foot he sneaks and starts to be a man. 95
+And when he is found asleep, awake him with this armed' s address: 
+That sleep which th'assassin hallowed,
+Scotland, awake; your king is murder'd, sleep no more. 100
+*Furbish'd. Weapons polished for battle. 
+*Thriftily. Fastidiously, thoughtfully. 
+*Eyrie. Fortress; the lair of birds of prey. 
+*Minion. A braggart, a coward. 
 
-THE THIRD SCENE
-Macbeth, Banquo, Ross, and Angus.
-Macbeth. So fair and foul a day I have not seen. 
-It is calm, and yet is all together. 
-[Thunder, then rain]
-Look, how the blood of Sweden flows from hence;
-The time is free. I see the Capitol; 90
-The city of kingly eyes. 
-[Thunder, then lightening]
-And the remote parts of Parliament,
-Which now behold, now can behold no more 95
-In which time will appear how much
-I have translated the flesh of Banquo
-Into a crow that strays about the capital. 
-[Treble knocks]
-The Prince of Cumberland; that is a step
-On which I must fall down, or else o'erleap, 100
-For in my way it lies. Stars, hide your fires;
-Let not light see my black and deep desires:
-The eye wink at the hand; yet let that be
-Which the eye fears to look upon.
-Let it be a sin; 105
-That the so lusterous, and so bright, so good
-Should but be seen a fellow to my crime;
-And dupe so ruin'd. 
-[Treble knocks]
-That my keen knife
-See you satisfied. 
-[Treble knocks] 110
-Go to thy death. 
-[Re-enter a Servant] 
-How now, what names. 
-Servant. Name. Marrow, marrow; that is the very question that I put to thee, 115
-That is the very question that I put to thee,
-Macbeth. Thou 'rt mad that thy sword is not temper'd. 
-What you lack of temperance, that I lack in valour.
-Art not without ambition; but without 120
-The illness should attend it. What thou wouldst highly,
-That wouldst thou boldly, and with thy virtues else
-Wouldst thou have wildly holden; let fall thy hand;
-[To the Servant]
-Kilt him like a boar. 125
-Macbeth. From this time these woes we will re-assume:
-Not from our fingers' ends? We still have left
-A special will to thrust these thorns more firmly.
-A little more the wisely. Gently the weather. 130
-[Treble knocks]
-The Prince of Cumberland; that is a step
-On which I must fall down, or else o'erleap,
-For in my way it lies. Stars, hide your fires;
-Let not light see my black and deep desires: 135
-The eye wink at the hand; yet let that be
-Which the eye fears to look upon.
-Let it be a sin; that the so lusterous, and so bright, so good
-Should but be seen a fellow to my crime; 140
-And dupe so ruin'd. 
-[Treble knocks] 
-That my keen knife
-See you satisfied. 
-[Treble knocks] 
-Go to thy death. 
-[Re-enter a Servant] 
-How now, what names. 
-Servant. Name. Marrow, marrow; that is the very question that I put to thee, 145
-That is the very question that I put to thee,
-Macbeth. Thou 'rt mad that thy sword is not temper'd. 
-What you lack of temperance, that I lack in valour.
-Art not without ambition; but without 150
-The illness should attend it. What thou wouldst highly,
-That wouldst thou boldly, and with thy virtues else
-Wouldst thou have wildly holden; let fall thy hand;
-[To the Servant]
-Kilt him like a boar. 155
-Macbeth. From this time these woes we will re-assume:
-Not from our fingers' ends? We still have left
-A special will to thrust these thorns more firmly.
-A little more the wisely. Gently the weather. 160
-[Treble knocks]
-Come, love, and we will a while chastise
-That dares come to this.
-[Re-enter a second Servant] 
-What is that which caugh your eyes? 165
-Second Servant. My young lord, I can tell. 
-To think that they may see such sights!
-And yet not be the eyes itself that see but, as 'tis said, a man should be the righter part of nature; if he be such, he need not
-come behindhand too. 170
-'Tis no time to cloak our faults. 
-[Re-enter a third Servant] 
-The very firstlings of my heart shall be
-The firstlings of my head; I'll be their patriarch.
-Come, put on gaiter; come, come, good mother, 175
-Damned entrance of weather! 
-[Thunder]
-Come, get you to my woman's breasts; And on them give, and mercy onen me, let fall your holy disinclinations. 
-[Exeunt]
-Act III. SCENE 1.
-The scene opens with the arrival of the King and his entourage at the castle of the thane of Fife. King Duncan, having heard of Macbeth's new successes, asks his thanes to rejoice with him. Macbeth's great respect for the king makes him slightly uncomfortable. King Duncan's concern for Macbeth's wife and children is further evidence of the king's warmth and loving nature. Macbeth appears ill at ease, perhaps at Duncan's evident concern. His language is overly formal and self-conscious, while his wife speaks rather bluntly. After Macbeth, the king, and his attendants enter, Banquo asks how Lady Macbeth is. 
+1.5
 
-Macbeth. When I am gone, 180
-After life's fitful fever, he sleeps well, 
-Though the powers of the strong world do set themselves 
-Against his estate. 
-King Duncan. So well to do! 
-Had he his heart's desire, he 'd stoop 
-To what humility 185
-Might become the matter. 
-Macbeth. As the matter now I 've put it. 
-King Duncan. Well then, 190
-Since that you are a father, show the child
-The taking off, and that which now you do 195
-Commit"
+Macbeth. So foul and fair a day I have not seen. 5
+Ross. Good morning, noble Macbeth. I come from Inverness,
+And find our throne void, the arm'd rest you; 10
+My Lord of Cassil has resigned his life.
+Macbeth. Whate'er you owe, in time repay, fair friends.
+Note you the words; I pray you do.
+Ross. I am your faithful servant, and will keep
+My sworn reward upon your life; my lord.
+Macbeth. You shall be well rewarded; stay the press, 20
+And I'll not fail. How now, good fellow?
+Servant. Sir, his schoolmaster. 25
+Macbeth. Well, good, though, old.
+Tell me, good fellow, how goes the night? 30
+Servant. There's marrygold and fire in your veins, my lord.
+Macbeth. He does commend you; the weight of this old night's embargoes 35
+Did one hour's waste of time lay upon him.
+I know when we are too safe, 'tis dangerous to be secure;
+Therefore our fearful parts do brave the danger 40
+Which knows it not. I see you are a gentleman.
+And a laudable one too; I am most off obliged.
+Servant. I should be sorry, my good lord, to have had the labour 45
+To outlive this damned hour. 50
+Macbeth. What's done cannot be undone. To bed, to bed, to bed.
+Servant. Will it please you to lie still? 55
+Macbeth. Lord, lord, my heart is in my mouth. All's true that ends well.
+Servant. I thank you, fair, and leave you to the content. 60
+Macbeth. You see, my lord, it smokes, and shows no cause
+Why the drone dies. 65
+Servant. Grief fills the room up of one vast stair,
+And downs our vaults to the inconstant man above. 70
+Macbeth. Go bid thy masters and thy mistress say, 75
+I have power in earth to do so much.
+There's comfort yet. They are assailable. Then say I,
+Thus ye may answer.
+Servant. He cannot be wronged; or being wronged, 80
+I cannot help him. 85
+Macbeth. You know but by this; as this, 90
+The Jew foole is hang'd. 95
+Servant. No more today, my lord. 100
+Macbeth. He does shame to tell him he loves him, but not remove him 105
+From his true place; no.
+Servant. That's true, and now I remember the story 110
+Of that sign in Leo four diurnal courses
+Returning in a constant motion were within 115
+A boare that had on Taurus' back tetracted; 120
+Or neuer, or but once in modulated accidence. 125
+Macbeth. Thou climd'st alone, ty'd to the stag's horn.
+Servant. I was a bull, for this the goodly year. 130
+Come, put me in my place.
+Macbeth. Now go to sleep. 135
+Servant. The west neuer sett before the equinox 140
+Till now; and sunnes look'd not theyr frequencie 145
+Upon our lappe till now, my lord. 150
+Macbeth. This game of chance you term a gong.
+Servant. A gong is a scotch word for an egg. 155
+Macbeth. Peace, be still. 160
+Servant. I coniecture I smell the blood of an Englishman. 165
+Macbeth. The faith is murthered.
+Servant. That murder'd in his sleep. 170
+Macbeth. And sleeping murdered. 175
+Servant. In the fair queen heere in his royal court. 180
+Macbeth. So great a mercy that it may last eternally.
+Servant. The earth hath bubbles as the water hath, 185
+And these are of them. Whate'er we will do 190
+To mend the trespasses of the comming time 195
+Shall be the seedes of new mischefe, and shall beget 200
+The formes of the extinctnese, which we are now. 205
+Macbeth. We have scorch'd the snake, not kill'd it. 210
+Servant. They hunt it in the morn. Good gally, good lord! 215
+It weares a gilded snout. 220
+Macbeth. It is the very painting of your fear. 225
+Servant. This is the worst. 230
+Macbeth. A fair quater of a mile is yet to go. 235
+Servant. A mile and half. 240
+Macbeth. I have run fifteen miles to-day.
+Servant. A calender's date.
+Macbeth. A bigger patch, a bigger patch. 245
+Servant. Thirteen of more. 250
+Macbeth. Wast thou with him? 255
+Servant. No, nor he to night. 260
+Macbeth. Thou seest the moon"
 
 echo "Generating, it can take a while..."
 
-OUTPUT=$(( ./main generate --seed 12345 --temperature 0.9 --topp 0.9 --prompt "$PROMPT" --weights-float-type q40 --buffer-float-type q80 --nthreads 8 --steps 2048 --model converter/dllama_meta-llama-3-8b_q40.bin --tokenizer converter/dllama_meta-llama3-tokenizer.t ) 2>&1)
+OUTPUT=$(( ./main generate --seed 12345 --temperature 0.9 --topp 0.9 --prompt "$PROMPT" --weights-float-type q40 --buffer-float-type f32 --nthreads 8 --steps 2048 --model converter/dllama_meta-llama-3-8b_q40.bin --tokenizer converter/dllama_meta-llama3-tokenizer.t ) 2>&1)
 
 echo "$OUTPUT"
 
