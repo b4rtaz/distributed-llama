@@ -71,8 +71,8 @@ void llamaMultiheadAtt(TASK_ARGS) {
         float* k = block->keyCache + transformer->pos * spec->kvDim;
         float* v = block->valueCache + transformer->pos * spec->kvDim;
 
-        memcpy(k, transformer->buffer->getUnit(TB_SLICED_K), spec->dim * sizeof(float));
-        memcpy(v, transformer->buffer->getUnit(TB_SLICED_V), spec->dim * sizeof(float));
+        memcpy(k, transformer->buffer->getUnit(TB_SLICED_K), spec->kvDim * sizeof(float));
+        memcpy(v, transformer->buffer->getUnit(TB_SLICED_V), spec->kvDim * sizeof(float));
     }
 }
 
