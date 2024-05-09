@@ -109,7 +109,7 @@ void generate(Inference* inference, SocketPool* socketPool, Tokenizer *tokenizer
         char* piece = tokenizer->decode(token, next);
 
         if (args->benchmark)
-            printf("🔶 %4d G %4ld ms I %4ld ms T %4ld ms S %6ld kB R %6ld kB ", pos, generationTime, inferenceTime, transferTime, sentBytes / 1024, recvBytes / 1024);
+            printf("🔶 G %4ld ms I %4ld ms T %4ld ms S %6ld kB R %6ld kB ", generationTime, inferenceTime, transferTime, sentBytes / 1024, recvBytes / 1024);
         safePrintf(piece); // same as printf("%s", piece), but skips "unsafe" bytes
         if (args->benchmark)
             printf("\n");
@@ -120,8 +120,10 @@ void generate(Inference* inference, SocketPool* socketPool, Tokenizer *tokenizer
     free(promptTokens);
 
     if (!args->benchmark) printf("\n");
+    double avgGenerationTime = totalGenerationTime / (double)pos;
     printf("Generated tokens:    %d\n", pos);
-    printf("Avg generation time: %.2f ms\n", totalGenerationTime / (double)pos);
+    printf("Avg tokens / second: %.2f\n", 1000.0 / avgGenerationTime);
+    printf("Avg generation time: %.2f ms\n", avgGenerationTime);
     printf("Avg inference time:  %.2f ms\n", totalInferenceTime / (double)pos);
     printf("Avg transfer time:   %.2f ms\n", totalTransferTime / (double)pos);
 }
