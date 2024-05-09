@@ -27,7 +27,9 @@ struct ProgramArgs {
     int* workerPorts;
     float temperature;
     float topp;
-    int steps;
+    pos_t steps;
+    bool benchmark;
+    unsigned long long seed;
 
     // worker
     int port;
@@ -105,16 +107,19 @@ void generate(Inference* inference, SocketPool* socketPool, Tokenizer *tokenizer
 
         // print the token as string, decode it with the Tokenizer object
         char* piece = tokenizer->decode(token, next);
-    
-        printf("🔶 G %4ld ms I %4ld ms T %4ld ms S %6ld kB R %6ld kB ", generationTime, inferenceTime, transferTime, sentBytes / 1024, recvBytes / 1024);
+
+        if (args->benchmark)
+            printf("🔶 %4d G %4ld ms I %4ld ms T %4ld ms S %6ld kB R %6ld kB ", pos, generationTime, inferenceTime, transferTime, sentBytes / 1024, recvBytes / 1024);
         safePrintf(piece); // same as printf("%s", piece), but skips "unsafe" bytes
-        printf("\n");
+        if (args->benchmark)
+            printf("\n");
         fflush(stdout);
         token = next;
     }
 
     free(promptTokens);
 
+    if (!args->benchmark) printf("\n");
     printf("Generated tokens:    %d\n", pos);
     printf("Avg generation time: %.2f ms\n", totalGenerationTime / (double)pos);
     printf("Avg inference time:  %.2f ms\n", totalInferenceTime / (double)pos);
@@ -286,14 +291,11 @@ int run(ProgramArgs* args, void (*program)(Inference* inference, SocketPool* soc
 
     SocketPool* socketPool = SocketPool::connect(args->nWorkers, args->workerHosts, args->workerPorts);
     unsigned int nSlices = args->nWorkers + 1;
-    unsigned long long rngSeed = (unsigned int)time(NULL);
 
     TransformerSpec spec = Transformer::loadSpecFromFile(args->modelPath, nSlices, args->weightsFloatType, args->bufferFloatType);
     TransformerArch arch = getArch(&spec);
 
-    if (args->steps < 0) {
-        args->steps = spec.seqLen;
-    } else if (args->steps > spec.seqLen) {
+    if (args->steps == 0 || args->steps > spec.seqLen) {
         args->steps = spec.seqLen;
     }
 
@@ -301,7 +303,7 @@ int run(ProgramArgs* args, void (*program)(Inference* inference, SocketPool* soc
     Transformer transformer = Transformer::loadRootFromFile(args->modelPath, &spec, socketPool);
     Inference inference = Inference(&arch, args->nThreads, &transformer, socketPool);
 
-    Sampler sampler(spec.vocabSize, args->temperature, args->topp, rngSeed);
+    Sampler sampler(spec.vocabSize, args->temperature, args->topp, args->seed);
 
     program(&inference, socketPool, &tokenizer, &sampler, args, &spec);
 
@@ -350,7 +352,8 @@ int main(int argc, char *argv[]) {
     args.port = 9990;
     args.temperature = 0.8f;
     args.topp = 0.9f;
-    args.steps = -1;
+    args.steps = 0;
+    args.seed = (unsigned long long)time(NULL);
 
     if (argc > 1) {
         args.mode = argv[1];
@@ -400,6 +403,8 @@ int main(int argc, char *argv[]) {
             args.temperature = atof(argv[i + 1]);
         } else if (strcmp(argv[i], "--topp") == 0) {
             args.topp = atof(argv[i + 1]);
+        } else if (strcmp(argv[i], "--seed") == 0) {
+            args.seed = atoll(argv[i + 1]);
         } else {
             printf("Unknown option %s\n", argv[i]);
             exit(EXIT_FAILURE);
@@ -408,6 +413,10 @@ int main(int argc, char *argv[]) {
 
     if (args.mode != NULL) {
         if (strcmp(args.mode, "inference") == 0) {
+            args.benchmark = true;
+            return run(&args, generate);
+        } else if (strcmp(args.mode, "generate") == 0) {
+            args.benchmark = false;
             return run(&args, generate);
         } else if (strcmp(args.mode, "chat") == 0) {
             return run(&args, chat);

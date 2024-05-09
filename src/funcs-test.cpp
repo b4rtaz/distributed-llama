@@ -58,10 +58,37 @@ void testMatmulQ80() {
     delete[] wQ;
 }
 
+void testAdd() {
+    const int n = 16;
+    float a[n];
+    float b[n];
+
+    for (int nThreads = 1; nThreads < 8; nThreads++) {
+        for (int i = 0; i < n; i++) {
+            a[i] = (float)-i;
+            b[i] = (float)i;
+        }
+
+        for (int threadIndex = 0; threadIndex < nThreads; threadIndex++) {
+            add(a, b, n, nThreads, threadIndex);
+        }
+
+        for (int i = 0; i < n; i++) {
+            if (fabs(a[i]) > 0.001) {
+                printf("❌ add() = %f (nThreads=%d)\n", a[i], nThreads);
+                exit(EXIT_FAILURE);
+            }
+        }
+    }
+
+    printf("✅ add\n");
+}
+
 int main() {
     initQuants();
 
     testRms();
     testMatmulQ80();
+    testAdd();
     return EXIT_SUCCESS;
 }

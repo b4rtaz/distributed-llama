@@ -116,11 +116,10 @@ float rms(const float* x, const int size) {
 
 void rmsnorm(float* o, const float* x, const float ms, const float* weight, const int size, unsigned int nThreads, unsigned int threadIndex) {
     assert(size % 4 == 0);
-    assert(size % nThreads == 0);
 
-    int slice = size / nThreads;
-    int start = threadIndex * slice;
-    int end = start + slice;
+    const int chunk = size / nThreads;
+    const int start = threadIndex * chunk;
+    const int end = (threadIndex == nThreads - 1) ? size : start + chunk;
 
 #if defined(__ARM_NEON)
     float32x4_t fw;
@@ -380,13 +379,14 @@ void matmulQ80vQ80(MatmulThreadInfo* a) {
 //        n          |_|       1
 //                    1
 void matmul(FloatType weightsFloatType, FloatType inputFloatType, float* output, void* input, void* weights, int n, int d, unsigned int nThreads, unsigned int threadIndex) {
+    const int chunk = d / nThreads;
     MatmulThreadInfo s;
     s.output = output;
     s.input = input;
     s.weights = weights;
     s.n = n;
-    s.ds = threadIndex * d / nThreads;
-    s.de = (threadIndex + 1) * d / nThreads;
+    s.ds = threadIndex * chunk;
+    s.de = (threadIndex == nThreads - 1) ? d : s.ds + chunk;
 
     if (inputFloatType == F32) {
         if (weightsFloatType == F32) {
@@ -445,10 +445,9 @@ float dotProduct(const float* a, const float* b, const int size) {
 #define GELU_COEF_A 0.044715f
 
 void gelu(float* t, int n, unsigned int nThreads, unsigned int threadIndex) {
-    assert(n % nThreads == 0);
-    int m = n / nThreads;
-    int start = m * threadIndex;
-    int end = start + m;
+    const int chunk = n / nThreads;
+    const int start = chunk * threadIndex;
+    const int end = (threadIndex == nThreads - 1) ? n : (start + chunk);
 
     for (int i = start; i < end; i++) {
         float x = t[i];
@@ -457,10 +456,9 @@ void gelu(float* t, int n, unsigned int nThreads, unsigned int threadIndex) {
 }
 
 void silu(float* t, int n, unsigned int nThreads, unsigned int threadIndex) {
-    assert(n % nThreads == 0);
-    int m = n / nThreads;
-    int start = m * threadIndex;
-    int end = start + m;
+    const int chunk = n / nThreads;
+    const int start = chunk * threadIndex;
+    const int end = (threadIndex == nThreads - 1) ? n : (start + chunk);
 
     for (int i = start; i < end; i++) {
         float x = t[i];
@@ -469,10 +467,9 @@ void silu(float* t, int n, unsigned int nThreads, unsigned int threadIndex) {
 }
 
 void mul(float* output, float* input, int n, unsigned int nThreads, unsigned int threadIndex) {
-    assert(n % nThreads == 0);
-    int m = n / nThreads;
-    int start = m * threadIndex;
-    int end = start + m;
+    const int chunk = n / nThreads;
+    const int start = chunk * threadIndex;
+    const int end = (threadIndex == nThreads - 1) ? n : (start + chunk);
 
     for (int i = start; i < end; i++) {
         output[i] *= input[i];
@@ -480,10 +477,9 @@ void mul(float* output, float* input, int n, unsigned int nThreads, unsigned int
 }
 
 void mulScalar(float* output, float c, int n, unsigned int nThreads, unsigned int threadIndex) {
-    assert(n % nThreads == 0);
-    int m = n / nThreads;
-    int start = m * threadIndex;
-    int end = start + m;
+    const int chunk = n / nThreads;
+    const int start = chunk * threadIndex;
+    const int end = (threadIndex == nThreads - 1) ? n : (start + chunk);
     
     for (int i = start; i < end; i++) {
         output[i] *= c;
@@ -491,10 +487,9 @@ void mulScalar(float* output, float c, int n, unsigned int nThreads, unsigned in
 }
 
 void add(float* output, float* input, int n, unsigned int nThreads, unsigned int threadIndex) {
-    assert(n % nThreads == 0);
-    int m = n / nThreads;
-    int start = m * threadIndex;
-    int end = start + m;
+    const int chunk = n / nThreads;
+    const int start = chunk * threadIndex;
+    const int end = (threadIndex == nThreads - 1) ? n : (start + chunk);
 
     for (int i = start; i < end; i++) {
         output[i] += input[i];
