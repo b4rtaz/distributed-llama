@@ -38,10 +38,8 @@ void ropeFalcon(float* q, float* k, TransformerSpec* spec, pos_t pos, float thet
 void grokMultiheadAttRope(TASK_ARGS) {
     TASK_VARIABLES;
     if (threadIndex == 0) {
-        /*float* q = (float*)transformer->buffer->getUnit(TB_SLICED_Q);    
-        float* xb = (float*)transformer->buffer->getUnit(TB_UNIT_XB);
-        float* k = block->keyCache + transformer->pos * spec->kvDim;
-        ropeFalcon(q, k, spec, transformer->pos, spec->ropeTheta);*/
+        float *k0 = &block->kvCacheSlice->keyCache[transformer->pos * block->kvCacheSlice->kvDim0];
+        ropeFalcon(block->qo0, k0, spec, transformer->pos, spec->ropeTheta);
     }
 }
 
@@ -49,6 +47,11 @@ void grokRmfFfn(TASK_ARGS) {
     TASK_VARIABLES;
     if (threadIndex == 0) {
         float* xb2 = (float*)transformer->buffer->getUnit(TB_SLICED_XB2);
+        memset(xb2, 0, spec->dim * sizeof(float));
+        for (uint8_t s = 0; s < spec->nSlices; s++) {
+            float* xbv = (float*)transformer->buffer->getSliced(TB_SLICED_XBV, s);
+            add(xb2, xbv, spec->dim, 1, 0);
+        }
         transformer->rms = rms(xb2, spec->dim);
     }
 }
@@ -309,14 +312,9 @@ TransformerArch buildGrok1Arch(TransformerSpec* spec) {
         a.I(llamaQuantizeRmsAtt, TASK_TYPE_INFERENCE);
         a.I(llamaSyncRmsAtt, TASK_TYPE_TRANSFER);
         a.I(llamaQkv, TASK_TYPE_INFERENCE);
-        //a.I(llamaQuantizeQkv, TASK_TYPE_INFERENCE);
-        //a.I(llamaSyncQkv, TASK_TYPE_TRANSFER);
-        //a.I(llamaDequantizeQkv, TASK_TYPE_INFERENCE);
-        a.I(llamaMultiheadAtt, TASK_TYPE_INFERENCE);
         a.I(grokMultiheadAttRope, TASK_TYPE_INFERENCE);
-        //a.I(llamaMultiheadAttJoin, TASK_TYPE_INFERENCE);
-        //a.I(llamaQuantizeMultiheadAtt, TASK_TYPE_INFERENCE);
-        //a.I(llamaSyncMultiheadAtt1, TASK_TYPE_TRANSFER);
+        a.I(llamaMultiheadAtt, TASK_TYPE_INFERENCE);
+        a.I(llamaQuantizeMultiheadAtt, TASK_TYPE_INFERENCE);
         a.I(llamaAtt, TASK_TYPE_INFERENCE);
         a.I(llamaQuantizeAtt, TASK_TYPE_INFERENCE);
         a.I(llamaSyncAtt, TASK_TYPE_TRANSFER);
@@ -359,9 +357,9 @@ TransformerArch buildGrok1Arch(TransformerSpec* spec) {
     for (int i = 0; i < spec->nLayers; i++) {
         a.W(llamaSyncRmsAtt, TASK_TYPE_TRANSFER);
         a.W(llamaQkv, TASK_TYPE_INFERENCE);
-        //a.W(llamaQuantizeQkv, TASK_TYPE_INFERENCE);
-        //a.W(llamaSyncQkv, TASK_TYPE_TRANSFER);
-        //a.W(llamaSyncMultiheadAtt1, TASK_TYPE_TRANSFER);
+        a.W(grokMultiheadAttRope, TASK_TYPE_INFERENCE);
+        a.W(llamaMultiheadAtt, TASK_TYPE_INFERENCE);
+        a.W(llamaQuantizeMultiheadAtt, TASK_TYPE_INFERENCE);
         a.W(llamaAtt, TASK_TYPE_INFERENCE);
         a.W(llamaQuantizeAtt, TASK_TYPE_INFERENCE);
         a.W(llamaSyncAtt, TASK_TYPE_TRANSFER);
