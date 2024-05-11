@@ -36,20 +36,18 @@ void llamaQkv(TASK_ARGS) {
     assert(block->kvCacheSlice->kvDim0 == block->v0Slice->d0);
 
     float *xbq = (float*)transformer->buffer->getUnit(TB_UNIT_XB_QUANTIZED);
-    float *q0 = (float*)transformer->buffer->getSliced(TB_SLICED_Q, transformer->sliceIndex);
     float *k0 = &block->kvCacheSlice->keyCache[transformer->pos * block->kvCacheSlice->kvDim0];
     float* v0 = &block->kvCacheSlice->valueCache[transformer->pos * block->kvCacheSlice->kvDim0];
 
-    matmul(spec->weightsFloatType, spec->bufferFloatType, q0, xbq, block->q0, block->q0Slice->n, block->q0Slice->d0, nThreads, threadIndex);
+    matmul(spec->weightsFloatType, spec->bufferFloatType, block->qo0, xbq, block->q0, block->q0Slice->n, block->q0Slice->d0, nThreads, threadIndex);
     matmul(spec->weightsFloatType, spec->bufferFloatType, k0, xbq, block->k0, block->k0Slice->n, block->k0Slice->d0, nThreads, threadIndex);
     matmul(spec->weightsFloatType, spec->bufferFloatType, v0, xbq, block->v0, block->v0Slice->n, block->v0Slice->d0, nThreads, threadIndex);
 }
 
 void llamaRope(TASK_ARGS) {
     TASK_VARIABLES;
-    float* q0 = (float*)transformer->buffer->getSliced(TB_SLICED_Q, transformer->sliceIndex);
     float* k0 = &block->kvCacheSlice->keyCache[transformer->pos * block->kvCacheSlice->kvDim0];
-    transformer->ropeSlice->forward(true, q0, transformer->pos, nThreads, threadIndex);
+    transformer->ropeSlice->forward(true, block->qo0, transformer->pos, nThreads, threadIndex);
     transformer->ropeSlice->forward(false, k0, transformer->pos, nThreads, threadIndex);
 }
 
@@ -57,14 +55,13 @@ void llamaMultiheadAtt(TASK_ARGS) {
     TASK_VARIABLES;
     SPLIT_RANGE_TO_THREADS(h0Start, h0End, 0, block->multiHeadAttSlice->nHeads0, nThreads, threadIndex);
 
-    float* q0 = (float*)transformer->buffer->getSliced(TB_SLICED_Q, transformer->sliceIndex);
     float* xb = (float*)transformer->buffer->getSliced(TB_UNIT_XB, transformer->sliceIndex);
 
     int kvMul = spec->nHeads / spec->nKvHeads; // integer multiplier of the kv sharing in multiquery
 
     for (int h0 = h0Start; h0 < h0End; h0++) {
         // get the query vector for this head
-        float* _q = q0 + h0 * spec->headSize;
+        float* _q = block->qo0 + h0 * spec->headSize;
         // attention scores for this head
         float* _att = block->multiHeadAttSlice->att + h0 * spec->seqLen;
         // iterate over all timesteps, including the current one
@@ -80,8 +77,8 @@ void llamaMultiheadAtt(TASK_ARGS) {
         softmax(_att, transformer->pos + 1);
 
         // weighted sum of the values, store back into xb
-        float* _xb = xb + h0 * spec->headSize;
-        memset(_xb, 0, spec->headSize * sizeof(float));
+        float* hxb = xb + h0 * spec->headSize;
+        memset(hxb, 0, spec->headSize * sizeof(float));
         for (int t = 0; t <= transformer->pos; t++) {
             // get the value vector for this head and at this timestep
             float* _v = block->kvCacheSlice->valueCache + t * block->kvCacheSlice->kvDim0 + (h0 / kvMul) * spec->headSize;
@@ -90,7 +87,7 @@ void llamaMultiheadAtt(TASK_ARGS) {
 
             // accumulate the weighted value into xb
             for (int i = 0; i < spec->headSize; i++) {
-                _xb[i] += a * _v[i];
+                hxb[i] += a * _v[i];
             }
         }
     }
@@ -99,47 +96,38 @@ void llamaMultiheadAtt(TASK_ARGS) {
 void llamaQuantizeMultiheadAtt(TASK_ARGS) {
     TASK_VARIABLES;
     quantizeSlicedBuffer(nThreads, threadIndex, ctx, true, TB_UNIT_XB, TB_UNIT_XB_QUANTIZED);
-}
-
-void llamaSyncMultiheadAtt1(TASK_ARGS) {
-    TASK_VARIABLES;
-    syncSliceOfSlicedBuffer(nThreads, threadIndex, ctx, TB_UNIT_XB_QUANTIZED);
-}
-
-void llamaSyncMultiheadAtt2(TASK_ARGS) {
-    TASK_VARIABLES;
-    syncMissingSlicesOfSlicedBuffer(nThreads, threadIndex, ctx, TB_UNIT_XB_QUANTIZED);
-}
+};
 
 void llamaAtt(TASK_ARGS) {
     TASK_VARIABLES;
 
-    char* xbq = transformer->buffer->getUnit(TB_UNIT_XB_QUANTIZED);
-    float* xb2 = (float*)transformer->buffer->getSliced(TB_SLICED_XB2, transformer->sliceIndex);
+    char* xbq0 = transformer->buffer->getSliced(TB_UNIT_XB_QUANTIZED, transformer->sliceIndex);
+    float* xbv0 = (float*)transformer->buffer->getSliced(TB_SLICED_XBV, transformer->sliceIndex);
 
-    matmul(spec->weightsFloatType, spec->bufferFloatType, xb2, xbq, block->wo0, block->wo0Slice->n, block->wo0Slice->d0, nThreads, threadIndex);
+    matmul(spec->weightsFloatType, spec->bufferFloatType, xbv0, xbq0, block->wo0, block->wo0Slice->n0, block->wo0Slice->d, nThreads, threadIndex);
 }
 
 void llamaQuantizeAtt(TASK_ARGS) {
     TASK_VARIABLES;
-    quantizeSlicedBuffer(nThreads, threadIndex, ctx, false, TB_SLICED_XB2, TB_SLICED_XB2_QUANTIZED);
+    quantizeSlicedBuffer(nThreads, threadIndex, ctx, false, TB_SLICED_XBV, TB_SLICED_XBV_QUANTIZED);
 }
 
 void llamaSyncAtt(TASK_ARGS) {
     TASK_VARIABLES;
-    syncSliceOfSlicedBuffer(nThreads, threadIndex, ctx, TB_SLICED_XB2_QUANTIZED);
+    syncSliceOfSlicedBuffer(nThreads, threadIndex, ctx, TB_SLICED_XBV_QUANTIZED);
 }
 
 void llamaDequantizeAtt(TASK_ARGS) {
     TASK_VARIABLES;
-    dequantizeSlicedBuffer(nThreads, threadIndex, ctx, false, TB_SLICED_XB2_QUANTIZED, TB_SLICED_XB2);    
+    dequantizeSlicedBuffer(nThreads, threadIndex, ctx, false, TB_SLICED_XBV_QUANTIZED, TB_SLICED_XBV);    
 }
 
 void llamaMergeAtt(TASK_ARGS) {
     TASK_VARIABLES;
-    float* xb2 = (float*)transformer->buffer->getUnit(TB_SLICED_XB2);
-    float* x = (float*)transformer->x;
-    add(x, xb2, spec->dim, nThreads, threadIndex);
+    for (uint8_t sliceIndex = 0; sliceIndex < spec->nSlices; sliceIndex++) {
+        float* xbv = (float*)transformer->buffer->getSliced(TB_SLICED_XBV, sliceIndex);
+        add(transformer->x, xbv, spec->dim, nThreads, threadIndex);
+    }
 }
 
 void llamaRmfFfn(TASK_ARGS) {
@@ -269,8 +257,6 @@ TransformerArch buildLlama2Arch(TransformerSpec* spec) {
         a.I(llamaRope, TASK_TYPE_INFERENCE);
         a.I(llamaMultiheadAtt, TASK_TYPE_INFERENCE);
         a.I(llamaQuantizeMultiheadAtt, TASK_TYPE_INFERENCE);
-        a.I(llamaSyncMultiheadAtt1, TASK_TYPE_TRANSFER);
-        a.I(llamaSyncMultiheadAtt2, TASK_TYPE_TRANSFER);
         a.I(llamaAtt, TASK_TYPE_INFERENCE);
         a.I(llamaQuantizeAtt, TASK_TYPE_INFERENCE);
         a.I(llamaSyncAtt, TASK_TYPE_TRANSFER);
@@ -303,8 +289,6 @@ TransformerArch buildLlama2Arch(TransformerSpec* spec) {
         a.W(llamaRope, TASK_TYPE_INFERENCE);
         a.W(llamaMultiheadAtt, TASK_TYPE_INFERENCE);
         a.W(llamaQuantizeMultiheadAtt, TASK_TYPE_INFERENCE);
-        a.W(llamaSyncMultiheadAtt1, TASK_TYPE_TRANSFER);
-        a.W(llamaSyncMultiheadAtt2, TASK_TYPE_TRANSFER);
         a.W(llamaAtt, TASK_TYPE_INFERENCE);
         a.W(llamaQuantizeAtt, TASK_TYPE_INFERENCE);
         a.W(llamaSyncAtt, TASK_TYPE_TRANSFER);

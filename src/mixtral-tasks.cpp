@@ -20,8 +20,8 @@ TransformerArch buildMixtralArch(TransformerSpec* spec) {
         a.I(llamaMultiheadAtt, TASK_TYPE_INFERENCE);
         a.I(grokMultiheadAttRope, TASK_TYPE_INFERENCE);
         //a.I(llamaMultiheadAttJoin, TASK_TYPE_INFERENCE);
-        a.I(llamaQuantizeMultiheadAtt, TASK_TYPE_INFERENCE);
-        a.I(llamaSyncMultiheadAtt1, TASK_TYPE_TRANSFER);
+        //a.I(llamaQuantizeMultiheadAtt, TASK_TYPE_INFERENCE);
+        //a.I(llamaSyncMultiheadAtt1, TASK_TYPE_TRANSFER);
         a.I(llamaAtt, TASK_TYPE_INFERENCE);
         a.I(llamaQuantizeAtt, TASK_TYPE_INFERENCE);
         a.I(llamaSyncAtt, TASK_TYPE_TRANSFER);
@@ -61,7 +61,7 @@ TransformerArch buildMixtralArch(TransformerSpec* spec) {
         a.W(llamaQkv, TASK_TYPE_INFERENCE);
         //a.W(llamaQuantizeQkv, TASK_TYPE_INFERENCE);
         //a.W(llamaSyncQkv, TASK_TYPE_TRANSFER);
-        a.W(llamaSyncMultiheadAtt1, TASK_TYPE_TRANSFER);
+        //a.W(llamaSyncMultiheadAtt1, TASK_TYPE_TRANSFER);
         a.W(llamaAtt, TASK_TYPE_INFERENCE);
         a.W(llamaQuantizeAtt, TASK_TYPE_INFERENCE);
         a.W(llamaSyncAtt, TASK_TYPE_TRANSFER);

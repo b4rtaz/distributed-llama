@@ -13,7 +13,7 @@
 #define ALLOC_WEIGHTS true
 #define IS_ROOT_SLICE(sliceIndex) (sliceIndex == 0)
 
-MatmulSlice::MatmulSlice(FloatType type, int nSlices, int n, int d) {
+RowMatmulSlice::RowMatmulSlice(FloatType type, int nSlices, int n, int d) {
     assert(d % nSlices == 0);
 
     this->type = type;
@@ -24,7 +24,7 @@ MatmulSlice::MatmulSlice(FloatType type, int nSlices, int n, int d) {
     this->sliceBytes = getBatchBytes(type, this->n, this->d0);
 }
 
-size_t MatmulSlice::splitWeights(uint8_t sliceIndex, char* weights, char* weights0) {
+size_t RowMatmulSlice::splitWeights(uint8_t sliceIndex, char* weights, char* weights0) {
     int numbersPerBatch = getNumbersPerBatch(this->type);
     int batchBytes = getBatchBytes(this->type, numbersPerBatch, 1);
 
@@ -43,8 +43,38 @@ size_t MatmulSlice::splitWeights(uint8_t sliceIndex, char* weights, char* weight
     return copiedBytes;
 }
 
-unsigned int MatmulSlice::dOffset(uint8_t sliceIndex) {
+unsigned int RowMatmulSlice::dOffset(uint8_t sliceIndex) {
     return this->d0 * sliceIndex;
+}
+
+ColMatmulSlice::ColMatmulSlice(FloatType type, int nSlices, int n, int d) {
+    assert(n % nSlices == 0);
+
+    this->type = type;
+    this->nSlices = nSlices;
+    this->n = n;
+    this->n0 = n / nSlices;
+    this->d = d;
+    this->bytes = getBatchBytes(type, n, d);
+    this->sliceBytes = getBatchBytes(type, this->n0, d);
+}
+
+size_t ColMatmulSlice::splitWeights(uint8_t sliceIndex, char* weights, char* weights0) {
+    int numbersPerBatch = getNumbersPerBatch(this->type);
+    int batchBytes = getBatchBytes(this->type, numbersPerBatch, 1);
+    assert(n0 % numbersPerBatch == 0);
+
+    int n = this->n / numbersPerBatch;
+    int rowBytes = n * batchBytes;
+    int row0Bytes = (n0 / numbersPerBatch) * batchBytes;
+    int rowOffsetBytes = sliceIndex * row0Bytes;
+
+    size_t copiedBytes = 0;
+    for (int d = 0; d < this->d; d++) {
+        memcpy(&weights0[row0Bytes * d], &weights[rowBytes * d + rowOffsetBytes], row0Bytes);
+        copiedBytes += row0Bytes;
+    }
+    return copiedBytes;
 }
 
 RopeSlice::RopeSlice(TransformerSpec* spec, uint8_t sliceIndex) {
@@ -236,8 +266,8 @@ TransformerBuffer::TransformerBuffer(TransformerSpec* spec) {
     bufferBytes[TB_UNIT_XB_QUANTIZED] = getBatchBytes(spec->bufferFloatType, spec->dim, 1);
     bufferBytes[TB_SLICED_XB2] = spec->dim * sizeof(float);
     bufferBytes[TB_SLICED_XB2_QUANTIZED] = getBatchBytes(spec->bufferFloatType, spec->dim, 1);
-    bufferBytes[TB_SLICED_Q] = spec->dim * sizeof(float);
-    bufferBytes[TB_SLICED_Q_QUANTIZED] = getBatchBytes(spec->bufferFloatType, spec->dim, 1);
+    bufferBytes[TB_SLICED_XBV] = spec->dim * spec->nSlices * sizeof(float);
+    bufferBytes[TB_SLICED_XBV_QUANTIZED] = getBatchBytes(spec->bufferFloatType, spec->dim, spec->nSlices);
 
     int nHb = (spec->nActiveExperts > 0)
         ? spec->hiddenDim * spec->nActiveExperts
@@ -384,10 +414,12 @@ TransformerBlock::TransformerBlock(TransformerSpec* spec, uint8_t sliceIndex) {
     kvCacheSlice = new KvCacheSlice(spec->kvDim, spec->seqLen, spec->nSlices);
     multiHeadAttSlice = new MultiHeadAttSlice(spec->nHeads, spec->seqLen, spec->nSlices, sliceIndex);
 
-    q0Slice = new MatmulSlice(spec->weightsFloatType, spec->nSlices, spec->dim, spec->dim);
-    k0Slice = new MatmulSlice(spec->weightsFloatType, spec->nSlices, spec->dim, spec->kvDim);
-    v0Slice = new MatmulSlice(spec->weightsFloatType, spec->nSlices, spec->dim, spec->kvDim);
-    wo0Slice = new MatmulSlice(spec->weightsFloatType, spec->nSlices, spec->dim, spec->dim);
+    q0Slice = new RowMatmulSlice(spec->weightsFloatType, spec->nSlices, spec->dim, spec->dim);
+    k0Slice = new RowMatmulSlice(spec->weightsFloatType, spec->nSlices, spec->dim, spec->kvDim);
+    v0Slice = new RowMatmulSlice(spec->weightsFloatType, spec->nSlices, spec->dim, spec->kvDim);
+    wo0Slice = new ColMatmulSlice(spec->weightsFloatType, spec->nSlices, spec->dim, spec->dim);
+
+    qo0 = (float*)NEW_BUFFER(q0Slice->d0 * sizeof(float));
 
 #if ALLOC_WEIGHTS
     q0 = NEW_BUFFER(q0Slice->sliceBytes);
@@ -397,8 +429,8 @@ TransformerBlock::TransformerBlock(TransformerSpec* spec, uint8_t sliceIndex) {
 #endif
 
     if (spec->nExperts > 0) {
-        moeUpAndGate0Slice = new MatmulSlice(spec->weightsFloatType, spec->nSlices, spec->dim, spec->hiddenDim);
-        moeDown0Slice = new MatmulSlice(spec->weightsFloatType, spec->nSlices, spec->hiddenDim, spec->dim);
+        moeUpAndGate0Slice = new RowMatmulSlice(spec->weightsFloatType, spec->nSlices, spec->dim, spec->hiddenDim);
+        moeDown0Slice = new RowMatmulSlice(spec->weightsFloatType, spec->nSlices, spec->hiddenDim, spec->dim);
 
         moeRouterBytes = getBatchBytes(spec->weightsFloatType, spec->dim, spec->nExperts);
         moeRouterProbs = (float*)NEW_BUFFER(spec->nExperts * sizeof(float));
@@ -419,9 +451,9 @@ TransformerBlock::TransformerBlock(TransformerSpec* spec, uint8_t sliceIndex) {
         expertGate = (float*)NEW_BUFFER(moeUpAndGate0Slice->d0 * spec->nExperts * sizeof(float));
         expertDown = (float*)NEW_BUFFER(moeDown0Slice->d0 * (spec->nExperts - 1) * sizeof(float));
     } else {
-        w10Slice = new MatmulSlice(spec->weightsFloatType, spec->nSlices, spec->dim, spec->hiddenDim);
-        w20Slice = new MatmulSlice(spec->weightsFloatType, spec->nSlices, spec->hiddenDim, spec->dim);
-        w30Slice = new MatmulSlice(spec->weightsFloatType, spec->nSlices, spec->dim, spec->hiddenDim);
+        w10Slice = new RowMatmulSlice(spec->weightsFloatType, spec->nSlices, spec->dim, spec->hiddenDim);
+        w20Slice = new RowMatmulSlice(spec->weightsFloatType, spec->nSlices, spec->hiddenDim, spec->dim);
+        w30Slice = new RowMatmulSlice(spec->weightsFloatType, spec->nSlices, spec->dim, spec->hiddenDim);
 
 #if ALLOC_WEIGHTS
         w10 = NEW_BUFFER(w10Slice->sliceBytes);
@@ -452,6 +484,8 @@ TransformerBlock::~TransformerBlock() {
     delete k0Slice;
     delete v0Slice;
     delete wo0Slice;
+
+    FREE_BUFFER(qo0);
 
 #if ALLOC_WEIGHTS
     FREE_BUFFER(q0);

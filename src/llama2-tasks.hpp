@@ -11,8 +11,6 @@ void llamaQkv(TASK_ARGS);
 void llamaRope(TASK_ARGS);
 void llamaMultiheadAtt(TASK_ARGS);
 void llamaQuantizeMultiheadAtt(TASK_ARGS);
-void llamaSyncMultiheadAtt1(TASK_ARGS);
-void llamaSyncMultiheadAtt2(TASK_ARGS);
 void llamaAtt(TASK_ARGS);
 void llamaQuantizeAtt(TASK_ARGS);
 void llamaSyncAtt(TASK_ARGS);

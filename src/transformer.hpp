@@ -10,16 +10,33 @@ typedef unsigned short pos_t;
 
 class MatmulSlice {
 public:
-    FloatType type;
-    int nSlices;
-    int d0;
-    int n;
     size_t bytes;
     size_t sliceBytes;
+    virtual size_t splitWeights(uint8_t sliceIndex, char* weights, char* weights0) = 0;
+};
 
-    MatmulSlice(FloatType type, int nSlices, int n, int d);
+class RowMatmulSlice : public MatmulSlice {
+public:
+    FloatType type;
+    int nSlices;
+    int n;
+    int d0;
+
+    RowMatmulSlice(FloatType type, int nSlices, int n, int d);
     size_t splitWeights(uint8_t sliceIndex, char* weights, char* weights0);
     unsigned int dOffset(uint8_t sliceIndex);
+};
+
+class ColMatmulSlice : public MatmulSlice {
+public:
+    FloatType type;
+    int nSlices;
+    int n;
+    int n0;
+    int d;
+
+    ColMatmulSlice(FloatType type, int nSlices, int n, int d);
+    size_t splitWeights(uint8_t sliceIndex, char* weights, char* weights0);
 };
 
 enum TransformerHeaderKey {
@@ -132,27 +149,27 @@ public:
     float* rmsFfn2;
 
     char* q0;
-    MatmulSlice* q0Slice;
+    RowMatmulSlice* q0Slice;
     char* k0;
-    MatmulSlice* k0Slice;
+    RowMatmulSlice* k0Slice;
     char* v0;
-    MatmulSlice* v0Slice;
+    RowMatmulSlice* v0Slice;
     char* wo0;
+    ColMatmulSlice* wo0Slice;
 
-    MatmulSlice* wo0Slice;
     char* w10;
-    MatmulSlice* w10Slice;
+    RowMatmulSlice* w10Slice;
     char* w20;
-    MatmulSlice* w20Slice;
+    RowMatmulSlice* w20Slice;
     char* w30;
-    MatmulSlice* w30Slice;
+    RowMatmulSlice* w30Slice;
 
     char* moeRouter;
     size_t moeRouterBytes;
-    MatmulSlice* moeUpAndGate0Slice;
+    RowMatmulSlice* moeUpAndGate0Slice;
     char** moeUp;
     char** moeGate;
-    MatmulSlice* moeDown0Slice;
+    RowMatmulSlice* moeDown0Slice;
     char** moeDown;
     float* moeRouterProbs;
 
@@ -163,6 +180,7 @@ public:
 
     KvCacheSlice* kvCacheSlice;
     MultiHeadAttSlice* multiHeadAttSlice;
+    float* qo0;
 
     TransformerBlock(TransformerSpec* spec, uint8_t sliceIndex);
     ~TransformerBlock();
@@ -175,8 +193,8 @@ public:
 #define TB_UNIT_XB_QUANTIZED 1
 #define TB_SLICED_XB2 2
 #define TB_SLICED_XB2_QUANTIZED 3
-#define TB_SLICED_Q 4
-#define TB_SLICED_Q_QUANTIZED 5
+#define TB_SLICED_XBV 4
+#define TB_SLICED_XBV_QUANTIZED 5
 #define TB_SLICED_HB 6
 #define TB_SLICED_HB_QUANTIZED 7
 #define TB_UNIT_MOE_INDEXES 8
