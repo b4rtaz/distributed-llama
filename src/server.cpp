@@ -64,13 +64,13 @@ FloatType parseFloatType(char* val) {
     exit(EXIT_FAILURE);
 }
 
-struct Delta {
+struct ChatMessageDelta {
     std::string role;
     std::string content;
 };
 
-// Define to_json for ChatMessage struct
-void to_json(json& j, const Delta& msg) {
+// Define to_json for Delta struct
+void to_json(json& j, const ChatMessageDelta& msg) {
     j = json{{"role", msg.role}, {"content", msg.content}};
 }
 
@@ -86,9 +86,14 @@ void to_json(json& j, const ChatMessage& msg) {
 
 struct ChunkChoice {
     int index;
-    Delta delta;
+    ChatMessageDelta delta;
     std::string finish_reason;
 };
+
+// Define to_json for ChunkChoice struct
+void to_json(json& j, const ChunkChoice& choice) {
+    j = json{{"index", choice.index}, {"delta", choice.delta}, {"finish_reason", choice.finish_reason}};
+}
 
 struct Choice {
     int index;
@@ -106,8 +111,17 @@ struct ChatCompletionChunk {
     std::string object;
     long long created;
     std::string model;
-    std::vector<Choice> choices;
+    std::vector<ChunkChoice> choices;
 };
+
+// Define to_json for ChatCompletionChunk struct
+void to_json(json& j, const ChatCompletionChunk& completion) {
+    j = json{{"id", completion.id},
+             {"object", completion.object},
+             {"created", completion.created},
+             {"model", completion.model},
+             {"choices", completion.choices}};
+}
 
 // Struct to represent the usage object
 struct ChatUsage {
@@ -155,8 +169,6 @@ void send_event(int client_socket, const std::string& data) {
 
 std::vector<ChatMessage> parseChatMessages(json &json){
     std::vector<ChatMessage> messages;
-    
-    printf("Total messages: %d\n", (int)json.size());
 
     for (const auto& item : json) {
         ChatMessage message;
@@ -164,8 +176,6 @@ std::vector<ChatMessage> parseChatMessages(json &json){
         message.role = item["role"].template get<std::string>();
         messages.push_back(message);
     }
-
-    printf("Parsed %d messages\n", (int)messages.size());
 
     return messages;
 }
@@ -190,20 +200,49 @@ std::string buildChatPrompt(Tokenizer *tokenizer, std::vector<ChatMessage> &mess
     return oss.str();
 }
 
-void streamChatCompletion(int &client_socket, InferenceParams &request, Inference* inference, Tokenizer *tokenizer, Sampler *sampler, ProgramArgs* args, TransformerSpec* spec){
-    // TODO
-    std::string header = "HTTP/1.1 200\r\n";
-    send(client_socket, header.c_str(), header.length(), 0);
+void outputChatCompletionChunk(int &client_socket, std::string delta, std::string finish_reason = ""){
+
+    ChunkChoice choice;
+    choice.index = 0;
+    
+    if(finish_reason.size() > 0){
+        choice.finish_reason = finish_reason;
+    }
+    else{
+        ChatMessageDelta responseDelta;
+        responseDelta.role = "assistant";
+        responseDelta.content = delta;
+        choice.delta = responseDelta;
+    }
+    
+    std::vector<ChunkChoice> choices;
+    choices.push_back(choice);
+
+    ChatCompletionChunk chunk;
+    chunk.id = "chatcmpl-test";
+    chunk.object = "chat.completion";
+    chunk.model = "Distributed Model";
+    chunk.created = time_t();
+    chunk.choices = choices;
+    
+    std::ostringstream oss;
+    
+    oss << "data: " << ((json)chunk).dump() << "\r\n";
+
+    if(finish_reason.size() > 0){ 
+        oss << "data: [DONE]\r\n";
+    }
+
+    std::string chunkResponse = oss.str();
+    send(client_socket, chunkResponse.c_str(), chunkResponse.length(), 0);
 }
 
-void processChatCompletion(int &client_socket, InferenceParams &request, Inference* inference, Tokenizer *tokenizer, Sampler *sampler, ProgramArgs* args, TransformerSpec* spec){
+void streamChatCompletion(int &client_socket, InferenceParams &request, Inference* inference, Tokenizer *tokenizer, Sampler *sampler, ProgramArgs* args, TransformerSpec* spec){
     //Generate the completion
     std::vector<std::string> generated;
 
     //We pre allocate enough to fill the vector
     generated.get_allocator().allocate(request.max_tokens);
-
-    printf("Prompt: %s\n", request.prompt.c_str());
 
     int promptLength = request.prompt.length();
     int nPromptTokens;
@@ -213,7 +252,82 @@ void processChatCompletion(int &client_socket, InferenceParams &request, Inferen
     strcpy(prompt, request.prompt.c_str());
     tokenizer->encode(prompt, promptTokens, &nPromptTokens, true, false);
 
-    printf("Prompt encoded\n");
+    std::string header = "HTTP/1.1 200\r\nContent-Type: text/event-stream\r\nConnection: keep-alive\r\nTransfer-Encoding: chunked\r\n";
+    send(client_socket, header.c_str(), header.length(), 0);
+
+    int token = promptTokens[0];
+    pos_t maxPos = nPromptTokens + request.max_tokens;
+    if (maxPos > spec->seqLen) maxPos = spec->seqLen;
+    bool eosEncountered = false;
+    for (pos_t pos = 0; pos < maxPos; pos++) {
+        float* logits = inference->infer(token, pos);
+
+        if (pos < nPromptTokens - 1) {
+            token = promptTokens[pos + 1];
+        }
+        else {
+            int prevToken = token;
+            token = sampler->sample(logits);
+
+            /*
+            Determine if we need to break out of the loop due to eos or stop words
+            This is tricky though since with the addition of stop words, we need to check the check if the last
+            word generated was a stop word, as it could be several tokens long in some cases
+            */
+            if(token == tokenizer->eosId) eosEncountered = true;
+
+            char* piece = tokenizer->decode(prevToken, token);
+
+            bool safePiece = isSafePiece(piece);
+            
+            //Do we have any stop words to check
+            if(!request.stop.empty() && safePiece){
+                // Concatenate the last 7 tokens with the current token
+                std::string concatenatedTokens;
+                int startIndex = std::max(0, static_cast<int>(generated.size()) - 7);
+                for (int i = startIndex; i < generated.size(); ++i) {
+                    concatenatedTokens += generated[i];
+                }
+                concatenatedTokens += std::string(piece);
+
+                for (const auto& word : request.stop) {
+                    if (concatenatedTokens.find(word) != std::string::npos) {
+                        eosEncountered = true;
+                        break;
+                    }
+                }
+            }
+
+            if(eosEncountered) break;
+
+            char string[100];
+            strcpy(string, piece);
+
+            //We keep track of what was generated for the purpose of the stop words
+            generated.push_back(std::string(string));
+
+            //Output chat chunk
+            outputChatCompletionChunk(client_socket, std::string(string));
+        }
+    }
+
+    outputChatCompletionChunk(client_socket, "", "stop");
+}
+
+void processChatCompletion(int &client_socket, InferenceParams &request, Inference* inference, Tokenizer *tokenizer, Sampler *sampler, ProgramArgs* args, TransformerSpec* spec){
+    //Generate the completion
+    std::vector<std::string> generated;
+
+    //We pre allocate enough to fill the vector
+    generated.get_allocator().allocate(request.max_tokens);
+
+    int promptLength = request.prompt.length();
+    int nPromptTokens;
+    int promptTokens[promptLength + 3];
+    char prompt[promptLength + 1];
+    prompt[promptLength] = 0;
+    strcpy(prompt, request.prompt.c_str());
+    tokenizer->encode(prompt, promptTokens, &nPromptTokens, true, false);
 
     int token = promptTokens[0];
     pos_t maxPos = nPromptTokens + request.max_tokens;
@@ -287,8 +401,6 @@ void processChatCompletion(int &client_socket, InferenceParams &request, Inferen
     completion.usage = usage;
 
     std::string response = ((json)completion).dump();
-
-    printf("JSON: %s\n", response.c_str());
     
     std::ostringstream oss;
     oss << "HTTP/1.1 200 OK\r\n"
@@ -298,11 +410,7 @@ void processChatCompletion(int &client_socket, InferenceParams &request, Inferen
     std::string header = oss.str();
     response = header + response;
 
-    printf("Response: %s\n", response.c_str());
-
     send(client_socket, response.c_str(), response.length(), 0);
-
-    printf("Responded back to client\n");
 }
 
 void handleClient(int &client_socket, Inference* inference, Tokenizer *tokenizer, Sampler *sampler, ProgramArgs* args, TransformerSpec* spec){
@@ -316,9 +424,9 @@ void handleClient(int &client_socket, Inference* inference, Tokenizer *tokenizer
 
     HTTP::HttpRequest request = HTTP::HttpParser::parseRequest(std::string(buffer));
 
-    printf("New Request: %s\n", request.path.c_str());
+    printf("New Request: %s %s\n", request.getMethod().c_str(), request.path.c_str());
 
-    if(request.path == "/v1/chat/completions"){
+    if(request.method == HTTP::HttpMethod::METHOD_POST && request.path == "/v1/chat/completions"){
         InferenceParams inferParams;
         inferParams.stream = false;
         inferParams.max_tokens = 8192;
@@ -327,8 +435,6 @@ void handleClient(int &client_socket, Inference* inference, Tokenizer *tokenizer
         
         std::vector<ChatMessage> messages = parseChatMessages(request.parsedJson["messages"]);
         inferParams.prompt = buildChatPrompt(tokenizer, messages);
-
-        printf("Chat Prompt:\n%s\n", inferParams.prompt.c_str());
         
         if(request.parsedJson.contains("stream")){
             inferParams.stream = request.parsedJson["stream"].template get<bool>();
@@ -349,7 +455,6 @@ void handleClient(int &client_socket, Inference* inference, Tokenizer *tokenizer
         }
         if(request.parsedJson.contains("stop")){
             inferParams.stop = request.parsedJson["stop"].template get<std::vector<std::string>>();
-            printf("Parsed %d stop words\n", (int)inferParams.stop.size());
         }
 
         if(inferParams.stream){
