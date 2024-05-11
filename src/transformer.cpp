@@ -43,6 +43,10 @@ size_t MatmulSlice::splitWeights(uint8_t sliceIndex, char* weights, char* weight
     return copiedBytes;
 }
 
+unsigned int MatmulSlice::dOffset(uint8_t sliceIndex) {
+    return this->d0 * sliceIndex;
+}
+
 RopeSlice::RopeSlice(TransformerSpec* spec, uint8_t sliceIndex) {
     assert(spec->dim >= spec->kvDim);
     assert(spec->dim % spec->nSlices == 0);
@@ -52,11 +56,11 @@ RopeSlice::RopeSlice(TransformerSpec* spec, uint8_t sliceIndex) {
     kvDim0 = spec->kvDim / spec->nSlices;
     assert(qDim0 % 2 == 0);
     assert(kvDim0 % 2 == 0);
-    int kvDim0From = kvDim0 * sliceIndex;
-    int qDim0From = qDim0 * sliceIndex;
-    int qDim0To = qDim0From + qDim0;
-    qOffset = qDim0From - kvDim0From;
-    cacheDim = qDim0To - kvDim0From;
+    kvDimStart = kvDim0 * sliceIndex;
+    qDimStart = qDim0 * sliceIndex;
+    const unsigned int qDimEnd = qDimStart + qDim0;
+    qShift = qDimStart - kvDimStart;
+    cacheDim = qDimEnd - kvDimStart;
     assert(cacheDim % 2 == 0);
 
     size_t cacheBytes = spec->seqLen * cacheDim * sizeof(float);
@@ -64,14 +68,14 @@ RopeSlice::RopeSlice(TransformerSpec* spec, uint8_t sliceIndex) {
     printf("🕒 ropeCache: %ld kB\n", cacheBytes / 1024);
 
     for (pos_t pos = 0; pos < spec->seqLen; pos++) {
-        for (int i = kvDim0From; i < qDim0To; i += 2) {
-            int headDim = i % spec->headSize;
-            float freq = 1.0f / powf(spec->ropeTheta, headDim / (float)spec->headSize);
-            float val = pos * freq;
-            float fcr = cosf(val);
-            float fci = sinf(val);
-            cache[pos * cacheDim + (i - kvDim0From)] = fcr;
-            cache[pos * cacheDim + (i - kvDim0From) + 1] = fci;
+        for (unsigned int i = kvDimStart; i < qDimEnd; i += 2) {
+            const unsigned int headDim = i % spec->headSize;
+            const float freq = 1.0f / powf(spec->ropeTheta, headDim / (float)spec->headSize);
+            const float val = pos * freq;
+            const float fcr = cosf(val);
+            const float fci = sinf(val);
+            cache[pos * cacheDim + (i - kvDimStart)] = fcr;
+            cache[pos * cacheDim + (i - kvDimStart) + 1] = fci;
         }
     }
 }
@@ -81,18 +85,18 @@ RopeSlice::~RopeSlice() {
 }
 
 void RopeSlice::forward(bool isQ, float* qOrK, pos_t pos, unsigned int nThreads, unsigned int threadIndex) {
-    int d0 = isQ ? qDim0 : kvDim0;
-    int offset = isQ ? qOffset : 0;
-    int halfD0 = d0 / 2;
-    int slice = halfD0 / nThreads;
-    int iStart = threadIndex * slice;
-    int iEnd = (nThreads - 1 == threadIndex) ? halfD0 : (iStart + slice);
+    const unsigned int d0 = isQ ? qDim0 : kvDim0;
+    const unsigned int shift = isQ ? qShift : 0;
+    const unsigned int halfD0 = d0 / 2;
+    const unsigned int slice = halfD0 / nThreads;
+    unsigned int iStart = threadIndex * slice;
+    unsigned int iEnd = (nThreads - 1 == threadIndex) ? halfD0 : (iStart + slice);
     iStart *= 2;
     iEnd *= 2;
 
-    for (int i = iStart; i < iEnd; i += 2) {
-        float fcr = cache[pos * cacheDim + offset + i];
-        float fci = cache[pos * cacheDim + offset + i + 1];
+    for (unsigned int i = iStart; i < iEnd; i += 2) {
+        float fcr = cache[pos * cacheDim + shift + i];
+        float fci = cache[pos * cacheDim + shift + i + 1];
         float v0 = qOrK[i];
         float v1 = qOrK[i+1];
         qOrK[i]   = v0 * fcr - v1 * fci;
@@ -306,6 +310,12 @@ Transformer::Transformer(TransformerSpec* spec, uint8_t sliceIndex) {
     // TODO: cache should be for all architectures
     if (spec->archType == LLAMA2 || spec->archType == MIXTRAL) {
         ropeSlice = new RopeSlice(spec, sliceIndex);
+
+        TransformerBlock* b = blocks[0];
+        assert(b->q0Slice->d0 == ropeSlice->qDim0);
+        assert(b->q0Slice->dOffset(sliceIndex) == ropeSlice->qDimStart);
+        assert(b->k0Slice->d0 == ropeSlice->kvDim0);
+        assert(b->k0Slice->dOffset(sliceIndex) == ropeSlice->kvDimStart);
     } else {
         ropeSlice = NULL;
     }

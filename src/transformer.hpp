@@ -19,6 +19,7 @@ public:
 
     MatmulSlice(FloatType type, int nSlices, int n, int d);
     size_t splitWeights(uint8_t sliceIndex, char* weights, char* weights0);
+    unsigned int dOffset(uint8_t sliceIndex);
 };
 
 enum TransformerHeaderKey {
@@ -87,11 +88,13 @@ struct TransformerSpec {
 class RopeSlice {
 private:
     float* cache;
-    int cacheDim;
-    int qDim0;
-    int qOffset;
-    int kvDim0;
+    unsigned int cacheDim;
 public:
+    unsigned int qDim0;
+    unsigned int qDimStart;
+    unsigned int qShift;
+    unsigned int kvDim0;
+    unsigned int kvDimStart;
     RopeSlice(TransformerSpec* spec, uint8_t sliceIndex);
     ~RopeSlice();
     void forward(bool isQ, float* qOrK, pos_t pos, unsigned int nThreads, unsigned int threadIndex);
