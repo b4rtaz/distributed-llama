@@ -25,7 +25,7 @@ constexpr int BUFFER_SIZE = 8192;
 constexpr float DEFAULT_TEMPERATURE = 0.8f;
 constexpr float DEFAULT_TOPP = 0.9f;
 
-struct ProgramArgs {
+struct ServerArgs {
     int nThreads; 
 
     // inference
@@ -175,7 +175,7 @@ std::vector<ChatMessage> parseChatMessages(json &json){
 /*
 Generally speaking, the tokenizer.config.json would contain the chat template for the model
 and depending on the model used you could set the chat template to follow
-could possibly just for simplicity set this in ProgramArgs with --chat-template
+could possibly just for simplicity set this in ServerArgs with --chat-template
 for this code draft I am assuming the use of llama 3 instruct
 */
 std::string buildChatPrompt(Tokenizer *tokenizer, std::vector<ChatMessage> &messages){
@@ -233,89 +233,18 @@ void outputChatCompletionChunk(int &client_socket, std::string delta, std::strin
     send(client_socket, formattedChunk.str().c_str(), formattedChunk.str().length(), 0);
 }
 
-void streamChatCompletion(int &client_socket, InferenceParams &request, Inference* inference, Tokenizer *tokenizer, Sampler *sampler, ProgramArgs* args, TransformerSpec* spec){
-    //Generate the completion
+void completeChat(int &client_socket, InferenceParams &request, Inference* inference, Tokenizer *tokenizer, Sampler *sampler, TransformerSpec* spec) {
     std::vector<std::string> generated;
-
-    //We pre allocate enough to fill the vector
     generated.get_allocator().allocate(request.max_tokens);
 
-    int promptLength = request.prompt.length();
-    int nPromptTokens;
-    int promptTokens[promptLength + 3];
-    char prompt[promptLength + 1];
-    prompt[promptLength] = 0;
-    strcpy(prompt, request.prompt.c_str());
-    tokenizer->encode(prompt, promptTokens, &nPromptTokens, true, false);
-
-    std::string header = "HTTP/1.1 200\r\nContent-Type: text/event-stream\r\nConnection: keep-alive\r\nTransfer-Encoding: chunked\r\n\r\n";
-    send(client_socket, header.c_str(), header.length(), 0);
-
-    int token = promptTokens[0];
-    pos_t maxPos = nPromptTokens + request.max_tokens;
-    if (maxPos > spec->seqLen) maxPos = spec->seqLen;
-    bool eosEncountered = false;
-    for (pos_t pos = 0; pos < maxPos; pos++) {
-        float* logits = inference->infer(token, pos);
-
-        if (pos < nPromptTokens - 1) {
-            token = promptTokens[pos + 1];
-        }
-        else {
-            int prevToken = token;
-            token = sampler->sample(logits);
-
-            /*
-            Determine if we need to break out of the loop due to eos or stop words
-            This is tricky though since with the addition of stop words, we need to check the check if the last
-            word generated was a stop word, as it could be several tokens long in some cases
-            */
-            if(token == tokenizer->eosId) eosEncountered = true;
-
-            char* piece = tokenizer->decode(prevToken, token);
-
-            bool safePiece = isSafePiece(piece);
-            
-            //Do we have any stop words to check
-            if(!request.stop.empty() && safePiece){
-                // Concatenate the last 7 tokens with the current token
-                std::string concatenatedTokens;
-                int startIndex = std::max(0, static_cast<int>(generated.size()) - 7);
-                for (int i = startIndex; i < generated.size(); ++i) {
-                    concatenatedTokens += generated[i];
-                }
-                concatenatedTokens += std::string(piece);
-
-                for (const auto& word : request.stop) {
-                    if (concatenatedTokens.find(word) != std::string::npos) {
-                        eosEncountered = true;
-                        break;
-                    }
-                }
-            }
-
-            if(eosEncountered) break;
-
-            char string[100];
-            strcpy(string, piece);
-
-            //We keep track of what was generated for the purpose of the stop words
-            generated.push_back(std::string(string));
-
-            //Output chat chunk
-            outputChatCompletionChunk(client_socket, std::string(string));
-        }
+    if (request.stream) {
+        std::ostringstream oss;
+        oss << "HTTP/1.1 200 OK\r\n"
+            << "Content-Type: text/event-stream; charset=utf-8\r\n"
+            << "Connection: keep-alive\r\n"
+            << "Transfer-Encoding: chunked\r\n\r\n";
+        send(client_socket, oss.str().c_str(), oss.str().length(), 0);
     }
-
-    outputChatCompletionChunk(client_socket, "", "stop");
-}
-
-void processChatCompletion(int &client_socket, InferenceParams &request, Inference* inference, Tokenizer *tokenizer, Sampler *sampler, ProgramArgs* args, TransformerSpec* spec){
-    //Generate the completion
-    std::vector<std::string> generated;
-
-    //We pre allocate enough to fill the vector
-    generated.get_allocator().allocate(request.max_tokens);
 
     int promptLength = request.prompt.length();
     int nPromptTokens;
@@ -339,20 +268,13 @@ void processChatCompletion(int &client_socket, InferenceParams &request, Inferen
             int prevToken = token;
             token = sampler->sample(logits);
 
-            /*
-            Determine if we need to break out of the loop due to eos or stop words
-            This is tricky though since with the addition of stop words, we need to check the check if the last
-            word generated was a stop word, as it could be several tokens long in some cases
-            */
-            if(token == tokenizer->eosId) eosEncountered = true;
+            if (token == tokenizer->eosId) eosEncountered = true;
 
             char* piece = tokenizer->decode(prevToken, token);
 
             bool safePiece = isSafePiece(piece);
             
-            //Do we have any stop words to check
-            if(!request.stop.empty() && safePiece){
-                // Concatenate the last 7 tokens with the current token
+            if (!request.stop.empty() && safePiece) {
                 std::string concatenatedTokens;
                 int startIndex = std::max(0, static_cast<int>(generated.size()) - 7);
                 for (int i = startIndex; i < generated.size(); ++i) {
@@ -368,48 +290,57 @@ void processChatCompletion(int &client_socket, InferenceParams &request, Inferen
                 }
             }
 
-            if(eosEncountered) break;
+            if (eosEncountered) break;
 
             char string[100];
             strcpy(string, piece);
 
             generated.push_back(std::string(string));
+            
+            if (request.stream) {
+                outputChatCompletionChunk(client_socket, std::string(string));
+            }
         }
     }
 
-    std::vector<Choice> choices;
-    ChatMessage responseMessage;
-    responseMessage.role = "assistant";
-    responseMessage.content = std::accumulate(generated.begin(), generated.end(), std::string(""));
-    Choice responseChoice;
-    responseChoice.message = responseMessage;
-    choices.push_back(responseChoice);
-    ChatCompletion completion;
-    completion.id = "chatcmpl-test";
-    completion.object = "chat.completion";
-    completion.model = "Distributed Model";
-    completion.created = time_t();
-    completion.choices = choices;
-    ChatUsage usage;
-    usage.prompt_tokens = nPromptTokens;
-    usage.completion_tokens = generated.size();
-    usage.total_tokens = nPromptTokens + generated.size();
-    completion.usage = usage;
+    if (!request.stream) {
+        std::vector<Choice> choices;
+        ChatMessage responseMessage;
+        responseMessage.role = "assistant";
+        responseMessage.content = std::accumulate(generated.begin(), generated.end(), std::string(""));
+        Choice responseChoice;
+        responseChoice.message = responseMessage;
+        choices.push_back(responseChoice);
+        ChatCompletion completion;
+        completion.id = "chatcmpl-test";
+        completion.object = "chat.completion";
+        completion.model = "Distributed Model";
+        completion.created = time_t();
+        completion.choices = choices;
+        ChatUsage usage;
+        usage.prompt_tokens = nPromptTokens;
+        usage.completion_tokens = generated.size();
+        usage.total_tokens = nPromptTokens + generated.size();
+        completion.usage = usage;
 
-    std::string response = ((json)completion).dump();
-    
-    std::ostringstream oss;
-    oss << "HTTP/1.1 200 OK\r\n"
-        << "Content-Type: application/json; charset=utf-8\r\n"
-        << "Content-Length: " << response.length() << "\r\n\r\n";
+        std::string response = ((json)completion).dump();
+        
+        std::ostringstream oss;
+        oss << "HTTP/1.1 200 OK\r\n"
+            << "Content-Type: application/json; charset=utf-8\r\n"
+            << "Content-Length: " << response.length() << "\r\n\r\n";
 
-    std::string header = oss.str();
-    response = header + response;
+        std::string header = oss.str();
+        response = header + response;
 
-    send(client_socket, response.c_str(), response.length(), 0);
+        send(client_socket, response.c_str(), response.length(), 0);
+    }
+    else{
+        outputChatCompletionChunk(client_socket, "", "stop");
+    }
 }
 
-void handleClient(int &client_socket, Inference* inference, Tokenizer *tokenizer, Sampler *sampler, ProgramArgs* args, TransformerSpec* spec){
+void handleClient(int &client_socket, Inference* inference, Tokenizer *tokenizer, Sampler *sampler, ServerArgs* args, TransformerSpec* spec){
     char buffer[BUFFER_SIZE] = {0};
 
     int valread = recv(client_socket, buffer, BUFFER_SIZE, 0);
@@ -453,12 +384,7 @@ void handleClient(int &client_socket, Inference* inference, Tokenizer *tokenizer
             inferParams.stop = request.parsedJson["stop"].template get<std::vector<std::string>>();
         }
 
-        if(inferParams.stream){
-            streamChatCompletion(client_socket, inferParams, inference, tokenizer, sampler, args, spec);
-        }
-        else{
-            processChatCompletion(client_socket, inferParams, inference, tokenizer, sampler, args, spec);
-        }
+        completeChat(client_socket, inferParams, inference, tokenizer, sampler, spec);
     }
     else{
         std::string header = "HTTP/1.1 404 Not Found\r\n";
@@ -466,7 +392,7 @@ void handleClient(int &client_socket, Inference* inference, Tokenizer *tokenizer
     }
 }
 
-void openAiServer(Inference* inference, SocketPool* socketPool, Tokenizer *tokenizer, Sampler *sampler, ProgramArgs* args, TransformerSpec* spec) {
+void openAiServer(Inference* inference, SocketPool* socketPool, Tokenizer *tokenizer, Sampler *sampler, ServerArgs* args, TransformerSpec* spec) {
     int server_socket, client_socket;
     struct sockaddr_in server, client;
     socklen_t addrlen = sizeof(client);
@@ -517,7 +443,7 @@ void openAiServer(Inference* inference, SocketPool* socketPool, Tokenizer *token
     return;
 }
 
-int run(ProgramArgs* args, void (*program)(Inference* inference, SocketPool* socketPool, Tokenizer* tokenizer, Sampler* sampler, ProgramArgs* args, TransformerSpec* spec)) {
+int run(ServerArgs* args, void (*program)(Inference* inference, SocketPool* socketPool, Tokenizer* tokenizer, Sampler* sampler, ServerArgs* args, TransformerSpec* spec)) {
     if (args->modelPath == NULL) {
         return usage("Model is required");
     }
@@ -548,7 +474,7 @@ int run(ProgramArgs* args, void (*program)(Inference* inference, SocketPool* soc
 int main(int argc, char *argv[]) {
     initQuants();
     
-    ProgramArgs args;
+    ServerArgs args;
     
     args.nThreads = 4;
     args.modelPath = NULL;

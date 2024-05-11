@@ -12,7 +12,7 @@
 #include "mixtral-tasks.hpp"
 #include "tokenizer.hpp"
 
-struct ProgramArgs {
+struct ServerArgs {
     char* mode;
     int nThreads; 
 
@@ -48,7 +48,7 @@ TransformerArch getArch(TransformerSpec* spec) {
     exit(EXIT_FAILURE);
 }
 
-void generate(Inference* inference, SocketPool* socketPool, Tokenizer *tokenizer, Sampler *sampler, ProgramArgs* args, TransformerSpec* spec) {
+void generate(Inference* inference, SocketPool* socketPool, Tokenizer *tokenizer, Sampler *sampler, ServerArgs* args, TransformerSpec* spec) {
     assert(args->prompt != NULL);
 
     // encode the (string) prompt into tokens sequence
@@ -128,7 +128,7 @@ void generate(Inference* inference, SocketPool* socketPool, Tokenizer *tokenizer
     printf("Avg transfer time:   %.2f ms\n", totalTransferTime / (double)pos);
 }
 
-void chat(Inference* inference, SocketPool* socketPool, Tokenizer* tokenizer, Sampler* sampler, ProgramArgs* args, TransformerSpec* spec) {
+void chat(Inference* inference, SocketPool* socketPool, Tokenizer* tokenizer, Sampler* sampler, ServerArgs* args, TransformerSpec* spec) {
     char* cliSystemPrompt = NULL;
     char* cliUserPrompt = NULL;
     // buffers for reading the system prompt and user prompt from stdin
@@ -214,7 +214,7 @@ void chat(Inference* inference, SocketPool* socketPool, Tokenizer* tokenizer, Sa
     free(promptTokens);
 }
 
-void simpleServer(Inference* inference, SocketPool* socketPool, Tokenizer *tokenizer, Sampler *sampler, ProgramArgs* args, TransformerSpec* spec) {
+void simpleServer(Inference* inference, SocketPool* socketPool, Tokenizer *tokenizer, Sampler *sampler, ServerArgs* args, TransformerSpec* spec) {
     int outputPos;
     int header[2];
     char output[8192]; // TODO: possible overflow if long context
@@ -283,7 +283,7 @@ void simpleServer(Inference* inference, SocketPool* socketPool, Tokenizer *token
     }
 }
 
-int run(ProgramArgs* args, void (*program)(Inference* inference, SocketPool* socketPool, Tokenizer* tokenizer, Sampler* sampler, ProgramArgs* args, TransformerSpec* spec)) {
+int run(ServerArgs* args, void (*program)(Inference* inference, SocketPool* socketPool, Tokenizer* tokenizer, Sampler* sampler, ServerArgs* args, TransformerSpec* spec)) {
     if (args->modelPath == NULL) {
         return usage("Model is required");
     }
@@ -313,7 +313,7 @@ int run(ProgramArgs* args, void (*program)(Inference* inference, SocketPool* soc
     return EXIT_SUCCESS;
 }
 
-int worker(ProgramArgs* args) {
+int worker(ServerArgs* args) {
     if (args->port < 1024) {
         return usage("Invalid port");
     }
@@ -342,7 +342,7 @@ FloatType parseFloatType(char* val) {
 int main(int argc, char *argv[]) {
     initQuants();
 
-    ProgramArgs args;
+    ServerArgs args;
     args.mode = NULL;
     args.nThreads = 4;
     args.modelPath = NULL;
