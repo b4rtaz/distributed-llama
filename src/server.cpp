@@ -159,14 +159,6 @@ struct InferenceParams {
     unsigned long long seed;
 };
 
-//data: {"id":"","object":"chat.completion.chunk","created":0,"model":"MODEL NAME","choices":[{"index":0,"delta":{"role":"assistant","content":"<|start_header_id|>system<|end_header_id|>\n\nYou are a helpful assistant.<|eot_id|><|start_header_id|>user<|end_header_id|>\n\nHello!<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"},"finish_reason":null}]}
-//data: {"id":"chatcmpl-w51kqn9wx6e5swuuyix71h","object":"chat.completion.chunk","created":1715355790,"model":"MaziyarPanahi/Llama-3-8B-Instruct-32k-v0.1-GGUF/Llama-3-8B-Instruct-32k-v0.1.Q4_K_M.gguf","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
-//data: [DONE]
-void send_event(int client_socket, const std::string& data) {
-    std::string message = "data: " + data + "\n\n";
-    send(client_socket, message.c_str(), message.length(), 0);
-}
-
 std::vector<ChatMessage> parseChatMessages(json &json){
     std::vector<ChatMessage> messages;
 
@@ -201,7 +193,6 @@ std::string buildChatPrompt(Tokenizer *tokenizer, std::vector<ChatMessage> &mess
 }
 
 void outputChatCompletionChunk(int &client_socket, std::string delta, std::string finish_reason = ""){
-
     ChunkChoice choice;
     choice.index = 0;
     
@@ -227,14 +218,19 @@ void outputChatCompletionChunk(int &client_socket, std::string delta, std::strin
     
     std::ostringstream oss;
     
-    oss << "data: " << ((json)chunk).dump() << "\r\n";
+    oss << "data: " << ((json)chunk).dump() << "\n\n";
 
     if(finish_reason.size() > 0){ 
-        oss << "data: [DONE]\r\n";
+        oss << "data: [DONE]\n\n";
     }
 
     std::string chunkResponse = oss.str();
-    send(client_socket, chunkResponse.c_str(), chunkResponse.length(), 0);
+
+    // Format the chunked response
+    std::ostringstream formattedChunk;
+    formattedChunk << std::hex << chunkResponse.length() << "\r\n" << chunkResponse << "\r\n";
+
+    send(client_socket, formattedChunk.str().c_str(), formattedChunk.str().length(), 0);
 }
 
 void streamChatCompletion(int &client_socket, InferenceParams &request, Inference* inference, Tokenizer *tokenizer, Sampler *sampler, ProgramArgs* args, TransformerSpec* spec){
@@ -252,7 +248,7 @@ void streamChatCompletion(int &client_socket, InferenceParams &request, Inferenc
     strcpy(prompt, request.prompt.c_str());
     tokenizer->encode(prompt, promptTokens, &nPromptTokens, true, false);
 
-    std::string header = "HTTP/1.1 200\r\nContent-Type: text/event-stream\r\nConnection: keep-alive\r\nTransfer-Encoding: chunked\r\n";
+    std::string header = "HTTP/1.1 200\r\nContent-Type: text/event-stream\r\nConnection: keep-alive\r\nTransfer-Encoding: chunked\r\n\r\n";
     send(client_socket, header.c_str(), header.length(), 0);
 
     int token = promptTokens[0];
