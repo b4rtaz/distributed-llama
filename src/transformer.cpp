@@ -84,6 +84,28 @@ RopeSlice::~RopeSlice() {
     FREE_BUFFER(cache);
 }
 
+KvCacheSlice::KvCacheSlice(unsigned int kvDim, unsigned int seqLen, unsigned int nSlices) {
+    assert(kvDim % nSlices == 0);
+    kvDim0 = kvDim / nSlices;
+    keyCache = (float*)NEW_BUFFER(seqLen * kvDim0 * sizeof(float));
+    valueCache = (float*)NEW_BUFFER(seqLen * kvDim0 * sizeof(float));
+}
+
+KvCacheSlice::~KvCacheSlice() {
+    FREE_BUFFER(keyCache);
+    FREE_BUFFER(valueCache);
+}
+
+MultiHeadAttSlice::MultiHeadAttSlice(unsigned int nHeads, unsigned int seqLen, unsigned int nSlices, uint8_t sliceIndex) {
+    assert(nHeads % nSlices == 0);
+    nHeads0 = nHeads / nSlices;
+    att = (float*)NEW_BUFFER(seqLen * nHeads0 * sizeof(float));
+}
+
+MultiHeadAttSlice::~MultiHeadAttSlice() {
+    FREE_BUFFER(att);
+}
+
 void RopeSlice::forward(bool isQ, float* qOrK, pos_t pos, unsigned int nThreads, unsigned int threadIndex) {
     const unsigned int d0 = isQ ? qDim0 : kvDim0;
     const unsigned int shift = isQ ? qShift : 0;
@@ -216,10 +238,6 @@ TransformerBuffer::TransformerBuffer(TransformerSpec* spec) {
     bufferBytes[TB_SLICED_XB2_QUANTIZED] = getBatchBytes(spec->bufferFloatType, spec->dim, 1);
     bufferBytes[TB_SLICED_Q] = spec->dim * sizeof(float);
     bufferBytes[TB_SLICED_Q_QUANTIZED] = getBatchBytes(spec->bufferFloatType, spec->dim, 1);
-    bufferBytes[TB_SLICED_K] = spec->kvDim * sizeof(float);
-    bufferBytes[TB_SLICED_K_QUANTIZED] = getBatchBytes(spec->bufferFloatType, spec->kvDim, 1);
-    bufferBytes[TB_SLICED_V] = spec->kvDim * sizeof(float);
-    bufferBytes[TB_SLICED_V_QUANTIZED] = getBatchBytes(spec->bufferFloatType, spec->kvDim, 1);
 
     int nHb = (spec->nActiveExperts > 0)
         ? spec->hiddenDim * spec->nActiveExperts
@@ -316,6 +334,7 @@ Transformer::Transformer(TransformerSpec* spec, uint8_t sliceIndex) {
         assert(b->q0Slice->dOffset(sliceIndex) == ropeSlice->qDimStart);
         assert(b->k0Slice->d0 == ropeSlice->kvDim0);
         assert(b->k0Slice->dOffset(sliceIndex) == ropeSlice->kvDimStart);
+        assert(b->kvCacheSlice->kvDim0 == ropeSlice->kvDim0);
     } else {
         ropeSlice = NULL;
     }
@@ -360,11 +379,10 @@ TransformerBlock::TransformerBlock(TransformerSpec* spec, uint8_t sliceIndex) {
             rmsFfn2 = (float*)NEW_BUFFER(rmsFfn2Bytes);
         }
 #endif
-
-        keyCache = (float*)NEW_BUFFER(spec->seqLen * spec->kvDim * sizeof(float));
-        valueCache = (float*)NEW_BUFFER(spec->seqLen * spec->kvDim * sizeof(float));
-        att = (float*)NEW_BUFFER(spec->nHeads * spec->seqLen * sizeof(float));
     }
+
+    kvCacheSlice = new KvCacheSlice(spec->kvDim, spec->seqLen, spec->nSlices);
+    multiHeadAttSlice = new MultiHeadAttSlice(spec->nHeads, spec->seqLen, spec->nSlices, sliceIndex);
 
     q0Slice = new MatmulSlice(spec->weightsFloatType, spec->nSlices, spec->dim, spec->dim);
     k0Slice = new MatmulSlice(spec->weightsFloatType, spec->nSlices, spec->dim, spec->kvDim);
@@ -425,10 +443,10 @@ TransformerBlock::~TransformerBlock() {
             FREE_BUFFER(rmsFfn2);
         }
 #endif
-        FREE_BUFFER(keyCache);
-        FREE_BUFFER(valueCache);
-        FREE_BUFFER(att);
     }
+
+    delete kvCacheSlice;
+    delete multiHeadAttSlice;
 
     delete q0Slice;
     delete k0Slice;

@@ -100,6 +100,23 @@ public:
     void forward(bool isQ, float* qOrK, pos_t pos, unsigned int nThreads, unsigned int threadIndex);
 };
 
+class KvCacheSlice {
+public:
+    unsigned int kvDim0;
+    float* keyCache;
+    float* valueCache;
+    KvCacheSlice(unsigned int kvDim, unsigned int seqLen, unsigned int nSlices);
+    ~KvCacheSlice();
+};
+
+class MultiHeadAttSlice {
+public:
+    unsigned int nHeads0;
+    float* att;
+    MultiHeadAttSlice(unsigned int nHeads, unsigned int seqLen, unsigned int nSlices, uint8_t sliceIndex);
+    ~MultiHeadAttSlice();
+};
+
 class TransformerBlock {
 public:
     uint8_t sliceIndex;
@@ -130,7 +147,6 @@ public:
     char* w30;
     MatmulSlice* w30Slice;
 
-
     char* moeRouter;
     size_t moeRouterBytes;
     MatmulSlice* moeUpAndGate0Slice;
@@ -145,15 +161,14 @@ public:
 
     float* hb20;
 
-    float* keyCache;
-    float* valueCache;
-    float* att;
+    KvCacheSlice* kvCacheSlice;
+    MultiHeadAttSlice* multiHeadAttSlice;
 
     TransformerBlock(TransformerSpec* spec, uint8_t sliceIndex);
     ~TransformerBlock();
 };
 
-#define TB_LENGTH 14
+#define TB_LENGTH 10
 #define TB_NO_PAIRS 2
 
 #define TB_UNIT_XB 0
@@ -162,14 +177,10 @@ public:
 #define TB_SLICED_XB2_QUANTIZED 3
 #define TB_SLICED_Q 4
 #define TB_SLICED_Q_QUANTIZED 5
-#define TB_SLICED_K 6
-#define TB_SLICED_K_QUANTIZED 7
-#define TB_SLICED_V 8
-#define TB_SLICED_V_QUANTIZED 9
-#define TB_SLICED_HB 10
-#define TB_SLICED_HB_QUANTIZED 11
-#define TB_UNIT_MOE_INDEXES 12
-#define TB_UNIT_MOE_WEIGHTS 13
+#define TB_SLICED_HB 6
+#define TB_SLICED_HB_QUANTIZED 7
+#define TB_UNIT_MOE_INDEXES 8
+#define TB_UNIT_MOE_WEIGHTS 9
 
 class TransformerBuffer {
 public:
