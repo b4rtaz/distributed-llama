@@ -55,14 +55,12 @@ void llamaRope(TASK_ARGS) {
 
 void llamaMultiheadAtt(TASK_ARGS) {
     TASK_VARIABLES;
+    SPLIT_RANGE_TO_THREADS(h0Start, h0End, 0, block->multiHeadAttSlice->nHeads0, nThreads, threadIndex);
+
     float* q0 = (float*)transformer->buffer->getSliced(TB_SLICED_Q, transformer->sliceIndex);
     float* xb = (float*)transformer->buffer->getSliced(TB_UNIT_XB, transformer->sliceIndex);
 
     int kvMul = spec->nHeads / spec->nKvHeads; // integer multiplier of the kv sharing in multiquery
-    int nHeads0PerThread = block->multiHeadAttSlice->nHeads0 / nThreads;
-
-    int h0Start = threadIndex * nHeads0PerThread;
-    int h0End = (threadIndex == nThreads - 1) ? block->multiHeadAttSlice->nHeads0 : (h0Start + nHeads0PerThread);
 
     for (int h0 = h0Start; h0 < h0End; h0++) {
         // get the query vector for this head

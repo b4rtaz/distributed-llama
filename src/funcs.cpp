@@ -379,14 +379,15 @@ void matmulQ80vQ80(MatmulThreadInfo* a) {
 //        n          |_|       1
 //                    1
 void matmul(FloatType weightsFloatType, FloatType inputFloatType, float* output, void* input, void* weights, int n, int d, unsigned int nThreads, unsigned int threadIndex) {
-    const int chunk = d / nThreads;
+    SPLIT_RANGE_TO_THREADS(ds, de, 0, d, nThreads, threadIndex);
+
     MatmulThreadInfo s;
     s.output = output;
     s.input = input;
     s.weights = weights;
     s.n = n;
-    s.ds = threadIndex * chunk;
-    s.de = (threadIndex == nThreads - 1) ? d : s.ds + chunk;
+    s.ds = ds;
+    s.de = de;
 
     if (inputFloatType == F32) {
         if (weightsFloatType == F32) {
@@ -445,9 +446,7 @@ float dotProduct(const float* a, const float* b, const int size) {
 #define GELU_COEF_A 0.044715f
 
 void gelu(float* t, int n, unsigned int nThreads, unsigned int threadIndex) {
-    const int chunk = n / nThreads;
-    const int start = chunk * threadIndex;
-    const int end = (threadIndex == nThreads - 1) ? n : (start + chunk);
+    SPLIT_RANGE_TO_THREADS(start, end, 0, n, nThreads, threadIndex);
 
     for (int i = start; i < end; i++) {
         float x = t[i];
@@ -456,9 +455,7 @@ void gelu(float* t, int n, unsigned int nThreads, unsigned int threadIndex) {
 }
 
 void silu(float* t, int n, unsigned int nThreads, unsigned int threadIndex) {
-    const int chunk = n / nThreads;
-    const int start = chunk * threadIndex;
-    const int end = (threadIndex == nThreads - 1) ? n : (start + chunk);
+    SPLIT_RANGE_TO_THREADS(start, end, 0, n, nThreads, threadIndex);
 
     for (int i = start; i < end; i++) {
         float x = t[i];
@@ -467,9 +464,7 @@ void silu(float* t, int n, unsigned int nThreads, unsigned int threadIndex) {
 }
 
 void mul(float* output, float* input, int n, unsigned int nThreads, unsigned int threadIndex) {
-    const int chunk = n / nThreads;
-    const int start = chunk * threadIndex;
-    const int end = (threadIndex == nThreads - 1) ? n : (start + chunk);
+    SPLIT_RANGE_TO_THREADS(start, end, 0, n, nThreads, threadIndex);
 
     for (int i = start; i < end; i++) {
         output[i] *= input[i];
@@ -477,19 +472,15 @@ void mul(float* output, float* input, int n, unsigned int nThreads, unsigned int
 }
 
 void mulScalar(float* output, float c, int n, unsigned int nThreads, unsigned int threadIndex) {
-    const int chunk = n / nThreads;
-    const int start = chunk * threadIndex;
-    const int end = (threadIndex == nThreads - 1) ? n : (start + chunk);
-    
+    SPLIT_RANGE_TO_THREADS(start, end, 0, n, nThreads, threadIndex);
+
     for (int i = start; i < end; i++) {
         output[i] *= c;
     }
 }
 
 void add(float* output, float* input, int n, unsigned int nThreads, unsigned int threadIndex) {
-    const int chunk = n / nThreads;
-    const int start = chunk * threadIndex;
-    const int end = (threadIndex == nThreads - 1) ? n : (start + chunk);
+    SPLIT_RANGE_TO_THREADS(start, end, 0, n, nThreads, threadIndex);
 
     for (int i = start; i < end; i++) {
         output[i] += input[i];
