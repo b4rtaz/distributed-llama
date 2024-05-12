@@ -28,9 +28,8 @@ http: src/http.cpp
 
 main: src/main.cpp utils quants funcs socket transformer tasks llama2-tasks grok1-tasks mixtral-tasks tokenizer
 	$(CXX) $(CXXFLAGS) src/main.cpp -o main utils.o quants.o funcs.o socket.o transformer.o tasks.o llama2-tasks.o grok1-tasks.o mixtral-tasks.o tokenizer.o -lpthread
-
-server: src/server.cpp http utils quants funcs socket transformer tasks llama2-tasks grok1-tasks mixtral-tasks tokenizer
-	$(CXX) $(CXXFLAGS) src/server.cpp -o server http.o utils.o quants.o funcs.o socket.o transformer.o tasks.o llama2-tasks.o grok1-tasks.o mixtral-tasks.o tokenizer.o -lpthread
+server: src/apps/server.cpp http utils quants funcs socket transformer tasks llama2-tasks grok1-tasks mixtral-tasks tokenizer
+	$(CXX) $(CXXFLAGS) src/apps/server.cpp -o server http.o utils.o quants.o funcs.o socket.o transformer.o tasks.o llama2-tasks.o grok1-tasks.o mixtral-tasks.o tokenizer.o -lpthread
 funcs-test: src/funcs-test.cpp funcs utils quants
 	$(CXX) $(CXXFLAGS) src/funcs-test.cpp -o funcs-test funcs.o utils.o quants.o -lpthread
 quants-test: src/quants.cpp utils quants

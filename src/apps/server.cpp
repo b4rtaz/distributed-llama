@@ -3,23 +3,23 @@
 #include <cstdint>
 #include <cstdio>
 #include <cassert>
-#include "utils.hpp"
-#include "socket.hpp"
-#include "transformer.hpp"
-#include "tasks.hpp"
-#include "llama2-tasks.hpp"
-#include "grok1-tasks.hpp"
-#include "mixtral-tasks.hpp"
-#include "tokenizer.hpp"
-
 #include <sstream>
 #include <iostream>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <unistd.h>
 #include <vector>
-#include "http.hpp"
-#include "common/json.hpp"
+
+#include "../utils.hpp"
+#include "../socket.hpp"
+#include "../transformer.hpp"
+#include "../tasks.hpp"
+#include "../llama2-tasks.hpp"
+#include "../grok1-tasks.hpp"
+#include "../mixtral-tasks.hpp"
+#include "../tokenizer.hpp"
+#include "../http.hpp"
+#include "../common/json.hpp"
 
 constexpr int BUFFER_SIZE = 8192;
 constexpr float DEFAULT_TEMPERATURE = 0.8f;
