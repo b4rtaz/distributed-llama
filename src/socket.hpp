@@ -4,6 +4,7 @@
 #include <atomic>
 #include <cstddef>
 #include <exception>
+#include <vector>
 
 class ReadSocketException : public std::exception {
 public:
@@ -57,6 +58,7 @@ public:
 
     void write(const void* data, size_t size);
     void read(void* data, size_t size);
+    std::vector<char> readHttpRequest();
 };
 
 class SocketServer {

@@ -231,7 +231,6 @@ void outputChatCompletionChunk(Socket &client_socket, std::string delta, std::st
     formattedChunk << std::hex << chunkResponse.length() << "\r\n" << chunkResponse << "\r\n";
 
     client_socket.write(formattedChunk.str().c_str(), formattedChunk.str().length());
-    //send(client_socket, formattedChunk.str().c_str(), formattedChunk.str().length(), 0);
 }
 
 void completeChat(Socket &client_socket, InferenceParams &request, Inference* inference, Tokenizer *tokenizer, Sampler *sampler, TransformerSpec* spec) {
@@ -246,7 +245,6 @@ void completeChat(Socket &client_socket, InferenceParams &request, Inference* in
             << "Transfer-Encoding: chunked\r\n\r\n";
             
         client_socket.write(oss.str().c_str(), oss.str().length());
-        //send(client_socket, oss.str().c_str(), oss.str().length(), 0);
     }
 
     int promptLength = request.prompt.length();
@@ -337,7 +335,6 @@ void completeChat(Socket &client_socket, InferenceParams &request, Inference* in
         response = header + response;
 
         client_socket.write(response.c_str(), response.length());
-        //send(client_socket, response.c_str(), response.length(), 0);
     }
     else{
         outputChatCompletionChunk(client_socket, "", "stop");
@@ -345,11 +342,10 @@ void completeChat(Socket &client_socket, InferenceParams &request, Inference* in
 }
 
 void handleClient(Socket &client_socket, Inference* inference, Tokenizer *tokenizer, Sampler *sampler, ServerArgs* args, TransformerSpec* spec){
-    char buffer[BUFFER_SIZE] = {0};
+    //Read in the whole http request
+    std::vector<char> httpRequest = client_socket.readHttpRequest();
 
-    client_socket.read((char*)&buffer, BUFFER_SIZE);
-
-    HTTP::HttpRequest request = HTTP::HttpParser::parseRequest(std::string(buffer));
+    HTTP::HttpRequest request = HTTP::HttpParser::parseRequest(std::string(httpRequest.begin(), httpRequest.end()));
 
     printf("New Request: %s %s\n", request.getMethod().c_str(), request.path.c_str());
 
@@ -389,7 +385,6 @@ void handleClient(Socket &client_socket, Inference* inference, Tokenizer *tokeni
     else{
         std::string header = "HTTP/1.1 404 Not Found\r\n";
         client_socket.write(header.c_str(), header.length());
-        //send(client_socket, header.c_str(), header.length(), 0);
     }
 }
 
@@ -404,7 +399,7 @@ void server(Inference* inference, SocketPool* socketPool, Tokenizer *tokenizer, 
             handleClient(client, inference, tokenizer, sampler, args, spec);
 
             // Close client socket
-            delete &client;
+            //delete &client;
         } catch (ReadSocketException& ex) {
             printf("Read socket error: %d %s\n", ex.code, ex.message);
         } catch (WriteSocketException& ex) {
