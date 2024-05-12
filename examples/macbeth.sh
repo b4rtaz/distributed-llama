@@ -180,7 +180,7 @@ Servant. This is the worst. 230
 Macbeth. A fair quater of a mile is yet to go. 235
 Servant. A mile and half. 240
 Macbeth. I have run fifteen miles to-day.
-Servant. A calender's date.
+Servant. A calendar's date.
 Macbeth. A bigger patch, a bigger patch. 245
 Servant. Thirteen of more. 250
 Macbeth. Wast thou with him? 255
