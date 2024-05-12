@@ -192,7 +192,7 @@ std::string buildChatPrompt(Tokenizer *tokenizer, std::vector<ChatMessage> &mess
     return oss.str();
 }
 
-void outputChatCompletionChunk(int &client_socket, std::string delta, std::string finish_reason = ""){
+void outputChatCompletionChunk(Socket &client_socket, std::string delta, std::string finish_reason = ""){
     ChunkChoice choice;
     choice.index = 0;
     
@@ -230,10 +230,11 @@ void outputChatCompletionChunk(int &client_socket, std::string delta, std::strin
     std::ostringstream formattedChunk;
     formattedChunk << std::hex << chunkResponse.length() << "\r\n" << chunkResponse << "\r\n";
 
-    send(client_socket, formattedChunk.str().c_str(), formattedChunk.str().length(), 0);
+    client_socket.write(formattedChunk.str().c_str(), formattedChunk.str().length());
+    //send(client_socket, formattedChunk.str().c_str(), formattedChunk.str().length(), 0);
 }
 
-void completeChat(int &client_socket, InferenceParams &request, Inference* inference, Tokenizer *tokenizer, Sampler *sampler, TransformerSpec* spec) {
+void completeChat(Socket &client_socket, InferenceParams &request, Inference* inference, Tokenizer *tokenizer, Sampler *sampler, TransformerSpec* spec) {
     std::vector<std::string> generated;
     generated.get_allocator().allocate(request.max_tokens);
 
@@ -243,7 +244,9 @@ void completeChat(int &client_socket, InferenceParams &request, Inference* infer
             << "Content-Type: text/event-stream; charset=utf-8\r\n"
             << "Connection: keep-alive\r\n"
             << "Transfer-Encoding: chunked\r\n\r\n";
-        send(client_socket, oss.str().c_str(), oss.str().length(), 0);
+            
+        client_socket.write(oss.str().c_str(), oss.str().length());
+        //send(client_socket, oss.str().c_str(), oss.str().length(), 0);
     }
 
     int promptLength = request.prompt.length();
@@ -333,21 +336,18 @@ void completeChat(int &client_socket, InferenceParams &request, Inference* infer
         std::string header = oss.str();
         response = header + response;
 
-        send(client_socket, response.c_str(), response.length(), 0);
+        client_socket.write(response.c_str(), response.length());
+        //send(client_socket, response.c_str(), response.length(), 0);
     }
     else{
         outputChatCompletionChunk(client_socket, "", "stop");
     }
 }
 
-void handleClient(int &client_socket, Inference* inference, Tokenizer *tokenizer, Sampler *sampler, ServerArgs* args, TransformerSpec* spec){
+void handleClient(Socket &client_socket, Inference* inference, Tokenizer *tokenizer, Sampler *sampler, ServerArgs* args, TransformerSpec* spec){
     char buffer[BUFFER_SIZE] = {0};
 
-    int valread = recv(client_socket, buffer, BUFFER_SIZE, 0);
-    if (valread == -1) {
-        std::cerr << "Failed to read from socket" << std::endl;
-        return;
-    }
+    client_socket.read((char*)&buffer, BUFFER_SIZE);
 
     HTTP::HttpRequest request = HTTP::HttpParser::parseRequest(std::string(buffer));
 
@@ -388,59 +388,31 @@ void handleClient(int &client_socket, Inference* inference, Tokenizer *tokenizer
     }
     else{
         std::string header = "HTTP/1.1 404 Not Found\r\n";
-        send(client_socket, header.c_str(), header.length(), 0);
+        client_socket.write(header.c_str(), header.length());
+        //send(client_socket, header.c_str(), header.length(), 0);
     }
 }
 
-void openAiServer(Inference* inference, SocketPool* socketPool, Tokenizer *tokenizer, Sampler *sampler, ServerArgs* args, TransformerSpec* spec) {
-    int server_socket, client_socket;
-    struct sockaddr_in server, client;
-    socklen_t addrlen = sizeof(client);
-    
-    // Create socket
-    if ((server_socket = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
-        std::cerr << "Socket creation failed" << std::endl;
-        return;
-    }
-    
-    server.sin_family = AF_INET;
-    server.sin_addr.s_addr = INADDR_ANY;
-    server.sin_port = htons(args->port);
-
-    // Bind socket
-    if (bind(server_socket, (struct sockaddr *)&server, sizeof(server)) == -1) {
-        std::cerr << "Bind failed" << std::endl;
-        close(server_socket);
-        return;
-    }
-    
-    // Listen for incoming connections
-    if (listen(server_socket, SOMAXCONN) == -1) {
-        std::cerr << "Listen failed" << std::endl;
-        close(server_socket);
-        return;
-    }
-    
-    std::cout << "Server listening on port " << args->port << std::endl;
+void server(Inference* inference, SocketPool* socketPool, Tokenizer *tokenizer, Sampler *sampler, ServerArgs* args, TransformerSpec* spec) {
+    SocketServer* server = new SocketServer(args->port);
 
     while (true) {
-        // Accept incoming connection
-        if ((client_socket = accept(server_socket, (struct sockaddr *)&client, &addrlen)) == -1) {
-            std::cerr << "Accept failed" << std::endl;
-            close(server_socket);
-            return;
+        try {
+            // Accept incoming connection
+            Socket client = server->accept();
+
+            handleClient(client, inference, tokenizer, sampler, args, spec);
+
+            // Close client socket
+            delete &client;
+        } catch (ReadSocketException& ex) {
+            printf("Read socket error: %d %s\n", ex.code, ex.message);
+        } catch (WriteSocketException& ex) {
+            printf("Write socket error: %d %s\n", ex.code, ex.message);
         }
-        
-        handleClient(client_socket, inference, tokenizer, sampler, args, spec);
-        
-        // Close client socket
-        close(client_socket);
     }
-    
-    // Cleanup
-    close(server_socket);
-    
-    return;
+
+    delete server;
 }
 
 int run(ServerArgs* args, void (*program)(Inference* inference, SocketPool* socketPool, Tokenizer* tokenizer, Sampler* sampler, ServerArgs* args, TransformerSpec* spec)) {
@@ -527,5 +499,5 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    return run(&args, openAiServer);
+    return run(&args, server);
 }
