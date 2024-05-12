@@ -67,6 +67,9 @@ FloatType parseFloatType(char* val) {
 struct ChatMessageDelta {
     std::string role;
     std::string content;
+
+    ChatMessageDelta() : role(""), content("") {}
+    ChatMessageDelta(const std::string& role_, const std::string& content_) : role(role_), content(content_) {}
 };
 
 // Define to_json for Delta struct
@@ -77,6 +80,9 @@ void to_json(json& j, const ChatMessageDelta& msg) {
 struct ChatMessage {
     std::string role;
     std::string content;
+
+    ChatMessage() : role(""), content("") {}
+    ChatMessage(const std::string& role_, const std::string& content_) : role(role_), content(content_) {}
 };
 
 // Define to_json for ChatMessage struct
@@ -88,6 +94,8 @@ struct ChunkChoice {
     int index;
     ChatMessageDelta delta;
     std::string finish_reason;
+
+    ChunkChoice() : index(0) {}
 };
 
 // Define to_json for ChunkChoice struct
@@ -99,6 +107,10 @@ struct Choice {
     int index;
     ChatMessage message;
     std::string finish_reason;
+
+    Choice() : finish_reason("") {}
+    Choice(ChatMessage &message_) : message(message_), finish_reason("") {}
+    Choice(const std::string &reason_) : finish_reason(reason_) {}
 };
 
 // Define to_json for Choice struct
@@ -112,6 +124,12 @@ struct ChatCompletionChunk {
     long long created;
     std::string model;
     std::vector<ChunkChoice> choices;
+
+    ChatCompletionChunk(ChunkChoice &choice_) 
+        : id("chatcmpl-test"), object("chat.completion"), model("Distributed Model") {
+        created = std::time(nullptr); // Set created to current Unix timestamp
+        choices.push_back(choice_);
+    }
 };
 
 // Define to_json for ChatCompletionChunk struct
@@ -128,16 +146,24 @@ struct ChatUsage {
     int prompt_tokens;
     int completion_tokens;
     int total_tokens;
+    ChatUsage() : prompt_tokens(0), completion_tokens(0), total_tokens(0) {}
+    ChatUsage(int pt, int ct, int tt) : prompt_tokens(pt), completion_tokens(ct), total_tokens(tt) {}
 };
 
 // Struct to represent the chat completion object
 struct ChatCompletion {
     std::string id;
     std::string object;
-    long long created; // Assuming Unix timestamp
+    long long created; // Unix timestamp
     std::string model;
     std::vector<Choice> choices;
     ChatUsage usage;
+
+    ChatCompletion(Choice &choice_) 
+        : id("chatcmpl-test"), object("chat.completion"), model("Distributed Model") {
+        created = std::time(nullptr); // Set created to current Unix timestamp
+        choices.push_back(choice_);
+    }
 };
 
 // Define to_json for ChatCompletion struct
@@ -157,16 +183,19 @@ struct InferenceParams {
     std::vector<std::string> stop;
     bool stream;
     unsigned long long seed;
+
+    InferenceParams() : temperature(DEFAULT_TEMPERATURE), top_p(DEFAULT_TOPP), seed(std::time(nullptr)), stream(false) { }
 };
 
 std::vector<ChatMessage> parseChatMessages(json &json){
     std::vector<ChatMessage> messages;
+    messages.reserve(json.size());
 
     for (const auto& item : json) {
-        ChatMessage message;
-        message.content = item["content"].template get<std::string>();
-        message.role = item["role"].template get<std::string>();
-        messages.push_back(message);
+        messages.emplace_back(
+           item["role"].template get<std::string>(),
+           item["content"].template get<std::string>()
+        );
     }
 
     return messages;
@@ -178,10 +207,8 @@ and depending on the model used you could set the chat template to follow
 could possibly just for simplicity set this in ServerArgs with --chat-template
 for this code draft I am assuming the use of llama 3 instruct
 */
-std::string buildChatPrompt(Tokenizer *tokenizer, std::vector<ChatMessage> &messages){
+std::string buildChatPrompt(Tokenizer *tokenizer, const std::vector<ChatMessage> &messages){
     std::ostringstream oss;
-
-    //oss << tokenizer->decode(-1, tokenizer->bosId);
 
     for (const auto& message : messages) {
         oss << "<|start_header_id|>" << message.role << "<|end_header_id|>\n\n" << message.content << "<|eot_id|>";
@@ -192,29 +219,17 @@ std::string buildChatPrompt(Tokenizer *tokenizer, std::vector<ChatMessage> &mess
     return oss.str();
 }
 
-void outputChatCompletionChunk(Socket &client_socket, std::string delta, std::string finish_reason = ""){
+void outputChatCompletionChunk(Socket &client_socket, const std::string &delta, const std::string &finish_reason){
     ChunkChoice choice;
-    choice.index = 0;
     
     if(finish_reason.size() > 0){
         choice.finish_reason = finish_reason;
     }
     else{
-        ChatMessageDelta responseDelta;
-        responseDelta.role = "assistant";
-        responseDelta.content = delta;
-        choice.delta = responseDelta;
+        choice.delta = ChatMessageDelta("assistant", delta);
     }
-    
-    std::vector<ChunkChoice> choices;
-    choices.push_back(choice);
 
-    ChatCompletionChunk chunk;
-    chunk.id = "chatcmpl-test";
-    chunk.object = "chat.completion";
-    chunk.model = "Distributed Model";
-    chunk.created = time_t();
-    chunk.choices = choices;
+    ChatCompletionChunk chunk = ChatCompletionChunk(choice);
     
     std::ostringstream oss;
     
@@ -233,7 +248,7 @@ void outputChatCompletionChunk(Socket &client_socket, std::string delta, std::st
     client_socket.write(formattedChunk.str().c_str(), formattedChunk.str().length());
 }
 
-void completeChat(Socket &client_socket, InferenceParams &request, Inference* inference, Tokenizer *tokenizer, Sampler *sampler, TransformerSpec* spec) {
+void chatCompletion(Socket &client_socket, InferenceParams &request, Inference* inference, Tokenizer *tokenizer, Sampler *sampler, TransformerSpec* spec) {
     std::vector<std::string> generated;
     generated.get_allocator().allocate(request.max_tokens);
 
@@ -293,46 +308,34 @@ void completeChat(Socket &client_socket, InferenceParams &request, Inference* in
 
             if (eosEncountered) break;
 
-            char string[100];
-            strcpy(string, piece);
+            std::string string = std::string(piece);
 
-            generated.push_back(std::string(string));
+            //char string[100];
+            //strcpy(string, piece);
+
+            generated.push_back(string);
             
             if (request.stream) {
-                outputChatCompletionChunk(client_socket, std::string(string));
+                outputChatCompletionChunk(client_socket, string, "");
             }
         }
     }
 
     if (!request.stream) {
-        std::vector<Choice> choices;
-        ChatMessage responseMessage;
-        responseMessage.role = "assistant";
-        responseMessage.content = std::accumulate(generated.begin(), generated.end(), std::string(""));
-        Choice responseChoice;
-        responseChoice.message = responseMessage;
-        choices.push_back(responseChoice);
-        ChatCompletion completion;
-        completion.id = "chatcmpl-test";
-        completion.object = "chat.completion";
-        completion.model = "Distributed Model";
-        completion.created = time_t();
-        completion.choices = choices;
-        ChatUsage usage;
-        usage.prompt_tokens = nPromptTokens;
-        usage.completion_tokens = generated.size();
-        usage.total_tokens = nPromptTokens + generated.size();
-        completion.usage = usage;
+        ChatMessage chatMessage = ChatMessage("assistant", std::accumulate(generated.begin(), generated.end(), std::string("")));
+        Choice responseChoice = Choice(chatMessage);
+        ChatCompletion completion = ChatCompletion(responseChoice);
+        completion.usage = ChatUsage(nPromptTokens, generated.size(), nPromptTokens + generated.size());
 
-        std::string response = ((json)completion).dump();
+        std::string chatJson = ((json)completion).dump();
         
         std::ostringstream oss;
+
         oss << "HTTP/1.1 200 OK\r\n"
             << "Content-Type: application/json; charset=utf-8\r\n"
-            << "Content-Length: " << response.length() << "\r\n\r\n";
+            << "Content-Length: " << chatJson.length() << "\r\n\r\n" << chatJson;
 
-        std::string header = oss.str();
-        response = header + response;
+        std::string response = oss.str();
 
         client_socket.write(response.c_str(), response.length());
     }
@@ -350,37 +353,31 @@ void handleClient(Socket &client_socket, Inference* inference, Tokenizer *tokeni
     printf("New Request: %s %s\n", request.getMethod().c_str(), request.path.c_str());
 
     if(request.method == HTTP::HttpMethod::METHOD_POST && request.path == "/v1/chat/completions"){
-        InferenceParams inferParams;
-        inferParams.stream = false;
-        inferParams.max_tokens = 8192;
-        inferParams.top_p = DEFAULT_TOPP;
-        inferParams.temperature = DEFAULT_TEMPERATURE;
-        
-        std::vector<ChatMessage> messages = parseChatMessages(request.parsedJson["messages"]);
-        inferParams.prompt = buildChatPrompt(tokenizer, messages);
+        InferenceParams inferParams = InferenceParams();
+        inferParams.prompt = buildChatPrompt(tokenizer, parseChatMessages(request.parsedJson["messages"]));
+        inferParams.max_tokens = spec->seqLen - inferParams.prompt.size();
         
         if(request.parsedJson.contains("stream")){
             inferParams.stream = request.parsedJson["stream"].template get<bool>();
         }
         if(request.parsedJson.contains("temperature")){
             inferParams.temperature = request.parsedJson["temperature"].template get<float>();
+            assert(inferParams.temperature >= 0.0f);
             sampler->setTemp(inferParams.temperature);
         }
         if(request.parsedJson.contains("seed")){
             inferParams.seed = request.parsedJson["seed"].template get<unsigned long long>();
             sampler->setSeed(inferParams.seed);
         }
-        else{
-            sampler->setSeed((unsigned long long)time(NULL));
-        }
         if(request.parsedJson.contains("max_tokens")){
             inferParams.max_tokens = request.parsedJson["max_tokens"].template get<int>();
+            assert(inferParams.max_tokens <= spec->seqLen); //until rope scaling or similiar is implemented
         }
         if(request.parsedJson.contains("stop")){
             inferParams.stop = request.parsedJson["stop"].template get<std::vector<std::string>>();
         }
 
-        completeChat(client_socket, inferParams, inference, tokenizer, sampler, spec);
+        chatCompletion(client_socket, inferParams, inference, tokenizer, sampler, spec);
     }
     else{
         std::string header = "HTTP/1.1 404 Not Found\r\n";
@@ -396,10 +393,8 @@ void server(Inference* inference, SocketPool* socketPool, Tokenizer *tokenizer, 
             // Accept incoming connection
             Socket client = server->accept();
 
+            // Handle client connection
             handleClient(client, inference, tokenizer, sampler, args, spec);
-
-            // Close client socket
-            //delete &client;
         } catch (ReadSocketException& ex) {
             printf("Read socket error: %d %s\n", ex.code, ex.message);
         } catch (WriteSocketException& ex) {
