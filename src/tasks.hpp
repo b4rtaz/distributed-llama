@@ -40,7 +40,7 @@ public:
     TransformerContext* ctx = (TransformerContext*)userData; \
     Transformer* transformer = ctx->transformer; \
     TransformerBlock* block = transformer->blocks[ctx->currentBlockIndex]; \
-    TransformerSpec* spec = transformer->spec;
+    TransformerSpec* spec = transformer->spec; // printf("%s:%d\n", __FUNCTION__, ctx->currentBlockIndex); fflush(stdout);
 
 void syncUnitBuffer(unsigned int nThreads, unsigned int threadIndex, TransformerContext* ctx, uint8_t bufferIndex);
 void syncSliceOfSlicedBuffer(unsigned int nThreads, unsigned int threadIndex, TransformerContext* ctx, uint8_t bufferIndex);
