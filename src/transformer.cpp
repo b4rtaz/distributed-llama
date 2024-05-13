@@ -1,16 +1,17 @@
 #include <cstdio>
 #include <cmath>
+#include <cassert>
+#include <stdexcept>
 #include <fcntl.h>
 #include <string.h>
 #include <sys/mman.h>
-#include <cassert>
+#include <unistd.h>
+#include "funcs.hpp"
 #include "utils.hpp"
 #include "socket.hpp"
 #include "transformer.hpp"
-#include <unistd.h>
-#include <stdexcept>
 
-#define ALLOC_WEIGHTS true
+#define ALLOC_WEIGHTS false
 #define IS_ROOT_SLICE(sliceIndex) (sliceIndex == 0)
 
 RowMatmulSlice::RowMatmulSlice(FloatType type, int nSlices, int n, int d) {
@@ -88,12 +89,17 @@ RopeSlice::RopeSlice(TransformerSpec* spec, uint8_t sliceIndex) {
     assert(kvDim0 % 2 == 0);
     kvDimStart = kvDim0 * sliceIndex;
     qDimStart = qDim0 * sliceIndex;
-    const unsigned int qDimEnd = qDimStart + qDim0;
+    qDimEnd = qDimStart + qDim0;
     qShift = qDimStart - kvDimStart;
-    cacheDim = qDimEnd - kvDimStart;
-    assert(cacheDim % 2 == 0);
+    sliceDim = qDimEnd - kvDimStart;
+    assert(sliceDim % 2 == 0);
+    this->spec = spec;
+}
 
-    size_t cacheBytes = spec->seqLen * cacheDim * sizeof(float);
+RopeSlice::~RopeSlice() {}
+
+LlamaRopeSlice::LlamaRopeSlice(TransformerSpec* spec, uint8_t sliceIndex) : RopeSlice(spec, sliceIndex) {
+    size_t cacheBytes = spec->seqLen * sliceDim * sizeof(float);
     cache = (float*)NEW_BUFFER(cacheBytes);
     printf("🕒 ropeCache: %ld kB\n", cacheBytes / 1024);
 
@@ -104,14 +110,55 @@ RopeSlice::RopeSlice(TransformerSpec* spec, uint8_t sliceIndex) {
             const float val = pos * freq;
             const float fcr = cosf(val);
             const float fci = sinf(val);
-            cache[pos * cacheDim + (i - kvDimStart)] = fcr;
-            cache[pos * cacheDim + (i - kvDimStart) + 1] = fci;
+            cache[pos * sliceDim + (i - kvDimStart)] = fcr;
+            cache[pos * sliceDim + (i - kvDimStart) + 1] = fci;
         }
     }
 }
 
-RopeSlice::~RopeSlice() {
+LlamaRopeSlice::~LlamaRopeSlice() {
     FREE_BUFFER(cache);
+}
+
+void LlamaRopeSlice::forward(bool isQ, float* qOrK, pos_t pos, unsigned int nThreads, unsigned int threadIndex) {
+    const unsigned int dim0Half = (isQ ? qDim0 : kvDim0) / 2;
+    const unsigned int shift = isQ ? qShift : 0;
+    SPLIT_RANGE_TO_THREADS(s, e, 0, dim0Half, nThreads, threadIndex);
+    const unsigned int iStart = s * 2;
+    const unsigned int iEnd = e * 2;
+
+    for (unsigned int i = iStart; i < iEnd; i += 2) {
+        float fcr = cache[pos * sliceDim + shift + i];
+        float fci = cache[pos * sliceDim + shift + i + 1];
+        float v0 = qOrK[i];
+        float v1 = qOrK[i + 1];
+        qOrK[i]   = v0 * fcr - v1 * fci;
+        qOrK[i + 1] = v0 * fci + v1 * fcr;
+    }
+}
+
+void FalconRopeSlice::forward(bool isQ, float* qOrK, pos_t pos, unsigned int nThreads, unsigned int threadIndex) {
+    // TODO: this implementation allows only a small number of slices (because it requires dim0 % headSize == 0). This could be improved.
+    unsigned int dimStart = isQ ? qDimStart : kvDimStart;
+    unsigned int dim0 = isQ ? qDim0 : kvDim0;
+    unsigned int headSize = isQ ? spec->headSize : spec->kvDim / spec->nKvHeads;
+    assert(dimStart % headSize == 0);
+    assert(dim0 % headSize == 0);
+    unsigned int nHeads0 = dim0 / headSize;
+    SPLIT_RANGE_TO_THREADS(h0s, h0e, 0, nHeads0, nThreads, threadIndex);
+
+    for (unsigned int h = h0s; h < h0e; h++) {
+        for (unsigned int j = 0; j < headSize / 2; j++) {
+            float freq = 1.0f / powf(spec->ropeTheta, 2.0f * (float)j / (float)headSize);
+            float val = pos * freq;
+            float fcr = cosf(val);
+            float fci = sinf(val);
+            float q0 = qOrK[h * headSize + j];
+            float q1 = qOrK[h * headSize + j + headSize / 2];
+            qOrK[h * headSize + j] = q0 * fcr - q1 * fci;
+            qOrK[h * headSize + j + headSize / 2] = q0 * fci + q1 * fcr;
+        }
+    }
 }
 
 KvCacheSlice::KvCacheSlice(unsigned int kvDim, unsigned int seqLen, unsigned int nSlices) {
@@ -134,26 +181,6 @@ MultiHeadAttSlice::MultiHeadAttSlice(unsigned int nHeads, unsigned int seqLen, u
 
 MultiHeadAttSlice::~MultiHeadAttSlice() {
     FREE_BUFFER(att);
-}
-
-void RopeSlice::forward(bool isQ, float* qOrK, pos_t pos, unsigned int nThreads, unsigned int threadIndex) {
-    const unsigned int d0 = isQ ? qDim0 : kvDim0;
-    const unsigned int shift = isQ ? qShift : 0;
-    const unsigned int halfD0 = d0 / 2;
-    const unsigned int slice = halfD0 / nThreads;
-    unsigned int iStart = threadIndex * slice;
-    unsigned int iEnd = (nThreads - 1 == threadIndex) ? halfD0 : (iStart + slice);
-    iStart *= 2;
-    iEnd *= 2;
-
-    for (unsigned int i = iStart; i < iEnd; i += 2) {
-        float fcr = cache[pos * cacheDim + shift + i];
-        float fci = cache[pos * cacheDim + shift + i + 1];
-        float v0 = qOrK[i];
-        float v1 = qOrK[i+1];
-        qOrK[i]   = v0 * fcr - v1 * fci;
-        qOrK[i+1] = v0 * fci + v1 * fcr;
-    }
 }
 
 TransformerSpec Transformer::loadSpecFromFile(const char* path, const unsigned int nSlices, FloatType weightsFloatType, FloatType bufferFloatType) {
@@ -355,19 +382,18 @@ Transformer::Transformer(TransformerSpec* spec, uint8_t sliceIndex) {
         logits = (float*)NEW_BUFFER(spec->vocabSize * sizeof(float));
     }
 
-    // TODO: cache should be for all architectures
-    if (spec->archType == LLAMA2 || spec->archType == MIXTRAL) {
-        ropeSlice = new RopeSlice(spec, sliceIndex);
-
-        TransformerBlock* b = blocks[0];
-        assert(b->q0Slice->d0 == ropeSlice->qDim0);
-        assert(b->q0Slice->dOffset(sliceIndex) == ropeSlice->qDimStart);
-        assert(b->k0Slice->d0 == ropeSlice->kvDim0);
-        assert(b->k0Slice->dOffset(sliceIndex) == ropeSlice->kvDimStart);
-        assert(b->kvCacheSlice->kvDim0 == ropeSlice->kvDim0);
+    if (spec->archType == GROK1 || spec->archType == MIXTRAL) {
+        ropeSlice = new FalconRopeSlice(spec, sliceIndex);
     } else {
-        ropeSlice = NULL;
+        ropeSlice = new LlamaRopeSlice(spec, sliceIndex);
     }
+
+    TransformerBlock* b = blocks[0];
+    assert(b->q0Slice->d0 == ropeSlice->qDim0);
+    assert(b->q0Slice->dOffset(sliceIndex) == ropeSlice->qDimStart);
+    assert(b->k0Slice->d0 == ropeSlice->kvDim0);
+    assert(b->k0Slice->dOffset(sliceIndex) == ropeSlice->kvDimStart);
+    assert(b->kvCacheSlice->kvDim0 == ropeSlice->kvDim0);
 }
 
 Transformer::~Transformer() {
@@ -387,9 +413,7 @@ Transformer::~Transformer() {
         FREE_BUFFER(logits);
     }
 
-    if (ropeSlice != NULL) {
-        delete ropeSlice;
-    }
+    delete ropeSlice;
 }
 
 TransformerBlock::TransformerBlock(TransformerSpec* spec, uint8_t sliceIndex) {

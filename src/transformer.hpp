@@ -103,17 +103,32 @@ struct TransformerSpec {
 };
 
 class RopeSlice {
-private:
-    float* cache;
-    unsigned int cacheDim;
 public:
     unsigned int qDim0;
     unsigned int qDimStart;
+    unsigned int qDimEnd;
     unsigned int qShift;
     unsigned int kvDim0;
     unsigned int kvDimStart;
+    unsigned int sliceDim;
+    TransformerSpec* spec;
     RopeSlice(TransformerSpec* spec, uint8_t sliceIndex);
-    ~RopeSlice();
+    virtual ~RopeSlice();
+    virtual void forward(bool isQ, float* qOrK, pos_t pos, unsigned int nThreads, unsigned int threadIndex) = 0;
+};
+
+class LlamaRopeSlice : public RopeSlice {
+private:
+    float* cache;
+public:
+    LlamaRopeSlice(TransformerSpec* spec, uint8_t sliceIndex);
+    ~LlamaRopeSlice();
+    void forward(bool isQ, float* qOrK, pos_t pos, unsigned int nThreads, unsigned int threadIndex);
+};
+
+class FalconRopeSlice : public RopeSlice {
+public:
+    using RopeSlice::RopeSlice;
     void forward(bool isQ, float* qOrK, pos_t pos, unsigned int nThreads, unsigned int threadIndex);
 };
 

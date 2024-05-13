@@ -3,7 +3,6 @@
 
 #include "tasks.hpp"
 
-void grokMultiheadAttRope(TASK_ARGS);
 void grokRmfFfn(TASK_ARGS);
 void grokRmfFfnNorm(TASK_ARGS);
 void grokRmfFfnNormJoin(TASK_ARGS);

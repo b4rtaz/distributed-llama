@@ -2,8 +2,8 @@
 
 # This is a simple test of generating a sequence that fulfills the KV cache.
 #
-# Model: https://huggingface.co/b4rtaz/llama-3-8b-distributed-llama
-# Probably, this test will be working correctly only on MacBook Pro, due to differences in float multiplication on different CPUs.
+# Used model & tokenizer: https://huggingface.co/b4rtaz/llama-3-8b-distributed-llama
+# Probably, this test will be working correctly only on MacBook Pro M1, due to differences in float multiplication on different CPUs.
 
 cd "$(dirname "$0")"
 cd ..
