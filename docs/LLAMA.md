@@ -3,7 +3,9 @@
 ## How to Run Llama 2
 
 1. Download [Llama 2](https://github.com/facebookresearch/llama) weights from Meta. This project supports 7B, 7B-chat, 13B, 13B-chat, 70B and 70B-chat models.
-2. Open the `llama-2-7b/params.json` file and replace `"vocab_size": -1` to `"vocab_size": 32000`.
+2. Open the `llama-2-7b/params.json` file:
+  * replace `"vocab_size": -1` to `"vocab_size": 32000`,
+  * add a new property: `"max_seq_len": 2048`.
 3. Install dependencies of the converter:
 ```sh
 cd converter && pip install -r requirements.txt
@@ -42,24 +44,25 @@ In the table below, you can find the expected size of the converted weights with
     - `Meta-Llama-3-8B/consolidated.00.pth`
     - `Meta-Llama-3-8B/params.json`
     - `Meta-Llama-3-8B/tokenizer.model`
-5. Clone the `https://github.com/b4rtaz/distributed-llama.git` repository.
-6. Install dependencies of the converter:
+5. Open `params.json` and add a new property: `"max_seq_len": 8192`.
+6. Clone the `https://github.com/b4rtaz/distributed-llama.git` repository.
+7. Install dependencies of the converter:
 ```sh
 cd converter && pip install -r requirements.txt
 ```
-7. Convert the model to the Distributed Llama format:
+8. Convert the model to the Distributed Llama format:
 ```bash
 python converter/convert-llama.py path/to/Meta-Llama-3-8B q40
 ```
-8. Convert the tokenizer to the Distributed Llama format:
+9. Convert the tokenizer to the Distributed Llama format:
 ```bash
 python converter/convert-tokenizer-llama3.py path/to/tokenizer.model
 ```
-9. Build the project:
+10. Build the project:
 ```bash
 make main
 ```
-10. Run the Distributed Llama:
+11. Run the Distributed Llama:
 ```bash
 ./main inference --weights-float-type q40 --buffer-float-type q80 --prompt "My name is" --steps 128 --nthreads 8 --model dllama_meta-llama-3-8b_q40.bin --tokenizer llama3-tokenizer.t
 ```
