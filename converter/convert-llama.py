@@ -200,7 +200,7 @@ if __name__ == '__main__':
     if (not modelPath or not isFloatTypeSupported(targetFloatType)):
         usage()
 
-    modelName = os.path.basename(modelName)
+    modelName = os.path.basename(modelPath)
         
     outputFileName = f'dllama_{modelName.lower()}_{targetFloatType}.bin'
 
