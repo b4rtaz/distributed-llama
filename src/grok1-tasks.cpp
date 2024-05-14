@@ -13,42 +13,15 @@ void grokMulInput(TASK_ARGS) {
     mulScalar(transformer->x, 78.38367176906169f, transformer->spec->dim, nThreads, threadIndex);
 }
 
-// source: https://github.com/karpathy/llama2.c/pull/408
-void ropeFalcon(float* q, float* k, TransformerSpec* spec, pos_t pos, float theta) {
-    for (int i = 0; i < spec->nHeads; i++) {
-        for (int j = 0; j < spec->headSize / 2; j++) {
-            float freq = 1.0f / powf(theta, 2.0f * (float)j / (float)spec->headSize);
-            float val = pos * freq;
-            float fcr = cosf(val);
-            float fci = sinf(val);
-            float q0 = q[i * spec->headSize + j];
-            float q1 = q[i * spec->headSize + j + spec->headSize / 2];
-            q[i * spec->headSize + j] = q0 * fcr - q1 * fci;
-            q[i * spec->headSize + j + spec->headSize / 2] = q0 * fci + q1 * fcr;
-            if (i < spec->nKvHeads) {
-                float k0 = k[i * spec->headSize + j];
-                float k1 = k[i * spec->headSize + j + spec->headSize / 2];
-                k[i * spec->headSize + j] = k0 * fcr - k1 * fci;
-                k[i * spec->headSize + j + spec->headSize / 2] = k0 * fci + k1 * fcr;
-            }
-        }
-    }
-}
-
-void grokMultiheadAttRope(TASK_ARGS) {
-    TASK_VARIABLES;
-    if (threadIndex == 0) {
-        float* q = (float*)transformer->buffer->getUnit(TB_SLICED_Q);    
-        float* xb = (float*)transformer->buffer->getUnit(TB_UNIT_XB);
-        float* k = block->keyCache + transformer->pos * spec->kvDim;
-        ropeFalcon(q, k, spec, transformer->pos, spec->ropeTheta);
-    }
-}
-
 void grokRmfFfn(TASK_ARGS) {
     TASK_VARIABLES;
     if (threadIndex == 0) {
         float* xb2 = (float*)transformer->buffer->getUnit(TB_SLICED_XB2);
+        memset(xb2, 0, spec->dim * sizeof(float));
+        for (uint8_t s = 0; s < spec->nSlices; s++) {
+            float* xbv = (float*)transformer->buffer->getSliced(TB_SLICED_XBV, s);
+            add(xb2, xbv, spec->dim, 1, 0);
+        }
         transformer->rms = rms(xb2, spec->dim);
     }
 }
@@ -309,14 +282,9 @@ TransformerArch buildGrok1Arch(TransformerSpec* spec) {
         a.I(llamaQuantizeRmsAtt, TASK_TYPE_INFERENCE);
         a.I(llamaSyncRmsAtt, TASK_TYPE_TRANSFER);
         a.I(llamaQkv, TASK_TYPE_INFERENCE);
-        a.I(llamaQuantizeQkv, TASK_TYPE_INFERENCE);
-        a.I(llamaSyncQkv, TASK_TYPE_TRANSFER);
-        a.I(llamaDequantizeQkv, TASK_TYPE_INFERENCE);
+        a.I(llamaRope, TASK_TYPE_INFERENCE);
         a.I(llamaMultiheadAtt, TASK_TYPE_INFERENCE);
-        a.I(grokMultiheadAttRope, TASK_TYPE_INFERENCE);
-        a.I(llamaMultiheadAttJoin, TASK_TYPE_INFERENCE);
         a.I(llamaQuantizeMultiheadAtt, TASK_TYPE_INFERENCE);
-        a.I(llamaSyncMultiheadAtt, TASK_TYPE_TRANSFER);
         a.I(llamaAtt, TASK_TYPE_INFERENCE);
         a.I(llamaQuantizeAtt, TASK_TYPE_INFERENCE);
         a.I(llamaSyncAtt, TASK_TYPE_TRANSFER);
@@ -359,9 +327,9 @@ TransformerArch buildGrok1Arch(TransformerSpec* spec) {
     for (int i = 0; i < spec->nLayers; i++) {
         a.W(llamaSyncRmsAtt, TASK_TYPE_TRANSFER);
         a.W(llamaQkv, TASK_TYPE_INFERENCE);
-        a.W(llamaQuantizeQkv, TASK_TYPE_INFERENCE);
-        a.W(llamaSyncQkv, TASK_TYPE_TRANSFER);
-        a.W(llamaSyncMultiheadAtt, TASK_TYPE_TRANSFER);
+        a.W(llamaRope, TASK_TYPE_INFERENCE);
+        a.W(llamaMultiheadAtt, TASK_TYPE_INFERENCE);
+        a.W(llamaQuantizeMultiheadAtt, TASK_TYPE_INFERENCE);
         a.W(llamaAtt, TASK_TYPE_INFERENCE);
         a.W(llamaQuantizeAtt, TASK_TYPE_INFERENCE);
         a.W(llamaSyncAtt, TASK_TYPE_TRANSFER);

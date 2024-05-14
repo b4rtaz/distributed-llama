@@ -10,14 +10,32 @@ typedef unsigned short pos_t;
 
 class MatmulSlice {
 public:
-    FloatType type;
-    int nSlices;
-    int d0;
-    int n;
     size_t bytes;
     size_t sliceBytes;
+    virtual size_t splitWeights(uint8_t sliceIndex, char* weights, char* weights0) = 0;
+};
 
-    MatmulSlice(FloatType type, int nSlices, int n, int d);
+class RowMatmulSlice : public MatmulSlice {
+public:
+    FloatType type;
+    int nSlices;
+    int n;
+    int d0;
+
+    RowMatmulSlice(FloatType type, int nSlices, int n, int d);
+    size_t splitWeights(uint8_t sliceIndex, char* weights, char* weights0);
+    unsigned int dOffset(uint8_t sliceIndex);
+};
+
+class ColMatmulSlice : public MatmulSlice {
+public:
+    FloatType type;
+    int nSlices;
+    int n;
+    int n0;
+    int d;
+
+    ColMatmulSlice(FloatType type, int nSlices, int n, int d);
     size_t splitWeights(uint8_t sliceIndex, char* weights, char* weights0);
 };
 
@@ -85,16 +103,50 @@ struct TransformerSpec {
 };
 
 class RopeSlice {
+public:
+    unsigned int qDim0;
+    unsigned int qDimStart;
+    unsigned int qDimEnd;
+    unsigned int qShift;
+    unsigned int kvDim0;
+    unsigned int kvDimStart;
+    unsigned int sliceDim;
+    TransformerSpec* spec;
+    RopeSlice(TransformerSpec* spec, uint8_t sliceIndex);
+    virtual ~RopeSlice();
+    virtual void forward(bool isQ, float* qOrK, pos_t pos, unsigned int nThreads, unsigned int threadIndex) = 0;
+};
+
+class LlamaRopeSlice : public RopeSlice {
 private:
     float* cache;
-    int cacheDim;
-    int qDim0;
-    int qOffset;
-    int kvDim0;
 public:
-    RopeSlice(TransformerSpec* spec, uint8_t sliceIndex);
-    ~RopeSlice();
+    LlamaRopeSlice(TransformerSpec* spec, uint8_t sliceIndex);
+    ~LlamaRopeSlice();
     void forward(bool isQ, float* qOrK, pos_t pos, unsigned int nThreads, unsigned int threadIndex);
+};
+
+class FalconRopeSlice : public RopeSlice {
+public:
+    using RopeSlice::RopeSlice;
+    void forward(bool isQ, float* qOrK, pos_t pos, unsigned int nThreads, unsigned int threadIndex);
+};
+
+class KvCacheSlice {
+public:
+    unsigned int kvDim0;
+    float* keyCache;
+    float* valueCache;
+    KvCacheSlice(unsigned int kvDim, unsigned int seqLen, unsigned int nSlices);
+    ~KvCacheSlice();
+};
+
+class MultiHeadAttSlice {
+public:
+    unsigned int nHeads0;
+    float* att;
+    MultiHeadAttSlice(unsigned int nHeads, unsigned int seqLen, unsigned int nSlices, uint8_t sliceIndex);
+    ~MultiHeadAttSlice();
 };
 
 class TransformerBlock {
@@ -112,28 +164,27 @@ public:
     float* rmsFfn2;
 
     char* q0;
-    MatmulSlice* q0Slice;
+    RowMatmulSlice* q0Slice;
     char* k0;
-    MatmulSlice* k0Slice;
+    RowMatmulSlice* k0Slice;
     char* v0;
-    MatmulSlice* v0Slice;
+    RowMatmulSlice* v0Slice;
     char* wo0;
+    ColMatmulSlice* wo0Slice;
 
-    MatmulSlice* wo0Slice;
     char* w10;
-    MatmulSlice* w10Slice;
+    RowMatmulSlice* w10Slice;
     char* w20;
-    MatmulSlice* w20Slice;
+    RowMatmulSlice* w20Slice;
     char* w30;
-    MatmulSlice* w30Slice;
-
+    RowMatmulSlice* w30Slice;
 
     char* moeRouter;
     size_t moeRouterBytes;
-    MatmulSlice* moeUpAndGate0Slice;
+    RowMatmulSlice* moeUpAndGate0Slice;
     char** moeUp;
     char** moeGate;
-    MatmulSlice* moeDown0Slice;
+    RowMatmulSlice* moeDown0Slice;
     char** moeDown;
     float* moeRouterProbs;
 
@@ -142,31 +193,27 @@ public:
 
     float* hb20;
 
-    float* keyCache;
-    float* valueCache;
-    float* att;
+    KvCacheSlice* kvCacheSlice;
+    MultiHeadAttSlice* multiHeadAttSlice;
+    float* qo0;
 
     TransformerBlock(TransformerSpec* spec, uint8_t sliceIndex);
     ~TransformerBlock();
 };
 
-#define TB_LENGTH 14
+#define TB_LENGTH 10
 #define TB_NO_PAIRS 2
 
 #define TB_UNIT_XB 0
 #define TB_UNIT_XB_QUANTIZED 1
 #define TB_SLICED_XB2 2
 #define TB_SLICED_XB2_QUANTIZED 3
-#define TB_SLICED_Q 4
-#define TB_SLICED_Q_QUANTIZED 5
-#define TB_SLICED_K 6
-#define TB_SLICED_K_QUANTIZED 7
-#define TB_SLICED_V 8
-#define TB_SLICED_V_QUANTIZED 9
-#define TB_SLICED_HB 10
-#define TB_SLICED_HB_QUANTIZED 11
-#define TB_UNIT_MOE_INDEXES 12
-#define TB_UNIT_MOE_WEIGHTS 13
+#define TB_SLICED_XBV 4
+#define TB_SLICED_XBV_QUANTIZED 5
+#define TB_SLICED_HB 6
+#define TB_SLICED_HB_QUANTIZED 7
+#define TB_UNIT_MOE_INDEXES 8
+#define TB_UNIT_MOE_WEIGHTS 9
 
 class TransformerBuffer {
 public:

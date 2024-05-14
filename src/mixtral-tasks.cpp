@@ -14,14 +14,9 @@ TransformerArch buildMixtralArch(TransformerSpec* spec) {
         a.I(llamaQuantizeRmsAtt, TASK_TYPE_INFERENCE);
         a.I(llamaSyncRmsAtt, TASK_TYPE_TRANSFER);
         a.I(llamaQkv, TASK_TYPE_INFERENCE);
-        a.I(llamaQuantizeQkv, TASK_TYPE_INFERENCE);
-        a.I(llamaSyncQkv, TASK_TYPE_TRANSFER);
-        a.I(llamaDequantizeQkv, TASK_TYPE_INFERENCE);
+        a.I(llamaRope, TASK_TYPE_INFERENCE);
         a.I(llamaMultiheadAtt, TASK_TYPE_INFERENCE);
-        a.I(grokMultiheadAttRope, TASK_TYPE_INFERENCE);
-        a.I(llamaMultiheadAttJoin, TASK_TYPE_INFERENCE);
         a.I(llamaQuantizeMultiheadAtt, TASK_TYPE_INFERENCE);
-        a.I(llamaSyncMultiheadAtt, TASK_TYPE_TRANSFER);
         a.I(llamaAtt, TASK_TYPE_INFERENCE);
         a.I(llamaQuantizeAtt, TASK_TYPE_INFERENCE);
         a.I(llamaSyncAtt, TASK_TYPE_TRANSFER);
@@ -59,9 +54,9 @@ TransformerArch buildMixtralArch(TransformerSpec* spec) {
     for (int i = 0; i < spec->nLayers; i++) {
         a.W(llamaSyncRmsAtt, TASK_TYPE_TRANSFER);
         a.W(llamaQkv, TASK_TYPE_INFERENCE);
-        a.W(llamaQuantizeQkv, TASK_TYPE_INFERENCE);
-        a.W(llamaSyncQkv, TASK_TYPE_TRANSFER);
-        a.W(llamaSyncMultiheadAtt, TASK_TYPE_TRANSFER);
+        a.W(llamaRope, TASK_TYPE_INFERENCE);
+        a.W(llamaMultiheadAtt, TASK_TYPE_INFERENCE);
+        a.W(llamaQuantizeMultiheadAtt, TASK_TYPE_INFERENCE);
         a.W(llamaAtt, TASK_TYPE_INFERENCE);
         a.W(llamaQuantizeAtt, TASK_TYPE_INFERENCE);
         a.W(llamaSyncAtt, TASK_TYPE_TRANSFER);

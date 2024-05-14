@@ -1,8 +1,9 @@
 #include "funcs.hpp"
 #include "utils.hpp"
-#include <stdio.h>
-#include <stdlib.h>
-#include <math.h>
+#include <cstdio>
+#include <cstdlib>
+#include <cmath>
+#include <cassert>
 
 void testRms() {
     float x[] = {0.1f, 0.2f, 0.3f, 0.4f, 0.5f, 0.6f, 0.7f, 0.8f};
@@ -84,11 +85,62 @@ void testAdd() {
     printf("✅ add\n");
 }
 
+void assertInt(int a, int b) {
+    if (a != b) {
+        printf("❌ %d != %d\n", a, b);
+        exit(EXIT_FAILURE);
+    }
+}
+
+void testSplitRangeToThreads() {
+    // <0; 32> across 3 threads
+    {
+        SPLIT_RANGE_TO_THREADS(a0Start, a0End, 0, 32, 3, 0); // thread 0
+        assertInt(a0Start, 0);
+        assertInt(a0End, 11);
+    }
+    {
+        SPLIT_RANGE_TO_THREADS(a1Start, a1End, 0, 32, 3, 1); // thread 1
+        assertInt(a1Start, 11);
+        assertInt(a1End, 22);
+    }
+    {
+        SPLIT_RANGE_TO_THREADS(a2Start, a2End, 0, 32, 3, 2); // thread 2
+        assertInt(a2Start, 22);
+        assertInt(a2End, 32);
+    }
+
+    // <0; 4> across 8 threads
+    {
+        SPLIT_RANGE_TO_THREADS(b0Start, b0End, 0, 4, 8, 0); // thread 0
+        assertInt(b0Start, 0);
+        assertInt(b0End, 1);
+    }
+    {
+        SPLIT_RANGE_TO_THREADS(b0Start, b0End, 0, 4, 8, 3); // thread 3
+        assertInt(b0Start, 3);
+        assertInt(b0End, 4);
+    }
+    {
+        SPLIT_RANGE_TO_THREADS(b0Start, b0End, 0, 4, 8, 4); // thread 4
+        assertInt(b0Start, 4); 
+        assertInt(b0End, 4);
+    }
+    {
+        SPLIT_RANGE_TO_THREADS(b0Start, b0End, 0, 4, 8, 7); // thread 7
+        assertInt(b0Start, 4);
+        assertInt(b0End, 4);
+    }
+
+    printf("✅ SPLIT_RANGE_TO_THREADS\n");
+}
+
 int main() {
     initQuants();
 
     testRms();
     testMatmulQ80();
     testAdd();
+    testSplitRangeToThreads();
     return EXIT_SUCCESS;
 }

@@ -1,19 +1,20 @@
 #include <cstdio>
 #include <cmath>
+#include <cassert>
+#include <stdexcept>
 #include <fcntl.h>
 #include <string.h>
 #include <sys/mman.h>
-#include <cassert>
+#include <unistd.h>
+#include "funcs.hpp"
 #include "utils.hpp"
 #include "socket.hpp"
 #include "transformer.hpp"
-#include <unistd.h>
-#include <stdexcept>
 
 #define ALLOC_WEIGHTS true
 #define IS_ROOT_SLICE(sliceIndex) (sliceIndex == 0)
 
-MatmulSlice::MatmulSlice(FloatType type, int nSlices, int n, int d) {
+RowMatmulSlice::RowMatmulSlice(FloatType type, int nSlices, int n, int d) {
     assert(d % nSlices == 0);
 
     this->type = type;
@@ -24,7 +25,7 @@ MatmulSlice::MatmulSlice(FloatType type, int nSlices, int n, int d) {
     this->sliceBytes = getBatchBytes(type, this->n, this->d0);
 }
 
-size_t MatmulSlice::splitWeights(uint8_t sliceIndex, char* weights, char* weights0) {
+size_t RowMatmulSlice::splitWeights(uint8_t sliceIndex, char* weights, char* weights0) {
     int numbersPerBatch = getNumbersPerBatch(this->type);
     int batchBytes = getBatchBytes(this->type, numbersPerBatch, 1);
 
@@ -43,6 +44,40 @@ size_t MatmulSlice::splitWeights(uint8_t sliceIndex, char* weights, char* weight
     return copiedBytes;
 }
 
+unsigned int RowMatmulSlice::dOffset(uint8_t sliceIndex) {
+    return this->d0 * sliceIndex;
+}
+
+ColMatmulSlice::ColMatmulSlice(FloatType type, int nSlices, int n, int d) {
+    assert(n % nSlices == 0);
+
+    this->type = type;
+    this->nSlices = nSlices;
+    this->n = n;
+    this->n0 = n / nSlices;
+    this->d = d;
+    this->bytes = getBatchBytes(type, n, d);
+    this->sliceBytes = getBatchBytes(type, this->n0, d);
+}
+
+size_t ColMatmulSlice::splitWeights(uint8_t sliceIndex, char* weights, char* weights0) {
+    int numbersPerBatch = getNumbersPerBatch(this->type);
+    int batchBytes = getBatchBytes(this->type, numbersPerBatch, 1);
+    assert(n0 % numbersPerBatch == 0);
+
+    int n = this->n / numbersPerBatch;
+    int rowBytes = n * batchBytes;
+    int row0Bytes = (n0 / numbersPerBatch) * batchBytes;
+    int rowOffsetBytes = sliceIndex * row0Bytes;
+
+    size_t copiedBytes = 0;
+    for (int d = 0; d < this->d; d++) {
+        memcpy(&weights0[row0Bytes * d], &weights[rowBytes * d + rowOffsetBytes], row0Bytes);
+        copiedBytes += row0Bytes;
+    }
+    return copiedBytes;
+}
+
 RopeSlice::RopeSlice(TransformerSpec* spec, uint8_t sliceIndex) {
     assert(spec->dim >= spec->kvDim);
     assert(spec->dim % spec->nSlices == 0);
@@ -52,52 +87,100 @@ RopeSlice::RopeSlice(TransformerSpec* spec, uint8_t sliceIndex) {
     kvDim0 = spec->kvDim / spec->nSlices;
     assert(qDim0 % 2 == 0);
     assert(kvDim0 % 2 == 0);
-    int kvDim0From = kvDim0 * sliceIndex;
-    int qDim0From = qDim0 * sliceIndex;
-    int qDim0To = qDim0From + qDim0;
-    qOffset = qDim0From - kvDim0From;
-    cacheDim = qDim0To - kvDim0From;
-    assert(cacheDim % 2 == 0);
+    kvDimStart = kvDim0 * sliceIndex;
+    qDimStart = qDim0 * sliceIndex;
+    qDimEnd = qDimStart + qDim0;
+    qShift = qDimStart - kvDimStart;
+    sliceDim = qDimEnd - kvDimStart;
+    assert(sliceDim % 2 == 0);
+    this->spec = spec;
+}
 
-    size_t cacheBytes = spec->seqLen * cacheDim * sizeof(float);
+RopeSlice::~RopeSlice() {}
+
+LlamaRopeSlice::LlamaRopeSlice(TransformerSpec* spec, uint8_t sliceIndex) : RopeSlice(spec, sliceIndex) {
+    size_t cacheBytes = spec->seqLen * sliceDim * sizeof(float);
     cache = (float*)NEW_BUFFER(cacheBytes);
     printf("🕒 ropeCache: %ld kB\n", cacheBytes / 1024);
 
     for (pos_t pos = 0; pos < spec->seqLen; pos++) {
-        for (int i = kvDim0From; i < qDim0To; i += 2) {
-            int headDim = i % spec->headSize;
-            float freq = 1.0f / powf(spec->ropeTheta, headDim / (float)spec->headSize);
-            float val = pos * freq;
-            float fcr = cosf(val);
-            float fci = sinf(val);
-            cache[pos * cacheDim + (i - kvDim0From)] = fcr;
-            cache[pos * cacheDim + (i - kvDim0From) + 1] = fci;
+        for (unsigned int i = kvDimStart; i < qDimEnd; i += 2) {
+            const unsigned int headDim = i % spec->headSize;
+            const float freq = 1.0f / powf(spec->ropeTheta, headDim / (float)spec->headSize);
+            const float val = pos * freq;
+            const float fcr = cosf(val);
+            const float fci = sinf(val);
+            cache[pos * sliceDim + (i - kvDimStart)] = fcr;
+            cache[pos * sliceDim + (i - kvDimStart) + 1] = fci;
         }
     }
 }
 
-RopeSlice::~RopeSlice() {
+LlamaRopeSlice::~LlamaRopeSlice() {
     FREE_BUFFER(cache);
 }
 
-void RopeSlice::forward(bool isQ, float* qOrK, pos_t pos, unsigned int nThreads, unsigned int threadIndex) {
-    int d0 = isQ ? qDim0 : kvDim0;
-    int offset = isQ ? qOffset : 0;
-    int halfD0 = d0 / 2;
-    int slice = halfD0 / nThreads;
-    int iStart = threadIndex * slice;
-    int iEnd = (nThreads - 1 == threadIndex) ? halfD0 : (iStart + slice);
-    iStart *= 2;
-    iEnd *= 2;
+void LlamaRopeSlice::forward(bool isQ, float* qOrK, pos_t pos, unsigned int nThreads, unsigned int threadIndex) {
+    const unsigned int dim0Half = (isQ ? qDim0 : kvDim0) / 2;
+    const unsigned int shift = isQ ? qShift : 0;
+    SPLIT_RANGE_TO_THREADS(s, e, 0, dim0Half, nThreads, threadIndex);
+    const unsigned int iStart = s * 2;
+    const unsigned int iEnd = e * 2;
 
-    for (int i = iStart; i < iEnd; i += 2) {
-        float fcr = cache[pos * cacheDim + offset + i];
-        float fci = cache[pos * cacheDim + offset + i + 1];
+    for (unsigned int i = iStart; i < iEnd; i += 2) {
+        float fcr = cache[pos * sliceDim + shift + i];
+        float fci = cache[pos * sliceDim + shift + i + 1];
         float v0 = qOrK[i];
-        float v1 = qOrK[i+1];
+        float v1 = qOrK[i + 1];
         qOrK[i]   = v0 * fcr - v1 * fci;
-        qOrK[i+1] = v0 * fci + v1 * fcr;
+        qOrK[i + 1] = v0 * fci + v1 * fcr;
     }
+}
+
+void FalconRopeSlice::forward(bool isQ, float* qOrK, pos_t pos, unsigned int nThreads, unsigned int threadIndex) {
+    // TODO: this implementation allows only a small number of slices (because it requires dim0 % headSize == 0). This could be improved.
+    unsigned int dimStart = isQ ? qDimStart : kvDimStart;
+    unsigned int dim0 = isQ ? qDim0 : kvDim0;
+    unsigned int headSize = isQ ? spec->headSize : spec->kvDim / spec->nKvHeads;
+    assert(dimStart % headSize == 0);
+    assert(dim0 % headSize == 0);
+    unsigned int nHeads0 = dim0 / headSize;
+    SPLIT_RANGE_TO_THREADS(h0s, h0e, 0, nHeads0, nThreads, threadIndex);
+
+    for (unsigned int h = h0s; h < h0e; h++) {
+        for (unsigned int j = 0; j < headSize / 2; j++) {
+            float freq = 1.0f / powf(spec->ropeTheta, 2.0f * (float)j / (float)headSize);
+            float val = pos * freq;
+            float fcr = cosf(val);
+            float fci = sinf(val);
+            float q0 = qOrK[h * headSize + j];
+            float q1 = qOrK[h * headSize + j + headSize / 2];
+            qOrK[h * headSize + j] = q0 * fcr - q1 * fci;
+            qOrK[h * headSize + j + headSize / 2] = q0 * fci + q1 * fcr;
+        }
+    }
+}
+
+KvCacheSlice::KvCacheSlice(unsigned int kvDim, unsigned int seqLen, unsigned int nSlices) {
+    assert(kvDim % nSlices == 0);
+    kvDim0 = kvDim / nSlices;
+    keyCache = (float*)NEW_BUFFER(seqLen * kvDim0 * sizeof(float));
+    valueCache = (float*)NEW_BUFFER(seqLen * kvDim0 * sizeof(float));
+}
+
+KvCacheSlice::~KvCacheSlice() {
+    FREE_BUFFER(keyCache);
+    FREE_BUFFER(valueCache);
+}
+
+MultiHeadAttSlice::MultiHeadAttSlice(unsigned int nHeads, unsigned int seqLen, unsigned int nSlices, uint8_t sliceIndex) {
+    assert(nHeads % nSlices == 0);
+    nHeads0 = nHeads / nSlices;
+    att = (float*)NEW_BUFFER(seqLen * nHeads0 * sizeof(float));
+}
+
+MultiHeadAttSlice::~MultiHeadAttSlice() {
+    FREE_BUFFER(att);
 }
 
 TransformerSpec Transformer::loadSpecFromFile(const char* path, const unsigned int nSlices, FloatType weightsFloatType, FloatType bufferFloatType) {
@@ -210,12 +293,8 @@ TransformerBuffer::TransformerBuffer(TransformerSpec* spec) {
     bufferBytes[TB_UNIT_XB_QUANTIZED] = getBatchBytes(spec->bufferFloatType, spec->dim, 1);
     bufferBytes[TB_SLICED_XB2] = spec->dim * sizeof(float);
     bufferBytes[TB_SLICED_XB2_QUANTIZED] = getBatchBytes(spec->bufferFloatType, spec->dim, 1);
-    bufferBytes[TB_SLICED_Q] = spec->dim * sizeof(float);
-    bufferBytes[TB_SLICED_Q_QUANTIZED] = getBatchBytes(spec->bufferFloatType, spec->dim, 1);
-    bufferBytes[TB_SLICED_K] = spec->kvDim * sizeof(float);
-    bufferBytes[TB_SLICED_K_QUANTIZED] = getBatchBytes(spec->bufferFloatType, spec->kvDim, 1);
-    bufferBytes[TB_SLICED_V] = spec->kvDim * sizeof(float);
-    bufferBytes[TB_SLICED_V_QUANTIZED] = getBatchBytes(spec->bufferFloatType, spec->kvDim, 1);
+    bufferBytes[TB_SLICED_XBV] = spec->dim * spec->nSlices * sizeof(float);
+    bufferBytes[TB_SLICED_XBV_QUANTIZED] = getBatchBytes(spec->bufferFloatType, spec->dim, spec->nSlices);
 
     int nHb = (spec->nActiveExperts > 0)
         ? spec->hiddenDim * spec->nActiveExperts
@@ -303,12 +382,18 @@ Transformer::Transformer(TransformerSpec* spec, uint8_t sliceIndex) {
         logits = (float*)NEW_BUFFER(spec->vocabSize * sizeof(float));
     }
 
-    // TODO: cache should be for all architectures
-    if (spec->archType == LLAMA2 || spec->archType == MIXTRAL) {
-        ropeSlice = new RopeSlice(spec, sliceIndex);
+    if (spec->archType == GROK1 || spec->archType == MIXTRAL) {
+        ropeSlice = new FalconRopeSlice(spec, sliceIndex);
     } else {
-        ropeSlice = NULL;
+        ropeSlice = new LlamaRopeSlice(spec, sliceIndex);
     }
+
+    TransformerBlock* b = blocks[0];
+    assert(b->q0Slice->d0 == ropeSlice->qDim0);
+    assert(b->q0Slice->dOffset(sliceIndex) == ropeSlice->qDimStart);
+    assert(b->k0Slice->d0 == ropeSlice->kvDim0);
+    assert(b->k0Slice->dOffset(sliceIndex) == ropeSlice->kvDimStart);
+    assert(b->kvCacheSlice->kvDim0 == ropeSlice->kvDim0);
 }
 
 Transformer::~Transformer() {
@@ -328,9 +413,7 @@ Transformer::~Transformer() {
         FREE_BUFFER(logits);
     }
 
-    if (ropeSlice != NULL) {
-        delete ropeSlice;
-    }
+    delete ropeSlice;
 }
 
 TransformerBlock::TransformerBlock(TransformerSpec* spec, uint8_t sliceIndex) {
@@ -350,16 +433,17 @@ TransformerBlock::TransformerBlock(TransformerSpec* spec, uint8_t sliceIndex) {
             rmsFfn2 = (float*)NEW_BUFFER(rmsFfn2Bytes);
         }
 #endif
-
-        keyCache = (float*)NEW_BUFFER(spec->seqLen * spec->kvDim * sizeof(float));
-        valueCache = (float*)NEW_BUFFER(spec->seqLen * spec->kvDim * sizeof(float));
-        att = (float*)NEW_BUFFER(spec->nHeads * spec->seqLen * sizeof(float));
     }
 
-    q0Slice = new MatmulSlice(spec->weightsFloatType, spec->nSlices, spec->dim, spec->dim);
-    k0Slice = new MatmulSlice(spec->weightsFloatType, spec->nSlices, spec->dim, spec->kvDim);
-    v0Slice = new MatmulSlice(spec->weightsFloatType, spec->nSlices, spec->dim, spec->kvDim);
-    wo0Slice = new MatmulSlice(spec->weightsFloatType, spec->nSlices, spec->dim, spec->dim);
+    kvCacheSlice = new KvCacheSlice(spec->kvDim, spec->seqLen, spec->nSlices);
+    multiHeadAttSlice = new MultiHeadAttSlice(spec->nHeads, spec->seqLen, spec->nSlices, sliceIndex);
+
+    q0Slice = new RowMatmulSlice(spec->weightsFloatType, spec->nSlices, spec->dim, spec->dim);
+    k0Slice = new RowMatmulSlice(spec->weightsFloatType, spec->nSlices, spec->dim, spec->kvDim);
+    v0Slice = new RowMatmulSlice(spec->weightsFloatType, spec->nSlices, spec->dim, spec->kvDim);
+    wo0Slice = new ColMatmulSlice(spec->weightsFloatType, spec->nSlices, spec->dim, spec->dim);
+
+    qo0 = (float*)NEW_BUFFER(q0Slice->d0 * sizeof(float));
 
 #if ALLOC_WEIGHTS
     q0 = NEW_BUFFER(q0Slice->sliceBytes);
@@ -369,8 +453,8 @@ TransformerBlock::TransformerBlock(TransformerSpec* spec, uint8_t sliceIndex) {
 #endif
 
     if (spec->nExperts > 0) {
-        moeUpAndGate0Slice = new MatmulSlice(spec->weightsFloatType, spec->nSlices, spec->dim, spec->hiddenDim);
-        moeDown0Slice = new MatmulSlice(spec->weightsFloatType, spec->nSlices, spec->hiddenDim, spec->dim);
+        moeUpAndGate0Slice = new RowMatmulSlice(spec->weightsFloatType, spec->nSlices, spec->dim, spec->hiddenDim);
+        moeDown0Slice = new RowMatmulSlice(spec->weightsFloatType, spec->nSlices, spec->hiddenDim, spec->dim);
 
         moeRouterBytes = getBatchBytes(spec->weightsFloatType, spec->dim, spec->nExperts);
         moeRouterProbs = (float*)NEW_BUFFER(spec->nExperts * sizeof(float));
@@ -391,9 +475,9 @@ TransformerBlock::TransformerBlock(TransformerSpec* spec, uint8_t sliceIndex) {
         expertGate = (float*)NEW_BUFFER(moeUpAndGate0Slice->d0 * spec->nExperts * sizeof(float));
         expertDown = (float*)NEW_BUFFER(moeDown0Slice->d0 * (spec->nExperts - 1) * sizeof(float));
     } else {
-        w10Slice = new MatmulSlice(spec->weightsFloatType, spec->nSlices, spec->dim, spec->hiddenDim);
-        w20Slice = new MatmulSlice(spec->weightsFloatType, spec->nSlices, spec->hiddenDim, spec->dim);
-        w30Slice = new MatmulSlice(spec->weightsFloatType, spec->nSlices, spec->dim, spec->hiddenDim);
+        w10Slice = new RowMatmulSlice(spec->weightsFloatType, spec->nSlices, spec->dim, spec->hiddenDim);
+        w20Slice = new RowMatmulSlice(spec->weightsFloatType, spec->nSlices, spec->hiddenDim, spec->dim);
+        w30Slice = new RowMatmulSlice(spec->weightsFloatType, spec->nSlices, spec->dim, spec->hiddenDim);
 
 #if ALLOC_WEIGHTS
         w10 = NEW_BUFFER(w10Slice->sliceBytes);
@@ -415,15 +499,17 @@ TransformerBlock::~TransformerBlock() {
             FREE_BUFFER(rmsFfn2);
         }
 #endif
-        FREE_BUFFER(keyCache);
-        FREE_BUFFER(valueCache);
-        FREE_BUFFER(att);
     }
+
+    delete kvCacheSlice;
+    delete multiHeadAttSlice;
 
     delete q0Slice;
     delete k0Slice;
     delete v0Slice;
     delete wo0Slice;
+
+    FREE_BUFFER(qo0);
 
 #if ALLOC_WEIGHTS
     FREE_BUFFER(q0);
