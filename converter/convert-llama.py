@@ -9,7 +9,7 @@ from pathlib import Path
 import safetensors
 
 LAYER_CHUNK_SIZE = 48
-    
+
 def convert_safetensor(modelPath, outputPath, targetFloatType):
     from transformers import AutoConfig
     config = AutoConfig.from_pretrained(modelPath)
@@ -90,10 +90,11 @@ def convert_pth(modelPath, outputPath, targetFloatType):
     with open(paramsPath) as f:
         params = json.load(f)
         if (params['vocab_size'] < 1):
-            raise Exception('Invalid vocab size')
+            raise Exception('vocab_size is invalid, please update params.json file')
+        if (params.get('max_seq_len') is None):
+            raise Exception('max_seq_len is required, please update params.json file')
         params['n_kv_heads'] = params.get('n_kv_heads') or params['n_heads']
         params['head_size'] = params['dim'] / params['n_heads']
-        params['max_seq_len'] = 2048
         params['arch_type'] = 0xABCD00
         params['n_experts'] = 0
         params['n_active_experts'] = 0
@@ -204,12 +205,12 @@ if __name__ == '__main__':
     else:
         modelName = modelPath.split('\\')[-1]
         
-    outputFileName = os.path.join(outputPath, f'dllama_{modelName.lower()}_{targetFloatType}.bin')
+    outputFileName = f'dllama_{modelName.lower()}_{targetFloatType}.bin'
 
     print(f'Model name: {modelName}')
     print(f'Target float type: {targetFloatType}')
     print(f'Target file: {outputFileName}')
 
-    convert_new(modelPath, outputFileName, targetFloatType)
+    convert(modelPath, outputFileName, targetFloatType)
 
     print('Done!')
