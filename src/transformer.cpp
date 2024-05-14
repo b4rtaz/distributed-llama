@@ -11,7 +11,7 @@
 #include "socket.hpp"
 #include "transformer.hpp"
 
-#define ALLOC_WEIGHTS false
+#define ALLOC_WEIGHTS true
 #define IS_ROOT_SLICE(sliceIndex) (sliceIndex == 0)
 
 RowMatmulSlice::RowMatmulSlice(FloatType type, int nSlices, int n, int d) {
