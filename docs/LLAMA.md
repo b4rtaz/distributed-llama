@@ -12,7 +12,7 @@ cd converter && pip install -r requirements.txt
 ```
 4. Convert weights to Distributed Llama format. This will take a bit of time. The script requires Python 3.
 ```sh
-python convert-llama.py /path/to/meta/llama-2-7b q40
+python convert-llama.py /path/to/meta/llama-2-7b /path/to/output/folder q40
 ```
 5. Download the tokenizer for Llama 2:
 ```
@@ -52,7 +52,7 @@ cd converter && pip install -r requirements.txt
 ```
 8. Convert the model to the Distributed Llama format:
 ```bash
-python converter/convert-llama.py path/to/Meta-Llama-3-8B q40
+python converter/convert-llama.py path/to/Meta-Llama-3-8B /path/to/output/folder q40
 ```
 9. Convert the tokenizer to the Distributed Llama format:
 ```bash
