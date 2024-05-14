@@ -248,11 +248,38 @@ void outputChatCompletionChunk(Socket &client_socket, const std::string &delta, 
     client_socket.write(formattedChunk.str().c_str(), formattedChunk.str().length());
 }
 
-void chatCompletion(Socket &client_socket, InferenceParams &request, Inference* inference, Tokenizer *tokenizer, Sampler *sampler, TransformerSpec* spec) {
-    std::vector<std::string> generated;
-    generated.get_allocator().allocate(request.max_tokens);
+void handleCompletionsRequest(Socket& client_socket, HTTP::HttpRequest& request, Inference* inference, Tokenizer* tokenizer, Sampler* sampler, ServerArgs* args, TransformerSpec* spec) {
+    printf("Handling Completion Request\n");
+    // Set inference arguments
+    InferenceParams inferParams = InferenceParams();
+    inferParams.prompt = buildChatPrompt(tokenizer, parseChatMessages(request.parsedJson["messages"]));
+    inferParams.max_tokens = spec->seqLen - inferParams.prompt.size();
+        
+    if(request.parsedJson.contains("stream")){
+        inferParams.stream = request.parsedJson["stream"].template get<bool>();
+    }
+    if(request.parsedJson.contains("temperature")){
+        inferParams.temperature = request.parsedJson["temperature"].template get<float>();
+        assert(inferParams.temperature >= 0.0f);
+        sampler->setTemp(inferParams.temperature);
+    }
+    if(request.parsedJson.contains("seed")){
+        inferParams.seed = request.parsedJson["seed"].template get<unsigned long long>();
+        sampler->setSeed(inferParams.seed);
+    }
+    if(request.parsedJson.contains("max_tokens")){
+        inferParams.max_tokens = request.parsedJson["max_tokens"].template get<int>();
+        assert(inferParams.max_tokens <= spec->seqLen); //until rope scaling or similiar is implemented
+    }
+    if(request.parsedJson.contains("stop")){
+        inferParams.stop = request.parsedJson["stop"].template get<std::vector<std::string>>();
+    }
 
-    if (request.stream) {
+    //Process the chat completion request
+    std::vector<std::string> generated;
+    generated.get_allocator().allocate(inferParams.max_tokens);
+
+    if (inferParams.stream) {
         std::ostringstream oss;
         oss << "HTTP/1.1 200 OK\r\n"
             << "Content-Type: text/event-stream; charset=utf-8\r\n"
@@ -262,16 +289,16 @@ void chatCompletion(Socket &client_socket, InferenceParams &request, Inference* 
         client_socket.write(oss.str().c_str(), oss.str().length());
     }
 
-    int promptLength = request.prompt.length();
+    int promptLength = inferParams.prompt.length();
     int nPromptTokens;
     int promptTokens[promptLength + 3];
     char prompt[promptLength + 1];
     prompt[promptLength] = 0;
-    strcpy(prompt, request.prompt.c_str());
+    strcpy(prompt, inferParams.prompt.c_str());
     tokenizer->encode(prompt, promptTokens, &nPromptTokens, true, false);
 
     int token = promptTokens[0];
-    pos_t maxPos = nPromptTokens + request.max_tokens;
+    pos_t maxPos = nPromptTokens + inferParams.max_tokens;
     if (maxPos > spec->seqLen) maxPos = spec->seqLen;
     bool eosEncountered = false;
     for (pos_t pos = 0; pos < maxPos; pos++) {
@@ -290,7 +317,7 @@ void chatCompletion(Socket &client_socket, InferenceParams &request, Inference* 
 
             bool safePiece = isSafePiece(piece);
             
-            if (!request.stop.empty() && safePiece) {
+            if (!inferParams.stop.empty() && safePiece) {
                 std::string concatenatedTokens;
                 int startIndex = std::max(0, static_cast<int>(generated.size()) - 7);
                 for (int i = startIndex; i < generated.size(); ++i) {
@@ -298,7 +325,7 @@ void chatCompletion(Socket &client_socket, InferenceParams &request, Inference* 
                 }
                 concatenatedTokens += std::string(piece);
 
-                for (const auto& word : request.stop) {
+                for (const auto& word : inferParams.stop) {
                     if (concatenatedTokens.find(word) != std::string::npos) {
                         eosEncountered = true;
                         break;
@@ -312,16 +339,17 @@ void chatCompletion(Socket &client_socket, InferenceParams &request, Inference* 
 
             //char string[100];
             //strcpy(string, piece);
+            safePrintf(piece);
 
             generated.push_back(string);
             
-            if (request.stream) {
+            if (inferParams.stream) {
                 outputChatCompletionChunk(client_socket, string, "");
             }
         }
     }
 
-    if (!request.stream) {
+    if (!inferParams.stream) {
         ChatMessage chatMessage = ChatMessage("assistant", std::accumulate(generated.begin(), generated.end(), std::string("")));
         Choice responseChoice = Choice(chatMessage);
         ChatCompletion completion = ChatCompletion(responseChoice);
@@ -344,57 +372,28 @@ void chatCompletion(Socket &client_socket, InferenceParams &request, Inference* 
     }
 }
 
-void handleClient(Socket &client_socket, Inference* inference, Tokenizer *tokenizer, Sampler *sampler, ServerArgs* args, TransformerSpec* spec){
-    //Read in the whole http request
-    std::vector<char> httpRequest = client_socket.readHttpRequest();
-
-    HTTP::HttpRequest request = HTTP::HttpParser::parseRequest(std::string(httpRequest.begin(), httpRequest.end()));
-
-    printf("New Request: %s %s\n", request.getMethod().c_str(), request.path.c_str());
-
-    if(request.method == HTTP::HttpMethod::METHOD_POST && request.path == "/v1/chat/completions"){
-        InferenceParams inferParams = InferenceParams();
-        inferParams.prompt = buildChatPrompt(tokenizer, parseChatMessages(request.parsedJson["messages"]));
-        inferParams.max_tokens = spec->seqLen - inferParams.prompt.size();
-        
-        if(request.parsedJson.contains("stream")){
-            inferParams.stream = request.parsedJson["stream"].template get<bool>();
-        }
-        if(request.parsedJson.contains("temperature")){
-            inferParams.temperature = request.parsedJson["temperature"].template get<float>();
-            assert(inferParams.temperature >= 0.0f);
-            sampler->setTemp(inferParams.temperature);
-        }
-        if(request.parsedJson.contains("seed")){
-            inferParams.seed = request.parsedJson["seed"].template get<unsigned long long>();
-            sampler->setSeed(inferParams.seed);
-        }
-        if(request.parsedJson.contains("max_tokens")){
-            inferParams.max_tokens = request.parsedJson["max_tokens"].template get<int>();
-            assert(inferParams.max_tokens <= spec->seqLen); //until rope scaling or similiar is implemented
-        }
-        if(request.parsedJson.contains("stop")){
-            inferParams.stop = request.parsedJson["stop"].template get<std::vector<std::string>>();
-        }
-
-        chatCompletion(client_socket, inferParams, inference, tokenizer, sampler, spec);
-    }
-    else{
-        std::string header = "HTTP/1.1 404 Not Found\r\n";
-        client_socket.write(header.c_str(), header.length());
-    }
-}
-
 void server(Inference* inference, SocketPool* socketPool, Tokenizer *tokenizer, Sampler *sampler, ServerArgs* args, TransformerSpec* spec) {
     SocketServer* server = new SocketServer(args->port);
+    
+    std::vector<HTTP::Route> routes = {
+        {
+            "/v1/chat/completions",
+            HTTP::HttpMethod::METHOD_POST,
+            std::bind(&handleCompletionsRequest, std::placeholders::_1, std::placeholders::_2, inference, tokenizer, sampler, args, spec)
+        }
+    };
 
     while (true) {
         try {
             // Accept incoming connection
             Socket client = server->accept();
-
-            // Handle client connection
-            handleClient(client, inference, tokenizer, sampler, args, spec);
+            // Read the HTTP request
+            std::vector<char> httpRequest = client.readHttpRequest();
+            // Parse the HTTP request
+            HTTP::HttpRequest request = HTTP::HttpParser::parseRequest(std::string(httpRequest.begin(), httpRequest.end()));
+            // Handle the HTTP request
+            printf("New Request: %s %s\n", request.getMethod().c_str(), request.path.c_str());
+            HTTP::Router::routeRequest(client, request, routes);
         } catch (ReadSocketException& ex) {
             printf("Read socket error: %d %s\n", ex.code, ex.message);
         } catch (WriteSocketException& ex) {

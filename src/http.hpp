@@ -4,6 +4,7 @@
 #include <cstring>
 #include <unordered_map>
 #include "common/json.hpp"
+#include "socket.hpp"
 
 using json = nlohmann::json;
 
@@ -31,6 +32,19 @@ namespace HTTP {
         static HttpRequest parseRequest(const std::string& request);
     private:
         static HttpMethod parseMethod(const std::string& method);
+    };
+
+    struct Route {
+        std::string path;
+        HttpMethod method;
+        std::function<void(Socket&, HttpRequest&)> handler;
+    };
+
+    class Router {
+    public:
+        static void routeRequest(Socket& client_socket, HttpRequest& request, std::vector<Route>& routes);
+    private:
+        static void notFoundHandler(Socket& request);
     };
 }
 
