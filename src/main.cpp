@@ -358,7 +358,7 @@ int main(int argc, char *argv[]) {
     args.seed = (unsigned long long)time(NULL);
 
     #if defined(__AVX2__)
-    print("Using AVX2 instructions")
+    printf("Using AVX2 instructions");
     #endif
 
     if (argc > 1) {
