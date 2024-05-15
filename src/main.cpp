@@ -357,6 +357,10 @@ int main(int argc, char *argv[]) {
     args.steps = 0;
     args.seed = (unsigned long long)time(NULL);
 
+    #if defined(__AVX2__)
+    print("Using AVX2 instructions")
+    #endif
+
     if (argc > 1) {
         args.mode = argv[1];
     }

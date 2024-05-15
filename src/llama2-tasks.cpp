@@ -59,6 +59,8 @@ void llamaMultiheadAtt(TASK_ARGS) {
 
     int kvMul = spec->nHeads / spec->nKvHeads; // integer multiplier of the kv sharing in multiquery
 
+    float headSizeSqrt = sqrtf(spec->headSize);
+
     for (int h0 = h0Start; h0 < h0End; h0++) {
         // get the query vector for this head
         float* _q = block->qo0 + h0 * spec->headSize;
@@ -69,7 +71,7 @@ void llamaMultiheadAtt(TASK_ARGS) {
             // get the key vector for this head and at this timestep
             float* k = block->kvCacheSlice->keyCache + t * block->kvCacheSlice->kvDim0 + (h0 / kvMul) * spec->headSize;
             // calculate the attention score as the dot product of q and k
-            float score = dotProduct(_q, k, spec->headSize) / sqrtf(spec->headSize);
+            float score = dotProduct(_q, k, spec->headSize) / headSizeSqrt;
             _att[t] = score;
         }
 
