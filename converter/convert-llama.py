@@ -17,6 +17,9 @@ def convert_safetensor(modelPath, outputPath, targetFloatType):
         print("Cannot convert as this model is not of the Llama architecture")
         return
     params = {}
+    params['vocab_size'] = config.vocab_size
+    params['dim'] = config.hidden_size
+    params['hidden_dim'] = 0
     params['head_size'] = config.hidden_size / config.num_attention_heads
     params["n_layers"] = config.num_hidden_layers
     params["n_heads"] = config.num_attention_heads
@@ -29,6 +32,8 @@ def convert_safetensor(modelPath, outputPath, targetFloatType):
     params['rope_theta'] = int(config.rope_theta)
     layers = []
     model_files = []
+    outFile = open(outputPath, 'wb')
+    
     for model_file in list(Path(modelPath).glob('*.safetensors')):
         if model_file.name.endswith("tokenizer.safetensors"):
             continue
@@ -39,13 +44,15 @@ def convert_safetensor(modelPath, outputPath, targetFloatType):
                     "name" : layer,
                     "file" : model_file
                 })
+                if layer == "model.layers.0.mlp.gate_proj.weight":
+                    tensor = f.get_tensor(layer)
+                    params['hidden_dim'] = tensor.shape[0]
+    
+    writeHeader(outFile, params)
+                  
     print(f"Total layers: {len(layers)}")
     nChunks = math.ceil(len(layers) / LAYER_CHUNK_SIZE)
     print(f"Total chunks: {nChunks}")
-        
-    outFile = open(outputPath, 'wb')
-    
-    writeHeader(outFile, params)
         
     for chunkIndex in range(0, nChunks):
         chunkLayers = layers[LAYER_CHUNK_SIZE * chunkIndex:LAYER_CHUNK_SIZE * (chunkIndex + 1)]
@@ -57,15 +64,15 @@ def convert_safetensor(modelPath, outputPath, targetFloatType):
                 continue
 
             isAxis1 = (
-                layer["name"] == 'tok_embeddings.weight' or
+                layer["name"] == 'model.embed_tokens.weight' or
                 layer["name"].endswith('.attention.wo.weight') or
-                layer["name"].endswith('.feed_forward.w2.weight')
+                layer["name"].endswith('.up_proj.weight')
             )
             isAlwaysF32 = (
-                layer["name"] == 'tok_embeddings.weight' or
-                layer["name"].endswith('.attention_norm.weight') or
-                layer["name"].endswith('.ffn_norm.weight') or
-                layer["name"] == 'norm.weight'
+                layer["name"] == 'model.embed_tokens.weight' or
+                layer["name"].endswith('.post_attention_layernorm.weight') or
+                layer["name"].endswith('.gate_proj.weight') or
+                layer["name"] == 'model.norm.weight'
             )
             floatType = 'f32' if isAlwaysF32 else targetFloatType
 
@@ -80,8 +87,6 @@ def convert_safetensor(modelPath, outputPath, targetFloatType):
 
                 print(f'🔶 Exporting {layer["name"]} {tensor.shape}...')
                 writeTensor(outFile, tensor, floatType)
-            
-        del models
         
     outFile.close()
 
