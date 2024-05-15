@@ -218,6 +218,21 @@ void matmulQ40(MatmulThreadInfo* a) {
         }
         a->output[d] = vaddvq_f32(u);
     }
+#elif defined(__AVX2__)
+    assert(k % 32 == 0);
+    __m256 a0, b0, u;
+    for (int d = a->ds; d < a->de; d++) {
+        u = _mm256_set1_ps(0.0f);
+        for (int j = 0; j < n; j++) {
+            dequantizeQ40Row(&w[d * n * blocksPerRow + j * blocksPerRow], group, k);
+            for (int z = 0; z < k; z += 8) {
+                a0 = _mm256_loadu_ps(&input[j * k + z]);
+                b0 = _mm256_loadu_ps(&group[z]);
+                u = _mm256_fmadd_ps(a0, b0, u);
+            }
+        }
+        a->output[d] = hsum_float_8(u);
+    }
 #else
     for (int d = a->ds; d < a->de; d++) {
         float val = 0.0f;
