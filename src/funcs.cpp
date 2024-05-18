@@ -160,6 +160,7 @@ void matmulF32(const MatmulThreadInfo* a) {
     unsigned int d, j;
 
 #if defined(__ARM_NEON)
+    assert(a->n % 4 == 0);
     float32x4_t q;
     float32x4_t p;
     float32x4_t z;
