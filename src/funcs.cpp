@@ -487,44 +487,44 @@ float dotProduct(const float* a, const float* b, const unsigned int size) {
 #define SQRT_2_OVER_PI 0.79788456080286535587989211986876f
 #define GELU_COEF_A 0.044715f
 
-void gelu(float* t, int n, unsigned int nThreads, unsigned int threadIndex) {
+void gelu(float* t, const unsigned int n, const unsigned int nThreads, const unsigned int threadIndex) {
     SPLIT_RANGE_TO_THREADS(start, end, 0, n, nThreads, threadIndex);
 
-    for (int i = start; i < end; i++) {
+    for (unsigned int i = start; i < end; i++) {
         float x = t[i];
         t[i] = 0.5f * x * (1.0f + tanhf(SQRT_2_OVER_PI * x * (1.0f + GELU_COEF_A * x * x)));
     }
 }
 
-void silu(float* t, int n, unsigned int nThreads, unsigned int threadIndex) {
+void silu(float* t, const unsigned int n, const unsigned int nThreads, const unsigned int threadIndex) {
     SPLIT_RANGE_TO_THREADS(start, end, 0, n, nThreads, threadIndex);
 
-    for (int i = start; i < end; i++) {
+    for (unsigned int i = start; i < end; i++) {
         float x = t[i];
         t[i] = x / (1.0f + expf(-x));
     }
 }
 
-void mul(float* output, float* input, int n, unsigned int nThreads, unsigned int threadIndex) {
+void mul(float* output, const float* input, const unsigned int n, const unsigned int nThreads, const unsigned int threadIndex) {
     SPLIT_RANGE_TO_THREADS(start, end, 0, n, nThreads, threadIndex);
 
-    for (int i = start; i < end; i++) {
+    for (unsigned int i = start; i < end; i++) {
         output[i] *= input[i];
     }
 }
 
-void mulScalar(float* output, float c, int n, unsigned int nThreads, unsigned int threadIndex) {
+void mulScalar(float* output, const float c, const unsigned int n, const unsigned int nThreads, const unsigned int threadIndex) {
     SPLIT_RANGE_TO_THREADS(start, end, 0, n, nThreads, threadIndex);
 
-    for (int i = start; i < end; i++) {
+    for (unsigned int i = start; i < end; i++) {
         output[i] *= c;
     }
 }
 
-void add(float* output, float* input, int n, unsigned int nThreads, unsigned int threadIndex) {
+void add(float* output, const float* input, const unsigned int n, const unsigned int nThreads, const unsigned int threadIndex) {
     SPLIT_RANGE_TO_THREADS(start, end, 0, n, nThreads, threadIndex);
 
-    for (int i = start; i < end; i++) {
+    for (unsigned int i = start; i < end; i++) {
         output[i] += input[i];
     }
 }
