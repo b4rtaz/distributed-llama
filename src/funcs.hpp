@@ -12,8 +12,8 @@
 
 void softmax(float* x, const int size);
 float rms(const float* x, const int size);
-void rmsnorm(float* o, const float* x, const float ms, const float* weight, const int size, unsigned int nThreads, unsigned int threadIndex);
-void matmul(FloatType weightsFloatType, FloatType inputFloatType, float* output, void* input, void* weights, int n, int d, unsigned int nThreads, unsigned int threadIndex);
+void rmsnorm(float* o, const float* x, const float ms, const float* weight, const int size, const unsigned int nThreads, const unsigned int threadIndex);
+void matmul(const FloatType weightsFloatType, const FloatType inputFloatType, float* output, const void* input, const void* weights, const unsigned int n, const unsigned int d, const unsigned int nThreads, const unsigned int threadIndex);
 float dotProduct(const float* a, const float* b, const int size);
 void gelu(float* t, int n, unsigned int nThreads, unsigned int threadIndex);
 void silu(float* t, int n, unsigned int nThreads, unsigned int threadIndex);
