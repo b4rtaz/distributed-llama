@@ -60,12 +60,12 @@
     }
 #endif
 
-void softmax(float* x, const int size) {
+void softmax(float* x, const unsigned int size) {
     float maxVal;
 #if defined(__ARM_NEON)
     float32x4_t fs;
     float32x4_t fmaxv = vld1q_f32(&x[0]);
-    for (int i = 4; i < size; i += 4) {
+    for (unsigned int i = 4; i < size; i += 4) {
         fs = vld1q_f32(&x[i]);
         fmaxv = vmaxq_f32(fmaxv, fs);
     }
@@ -73,7 +73,7 @@ void softmax(float* x, const int size) {
 #else
     // find max value (for numerical stability)
     maxVal = x[0];
-    for (int i = 1; i < size; i++) {
+    for (unsigned int i = 1; i < size; i++) {
         if (x[i] > maxVal) {
             maxVal = x[i];
         }
@@ -81,30 +81,38 @@ void softmax(float* x, const int size) {
 #endif
     // exp and sum
     float sum = 0.0f;
-    for (int i = 0; i < size; i++) {
+    for (unsigned int i = 0; i < size; i++) {
         x[i] = expf(x[i] - maxVal);
         sum += x[i];
     }
     // normalize
-    for (int i = 0; i < size; i++) {
+    for (unsigned int i = 0; i < size; i++) {
         x[i] /= sum;
     }
 }
 
-float rms(const float* x, const int size) {
-    assert(size % 4 == 0);
+float rms(const float* x, const unsigned int size) {
     float ss;
 #if defined(__ARM_NEON)
+    assert(size % 4 == 0);
     float32x4_t fsq;
     float32x4_t fs = vmovq_n_f32(0);
-    for (int j = 0; j < size; j += 4) {
+    for (unsigned int j = 0; j < size; j += 4) {
         fsq = vld1q_f32(&x[j]);
         fs = vmlaq_f32(fs, fsq, fsq);
     }
     ss = vaddvq_f32(fs);
+#elif defined(__AVX2__)
+    assert(size % 8 == 0);
+    __m256 a, u;
+    for (unsigned int j = 0; j < size; j += 8) {
+        a = _mm256_loadu_ps(&x[j]);
+        u = _mm256_fmadd_ps(a, a, u);
+    }
+    ss = hsum_float_8(u);
 #else
     ss = 0;
-    for (int j = 0; j < size; j++) {
+    for (unsigned int j = 0; j < size; j++) {
         ss += x[j] * x[j];
     }
 #endif
@@ -114,18 +122,15 @@ float rms(const float* x, const int size) {
     return ss;
 }
 
-void rmsnorm(float* o, const float* x, const float ms, const float* weight, const int size, unsigned int nThreads, unsigned int threadIndex) {
-    assert(size % 4 == 0);
-
-    const int chunk = size / nThreads;
-    const int start = threadIndex * chunk;
-    const int end = (threadIndex == nThreads - 1) ? size : start + chunk;
+void rmsnorm(float* o, const float* x, const float ms, const float* weight, const unsigned int size, const unsigned int nThreads, const unsigned int threadIndex) {
+    SPLIT_RANGE_TO_THREADS(start, end, 0, size, nThreads, threadIndex);
 
 #if defined(__ARM_NEON)
+    assert(size % 4 == 0);
     float32x4_t fw;
     float32x4_t fx;
     float32x4_t fss = vmovq_n_f32(ms);
-    for (int j = start; j < end; j += 4) {
+    for (unsigned int j = start; j < end; j += 4) {
         fw = vld1q_f32(&weight[j]);
         fx = vld1q_f32(&x[j]);
         fx = vmulq_f32(fx, fw);
@@ -133,7 +138,7 @@ void rmsnorm(float* o, const float* x, const float ms, const float* weight, cons
         vst1q_f32(&o[j], fx);
     }
 #else
-    for (int j = start; j < end; j++) {
+    for (unsigned int j = start; j < end; j++) {
         o[j] = weight[j] * (ms * x[j]);
     }
 #endif
@@ -142,19 +147,20 @@ void rmsnorm(float* o, const float* x, const float ms, const float* weight, cons
 struct MatmulThreadInfo {
     pthread_t handler;
     float* output;
-    void* input;
-    void* weights;
-    int n;
-    int ds;
-    int de;
+    const void* input;
+    const void* weights;
+    unsigned int n;
+    unsigned int ds;
+    unsigned int de;
 };
 
-void matmulF32(MatmulThreadInfo* a) {
+void matmulF32(const MatmulThreadInfo* a) {
     const float* input = (float*)a->input;
     float* w = (float*)a->weights;
     unsigned int d, j;
 
 #if defined(__ARM_NEON)
+    assert(a->n % 4 == 0);
     float32x4_t q;
     float32x4_t p;
     float32x4_t z;
@@ -190,13 +196,12 @@ void matmulF32(MatmulThreadInfo* a) {
 #endif
 }
 
-void matmulF16(MatmulThreadInfo* a) {
+void matmulF16(const MatmulThreadInfo* a) {
     const float* input = (float*)a->input;
-    uint16_t* w = (uint16_t*)a->weights;
-    int d;
-    for (d = a->ds; d < a->de; d++) {
+    const uint16_t* w = (uint16_t*)a->weights;
+    for (unsigned int d = a->ds; d < a->de; d++) {
         float val = 0.0f;
-        for (int j = 0; j < a->n; j++) {
+        for (unsigned int j = 0; j < a->n; j++) {
             float ww = convertF16ToF32(w[d * a->n + j]);
             val += ww * input[j];
         }
@@ -204,7 +209,7 @@ void matmulF16(MatmulThreadInfo* a) {
     }
 }
 
-void matmulQ40(MatmulThreadInfo* a) {
+void matmulQ40(const MatmulThreadInfo* a) {
     const int blocksPerRow = 8;
     const int k = QK40 * blocksPerRow;
     BlockQ40* w = (BlockQ40*)a->weights;
@@ -218,11 +223,11 @@ void matmulQ40(MatmulThreadInfo* a) {
     float32x4_t a0;
     float32x4_t b0;
     float32x4_t u;
-    for (int d = a->ds; d < a->de; d++) {
+    for (unsigned int d = a->ds; d < a->de; d++) {
         u = vmovq_n_f32(0);
-        for (int j = 0; j < n; j++) {
+        for (unsigned int j = 0; j < n; j++) {
             dequantizeQ40Row(&w[d * n * blocksPerRow + j * blocksPerRow], group, k);
-            for (int z = 0; z < k; z += 4) {
+            for (unsigned int z = 0; z < k; z += 4) {
                 a0 = vld1q_f32(&input[j * k + z]);
                 b0 = vld1q_f32(&group[z]);
                 u = vfmaq_f32(u, a0, b0);
@@ -233,11 +238,11 @@ void matmulQ40(MatmulThreadInfo* a) {
 #elif defined(__AVX2__)
     assert(k % 32 == 0);
     __m256 a0, b0, u;
-    for (int d = a->ds; d < a->de; d++) {
+    for (unsigned int d = a->ds; d < a->de; d++) {
         u = _mm256_set1_ps(0.0f);
-        for (int j = 0; j < n; j++) {
+        for (unsigned int j = 0; j < n; j++) {
             dequantizeQ40Row(&w[d * n * blocksPerRow + j * blocksPerRow], group, k);
-            for (int z = 0; z < k; z += 8) {
+            for (unsigned int z = 0; z < k; z += 8) {
                 a0 = _mm256_loadu_ps(&input[j * k + z]);
                 b0 = _mm256_loadu_ps(&group[z]);
                 u = _mm256_fmadd_ps(a0, b0, u);
@@ -246,11 +251,11 @@ void matmulQ40(MatmulThreadInfo* a) {
         a->output[d] = hsum_float_8(u);
     }
 #else
-    for (int d = a->ds; d < a->de; d++) {
+    for (unsigned int d = a->ds; d < a->de; d++) {
         float val = 0.0f;
-        for (int j = 0; j < n; j++) {
+        for (unsigned int j = 0; j < n; j++) {
             dequantizeQ40Row(&w[d * n * blocksPerRow + j * blocksPerRow], group, k);
-            for (int z = 0; z < k; z++) {
+            for (unsigned int z = 0; z < k; z++) {
                 val += group[z] * input[j * k + z];
             }
         }
@@ -259,17 +264,17 @@ void matmulQ40(MatmulThreadInfo* a) {
 #endif
 }
 
-void matmulQ80(MatmulThreadInfo* a) {
+void matmulQ80(const MatmulThreadInfo* a) {
     float* input = (float*)a->input;
-    BlockQ80* weights = (BlockQ80*)a->weights;
+    const BlockQ80* weights = (BlockQ80*)a->weights;
     assert(a->n % QK80 == 0);
-    int nb = a->n / QK80;
+    const unsigned int nb = a->n / QK80;
 
-    for (int d = a->ds; d < a->de; d++) {
+    for (unsigned int d = a->ds; d < a->de; d++) {
         float sum = 0.0;
-        for (int i = 0; i < nb; i++) {
+        for (unsigned int i = 0; i < nb; i++) {
             float s = 0.0;
-            for (int j = 0; j < QK80; j++) {
+            for (unsigned int j = 0; j < QK80; j++) {
                 s += input[i * QK80 + j] * (float)weights[d * nb + i].qs[j];
             }
             sum += s * convertF16ToF32(weights[d * nb + i].d);
@@ -278,19 +283,19 @@ void matmulQ80(MatmulThreadInfo* a) {
     }
 }
 
-void matmulQ40vQ80(MatmulThreadInfo* a) {
+void matmulQ40vQ80(const MatmulThreadInfo* a) {
     const BlockQ40* w = (BlockQ40*)a->weights;
     const BlockQ80* input = (BlockQ80*)a->input;
     assert(a->n % QK40 == 0);
-    const int n = a->n / QK40;
+    const unsigned int n = a->n / QK40;
 
 #if defined(__ARM_NEON)
     float32x4_t sumv0;
     float32x4_t sumv1;
-    for (int d = a->ds; d < a->de; d++) {
+    for (unsigned int d = a->ds; d < a->de; d++) {
         sumv0 = vmovq_n_f32(0);
         sumv1 = vmovq_n_f32(0);
-        for (int j = 0; j < n; j += 2) {
+        for (unsigned int j = 0; j < n; j += 2) {
             const BlockQ40* x0 = &w[d * n + j];
             const BlockQ40* x1 = &w[d * n + j + 1];
             const BlockQ80* y0 = &input[j];
@@ -350,10 +355,10 @@ void matmulQ40vQ80(MatmulThreadInfo* a) {
         a->output[d] = vaddvq_f32(sumv0) + vaddvq_f32(sumv1);
     }
 #elif defined(__AVX2__)
-    for (int d = a->ds; d < a->de; d++) {
+    for (unsigned int d = a->ds; d < a->de; d++) {
         __m256 acc = _mm256_setzero_ps();
 
-        for (int j = 0; j < n; j++) {
+        for (unsigned int j = 0; j < n; j++) {
             /* Compute combined scale for the block */
             const __m256 cd = _mm256_set1_ps( convertF16ToF32(w[d * n + j].d) * convertF16ToF32(input[j].d) );
 
@@ -379,17 +384,17 @@ void matmulQ40vQ80(MatmulThreadInfo* a) {
 #endif
 }
 
-void matmulQ80vQ80(MatmulThreadInfo* a) {
-    BlockQ80* input = (BlockQ80*)a->input;
+void matmulQ80vQ80(const MatmulThreadInfo* a) {
+    const BlockQ80* input = (BlockQ80*)a->input;
     BlockQ80* weights = (BlockQ80*)a->weights;
     assert(a->n % QK80 == 0);
-    int nb = a->n / QK80;
+    const unsigned int nb = a->n / QK80;
 
-    for (int d = a->ds; d < a->de; d++) {
+    for (unsigned int d = a->ds; d < a->de; d++) {
         float sum = 0.0;
-        for (int i = 0; i < nb; i++) {
+        for (unsigned int i = 0; i < nb; i++) {
             int s = 0;
-            for (int j = 0; j < QK80; j++) {
+            for (unsigned int j = 0; j < QK80; j++) {
                 s += input[i].qs[j] * (int)weights[d * nb + i].qs[j];
             }
             sum += s * (convertF16ToF32(input[i].d) * convertF16ToF32(weights[d * nb + i].d));
@@ -405,7 +410,7 @@ void matmulQ80vQ80(MatmulThreadInfo* a) {
 //   |_________|   n | |      |_|
 //        n          |_|       1
 //                    1
-void matmul(FloatType weightsFloatType, FloatType inputFloatType, float* output, void* input, void* weights, int n, int d, unsigned int nThreads, unsigned int threadIndex) {
+void matmul(const FloatType weightsFloatType, const FloatType inputFloatType, float* output, const void* input, const void* weights, const unsigned int n, const unsigned int d, const unsigned int nThreads, const unsigned int threadIndex) {
     SPLIT_RANGE_TO_THREADS(ds, de, 0, d, nThreads, threadIndex);
 
     MatmulThreadInfo s;
@@ -448,21 +453,31 @@ void matmul(FloatType weightsFloatType, FloatType inputFloatType, float* output,
     exit(EXIT_FAILURE);
 }
 
-float dotProduct(const float* a, const float* b, const int size) {
-    assert(size % 4 == 0);
+float dotProduct(const float* a, const float* b, const unsigned int size) {
 #if defined(__ARM_NEON)
+    assert(size % 4 == 0);
     float32x4_t fa;
     float32x4_t fb;
     float32x4_t fs = vmovq_n_f32(0);
-    for (int i = 0; i < size; i += 4) {
+    for (unsigned int i = 0; i < size; i += 4) {
         fa = vld1q_f32(&a[i]);
         fb = vld1q_f32(&b[i]);
         fs = vmlaq_f32(fs, fa, fb);
     }
     return vaddvq_f32(fs);
+#elif defined(__AVX2__)
+    assert(size % 8 == 0);
+    __m256 a0, b0;
+    __m256 u = _mm256_set1_ps(0.0f);
+    for (unsigned int i = 0; i < size; i += 8) {
+        a0 = _mm256_loadu_ps(&a[i]);
+        b0 = _mm256_loadu_ps(&b[i]);
+        u = _mm256_fmadd_ps(a0, b0, u);
+    }
+    return hsum_float_8(u);
 #else
     float sum = 0.0f;
-    for (int i = 0; i < size; i++) {
+    for (unsigned int i = 0; i < size; i++) {
         sum += a[i] * b[i];
     }
     return sum;
@@ -472,44 +487,44 @@ float dotProduct(const float* a, const float* b, const int size) {
 #define SQRT_2_OVER_PI 0.79788456080286535587989211986876f
 #define GELU_COEF_A 0.044715f
 
-void gelu(float* t, int n, unsigned int nThreads, unsigned int threadIndex) {
+void gelu(float* t, const unsigned int n, const unsigned int nThreads, const unsigned int threadIndex) {
     SPLIT_RANGE_TO_THREADS(start, end, 0, n, nThreads, threadIndex);
 
-    for (int i = start; i < end; i++) {
+    for (unsigned int i = start; i < end; i++) {
         float x = t[i];
         t[i] = 0.5f * x * (1.0f + tanhf(SQRT_2_OVER_PI * x * (1.0f + GELU_COEF_A * x * x)));
     }
 }
 
-void silu(float* t, int n, unsigned int nThreads, unsigned int threadIndex) {
+void silu(float* t, const unsigned int n, const unsigned int nThreads, const unsigned int threadIndex) {
     SPLIT_RANGE_TO_THREADS(start, end, 0, n, nThreads, threadIndex);
 
-    for (int i = start; i < end; i++) {
+    for (unsigned int i = start; i < end; i++) {
         float x = t[i];
         t[i] = x / (1.0f + expf(-x));
     }
 }
 
-void mul(float* output, float* input, int n, unsigned int nThreads, unsigned int threadIndex) {
+void mul(float* output, const float* input, const unsigned int n, const unsigned int nThreads, const unsigned int threadIndex) {
     SPLIT_RANGE_TO_THREADS(start, end, 0, n, nThreads, threadIndex);
 
-    for (int i = start; i < end; i++) {
+    for (unsigned int i = start; i < end; i++) {
         output[i] *= input[i];
     }
 }
 
-void mulScalar(float* output, float c, int n, unsigned int nThreads, unsigned int threadIndex) {
+void mulScalar(float* output, const float c, const unsigned int n, const unsigned int nThreads, const unsigned int threadIndex) {
     SPLIT_RANGE_TO_THREADS(start, end, 0, n, nThreads, threadIndex);
 
-    for (int i = start; i < end; i++) {
+    for (unsigned int i = start; i < end; i++) {
         output[i] *= c;
     }
 }
 
-void add(float* output, float* input, int n, unsigned int nThreads, unsigned int threadIndex) {
+void add(float* output, const float* input, const unsigned int n, const unsigned int nThreads, const unsigned int threadIndex) {
     SPLIT_RANGE_TO_THREADS(start, end, 0, n, nThreads, threadIndex);
 
-    for (int i = start; i < end; i++) {
+    for (unsigned int i = start; i < end; i++) {
         output[i] += input[i];
     }
 }
