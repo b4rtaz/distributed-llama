@@ -60,7 +60,7 @@
     }
 #endif
 
-void softmax(float* x, const int size) {
+void softmax(float* x, const unsigned int size) {
     float maxVal;
 #if defined(__ARM_NEON)
     float32x4_t fs;
@@ -91,20 +91,28 @@ void softmax(float* x, const int size) {
     }
 }
 
-float rms(const float* x, const int size) {
-    assert(size % 4 == 0);
+float rms(const float* x, const unsigned int size) {
     float ss;
 #if defined(__ARM_NEON)
+    assert(size % 4 == 0);
     float32x4_t fsq;
     float32x4_t fs = vmovq_n_f32(0);
-    for (int j = 0; j < size; j += 4) {
+    for (unsigned int j = 0; j < size; j += 4) {
         fsq = vld1q_f32(&x[j]);
         fs = vmlaq_f32(fs, fsq, fsq);
     }
     ss = vaddvq_f32(fs);
+#elif defined(__AVX2__)
+    assert(size % 8 == 0);
+    __m256 a, u;
+    for (unsigned int j = 0; j < size; j += 8) {
+        a = _mm256_loadu_ps(&x[j]);
+        u = _mm256_fmadd_ps(a, a, u);
+    }
+    ss = hsum_float_8(u);
 #else
     ss = 0;
-    for (int j = 0; j < size; j++) {
+    for (unsigned int j = 0; j < size; j++) {
         ss += x[j] * x[j];
     }
 #endif
@@ -114,7 +122,7 @@ float rms(const float* x, const int size) {
     return ss;
 }
 
-void rmsnorm(float* o, const float* x, const float ms, const float* weight, const int size, const unsigned int nThreads, const unsigned int threadIndex) {
+void rmsnorm(float* o, const float* x, const float ms, const float* weight, const unsigned int size, const unsigned int nThreads, const unsigned int threadIndex) {
     SPLIT_RANGE_TO_THREADS(start, end, 0, size, nThreads, threadIndex);
 
 #if defined(__ARM_NEON)
@@ -189,11 +197,10 @@ void matmulF32(const MatmulThreadInfo* a) {
 
 void matmulF16(const MatmulThreadInfo* a) {
     const float* input = (float*)a->input;
-    uint16_t* w = (uint16_t*)a->weights;
-    int d;
-    for (d = a->ds; d < a->de; d++) {
+    const uint16_t* w = (uint16_t*)a->weights;
+    for (unsigned int d = a->ds; d < a->de; d++) {
         float val = 0.0f;
-        for (int j = 0; j < a->n; j++) {
+        for (unsigned int j = 0; j < a->n; j++) {
             float ww = convertF16ToF32(w[d * a->n + j]);
             val += ww * input[j];
         }
@@ -445,7 +452,7 @@ void matmul(const FloatType weightsFloatType, const FloatType inputFloatType, fl
     exit(EXIT_FAILURE);
 }
 
-float dotProduct(const float* a, const float* b, const int size) {
+float dotProduct(const float* a, const float* b, const unsigned int size) {
 #if defined(__ARM_NEON)
     assert(size % 4 == 0);
     float32x4_t fa;
