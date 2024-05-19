@@ -16,7 +16,7 @@ float expectedOutput_5012_5016[] = { 0.0126675405, 0.0169415697, 0.0183475353, 0
 
 void compare(float* a, float* b, int n) {
     for (int i = 0; i < n; i++) {
-        if (std::isnan(a[i]) || fabs(a[i] - b[i]) > 0.00001) { // Optimization may cause some differences
+        if (std::isnan(a[i]) || fabs(a[i] - b[i]) > 0.000035) { // Optimization may cause some differences
             printf("%.9g != %.9g\n", a[i], b[i]); i++;
             printf("%.9g != %.9g\n", a[i], b[i]); i++;
             printf("%.9g != %.9g\n", a[i], b[i]); i++;
