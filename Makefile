@@ -23,13 +23,13 @@ mixtral-tasks: src/mixtral-tasks.cpp
 	$(CXX) $(CXXFLAGS) -c src/mixtral-tasks.cpp -o mixtral-tasks.o
 tokenizer: src/tokenizer.cpp
 	$(CXX) $(CXXFLAGS) -c src/tokenizer.cpp -o tokenizer.o
-http: src/http.cpp
-	$(CXX) $(CXXFLAGS) -c src/http.cpp -o http.o
+app: src/app.cpp
+	$(CXX) $(CXXFLAGS) -c src/app.cpp -o app.o
 
-main: src/main.cpp utils quants funcs socket transformer tasks llama2-tasks grok1-tasks mixtral-tasks tokenizer
-	$(CXX) $(CXXFLAGS) src/main.cpp -o main utils.o quants.o funcs.o socket.o transformer.o tasks.o llama2-tasks.o grok1-tasks.o mixtral-tasks.o tokenizer.o -lpthread
-server: src/apps/server.cpp http utils quants funcs socket transformer tasks llama2-tasks grok1-tasks mixtral-tasks tokenizer
-	$(CXX) $(CXXFLAGS) src/apps/server.cpp -o server http.o utils.o quants.o funcs.o socket.o transformer.o tasks.o llama2-tasks.o grok1-tasks.o mixtral-tasks.o tokenizer.o -lpthread
+dllama: src/apps/dllama/dllama.cpp utils quants funcs socket transformer tasks llama2-tasks grok1-tasks mixtral-tasks tokenizer app
+	$(CXX) $(CXXFLAGS) src/apps/dllama/dllama.cpp -o dllama utils.o quants.o funcs.o socket.o transformer.o tasks.o llama2-tasks.o grok1-tasks.o mixtral-tasks.o tokenizer.o app.o -lpthread
+dllama-api: src/apps/dllama-api/dllama-api.cpp utils quants funcs socket transformer tasks llama2-tasks grok1-tasks mixtral-tasks tokenizer app
+	$(CXX) $(CXXFLAGS) src/apps/dllama-api/dllama-api.cpp -o dllama-api utils.o quants.o funcs.o socket.o transformer.o tasks.o llama2-tasks.o grok1-tasks.o mixtral-tasks.o tokenizer.o app.o -lpthread
 funcs-test: src/funcs-test.cpp funcs utils quants
 	$(CXX) $(CXXFLAGS) src/funcs-test.cpp -o funcs-test funcs.o utils.o quants.o -lpthread
 quants-test: src/quants.cpp utils quants
