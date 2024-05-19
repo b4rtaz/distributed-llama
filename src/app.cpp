@@ -1,3 +1,8 @@
+#include <cstring>
+#include <cstdlib>
+#include <cstdint>
+#include <cstdio>
+#include <cassert>
 #include "app.hpp"
 
 FloatType parseFloatType(char* val) {
