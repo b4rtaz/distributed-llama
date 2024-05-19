@@ -37,6 +37,8 @@ In the table below, you can find the expected size of the converted weights with
 
 ## How to Run Llama 3
 
+You can skip the 1 - 9 points by downloading the converted Llama 3 8B Q40 model from [here](https://huggingface.co/b4rtaz/llama-3-8b-distributed-llama).
+
 1. Get an access to the model on [Llama 3 website](https://llama.meta.com/llama-downloads).
 2. Clone the `https://github.com/meta-llama/llama3` repository.
 3. Run the `download.sh` script to download the model.

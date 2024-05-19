@@ -19,9 +19,6 @@
 
 using json = nlohmann::json;
 
-constexpr float DEFAULT_TEMPERATURE = 0.8f;
-constexpr float DEFAULT_TOPP = 0.9f;
-
 enum class HttpMethod {
     METHOD_GET = 0,
     METHOD_POST = 1,
