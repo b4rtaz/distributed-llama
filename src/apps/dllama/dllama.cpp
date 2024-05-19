@@ -178,7 +178,7 @@ void chat(Inference* inference, SocketPool* socketPool, Tokenizer* tokenizer, Sa
 
 void worker(AppArgs* args) {
     if (args->port < 1024) {
-        throw std::invalid_argument("Invalid port number");
+        throw std::runtime_error("Invalid port number");
     }
 
     SocketServer server(args->port);
