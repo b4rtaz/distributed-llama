@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cassert>
+#include <stdexcept>
 #include "../../utils.hpp"
 #include "../../socket.hpp"
 #include "../../transformer.hpp"
