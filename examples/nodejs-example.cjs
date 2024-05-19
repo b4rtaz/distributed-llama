@@ -2,7 +2,7 @@ const { Socket } = require('net');
 
 // Run Distributed Llama server:
 //
-// `./main simple-server --weights-float-type q40 --buffer-float-type q80 --nthreads 4 --model converter/dllama_meta-llama-3-8b_q40.bin --tokenizer converter/llama3-tokenizer.t --workers 10.0.0.1:9999`
+// `./dllama simple-server --weights-float-type q40 --buffer-float-type q80 --nthreads 4 --model converter/dllama_meta-llama-3-8b_q40.bin --tokenizer converter/llama3-tokenizer.t --workers 10.0.0.1:9999`
 //
 // Then run this script:
 //

@@ -9,3 +9,6 @@ __pycache__
 *-test
 main
 run.sh
+server
+/dllama
+/dllama-*

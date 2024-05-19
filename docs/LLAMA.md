@@ -20,11 +20,11 @@ wget https://huggingface.co/b4rtaz/llama-2-distributed-llama/resolve/main/dllama
 ```
 6. Build the project:
 ```bash
-make main
+make dllama
 ```
 7. Run:
 ```bash
-./main inference --model dllama_llama-2-7b_q40.bin --tokenizer dllama-llama2-tokenizer.t --weights-float-type q40 --buffer-float-type q80 --prompt "Hello world" --steps 16 --nthreads 4
+./dllama inference --model dllama_llama-2-7b_q40.bin --tokenizer dllama-llama2-tokenizer.t --weights-float-type q40 --buffer-float-type q80 --prompt "Hello world" --steps 16 --nthreads 4
 ```
 
 In the table below, you can find the expected size of the converted weights with different floating-point types.
@@ -60,9 +60,9 @@ python converter/convert-tokenizer-llama3.py path/to/tokenizer.model
 ```
 10. Build the project:
 ```bash
-make main
+make dllama
 ```
 11. Run the Distributed Llama:
 ```bash
-./main inference --weights-float-type q40 --buffer-float-type q80 --prompt "My name is" --steps 128 --nthreads 8 --model dllama_meta-llama-3-8b_q40.bin --tokenizer llama3-tokenizer.t
+./dllama inference --weights-float-type q40 --buffer-float-type q80 --prompt "My name is" --steps 128 --nthreads 8 --model dllama_meta-llama-3-8b_q40.bin --tokenizer llama3-tokenizer.t
 ```

@@ -28,7 +28,8 @@ jobs:
       - name: Build
         id: build
         run: |
-          make main
+          make dllama
+          make dllama-api
           make funcs-test
           make quants-test
           make transformer-test

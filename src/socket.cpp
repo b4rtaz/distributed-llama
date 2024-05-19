@@ -10,6 +10,7 @@
 #include <unistd.h>
 #include "socket.hpp"
 #include <stdexcept>
+#include <vector>
 
 #define SOCKET_LAST_ERRCODE errno
 #define SOCKET_LAST_ERROR strerror(errno)
@@ -53,6 +54,7 @@ static inline void writeSocket(int socket, const void* data, size_t size) {
 static inline void readSocket(bool* isNonBlocking, int socket, void* data, size_t size) {
     unsigned int attempt = 0;
     time_t startTime;
+
     while (size > 0) {
         int r = recv(socket, (char*)data, size, 0);
         if (r < 0) {
@@ -243,6 +245,38 @@ void Socket::write(const void* data, size_t size) {
 void Socket::read(void* data, size_t size) {
     readSocket(&isNonBlocking, socket, data, size);
 }
+
+std::vector<char> Socket::readHttpRequest() {
+        std::vector<char> httpRequest;
+        char buffer[1024]; // Initial buffer size
+        ssize_t bytesRead;
+        
+        // Peek into the socket buffer to check available data
+        bytesRead = recv(socket, buffer, sizeof(buffer), MSG_PEEK);
+        if (bytesRead <= 0) {
+            // No data available or error occurred
+            if (bytesRead == 0) {
+                // No more data to read
+                return httpRequest;
+            } else {
+                // Error while peeking
+                throw std::runtime_error("Error while peeking into socket");
+            }
+        }
+        
+        // Resize buffer according to the amount of data available
+        std::vector<char> peekBuffer(bytesRead);
+        bytesRead = recv(socket, peekBuffer.data(), bytesRead, 0);
+        if (bytesRead <= 0) {
+            // Error while reading
+            throw std::runtime_error("Error while reading from socket");
+        }
+
+        // Append data to httpRequest
+        httpRequest.insert(httpRequest.end(), peekBuffer.begin(), peekBuffer.end());
+        
+        return httpRequest;
+    }
 
 SocketServer::SocketServer(int port) {
     const char* host = "0.0.0.0";
