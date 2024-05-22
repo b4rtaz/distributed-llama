@@ -226,6 +226,8 @@ Worker::~Worker() {
 }
 
 void Worker::work() {
+    socket->setTurbo(true);
+
     while (true) {
         waitForPos(transformer, socket);
 
