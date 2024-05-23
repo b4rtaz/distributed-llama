@@ -542,7 +542,7 @@ int main() {
     spec.weightsFloatType = F32;
     spec.bufferFloatType = F32;
     spec.nSlices = 1;
-    spec.hiddenAct = GELU;
+    spec.hiddenAct = SILU;
     spec.ropeTheta = 10000.0f;
 
     size_t beforeBlockBytes = /* embedding */ 524288000;
