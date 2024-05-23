@@ -119,6 +119,8 @@ void App::run(AppArgs* args, void (*program)(Inference* inference, SocketPool* s
 
     Tokenizer tokenizer(args->tokenizerPath, spec.vocabSize);
     Transformer transformer = Transformer::loadRootFromFile(args->modelPath, &spec, socketPool);
+    socketPool->setTurbo(true);
+
     Inference inference = Inference(&arch, args->nThreads, &transformer, socketPool);
 
     Sampler sampler(spec.vocabSize, args->temperature, args->topp, args->seed);

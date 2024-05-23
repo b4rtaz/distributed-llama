@@ -8,15 +8,12 @@
 #include <fcntl.h>
 #include <ctime>
 #include <unistd.h>
-#include "socket.hpp"
 #include <stdexcept>
 #include <vector>
+#include "socket.hpp"
 
 #define SOCKET_LAST_ERRCODE errno
 #define SOCKET_LAST_ERROR strerror(errno)
-
-#define AUTO_NON_BLOCKING_MODULO 10000
-#define AUTO_NON_BLOCKING_TIMEOUT_SECONDS 3
 
 static inline void setNonBlocking(int socket, bool enabled) {
     int flags = fcntl(socket, F_GETFL, 0);
@@ -35,6 +32,14 @@ static inline void setNoDelay(int socket) {
         throw std::runtime_error("Error setting socket to no-delay");
 }
 
+static inline void setQuickAck(int socket) {
+#ifdef TCP_QUICKACK
+    int value = 1;
+    if (setsockopt(socket, IPPROTO_TCP, TCP_QUICKACK, (char*)&value, sizeof(int)) < 0)
+        throw std::runtime_error("Error setting quick ack");
+#endif
+}
+
 static inline void writeSocket(int socket, const void* data, size_t size) {
     while (size > 0) {
         int s = send(socket, (char*)data, size, 0);
@@ -51,22 +56,17 @@ static inline void writeSocket(int socket, const void* data, size_t size) {
     }
 }
 
-static inline void readSocket(bool* isNonBlocking, int socket, void* data, size_t size) {
-    unsigned int attempt = 0;
-    time_t startTime;
-
-    while (size > 0) {
-        int r = recv(socket, (char*)data, size, 0);
+static inline bool tryReadSocket(int socket, void* data, size_t size, unsigned long maxAttempts) {
+    // maxAttempts = 0 means infinite attempts
+    size_t s = size;
+    while (s > 0) {
+        int r = recv(socket, data, s, 0);
         if (r < 0) {
-            if (*isNonBlocking && SOCKET_LAST_ERRCODE == EAGAIN) {
-                attempt++;
-                if (attempt % AUTO_NON_BLOCKING_MODULO == 0) {
-                    time_t now = time(NULL);
-                    if (attempt == AUTO_NON_BLOCKING_MODULO) {
-                        startTime = now;
-                    } else if (now - startTime > AUTO_NON_BLOCKING_TIMEOUT_SECONDS) {
-                        setNonBlocking(socket, false);
-                        *isNonBlocking = false;
+            if (SOCKET_LAST_ERRCODE == EAGAIN) {
+                if (s == size && maxAttempts > 0) {
+                    maxAttempts--;
+                    if (maxAttempts == 0) {
+                        return false;
                     }
                 }
                 continue;
@@ -76,13 +76,13 @@ static inline void readSocket(bool* isNonBlocking, int socket, void* data, size_
             throw ReadSocketException(0, "Socket closed");
         }
         data = (char*)data + r;
-        size -= r;
-
-        if (!*isNonBlocking) {
-            setNonBlocking(socket, true);
-            *isNonBlocking = true;
-        }
+        s -= r;
     }
+    return true;
+}
+
+static inline void readSocket(int socket, void* data, size_t size) {
+    assert(tryReadSocket(socket, data, size, 0));
 }
 
 ReadSocketException::ReadSocketException(int code, const char* message) {
@@ -116,6 +116,7 @@ SocketPool* SocketPool::connect(unsigned int nSockets, char** hosts, int* ports)
         }
 
         setNoDelay(clientSocket);
+        setQuickAck(clientSocket);
         sockets[i] = clientSocket;
     }
     return new SocketPool(nSockets, sockets);
@@ -124,7 +125,6 @@ SocketPool* SocketPool::connect(unsigned int nSockets, char** hosts, int* ports)
 SocketPool::SocketPool(unsigned int nSockets, int* sockets) {
     this->nSockets = nSockets;
     this->sockets = sockets;
-    this->isNonBlocking = new bool[nSockets];
     this->sentBytes.exchange(0);
     this->recvBytes.exchange(0);
 }
@@ -135,7 +135,12 @@ SocketPool::~SocketPool() {
         close(sockets[i]);
     }
     delete[] sockets;
-    delete[] isNonBlocking;
+}
+
+void SocketPool::setTurbo(bool enabled) {
+    for (unsigned int i = 0; i < nSockets; i++) {
+        ::setNonBlocking(sockets[i], enabled);
+    }
 }
 
 void SocketPool::write(unsigned int socketIndex, const void* data, size_t size) {
@@ -147,7 +152,7 @@ void SocketPool::write(unsigned int socketIndex, const void* data, size_t size) 
 void SocketPool::read(unsigned int socketIndex, void* data, size_t size) {
     assert(socketIndex >= 0 && socketIndex < nSockets);
     recvBytes += size;
-    readSocket(&isNonBlocking[socketIndex], sockets[socketIndex], data, size);
+    readSocket(sockets[socketIndex], data, size);
 }
 
 void SocketPool::writeMany(unsigned int n, SocketIo* ios) {
@@ -224,13 +229,13 @@ Socket SocketServer::accept() {
     if (clientSocket < 0)
         throw std::runtime_error("Error accepting connection");
     setNoDelay(clientSocket);
+    setQuickAck(clientSocket);
     printf("Client connected\n");
     return Socket(clientSocket);
 }
 
 Socket::Socket(int socket) {
     this->socket = socket;
-    this->isNonBlocking = false;
 }
 
 Socket::~Socket() {
@@ -238,12 +243,20 @@ Socket::~Socket() {
     close(socket);
 }
 
+void Socket::setTurbo(bool enabled) {
+    ::setNonBlocking(socket, enabled);
+}
+
 void Socket::write(const void* data, size_t size) {
     writeSocket(socket, data, size);
 }
 
 void Socket::read(void* data, size_t size) {
-    readSocket(&isNonBlocking, socket, data, size);
+    readSocket(socket, data, size);
+}
+
+bool Socket::tryRead(void* data, size_t size, unsigned long maxAttempts) {
+    return tryReadSocket(socket, data, size, maxAttempts);
 }
 
 std::vector<char> Socket::readHttpRequest() {
