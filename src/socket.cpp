@@ -15,9 +15,6 @@
 #define SOCKET_LAST_ERRCODE errno
 #define SOCKET_LAST_ERROR strerror(errno)
 
-#define AUTO_NON_BLOCKING_MODULO 10000
-#define AUTO_NON_BLOCKING_TIMEOUT_SECONDS 3
-
 static inline void setNonBlocking(int socket, bool enabled) {
     int flags = fcntl(socket, F_GETFL, 0);
     if (enabled) {
@@ -59,11 +56,19 @@ static inline void writeSocket(int socket, const void* data, size_t size) {
     }
 }
 
-static inline void readSocket(int socket, void* data, size_t size) {
-    while (size > 0) {
-        int r = recv(socket, (char*)data, size, 0);
+static inline bool tryReadSocket(int socket, void* data, size_t size, unsigned long maxAttempts) {
+    // maxAttempts = 0 means infinite attempts
+    size_t s = size;
+    while (s > 0) {
+        int r = recv(socket, data, s, 0);
         if (r < 0) {
             if (SOCKET_LAST_ERRCODE == EAGAIN) {
+                if (s == size && maxAttempts > 0) {
+                    maxAttempts--;
+                    if (maxAttempts == 0) {
+                        return false;
+                    }
+                }
                 continue;
             }
             throw ReadSocketException(SOCKET_LAST_ERRCODE, SOCKET_LAST_ERROR);
@@ -71,8 +76,13 @@ static inline void readSocket(int socket, void* data, size_t size) {
             throw ReadSocketException(0, "Socket closed");
         }
         data = (char*)data + r;
-        size -= r;
+        s -= r;
     }
+    return true;
+}
+
+static inline void readSocket(int socket, void* data, size_t size) {
+    assert(tryReadSocket(socket, data, size, 0));
 }
 
 ReadSocketException::ReadSocketException(int code, const char* message) {
@@ -243,6 +253,10 @@ void Socket::write(const void* data, size_t size) {
 
 void Socket::read(void* data, size_t size) {
     readSocket(socket, data, size);
+}
+
+bool Socket::tryRead(void* data, size_t size, unsigned long maxAttempts) {
+    return tryReadSocket(socket, data, size, maxAttempts);
 }
 
 std::vector<char> Socket::readHttpRequest() {

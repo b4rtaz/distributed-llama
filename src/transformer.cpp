@@ -715,7 +715,7 @@ Transformer Transformer::loadSlice(TransformerSpec* spec, Socket* socket) {
         }
 
         float kbs = blockBytes / (float)(timeMs() - t0);
-        printf("⏩ Received %ld bytes for block %d (%.0f kB/s)\n", blockBytes, i, kbs);
+        printf("⏩ Received %ld kB for block %d (%.0f kB/s)\n", blockBytes / 1024, i, kbs);
     }
     return transformer;
 }
