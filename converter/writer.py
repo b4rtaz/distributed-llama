@@ -3,8 +3,25 @@ import torch
 import time
 import numpy as np
 
-def isFloatTypeSupported(type):
-    return type in ['f16', 'f32', 'q40', 'q80']
+class FloatType:
+    F32 = 0
+    F16 = 1
+    Q40 = 2
+    Q80 = 3
+
+floatTypeMap = {
+    'f32': FloatType.F32,
+    'f16': FloatType.F16,
+    'q40': FloatType.Q40,
+    'q80': FloatType.Q80,
+}
+floatTypeNames = list(floatTypeMap.keys())
+
+def parseFloatType(type):
+    floatType = floatTypeMap.get(type)
+    if floatType is not None:
+        return floatType
+    raise Exception(f'{type} is not supported')
 
 def writeQuantizedQ40Tensor(file, x):
     x = x.to(torch.float32).numpy().astype(np.float32)
@@ -77,18 +94,18 @@ def writeTensor(file, tensor, floatType):
     d = tensor.detach().cpu().view(-1)
     t0 = time.time()
     nBytes = 0
-    if (floatType == 'f16'):
+    if (floatType == FloatType.F16):
         nBytes = writeF16Tensor(file, d)
-    elif (floatType == 'f32'):
+    elif (floatType == FloatType.F32):
         nBytes = writeF32Tensor(file, d)
-    elif (floatType == 'q40'):
+    elif (floatType == FloatType.Q40):
         nBytes = writeQuantizedQ40Tensor(file, d)
-    elif (floatType == 'q80'):
+    elif (floatType == FloatType.Q80):
         nBytes = writeQuantizedQ80Tensor(file, d)
     else:
-        raise Exception('Unknown float type')
+        raise Exception(f'Unknown float type')
     t1 = time.time()
-    print(f'Saved {floatType} tensor in {t1 - t0:.2f}s, {nBytes} bytes')
+    print(f'Saved {floatTypeNames[floatType]} tensor in {t1 - t0:.2f}s, {nBytes} bytes')
 
 def writeHeader(file, params):
     headerKeys = {
@@ -105,6 +122,7 @@ def writeHeader(file, params):
         'max_seq_len': 10,
         'hidden_act': 11,
         'rope_theta': 12,
+        'weights_float_type': 13
     }
     header = struct.pack('i', 0xA00ABCD)
 

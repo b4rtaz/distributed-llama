@@ -53,6 +53,7 @@ enum TransformerHeaderKey {
     SEQ_LEN = 10,
     HIDDEN_ACT = 11,
     ROPE_THETA = 12,
+    WEIGHTS_FLOAT_TYPE = 13,
 };
 
 struct TransformerFileOldHeader {
