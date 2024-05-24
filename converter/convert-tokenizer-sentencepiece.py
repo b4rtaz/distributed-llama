@@ -5,10 +5,11 @@ from typing import List
 from sentencepiece import SentencePieceProcessor
 
 class Tokenizer:
-    def __init__(self, model_path):
+    def __init__(self, model_path, model_name):
         assert os.path.isfile(model_path), model_path
         self.sp_model = SentencePieceProcessor(model_file=model_path)
         self.model_path = model_path
+        self.model_name = model_name
 
         # BOS / EOS token IDs
         self.n_words: int = self.sp_model.vocab_size()
@@ -53,7 +54,7 @@ class Tokenizer:
  
         # write to a binary file
         # the tokenizer.bin file is the same as .model file, but .bin
-        outputPath = 'dllama-' + os.path.basename(self.model_path).replace('.model', '.t')
+        outputPath = 'dllama_tokenizer_' + self.model_name + '.t'
         with open(outputPath, 'wb') as f:
             f.write(struct.pack('IIIiii',
                 0x567123,
@@ -69,10 +70,17 @@ class Tokenizer:
                 f.write(bytes)
         print(f'Created {outputPath}')
 
-if __name__ == "__main__":
-    if (len(sys.argv) < 2):
-        print('Invalid usage')
+def printUsage():
+    print('Usage: python convert-tokenizer-sentencepiece.py <tokenizerPath> <name>')
+    print()
+    print('Options:')
+    print('  <tokenizerPath> The path to the SentencePiece model file (.model)')
+    print('  <name>          The name of the tokenizer (e.g. "llama3")')
+
+if __name__ == '__main__':
+    if (len(sys.argv) < 3):
+        printUsage()
         exit(1)
 
-    t = Tokenizer(sys.argv[1])
+    t = Tokenizer(sys.argv[1], sys.argv[2])
     t.export()

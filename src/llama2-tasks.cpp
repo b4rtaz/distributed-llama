@@ -164,7 +164,13 @@ void llamaFfn(TASK_ARGS) {
     matmul(spec->weightsFloatType, spec->bufferFloatType, hb0, xb, block->w10, block->w10Slice->n, block->w10Slice->d0, nThreads, threadIndex);
     matmul(spec->weightsFloatType, spec->bufferFloatType, block->hb20, xb, block->w30, block->w30Slice->n, block->w30Slice->d0, nThreads, threadIndex);
 
-    silu(hb0, block->w10Slice->d0, nThreads, threadIndex);
+    if (spec->hiddenAct == SILU) {
+        silu(hb0, block->w10Slice->d0, nThreads, threadIndex);
+    } else if (spec->hiddenDim == GELU) {
+        gelu(hb0, block->w10Slice->d0, nThreads, threadIndex);
+    } else {
+        assert(false);
+    }
     mul(hb0, block->hb20, block->w10Slice->d0, nThreads, threadIndex);
 }
 
@@ -242,7 +248,7 @@ void llamaFinalize(TASK_ARGS) {
     matmul(spec->weightsFloatType, F32, transformer->logits, x, transformer->wcls, spec->dim, spec->vocabSize, nThreads, threadIndex);
 }
 
-TransformerArch buildLlama2Arch(TransformerSpec* spec) {
+TransformerArch buildLlamaArch(TransformerSpec* spec) {
     TransformerArch a;
 
     // inference

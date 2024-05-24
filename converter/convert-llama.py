@@ -4,7 +4,7 @@ import json
 import torch
 import math
 import numpy as np
-from writer import writeTensor, writeHeader, isFloatTypeSupported
+from writer import writeTensor, writeHeader, parseFloatType, FloatType
 from pathlib import Path
 
 LAYER_CHUNK_SIZE = 48
@@ -81,7 +81,7 @@ def convert(modelPath, outputPath, targetFloatType):
                 layerName.endswith('.ffn_norm.weight') or
                 layerName == 'norm.weight'
             )
-            floatType = 'f32' if isAlwaysF32 else targetFloatType
+            floatType = FloatType.F32 if isAlwaysF32 else targetFloatType
 
             tensors = models[layerName]
             if len(tensors) == 1 or len(tensors[0].shape) == 1:
@@ -105,13 +105,10 @@ if __name__ == '__main__':
         usage()
 
     modelPath = sys.argv[1]
-    targetFloatType = sys.argv[2]
-
-    if (not modelPath or not isFloatTypeSupported(targetFloatType)):
-        usage()
+    targetFloatType = parseFloatType(sys.argv[2])
 
     modelName = modelPath.split('/')[-1]
-    outputFileName = f'dllama_{modelName.lower()}_{targetFloatType}.bin'
+    outputFileName = f'dllama_model_{modelName.lower()}_{targetFloatType}.m'
 
     print(f'Model name: {modelName}')
     print(f'Target float type: {targetFloatType}')

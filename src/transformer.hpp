@@ -53,6 +53,7 @@ enum TransformerHeaderKey {
     SEQ_LEN = 10,
     HIDDEN_ACT = 11,
     ROPE_THETA = 12,
+    WEIGHTS_FLOAT_TYPE = 13,
 };
 
 struct TransformerFileOldHeader {
@@ -68,7 +69,7 @@ struct TransformerFileOldHeader {
 };
 
 enum TransformerArchType {
-    LLAMA2 = 0xABCD00,
+    LLAMA = 0xABCD00,
     GROK1 = 0xABCD01,
     MIXTRAL = 0xABCD02
 };

@@ -37,7 +37,7 @@ if __name__ == '__main__':
     modelPath = sys.argv[1]
 
     with open(modelPath, 'r') as inputFile:
-        with open('dllama-llama3-tokenizer.t', 'wb') as outputFile:
+        with open('dllama_tokenizer_llama3.t', 'wb') as outputFile:
             inputLines = inputFile.readlines()
             nLines = len(inputLines)
 

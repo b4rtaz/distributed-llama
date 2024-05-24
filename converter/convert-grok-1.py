@@ -2,7 +2,7 @@ import gc
 import torch
 import sys
 import os
-from writer import isFloatTypeSupported, writeTensor, writeHeader 
+from writer import parseFloatType, writeTensor, writeHeader 
 
 # Model: https://huggingface.co/keyfan/grok-1-hf/tree/main
 
@@ -116,11 +116,7 @@ if __name__ == '__main__':
         usage()
 
     folderPath = sys.argv[1]
-    targetFloatType = sys.argv[2]
+    targetFloatType = parseFloatType(sys.argv[2])
     outputFileName = f'dllama-grok-1-{targetFloatType}.bin'
-
-    if not isFloatTypeSupported(targetFloatType):
-        print('Float type is not supported')
-        exit(1)
 
     convert(targetFloatType, outputFileName)

@@ -186,7 +186,7 @@ MultiHeadAttSlice::~MultiHeadAttSlice() {
 TransformerSpec Transformer::loadSpecFromFile(const char* path, const unsigned int nSlices, FloatType weightsFloatType, FloatType bufferFloatType) {
     TransformerSpec spec;
     memset(&spec, 0, sizeof(TransformerSpec));
-    spec.hiddenAct = GELU;
+    spec.hiddenAct = SILU;
     spec.ropeTheta = 10000.0f;
 
     FILE* fd = fopen(path, "rb");
@@ -239,6 +239,7 @@ TransformerSpec Transformer::loadSpecFromFile(const char* path, const unsigned i
             else if (key == SEQ_LEN) spec.seqLen = value;
             else if (key == HIDDEN_ACT) spec.hiddenAct = (TransformerHiddenAct)value;
             else if (key == ROPE_THETA) spec.ropeTheta = (float)value;
+            else if (key == WEIGHTS_FLOAT_TYPE) { /* TODO */}
             else {
                 throw std::runtime_error("Unsupported header key");
             }
@@ -253,14 +254,21 @@ TransformerSpec Transformer::loadSpecFromFile(const char* path, const unsigned i
     spec.bufferFloatType = bufferFloatType;
     spec.nSlices = nSlices;
 
-    if (spec.archType == LLAMA2) {
-        printf("💡 arch: llama2\n");
+    if (spec.archType == LLAMA) {
+        printf("💡 arch: llama\n");
     } else if (spec.archType == GROK1) {
         printf("💡 arch: grok1\n");
     } else if (spec.archType == MIXTRAL) {
         printf("💡 arch: mixtral\n");
     } else {
         throw std::runtime_error("Unsupported architecture");
+    }
+    if (spec.hiddenAct == GELU) {
+        printf("💡 hiddenAct: gelu\n");
+    } else if (spec.hiddenAct == SILU) {
+        printf("💡 hiddenAct: silu\n");
+    } else {
+        throw std::runtime_error("Unsupported hidden activation");
     }
     printf("💡 dim: %d\n", spec.dim);
     printf("💡 hiddenDim: %d\n", spec.hiddenDim);

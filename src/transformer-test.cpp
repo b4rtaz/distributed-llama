@@ -30,7 +30,7 @@ void testRopeSlice(const TransformerArchType archType, const int nSliceTests, co
 
                 for (uint8_t sliceIndex = 0; sliceIndex < spec.nSlices; sliceIndex++) {
                     RopeSlice* slice;
-                    if (archType == LLAMA2) {
+                    if (archType == LLAMA) {
                         slice = new LlamaRopeSlice(&spec, sliceIndex);
                     } else if (archType == MIXTRAL) {
                         slice = new FalconRopeSlice(&spec, sliceIndex);
@@ -80,6 +80,6 @@ void testRopeSlice(const TransformerArchType archType, const int nSliceTests, co
 
 int main() {
     testRopeSlice(MIXTRAL, 4, 6, 3);
-    testRopeSlice(LLAMA2, 6, 4, 3);
+    testRopeSlice(LLAMA, 6, 4, 3);
     return 0;
 }

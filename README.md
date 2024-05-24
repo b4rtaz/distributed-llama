@@ -14,7 +14,9 @@ Run LLMs on weak devices or make powerful devices even more powerful by distribu
 **Supported models:**
 * Llama 2 (7B, 13B, 70B) chat and non-chat versions,
 * Llama 3,
-* Grok-1 (314B).
+* Grok-1 (314B)
+* Mistral, Mixtral
+* TinyLlama
 
 **Known limitations:**
 * You can run Distributed Llama only on 1, 2, 4... 2^n devices.
@@ -28,7 +30,7 @@ Run LLMs on weak devices or make powerful devices even more powerful by distribu
     * ❌ F32 × F32
     * ❌ F16 × F32
     * ❌ Q40 × F32
-    * ⚠️ Q40 × Q80 (partial optimization)
+    * ✅ Q40 × Q80
 
 **Architecture**<br />
 The project is split up into two parts:
