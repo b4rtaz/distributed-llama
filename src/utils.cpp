@@ -1,19 +1,93 @@
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
+#include <iostream>
 #include <sys/time.h>
-#include <sys/mman.h>
 #include "utils.hpp"
+
+#ifdef _WIN32 
+#include <malloc.h>
+#include <vector>
+
+class LargeArrayManager {
+public:
+    LargeArrayManager(size_t size) {
+        arr.reserve(size);
+        arr.resize(size); // Allocate and resize to the desired size
+    }
+
+    char* getPointer() {
+        return arr.data();
+    }
+
+private:
+    std::vector<char> arr;
+};
+
+char* createBuffer(size_t size) {
+    LargeArrayManager* manager = new LargeArrayManager(size);
+    return manager->getPointer();
+}
+
+char* allocateAndLockMemory(size_t size) {
+    char* buffer = createBuffer(size);
+    std::memset(buffer, 0, size);
+    return buffer;
+}
+
+static int check_align(size_t align)
+{
+    for (size_t i = sizeof(void *); i != 0; i *= 2)
+    if (align == i)
+        return 0;
+    return EINVAL;
+}
+
+int posix_memalign(void **ptr, size_t align, size_t size) {
+    if (check_align(align)) {
+        fprintf(stderr, "posix_memalign: alignment %zu is not valid\n", align);
+        return EINVAL;
+    }
+
+    int saved_errno = errno;
+    void *p = _aligned_malloc(size, align);
+    if (p == NULL) {
+        fprintf(stderr, "posix_memalign: _aligned_malloc failed\n");
+        errno = saved_errno;
+        return ENOMEM;
+    }
+
+    *ptr = p;
+    return 0;
+}
+
+#else
+#include <sys/mman.h>
+
+void* allocateAndLockMemory(size_t size) {
+    void* ptr;
+    if (posix_memalign(&ptr, sysconf(_SC_PAGESIZE), size) != 0) {
+        fprintf(stderr, "posix_memalign failed\n");
+        return NULL;
+    }
+
+    if (mlock(ptr, size) != 0) {
+        perror("mlock failed");
+        free(ptr);
+        return NULL;
+    }
+
+    return ptr;
+}
+#endif
 
 #define BUFFER_ALIGNMENT 16
 
 char* newBuffer(size_t size) {
-    char* buffer;
-    if (posix_memalign((void**)&buffer, BUFFER_ALIGNMENT, size) != 0) {
-        fprintf(stderr, "error: posix_memalign failed\n");
-        exit(EXIT_FAILURE);
-    }
-    if (mlock(buffer, size) != 0) {
+    char* buffer = (char*)allocateAndLockMemory(size);
+    if (buffer == NULL || buffer == nullptr) {
         fprintf(stderr, "🚧 Cannot allocate %zu bytes directly in RAM\n", size);
+        exit(EXIT_FAILURE);
     }
     return buffer;
 }

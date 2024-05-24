@@ -4,8 +4,9 @@
 #include <stdexcept>
 #include <fcntl.h>
 #include <string.h>
-#include <sys/mman.h>
 #include <unistd.h>
+#include <ostream>
+#include <iostream>
 #include "funcs.hpp"
 #include "utils.hpp"
 #include "socket.hpp"
@@ -13,6 +14,15 @@
 
 #define ALLOC_WEIGHTS true
 #define IS_ROOT_SLICE(sliceIndex) (sliceIndex == 0)
+
+#ifdef _WIN32
+#include <windows.h>
+#include <io.h>
+#define fseek _fseeki64
+#define ftell _ftelli64
+#else
+#include <sys/mman.h>
+#endif
 
 RowMatmulSlice::RowMatmulSlice(FloatType type, int nSlices, int n, int d) {
     assert(d % nSlices == 0);
@@ -277,10 +287,14 @@ TransformerSpec Transformer::loadSpecFromFile(const char* path, const unsigned i
     printf("💡 ropeTheta: %.1f\n", spec.ropeTheta);
 
     fseek(fd, 0, SEEK_END);
-    size_t fileSize = ftell(fd);
+    long fileSize = ftell(fd);
+    if (fileSize == -1L) {
+        fclose(fd);
+        throw std::runtime_error("Error determining model file size");
+    }
     fclose(fd);
 
-    spec.fileSize = fileSize;
+    spec.fileSize = static_cast<size_t>(fileSize);
     return spec;
 }
 
@@ -599,25 +613,74 @@ static size_t readSlicedMatmulWeights(MatmulSlice* slice, char* weights0, Socket
 }
 
 Transformer Transformer::loadRootFromFile(const char* path, TransformerSpec* spec, SocketPool* socketPool) {
+#ifdef _WIN32
+    HANDLE hFile = CreateFileA(path, GENERIC_READ, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hFile == INVALID_HANDLE_VALUE) {
+        printf("Cannot open file %s\n", path);
+        exit(EXIT_FAILURE);
+    }
+
+    HANDLE hMapping = CreateFileMappingA(hFile, NULL, PAGE_READONLY, 0, 0, NULL);
+    if (hMapping == NULL) {
+        printf("CreateFileMappingA failed, error: %lu\n", GetLastError());
+        CloseHandle(hFile);
+        exit(EXIT_FAILURE);
+    }
+
+    char* data = (char*)MapViewOfFile(hMapping, FILE_MAP_READ, 0, 0, 0);
+    if (data == NULL) {
+        printf("MapViewOfFile failed!\n");
+        CloseHandle(hMapping);
+        CloseHandle(hFile);
+        exit(EXIT_FAILURE);
+    }
+
+    std::cout << "MapViewOfFile succeeded. data = " << static_cast<void*>(data) << std::endl;
+
+    char* weights = data + spec->headerSize;
+    std::cout << "weights = " << static_cast<void*>(weights) << std::endl;
+
+    Transformer transformer = Transformer::loadRoot(weights, spec, socketPool);
+
+#if ALLOC_WEIGHTS
+    UnmapViewOfFile(data);
+    CloseHandle(hMapping);
+    CloseHandle(hFile);
+#else
+    // TODO: handler should be released in destructor
+#endif
+
+    return transformer;
+#else
     int fd = open(path, O_RDONLY);
     if (fd == -1) {
         printf("Cannot open file %s\n", path);
         exit(EXIT_FAILURE);
     }
+
     char* data = (char*)mmap(NULL, spec->fileSize, PROT_READ, MAP_PRIVATE, fd, 0);
     if (data == MAP_FAILED) {
         printf("Mmap failed!\n");
+        close(fd);
         exit(EXIT_FAILURE);
     }
+
+    std::cout << "mmap succeeded. data = " << static_cast<void*>(data) << std::endl;
+
     char* weights = data + spec->headerSize;
+    std::cout << "weights = " << static_cast<void*>(weights) << std::endl;
+
     Transformer transformer = Transformer::loadRoot(weights, spec, socketPool);
+
 #if ALLOC_WEIGHTS
     munmap(data, spec->fileSize);
     close(fd);
 #else
-    // TODO: handler should be released in deconstructor
+    // TODO: handler should be released in destructor
 #endif
+
     return transformer;
+#endif
 }
 
 Transformer Transformer::loadRoot(char* data, TransformerSpec* spec, SocketPool* socketPool) {
@@ -675,6 +738,8 @@ Transformer Transformer::loadRoot(char* data, TransformerSpec* spec, SocketPool*
     long missedBytes = (long)(w - data) - spec->fileSize + spec->headerSize;
     if (missedBytes != 0) {
         printf("Missed %ld bytes\n", missedBytes);
+        printf("File Size %ld bytes\n", spec->fileSize);
+        printf("Header Size %ld bytes\n", spec->headerSize);
         exit(EXIT_FAILURE);
     }
 

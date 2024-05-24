@@ -3,7 +3,9 @@
 #include <cstring>
 #include <cstdint>
 #include <fcntl.h>
+#ifndef _WIN32
 #include <sys/mman.h>
+#endif
 #include <ctype.h>
 #include <ctime>
 #include <cassert>
