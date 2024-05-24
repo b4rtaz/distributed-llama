@@ -7,6 +7,8 @@
 #include <ctime>
 #include <stdexcept>
 #include <vector>
+#include <string>
+#include <iostream>
 #include "socket.hpp"
 
 #ifdef _WIN32
@@ -17,11 +19,10 @@ typedef SSIZE_T ssize_t;
 #define close closesocket
 #else
 #include <sys/socket.h>
+#include <netinet/tcp.h>
 #include <arpa/inet.h>
 #include <unistd.h>
 #endif
-#include <string>
-#include <iostream>
 
 #define SOCKET_LAST_ERRCODE errno
 #define SOCKET_LAST_ERROR strerror(errno)

@@ -5,9 +5,13 @@
 #include <sys/time.h>
 #include "utils.hpp"
 
+#define BUFFER_ALIGNMENT 16
+
 #ifdef _WIN32 
+#include <windows.h>
 #include <malloc.h>
 #include <vector>
+typedef DWORD thread_ret_t;
 
 class LargeArrayManager {
 public:
@@ -64,24 +68,20 @@ int posix_memalign(void **ptr, size_t align, size_t size) {
 #else
 #include <sys/mman.h>
 
-void* allocateAndLockMemory(size_t size) {
-    void* ptr;
-    if (posix_memalign(&ptr, sysconf(_SC_PAGESIZE), size) != 0) {
-        fprintf(stderr, "posix_memalign failed\n");
-        return NULL;
-    }
+char* allocateAndLockMemory(size_t size) {
+    char* ptr;
 
+    if (posix_memalign((void**)&ptr, BUFFER_ALIGNMENT, size) != 0) {
+        fprintf(stderr, "error: posix_memalign failed\n");
+        exit(EXIT_FAILURE);
+    }
     if (mlock(ptr, size) != 0) {
-        perror("mlock failed");
-        free(ptr);
-        return NULL;
+        fprintf(stderr, "🚧 Cannot allocate %zu bytes directly in RAM\n", size);
     }
 
     return ptr;
 }
 #endif
-
-#define BUFFER_ALIGNMENT 16
 
 char* newBuffer(size_t size) {
     char* buffer = (char*)allocateAndLockMemory(size);
@@ -143,7 +143,7 @@ void TaskLoop::run() {
     }
 
     for (i = 1; i < nThreads; i++) {
-        int result = pthread_create(&threads[i].handler, NULL, threadHandler, (void*)&threads[i]);
+        int result = pthread_create(&threads[i].handler, NULL, (thread_func_t)threadHandler, (void*)&threads[i]);
         if (result != 0) {
             printf("Cannot created thread\n");
             exit(EXIT_FAILURE);

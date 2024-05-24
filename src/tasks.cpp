@@ -1,7 +1,8 @@
-#include "tasks.hpp"
 #include <cassert>
 #include <cstring>
 #include <cstdio>
+#include <ctime>
+#include "tasks.hpp"
 
 TransformerArch::TransformerArch() {
     inference.nTasks = 0;

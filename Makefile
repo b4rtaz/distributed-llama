@@ -5,14 +5,10 @@ CXXFLAGS = -std=c++11 -Werror -O3 -march=native -mtune=native
 INCLUDES =
 LIBPATH =
 LIBS = -lpthread
-EXTRA_COMMANDS = 
 
 # Conditional settings for Windows
 ifdef WIN32
-    INCLUDES = -Isrc/common/pthreads-w32/include
-    LIBPATH = -Lsrc/common/pthreads-w32/lib/x64
-    LIBS = -lpthreadVC2 -lws2_32 # or -lpthreadGC2 if needed
-    EXTRA_COMMANDS += copy src\common\pthreads-w32\dll\x64\pthreadVC2.dll $(BIN_DIR)\pthreadVC2.dll
+    LIBS = -lws2_32 # or -lpthreadGC2 if needed
 endif
 
 utils: src/utils.cpp
@@ -42,11 +38,8 @@ app: src/app.cpp
 
 dllama: src/apps/dllama/dllama.cpp utils quants funcs socket transformer tasks llama2-tasks grok1-tasks mixtral-tasks tokenizer app
 	$(CXX) $(CXXFLAGS) src/apps/dllama/dllama.cpp -o bin/dllama utils.o quants.o funcs.o socket.o transformer.o tasks.o llama2-tasks.o grok1-tasks.o mixtral-tasks.o tokenizer.o app.o $(LIBPATH) $(LIBS)
-	$(EXTRA_COMMANDS)
-
 dllama-api: src/apps/dllama-api/dllama-api.cpp utils quants funcs socket transformer tasks llama2-tasks grok1-tasks mixtral-tasks tokenizer app
 	$(CXX) $(CXXFLAGS) src/apps/dllama-api/dllama-api.cpp -o bin/dllama-api utils.o quants.o funcs.o socket.o transformer.o tasks.o llama2-tasks.o grok1-tasks.o mixtral-tasks.o tokenizer.o app.o $(LIBPATH) $(LIBS)
-	$(EXTRA_COMMANDS)
 
 funcs-test: src/funcs-test.cpp funcs utils quants
 	$(CXX) $(CXXFLAGS) src/funcs-test.cpp -o bin/funcs-test funcs.o utils.o quants.o $(LIBPATH) $(LIBS)

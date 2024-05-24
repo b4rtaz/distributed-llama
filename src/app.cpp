@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <cassert>
 #include <stdexcept>
+#include <ctime>
 #include "app.hpp"
 
 FloatType parseFloatType(char* val) {

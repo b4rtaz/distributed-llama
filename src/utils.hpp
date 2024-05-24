@@ -2,7 +2,7 @@
 #define UTILS_HPP
 
 #include <atomic>
-#include <pthread.h>
+#include "common/pthread.h"
 
 #define NEW_BUFFER(size) newBuffer(size)
 #define FREE_BUFFER(buffer) free(buffer)
@@ -23,7 +23,7 @@ class TaskLoop;
 struct TaskLoopThread {
     unsigned int threadIndex;
     unsigned int nTasks;
-    pthread_t handler;
+    dl_thread handler;
     TaskLoop* loop;
 };
 
