@@ -37,9 +37,9 @@ app: src/app.cpp
 	$(CXX) $(CXXFLAGS) -c src/app.cpp -o app.o
 
 dllama: src/apps/dllama/dllama.cpp utils quants funcs socket transformer tasks llama2-tasks grok1-tasks mixtral-tasks tokenizer app
-	$(CXX) $(CXXFLAGS) src/apps/dllama/dllama.cpp -o bin/dllama utils.o quants.o funcs.o socket.o transformer.o tasks.o llama2-tasks.o grok1-tasks.o mixtral-tasks.o tokenizer.o app.o $(LIBPATH) $(LIBS)
+	$(CXX) $(CXXFLAGS) src/apps/dllama/dllama.cpp -o dllama utils.o quants.o funcs.o socket.o transformer.o tasks.o llama2-tasks.o grok1-tasks.o mixtral-tasks.o tokenizer.o app.o $(LIBPATH) $(LIBS)
 dllama-api: src/apps/dllama-api/dllama-api.cpp utils quants funcs socket transformer tasks llama2-tasks grok1-tasks mixtral-tasks tokenizer app
-	$(CXX) $(CXXFLAGS) src/apps/dllama-api/dllama-api.cpp -o bin/dllama-api utils.o quants.o funcs.o socket.o transformer.o tasks.o llama2-tasks.o grok1-tasks.o mixtral-tasks.o tokenizer.o app.o $(LIBPATH) $(LIBS)
+	$(CXX) $(CXXFLAGS) src/apps/dllama-api/dllama-api.cpp -o dllama-api utils.o quants.o funcs.o socket.o transformer.o tasks.o llama2-tasks.o grok1-tasks.o mixtral-tasks.o tokenizer.o app.o $(LIBPATH) $(LIBS)
 
 funcs-test: src/funcs-test.cpp funcs utils quants
 	$(CXX) $(CXXFLAGS) src/funcs-test.cpp -o bin/funcs-test funcs.o utils.o quants.o $(LIBPATH) $(LIBS)

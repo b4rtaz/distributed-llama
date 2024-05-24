@@ -11,5 +11,5 @@ __pycache__
 main
 run.sh
 server
-/bin/dllama
-/bin/dllama-*
+/dllama
+/dllama-*
