@@ -92,7 +92,7 @@ AppArgs AppArgs::parse(int argc, char** argv, bool hasMode) {
 }
 
 TransformerArch TransformerArchFactory::create(TransformerSpec* spec) {
-    if (spec->archType == LLAMA2) return buildLlama2Arch(spec);
+    if (spec->archType == LLAMA) return buildLlamaArch(spec);
     if (spec->archType == GROK1) return buildGrok1Arch(spec);
     if (spec->archType == MIXTRAL) return buildMixtralArch(spec);
     printf("Unsupported arch type: %d\n", spec->archType);

@@ -5,6 +5,10 @@ import os
 from writer import parseFloatType, writeTensor, writeHeader, FloatType
 from safetensors import safe_open
 
+class ArchType:
+    LLAMA = 0xABCD00
+    MIXTRAL = 0xABCD02
+
 def permute(tensor, nHeads: int, nKvHeads: int):
     if nHeads != nKvHeads:
         nHeads = nKvHeads
@@ -25,7 +29,7 @@ class Processor:
             self.currentModel = None
             gc.collect()
 
-    def __loadModel(self, index):
+    def __loadModel(self, index: int):
         if (self.currentModelIndex == index):
             return
         self.__unloadModel()
@@ -46,31 +50,46 @@ class Processor:
         return permute(tensor, self.config['n_heads'], self.config['n_kv_heads'])
 
     def __preparePlan(self):
-        floatType = self.config['weights_float_type']
+        wt = self.config['weights_float_type']
         p = self.plan
-        p.append([FloatType.F32, 'model.embed_tokens.weight'])
+        p.append([FloatType.F32,
+            'model.embed_tokens.weight'])
         for l in range(0, self.config['n_layers']):
-            p.append([floatType, self.__permuteQ, f'model.layers.{l}.self_attn.q_proj.weight'])
-            p.append([floatType, self.__permuteK, f'model.layers.{l}.self_attn.k_proj.weight'])
-            p.append([floatType, f'model.layers.{l}.self_attn.v_proj.weight'])
-            p.append([floatType, f'model.layers.{l}.self_attn.o_proj.weight'])
+            p.append([wt, self.__permuteQ,
+                f'model.layers.{l}.self_attn.q_proj.weight'])
+            p.append([wt, self.__permuteK,
+                f'model.layers.{l}.self_attn.k_proj.weight'])
+            p.append([wt,
+                f'model.layers.{l}.self_attn.v_proj.weight'])
+            p.append([wt,
+                f'model.layers.{l}.self_attn.o_proj.weight'])
 
             if (self.config['n_experts'] > 0):
                 for e in range(self.config['n_experts']):
-                    p.append([floatType, f'model.layers.{l}.block_sparse_moe.experts.{e}.w3.weight']) # up
-                    p.append([floatType, f'model.layers.{l}.block_sparse_moe.experts.{e}.w1.weight']) # gate
-                    p.append([floatType, f'model.layers.{l}.block_sparse_moe.experts.{e}.w2.weight']) # down
+                    p.append([wt,
+                        f'model.layers.{l}.block_sparse_moe.experts.{e}.w3.weight']) # up
+                    p.append([wt,
+                        f'model.layers.{l}.block_sparse_moe.experts.{e}.w1.weight']) # gate
+                    p.append([wt,
+                        f'model.layers.{l}.block_sparse_moe.experts.{e}.w2.weight']) # down
             else:
-                p.append([floatType, f'model.layers.{l}.mlp.gate_proj.weight']) # gate
-                p.append([floatType, f'model.layers.{l}.mlp.down_proj.weight']) # down
-                p.append([floatType, f'model.layers.{l}.mlp.up_proj.weight']) # up
+                p.append([wt,
+                    f'model.layers.{l}.mlp.gate_proj.weight']) # gate
+                p.append([wt,
+                    f'model.layers.{l}.mlp.down_proj.weight']) # down
+                p.append([wt,
+                    f'model.layers.{l}.mlp.up_proj.weight']) # up
 
-            p.append([FloatType.F32, f'model.layers.{l}.input_layernorm.weight'])
-            p.append([FloatType.F32, f'model.layers.{l}.post_attention_layernorm.weight'])
-        p.append([FloatType.F32, 'model.norm.weight'])
-        p.append([floatType, 'lm_head.weight'])
+            p.append([FloatType.F32,
+                f'model.layers.{l}.input_layernorm.weight'])
+            p.append([FloatType.F32,
+                f'model.layers.{l}.post_attention_layernorm.weight'])
+        p.append([FloatType.F32,
+            'model.norm.weight'])
+        p.append([wt,
+            'lm_head.weight'])
 
-    def write(self, outputFile):
+    def write(self, outputFile: str):
         self.__preparePlan()
         for planItem in self.plan:
             lookup = planItem[1:]
@@ -105,7 +124,26 @@ class Processor:
                 tensor = transform(tensor)
             writeTensor(outputFile, tensor, floatType)
 
-def loadConfig(folderPath, weightsFloatType):
+def parseArchType(type: str):
+    archType = {
+        'llama': ArchType.LLAMA,
+        'mistral': ArchType.LLAMA,
+        'mixtral': ArchType.MIXTRAL,
+    }.get(type)
+    if (archType is None):
+        raise Exception(f'Unsupported arch type: {type}')
+    return archType
+
+def parseHiddenAct(act: str):
+    hiddenAct = {
+        'gelu': 0,
+        'silu': 1
+    }.get(act)
+    if (hiddenAct is None):
+        raise Exception(f'Unsupported hidden act: {act}')
+    return hiddenAct
+
+def loadConfig(folderPath: str, weightsFloatType: int):
     allFiles = os.listdir(folderPath)
     allFiles.sort()
     with open(os.path.join(folderPath, 'config.json')) as fc:
@@ -114,25 +152,13 @@ def loadConfig(folderPath, weightsFloatType):
     for fileName in allFiles:
         if fileName.endswith('.safetensors'):
             files.append(os.path.join(folderPath, fileName))
-    nFiles = len(files)
-    if (nFiles == 0):
+    if (len(files) == 0):
         raise Exception('Not found any model file')
-
-    archType = {
-        'llama': 0xABCD00,
-    }.get(config['model_type'])
-    if (archType is None):
-        raise Exception('Unknown arch_type')
-    hiddenAct = {
-        'gelu': 0,
-        'silu': 1
-    }.get(config['hidden_act'])
-    if (hiddenAct is None):
-        raise Exception('Unknown hidden_act')
 
     result = {
         'version': 0,
-        'arch_type': archType,
+        'arch_type': parseArchType(config['model_type']),
+        'hidden_act': parseHiddenAct(config['hidden_act']),
         'dim': config['hidden_size'],
         'hidden_dim': config['intermediate_size'],
         'n_layers': config['num_hidden_layers'],
@@ -141,28 +167,36 @@ def loadConfig(folderPath, weightsFloatType):
         'weights_float_type': weightsFloatType,
         'max_seq_len': config['max_position_embeddings'],
         'vocab_size': config['vocab_size'],
-        'hidden_act': hiddenAct,
         'files': files,
-        'n_files': nFiles,
     }
-    if ('rope_theta' in config):
-        config['rope_theta'] = int(config['rope_theta'])
-    if ('num_local_experts' in config):
-        result['n_experts'] = config['num_local_experts']
-        result['n_active_experts'] = config['num_active_local_experts']
-    else:
-        result['n_experts'] = 0
-        result['n_active_experts'] = 0
+
+    nExperts = config.get('num_local_experts')
+    nActiveExperts = config.get('num_active_local_experts') or config.get('num_experts_per_tok')
+    result['n_experts'] = int(nExperts) if nExperts is not None else 0
+    result['n_active_experts'] = int(nActiveExperts) if nActiveExperts is not None else 0
+
+    ropeTheta = config.get('rope_theta')
+    if (ropeTheta is not None):
+        result['rope_theta'] = int(ropeTheta)
     return result
+
+def printUsage():
+    print('Usage: python convert-hf.py <sourceFolderPath> <weightsFloatType> <name>')
+    print()
+    print('Options:')
+    print('  <sourceFolderPath> The path to the folder containing the model files')
+    print('  <weightsFloatType> The float type of the weights (e.g. "q40")')
+    print('  <name>             The name of the model (e.g. "llama3")')
 
 if __name__ == '__main__':
     if (len(sys.argv) < 4):
-        print('Usage: python convert-hf.py <sourceFolderPath> <weightsFloatType> <outputName>')
+        printUsage()
         exit(1)
 
     sourceFolderPath = sys.argv[1]
     weightsFloatType = parseFloatType(sys.argv[2])
-    outputFileName = f'dllama_{sys.argv[3]}_{sys.argv[2]}.bin'
+    name = sys.argv[3]
+    outputFileName = f'dllama_model_{name}_{sys.argv[2]}.m'
 
     print(f'Output file: {outputFileName}')
 

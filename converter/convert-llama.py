@@ -108,7 +108,7 @@ if __name__ == '__main__':
     targetFloatType = parseFloatType(sys.argv[2])
 
     modelName = modelPath.split('/')[-1]
-    outputFileName = f'dllama_{modelName.lower()}_{targetFloatType}.bin'
+    outputFileName = f'dllama_model_{modelName.lower()}_{targetFloatType}.m'
 
     print(f'Model name: {modelName}')
     print(f'Target float type: {targetFloatType}')

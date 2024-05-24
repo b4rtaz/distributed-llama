@@ -154,6 +154,8 @@ void grokMoeBlock1(TASK_ARGS) {
             silu(expertGate, block->moeUpAndGate0Slice->d0, nThreads, threadIndex);
         } else if (spec->hiddenAct == GELU) {
             gelu(expertGate, block->moeUpAndGate0Slice->d0, nThreads, threadIndex);
+        } else {
+            assert(false);
         }
         mul(expertUp, expertGate, block->moeUpAndGate0Slice->d0, nThreads, threadIndex);
     }

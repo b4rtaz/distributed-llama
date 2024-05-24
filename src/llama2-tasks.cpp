@@ -248,7 +248,7 @@ void llamaFinalize(TASK_ARGS) {
     matmul(spec->weightsFloatType, F32, transformer->logits, x, transformer->wcls, spec->dim, spec->vocabSize, nThreads, threadIndex);
 }
 
-TransformerArch buildLlama2Arch(TransformerSpec* spec) {
+TransformerArch buildLlamaArch(TransformerSpec* spec) {
     TransformerArch a;
 
     // inference

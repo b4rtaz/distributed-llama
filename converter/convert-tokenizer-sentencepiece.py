@@ -54,7 +54,7 @@ class Tokenizer:
  
         # write to a binary file
         # the tokenizer.bin file is the same as .model file, but .bin
-        outputPath = 'dllama_' + self.model_name + '.t'
+        outputPath = 'dllama_tokenizer_' + self.model_name + '.t'
         with open(outputPath, 'wb') as f:
             f.write(struct.pack('IIIiii',
                 0x567123,
@@ -70,9 +70,16 @@ class Tokenizer:
                 f.write(bytes)
         print(f'Created {outputPath}')
 
-if __name__ == "__main__":
+def printUsage():
+    print('Usage: python convert-tokenizer-sentencepiece.py <tokenizerPath> <name>')
+    print()
+    print('Options:')
+    print('  <tokenizerPath> The path to the SentencePiece model file (.model)')
+    print('  <name>          The name of the tokenizer (e.g. "llama3")')
+
+if __name__ == '__main__':
     if (len(sys.argv) < 3):
-        print('Usage: python convert-tokenizer-sentencepiece.py <tokenizerPath> <name>')
+        printUsage()
         exit(1)
 
     t = Tokenizer(sys.argv[1], sys.argv[2])

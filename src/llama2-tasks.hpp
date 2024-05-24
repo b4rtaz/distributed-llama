@@ -23,6 +23,6 @@ void llamaRmsFinal(TASK_ARGS);
 void llamaRmsFinalNorm(TASK_ARGS);
 void llamaFinalize(TASK_ARGS);
 
-TransformerArch buildLlama2Arch(TransformerSpec* spec);
+TransformerArch buildLlamaArch(TransformerSpec* spec);
 
 #endif

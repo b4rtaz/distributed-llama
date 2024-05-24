@@ -527,7 +527,7 @@ float expectedOutput[4096] = {
 int main() {
     TransformerSpec spec;
     spec.headerSize = sizeof(TransformerFileOldHeader) + sizeof(int);
-    spec.archType = LLAMA2;
+    spec.archType = LLAMA;
     spec.dim = 4096;
     spec.nLayers = 1;
     spec.headSize = 128;
@@ -568,7 +568,7 @@ int main() {
     float* x = transformer.x;
     for (int i = 0; i < spec.dim; i++) x[i] = randomF32(&state) / 120.0;
 
-    TransformerArch arch = buildLlama2Arch(&spec);
+    TransformerArch arch = buildLlamaArch(&spec);
 
     int nThreads = 4;
     TransformerContext context;

@@ -254,8 +254,8 @@ TransformerSpec Transformer::loadSpecFromFile(const char* path, const unsigned i
     spec.bufferFloatType = bufferFloatType;
     spec.nSlices = nSlices;
 
-    if (spec.archType == LLAMA2) {
-        printf("💡 arch: llama2\n");
+    if (spec.archType == LLAMA) {
+        printf("💡 arch: llama\n");
     } else if (spec.archType == GROK1) {
         printf("💡 arch: grok1\n");
     } else if (spec.archType == MIXTRAL) {
