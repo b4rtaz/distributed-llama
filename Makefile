@@ -42,15 +42,12 @@ dllama-api: src/apps/dllama-api/dllama-api.cpp utils quants funcs socket transfo
 	$(CXX) $(CXXFLAGS) src/apps/dllama-api/dllama-api.cpp -o dllama-api utils.o quants.o funcs.o socket.o transformer.o tasks.o llama2-tasks.o grok1-tasks.o mixtral-tasks.o tokenizer.o app.o $(LIBPATH) $(LIBS)
 
 funcs-test: src/funcs-test.cpp funcs utils quants
-	$(CXX) $(CXXFLAGS) src/funcs-test.cpp -o bin/funcs-test funcs.o utils.o quants.o $(LIBPATH) $(LIBS)
+	$(CXX) $(CXXFLAGS) src/funcs-test.cpp -o funcs-test funcs.o utils.o quants.o $(LIBPATH) $(LIBS)
 quants-test: src/quants.cpp utils quants
-	$(CXX) $(CXXFLAGS) src/quants-test.cpp -o bin/quants-test utils.o quants.o $(LIBPATH) $(LIBS)
+	$(CXX) $(CXXFLAGS) src/quants-test.cpp -o quants-test utils.o quants.o $(LIBPATH) $(LIBS)
 transformer-test: src/transformer-test.cpp funcs utils quants transformer socket
-	$(CXX) $(CXXFLAGS) src/transformer-test.cpp -o bin/transformer-test funcs.o utils.o quants.o transformer.o socket.o $(LIBPATH) $(LIBS)
+	$(CXX) $(CXXFLAGS) src/transformer-test.cpp -o transformer-test funcs.o utils.o quants.o transformer.o socket.o $(LIBPATH) $(LIBS)
 llama2-tasks-test: src/llama2-tasks-test.cpp utils quants funcs socket transformer tasks llama2-tasks tokenizer
-	$(CXX) $(CXXFLAGS) src/llama2-tasks-test.cpp -o bin/llama2-tasks-test utils.o quants.o funcs.o socket.o transformer.o tasks.o llama2-tasks.o tokenizer.o $(LIBPATH) $(LIBS)
+	$(CXX) $(CXXFLAGS) src/llama2-tasks-test.cpp -o llama2-tasks-test utils.o quants.o funcs.o socket.o transformer.o tasks.o llama2-tasks.o tokenizer.o $(LIBPATH) $(LIBS)
 grok1-tasks-test: src/grok1-tasks-test.cpp utils quants funcs socket transformer tasks llama2-tasks grok1-tasks tokenizer
-	$(CXX) $(CXXFLAGS) src/grok1-tasks-test.cpp -o bin/grok1-tasks-test utils.o quants.o funcs.o socket.o transformer.o tasks.o llama2-tasks.o grok1-tasks.o tokenizer.o $(LIBPATH) $(LIBS)
-
-clean:
-	rm -f $(BIN_DIR)/*
+	$(CXX) $(CXXFLAGS) src/grok1-tasks-test.cpp -o grok1-tasks-test utils.o quants.o funcs.o socket.o transformer.o tasks.o llama2-tasks.o grok1-tasks.o tokenizer.o $(LIBPATH) $(LIBS)
