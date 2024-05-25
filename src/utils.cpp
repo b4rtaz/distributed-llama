@@ -2,6 +2,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <vector>
 #include <sys/time.h>
 #include "utils.hpp"
 
@@ -10,87 +11,43 @@
 #ifdef _WIN32 
 #include <windows.h>
 #include <malloc.h>
-#include <vector>
-typedef DWORD thread_ret_t;
+#else
+#include <sys/mman.h>
+#endif
 
-class LargeArrayManager {
-public:
-    LargeArrayManager(size_t size) {
-        arr.reserve(size);
-        arr.resize(size); // Allocate and resize to the desired size
-    }
-
-    char* getPointer() {
-        return arr.data();
-    }
-
-private:
-    std::vector<char> arr;
-};
-
-char* createBuffer(size_t size) {
-    LargeArrayManager* manager = new LargeArrayManager(size);
-    return manager->getPointer();
-}
-
-char* allocateAndLockMemory(size_t size) {
-    char* buffer = createBuffer(size);
+void* gracefullyAllocateBuffer(size_t size){
+    std::vector<char>* arr = new std::vector<char>();
+    arr->reserve(size);
+    arr->resize(size);
+    char* buffer = arr->data();
     std::memset(buffer, 0, size);
     return buffer;
 }
 
-static int check_align(size_t align)
-{
-    for (size_t i = sizeof(void *); i != 0; i *= 2)
-    if (align == i)
-        return 0;
-    return EINVAL;
+#ifdef _WIN32 
+char* newBuffer(size_t size) {
+    char* ptr = (char*)gracefullyAllocateBuffer(size);
+    return ptr;
 }
-
-int posix_memalign(void **ptr, size_t align, size_t size) {
-    if (check_align(align)) {
-        fprintf(stderr, "posix_memalign: alignment %zu is not valid\n", align);
-        return EINVAL;
-    }
-
-    int saved_errno = errno;
-    void *p = _aligned_malloc(size, align);
-    if (p == NULL) {
-        fprintf(stderr, "posix_memalign: _aligned_malloc failed\n");
-        errno = saved_errno;
-        return ENOMEM;
-    }
-
-    *ptr = p;
-    return 0;
-}
-
 #else
-#include <sys/mman.h>
-
-char* allocateAndLockMemory(size_t size) {
+char* newBuffer(size_t size) {
     char* ptr;
+    bool useGraceful = false;
 
     if (posix_memalign((void**)&ptr, BUFFER_ALIGNMENT, size) != 0) {
-        fprintf(stderr, "error: posix_memalign failed\n");
-        exit(EXIT_FAILURE);
+        useGraceful = true;
     }
-    if (mlock(ptr, size) != 0) {
-        fprintf(stderr, "🚧 Cannot allocate %zu bytes directly in RAM\n", size);
+    else if (mlock(ptr, size) != 0){
+        useGraceful = true;
+    }
+
+    if(useGraceful){
+        ptr = (char*)gracefullyAllocateBuffer(size);
     }
 
     return ptr;
 }
 #endif
-
-char* newBuffer(size_t size) {
-    char* buffer = (char*)allocateAndLockMemory(size);
-    if (buffer == NULL || buffer == nullptr) {
-        fprintf(stderr, "🚧 Cannot allocate %zu bytes directly in RAM\n", size);
-        exit(EXIT_FAILURE);
-    }
-    return buffer;
-}
 
 unsigned long timeMs() {
     struct timeval te; 
