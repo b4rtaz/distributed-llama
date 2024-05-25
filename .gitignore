@@ -5,6 +5,7 @@
 *.data
 *.bin
 *.exe
+
 __pycache__
 
 *-test
