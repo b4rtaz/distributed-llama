@@ -265,7 +265,7 @@ TransformerArch buildLlamaArch(TransformerSpec* spec) {
         a.I(llamaQuantizeRmfFfn, TASK_TYPE_INFERENCE);
         a.I(llamaSyncFfn, TASK_TYPE_TRANSFER);
         a.I(llamaFfn0, TASK_TYPE_INFERENCE);
-        a.I(llamaFfn1, TASK_TYPE_TRANSFER);
+        a.I(llamaFfn1, TASK_TYPE_INFERENCE);
         a.I(llamaFfn2, TASK_TYPE_INFERENCE);
         a.I(llamaQuantizeFfn2, TASK_TYPE_INFERENCE);
         a.I(llamaSyncFfn2, TASK_TYPE_TRANSFER);
