@@ -3,14 +3,12 @@
 *.o
 *.dSYM
 *.data
-*.bin
-*.exe
-
 __pycache__
 
 *-test
 main
-run.sh
+run*.sh
 server
 /dllama
 /dllama-*
+*.exe
