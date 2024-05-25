@@ -45,6 +45,15 @@ You always need the root node and you can add 2^n - 1 worker nodes to speed up t
 
 All tests below utilized Q40 weights and a Q80 buffer. The generation time encompasses the inference time, network transfer time, sampling time, and multi-thread synchronization time. Number of samples: 16.
 
+**Raspberry Pi 5 8GB**
+
+| Model       | 1 x RasPi 5 8 GB                                                    | 2 x RasPi 5 8 GB                                                    | 4 x RasPi 5 8 GB                                                    |
+|-------------|---------------------------------------------------------------------|---------------------------------------------------------------------|---------------------------------------------------------------------|
+| Llama 2 7B  | **441.09 ms**, 2.26 t/s<br><sub><sup>(I: 434.84 ms, T: 5.25 ms)</sup></sub> | **341.46 ms**, 2.92 t/s<br><sub><sup>(I: 257.78 ms, T: 83.27 ms)</sup></sub>   | **219.08 ms**, 4.56 t/s<br><sub><sup>(I: 163.42 ms, T: 55.25 ms)</sup></sub> |
+| Llama 3 8B  | **564.31 ms**, 1.77 t/s<br><sub><sup>(I: 556.67 ms, T: 6.17 ms)</sup></sub> | **444.27 ms**, 2.25 t/s<br><sub><sup>(I: 362.73 ms, T: 80.11 ms)</sup></sub>   | **331.47 ms**, 3.01 t/s<br><sub><sup>(I: 267.62 ms, T: 62.34 ms)</sup></sub> |
+
+<sub><sup>I - inference time of the root node, T - network transfer time, tested on 0.3.1 version</sup></sub>
+
 **Raspberry Pi 4B 8 GB**
 
 <p align="center">
@@ -59,14 +68,6 @@ All Raspberry Pi units were connected via Gigabit Ethernet to the TP-Link LS1008
 | Llama 2 7B  | **1312.50 ms**<br><sub><sup>(I: 1307.94 ms, T: 1.81 ms)</sup></sub> | **793.69 ms**<br><sub><sup>(I: 739.00 ms, T: 52.50 ms)</sup></sub>    | **494.00 ms** 🔥               <br><sub><sup>(I: 458.81 ms, T: 34.06 ms)</sup></sub> | **588.19 ms**<br><sub><sup>(I: 296.69 ms, T: 289.75 ms)</sup></sub>  |
 | Llama 2 13B | <sub><sup>Not enough RAM</sup></sub>                                | **1497.19 ms**<br><sub><sup>(I: 1465.06 ms, T: 30.88 ms)</sup></sub>  | **848.19 ms** 🔥<br><sub><sup>(I: 746.88 ms, T: 99.50 ms)</sup></sub>                | **1114.88 ms**<br><sub><sup>(I: 460.8 ms, T: 652.88 ms)</sup></sub>  |
 | Llama 2 70B | <sub><sup>Not enough RAM</sup></sub>                                | <sub><sup>Not enough RAM</sup></sub>                                  | <sub><sup>Not enough RAM</sup></sub>                                                 | **4842.81 ms** 🔥<br><sub><sup>(I: 2121.94 ms, T: 2719.62 ms)</sup></sub> |
-
-<sub><sup>I - inference time of the root node, T - network transfer time, tested on 0.1.0 version</sup></sub>
-
-**Raspberry Pi 5 8GB**
-
-| Model       | 1 x RasPi 5 8 GB                                                    |
-|-------------|---------------------------------------------------------------------|
-| Llama 2 7B  | **436.25 ms**<br><sub><sup>(I: 433.31 ms, T: 2.19 ms) by [@segabor](https://github.com/b4rtaz/distributed-llama/issues/8#issuecomment-1913588926)</sup></sub> |
 
 <sub><sup>I - inference time of the root node, T - network transfer time, tested on 0.1.0 version</sup></sub>
 
@@ -90,7 +91,7 @@ All tests below were conducted on c3d-highcpu-30 (30 vCPU, 15 core, 59 GB memory
 |-------------|------------------------------------------------------------------|------------------------------------------------------------------|------------------------------------------------------------------|
 | Llama 3 8B  | **2048 kB**<br><sub><sup>(S: 1024 kB, R: 1024 kB)</sup></sub>    | **6144 kB**<br><sub><sup>(S: 3072 kB, R: 3072 kB)</sup></sub>   | **14336 kB**<br><sub><sup>(S: 7168 kB, R: 7168 kB)</sup></sub>  |
 
-<sub><sup>S - sent data from the root node to workers, R - received data by the root node from workers</sup></sub>
+<sub><sup>S - sent data from the root node to workers, R - received data by the root node from workers, tested on 0.7.1 version</sup></sub>
 
 **Q80 Buffer**
 
@@ -98,7 +99,7 @@ All tests below were conducted on c3d-highcpu-30 (30 vCPU, 15 core, 59 GB memory
 |-------------|---------------------------------------------------------------|----------------------------------------------------------------|-----------------------------------------------------------------|
 | Llama 3 8B  | **544 kB**<br><sub><sup>(S: 272 kB, R: 272 kB)</sup></sub>   | **1632 kB**<br><sub><sup>(S: 816 kB, R: 816 kB)</sup></sub>   | **3808 kB**<br><sub><sup>(S: 1904 kB, R: 1904 kB)</sup></sub>    |
 
-<sub><sup>S - sent data from the root node to workers, R - received data by the root node from workers</sup></sub>
+<sub><sup>S - sent data from the root node to workers, R - received data by the root node from workers, tested on 0.7.1 version</sup></sub>
 
 ## Download Model and Run
 
