@@ -7,6 +7,10 @@ MODELS = {
         'https://huggingface.co/b4rtaz/llama-3-8b-distributed-llama/resolve/main/dllama_meta-llama-3-8b_q40.bin?download=true',
         'https://huggingface.co/b4rtaz/llama-3-8b-distributed-llama/resolve/main/dllama_meta-llama3-tokenizer.t?download=true',
     ],
+    'llama3_8b_instruct_q40': [
+        'https://huggingface.co/Azamorn/Meta-Llama-3-8B-Instruct-Distributed/resolve/main/dllama_original_q40.bin?download=true',
+        'https://huggingface.co/Azamorn/Meta-Llama-3-8B-Instruct-Distributed/resolve/main/dllama-llama3-tokenizer.t?download=true',
+    ],
     'tinylama_1.1b_3t_q40': [
         'https://huggingface.co/b4rtaz/tinyllama-1.1b-1431k-3t-distributed-llama/resolve/main/dllama_model_tinylama_1.1b_3t_q40.m?download=true',
         'https://huggingface.co/b4rtaz/tinyllama-1.1b-1431k-3t-distributed-llama/resolve/main/dllama_tokenizer_tinylama_1.1b_3t_q40.t?download=true'
@@ -16,6 +20,8 @@ MODELS = {
 ALIASES = {
     'llama3': 'llama3_8b_q40',
     'llama3_8b': 'llama3_8b_q40',
+    'llama3_instruct': 'llama3_8b_instruct_q40',
+    'llama3_8b_instruct': 'llama3_8b_instruct_q40',
     'tinylama': 'tinylama_1.1b_3t_q40'
 }
 
