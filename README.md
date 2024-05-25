@@ -18,7 +18,7 @@ Python and GCC required. Download this repository and run:
 * Llama 3 8B: `python download-model.py llama3`
 * TinyLlama: `python download-model.py tinylama`
 
-** Supported modes:**
+**Supported modes:**
 
 - Inference
 - Chat
