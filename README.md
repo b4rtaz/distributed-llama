@@ -18,6 +18,12 @@ Python and GCC required. Download this repository and run:
 * Llama 3 8B: `python download-model.py llama3`
 * TinyLlama: `python download-model.py tinylama`
 
+** Supported modes:**
+
+- Inference
+- Chat
+- [API Server](./src/apps/dllama-api/README.md)
+
 **Known limitations:**
 * You can run Distributed Llama only on 1, 2, 4... 2^n devices.
 * Optimized for (weights format × buffer format):
