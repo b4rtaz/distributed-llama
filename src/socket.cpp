@@ -65,18 +65,12 @@ static inline void writeSocket(int socket, const void* data, size_t size) {
     while (size > 0) {
         int s = send(socket, (const char*)data, size, 0);
         if (s < 0) {
-#ifdef _WIN32
-            if (WSAGetLastError() == WSAEWOULDBLOCK) {
+            if(isEagainError()){
                 continue;
             }
-#else
-            if (SOCKET_LAST_ERRCODE == EAGAIN) {
-                continue;
-            }
-#endif
-            throw std::runtime_error("Error writing to socket");
+            throw WriteSocketException(0, "Error writing to socket");
         } else if (s == 0) {
-            throw std::runtime_error("Socket closed");
+            throw ReadSocketException(0, "Socket closed");
         }
         size -= s;
         data = (const char*)data + s;
@@ -106,9 +100,9 @@ static inline bool tryReadSocket(int socket, void* data, size_t size, unsigned l
                 }
                 continue;
             }
-            throw std::runtime_error("Error reading from socket");
+            throw ReadSocketException(0, "Error reading from socket");
         } else if (r == 0) {
-            throw std::runtime_error("Socket closed");
+            throw ReadSocketException(0, "Socket closed");
         }
         data = (char*)data + r;
         s -= r;
@@ -208,15 +202,9 @@ void SocketPool::writeMany(unsigned int n, SocketIo* ios) {
                 int socket = sockets[io->socketIndex];
                 ssize_t s = send(socket, (const char*)io->data, io->size, 0);
                 if (s < 0) {
-#ifdef _WIN32
-                    if (WSAGetLastError() == WSAEWOULDBLOCK) {
+                    if (isEagainError()) {
                         continue;
                     }
-#else
-                    if (SOCKET_LAST_ERRCODE == EAGAIN) {
-                        continue;
-                    }
-#endif
                     throw WriteSocketException(SOCKET_LAST_ERRCODE, SOCKET_LAST_ERROR);
                 } else if (s == 0) {
                     throw WriteSocketException(0, "Socket closed");
@@ -244,7 +232,7 @@ void SocketPool::readMany(unsigned int n, SocketIo* ios) {
                 int socket = sockets[io->socketIndex];
                 ssize_t r = recv(socket, (char*)io->data, io->size, 0);
                 if (r < 0) {
-                    if (SOCKET_LAST_ERRCODE == EAGAIN) {
+                    if (isEagainError()) {
                         continue;
                     }
                     throw ReadSocketException(SOCKET_LAST_ERRCODE, SOCKET_LAST_ERROR);
