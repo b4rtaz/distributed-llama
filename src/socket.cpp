@@ -83,14 +83,21 @@ static inline void writeSocket(int socket, const void* data, size_t size) {
     }
 }
 
+static inline bool isEagainError(){
+    #ifdef _WIN32
+    return WSAGetLastError() == WSAEWOULDBLOCK;
+    #else
+    return SOCKET_LAST_ERRCODE == EAGAIN;
+    #endif
+}
+
 static inline bool tryReadSocket(int socket, void* data, size_t size, unsigned long maxAttempts) {
     // maxAttempts = 0 means infinite attempts
     size_t s = size;
     while (s > 0) {
         int r = recv(socket, (char*)data, s, 0);
         if (r < 0) {
-#ifdef _WIN32
-            if (WSAGetLastError() == WSAEWOULDBLOCK) {
+            if (isEagainError()) {
                 if (s == size && maxAttempts > 0) {
                     maxAttempts--;
                     if (maxAttempts == 0) {
@@ -99,17 +106,6 @@ static inline bool tryReadSocket(int socket, void* data, size_t size, unsigned l
                 }
                 continue;
             }
-#else
-            if (SOCKET_LAST_ERRCODE == EAGAIN) {
-                if (s == size && maxAttempts > 0) {
-                    maxAttempts--;
-                    if (maxAttempts == 0) {
-                        return false;
-                    }
-                }
-                continue;
-            }
-#endif
             throw std::runtime_error("Error reading from socket");
         } else if (r == 0) {
             throw std::runtime_error("Socket closed");
