@@ -176,7 +176,7 @@ public:
     char* w10;
     RowMatmulSlice* w10Slice;
     char* w20;
-    RowMatmulSlice* w20Slice;
+    ColMatmulSlice* w20Slice;
     char* w30;
     RowMatmulSlice* w30Slice;
 
