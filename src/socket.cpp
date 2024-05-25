@@ -27,6 +27,14 @@ typedef SSIZE_T ssize_t;
 #define SOCKET_LAST_ERRCODE errno
 #define SOCKET_LAST_ERROR strerror(errno)
 
+static inline bool isEagainError(){
+    #ifdef _WIN32
+    return WSAGetLastError() == WSAEWOULDBLOCK;
+    #else
+    return SOCKET_LAST_ERRCODE == EAGAIN;
+    #endif
+}
+
 static inline void setNonBlocking(int socket, bool enabled) {
 #ifdef _WIN32
     u_long mode = enabled ? 1 : 0;
@@ -75,14 +83,6 @@ static inline void writeSocket(int socket, const void* data, size_t size) {
         size -= s;
         data = (const char*)data + s;
     }
-}
-
-static inline bool isEagainError(){
-    #ifdef _WIN32
-    return WSAGetLastError() == WSAEWOULDBLOCK;
-    #else
-    return SOCKET_LAST_ERRCODE == EAGAIN;
-    #endif
 }
 
 static inline bool tryReadSocket(int socket, void* data, size_t size, unsigned long maxAttempts) {
