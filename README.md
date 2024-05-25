@@ -4,19 +4,19 @@
 
 [![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/b4rtaz/distributed-llama/.github%2Fworkflows%2Fmain.yml?style=flat-square)](https://github.com/b4rtaz/distributed-llama/actions) [![License: MIT](https://img.shields.io/github/license/mashape/apistatus.svg?style=flat-square)](/LICENSE)
 
-Run LLMs on weak devices or make powerful devices even more powerful by distributing the workload and dividing the RAM usage. This project proves that it's possible split the workload of LLMs across multiple devices and achieve a significant speedup. Distributed Llama allows you to run huge LLMs in-house. The project uses TCP sockets to synchronize the state. You can easily configure your AI cluster by using a home router.
+Tensor parallelism is all you need. Run LLMs on weak devices or make powerful devices even more powerful by distributing the workload and dividing the RAM usage. This project proves that it's possible split the workload of LLMs across multiple devices and achieve a significant speedup. Distributed Llama allows you to run huge LLMs in-house. The project uses TCP sockets to synchronize the state. You can easily configure your AI cluster by using a home router.
 
 <p align="center">
   <img src=".github/8raspi.jpg" width="50%" alt="Distributed Llama running on 8 Raspberry Pi 4B devices" /><br />
   <sub><sup>Distributed Llama running Llama 2 70B on 8 Raspberry Pi 4B devices</sup></sub>
 </p>
 
-**Supported models:**
-* Llama 2 (7B, 13B, 70B) chat and non-chat versions,
-* Llama 3,
-* Grok-1 (314B)
-* Mistral, Mixtral
-* TinyLlama
+**🔥 Run Distributed Llama by single command**
+
+Python and GCC required. Download this repository and run:
+
+* Llama 3 8B: `python download-model.py llama3`
+* TinyLlama: `python download-model.py tinylama`
 
 **Known limitations:**
 * You can run Distributed Llama only on 1, 2, 4... 2^n devices.
@@ -60,7 +60,7 @@ All Raspberry Pi units were connected via Gigabit Ethernet to the TP-Link LS1008
 | Llama 2 13B | <sub><sup>Not enough RAM</sup></sub>                                | **1497.19 ms**<br><sub><sup>(I: 1465.06 ms, T: 30.88 ms)</sup></sub>  | **848.19 ms** 🔥<br><sub><sup>(I: 746.88 ms, T: 99.50 ms)</sup></sub>                | **1114.88 ms**<br><sub><sup>(I: 460.8 ms, T: 652.88 ms)</sup></sub>  |
 | Llama 2 70B | <sub><sup>Not enough RAM</sup></sub>                                | <sub><sup>Not enough RAM</sup></sub>                                  | <sub><sup>Not enough RAM</sup></sub>                                                 | **4842.81 ms** 🔥<br><sub><sup>(I: 2121.94 ms, T: 2719.62 ms)</sup></sub> |
 
-<sub><sup>I - inference time of the root node, T - network transfer time</sup></sub>
+<sub><sup>I - inference time of the root node, T - network transfer time, tested on 0.1.0 version</sup></sub>
 
 **Raspberry Pi 5 8GB**
 
@@ -68,7 +68,7 @@ All Raspberry Pi units were connected via Gigabit Ethernet to the TP-Link LS1008
 |-------------|---------------------------------------------------------------------|
 | Llama 2 7B  | **436.25 ms**<br><sub><sup>(I: 433.31 ms, T: 2.19 ms) by [@segabor](https://github.com/b4rtaz/distributed-llama/issues/8#issuecomment-1913588926)</sup></sub> |
 
-<sub><sup>I - inference time of the root node, T - network transfer time</sup></sub>
+<sub><sup>I - inference time of the root node, T - network transfer time, tested on 0.1.0 version</sup></sub>
 
 **x86_64 CPU Cloud Server**
 
@@ -80,7 +80,7 @@ All tests below were conducted on c3d-highcpu-30 (30 vCPU, 15 core, 59 GB memory
 | Llama 2 13B | **184.19 ms**<br><sub><sup>(I: 182.88 ms, T: 0.69 ms)</sup></sub>   | **115.38 ms**<br><sub><sup>(I: 107.12 ms, T: 7.81 ms)</sup></sub>     | **86.81 ms** 🔥<br><sub><sup>(I: 66.25 ms, T: 19.94 ms)</sup></sub>                  |
 | Llama 2 70B | **909.69 ms**<br><sub><sup>(I: 907.25 ms, T: 1.75 ms)</sup></sub>   | **501.38 ms**<br><sub><sup>(I: 475.50 ms, T: 25.00 ms)</sup></sub>    | **293.06 ms** 🔥<br><sub><sup>(I: 264.00 ms, T: 28.50 ms)</sup></sub>                  |
 
-<sub><sup>I - inference time of the root node, T - network transfer time</sup></sub>
+<sub><sup>I - inference time of the root node, T - network transfer time, tested on 0.1.0 version</sup></sub>
 
 ### Network Transfer for Generating Single Token
 
@@ -88,9 +88,7 @@ All tests below were conducted on c3d-highcpu-30 (30 vCPU, 15 core, 59 GB memory
 
 | Model       | 2 devices                                                        | 4 devices                                                        | 8 devices                                                        |
 |-------------|------------------------------------------------------------------|------------------------------------------------------------------|------------------------------------------------------------------|
-| Llama 2 7B  | **4192 kB**<br><sub><sup>(S: 2224 kB, R: 1968 kB)</sup></sub>    | **10656 kB**<br><sub><sup>(S: 7704 kB, R: 2952 kB)</sup></sub>   | **22624 kB**<br><sub><sup>(S: 19180 kB, R: 3444 kB)</sup></sub>  |
-| Llama 2 13B | **6560 kB**<br><sub><sup>(S: 3480 kB, R: 3080 kB)</sup></sub>    | **16680 kB**<br><sub><sup>(S: 12060 kB, R: 4620 kB)</sup></sub>  | **35420 kB**<br><sub><sup>(S: 30030 kB, R: 5390 kB)</sup></sub>  |
-| Llama 2 70B |                                                                  |                                                                  |                                                                  |
+| Llama 3 8B  | **2048 kB**<br><sub><sup>(S: 1024 kB, R: 1024 kB)</sup></sub>    | **6144 kB**<br><sub><sup>(S: 3072 kB, R: 3072 kB)</sup></sub>   | **14336 kB**<br><sub><sup>(S: 7168 kB, R: 7168 kB)</sup></sub>  |
 
 <sub><sup>S - sent data from the root node to workers, R - received data by the root node from workers</sup></sub>
 
@@ -98,9 +96,7 @@ All tests below were conducted on c3d-highcpu-30 (30 vCPU, 15 core, 59 GB memory
 
 | Model       | 2 devices                                                     | 4 devices                                                      | 8 devices                                                       |
 |-------------|---------------------------------------------------------------|----------------------------------------------------------------|-----------------------------------------------------------------|
-| Llama 2 7B  | **1112 kB**<br><sub><sup>(S: 590 kB, R: 522 kB)</sup></sub>   | **2830 kB**<br><sub><sup>(S: 2046 kB, R: 784 kB)</sup></sub>   | **6008 kB**<br><sub><sup>(S: 5094 kB, R: 914 kB)</sup></sub>    |
-| Llama 2 13B | **1742 kB**<br><sub><sup>(S: 924 kB, R: 818 kB)</sup></sub>   | **4430 kB**<br><sub><sup>(S: 3203 kB, R: 1227 kB)</sup></sub>  | **9407 kB**<br><sub><sup>(S: 7976 kB, R: 1431 kB)</sup></sub>   |
-| Llama 2 70B | **5525 kB**<br><sub><sup>(S: 3230 kB, R: 2295 kB)</sup></sub> | **14917 kB**<br><sub><sup>(S: 11475 kB, R: 3442 kB)</sup></sub>| **32873 kB**<br><sub><sup>(S: 28857 kB, R: 4016 kB)</sup></sub> |
+| Llama 3 8B  | **544 kB**<br><sub><sup>(S: 272 kB, R: 272 kB)</sup></sub>   | **1632 kB**<br><sub><sup>(S: 816 kB, R: 816 kB)</sup></sub>   | **3808 kB**<br><sub><sup>(S: 1904 kB, R: 1904 kB)</sup></sub>    |
 
 <sub><sup>S - sent data from the root node to workers, R - received data by the root node from workers</sup></sub>
 
