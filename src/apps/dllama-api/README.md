@@ -9,3 +9,5 @@ How to run?
 ```bash
 ./dllama-api --model converter/dllama_original_q40.bin --tokenizer converter/dllama-llama3-tokenizer.t --weights-float-type q40 --buffer-float-type q80 --nthreads 4
 ```
+
+Check the [chat-api-client.js](../../../examples/chat-api-client.js) file to see how to use the API from NodeJS application.
