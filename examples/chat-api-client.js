@@ -5,8 +5,8 @@
 // 1. Start the server, how to do it is described in the `src/apps/dllama-api/README.md` file.
 // 2. Run this script: `node examples/chat-api-client.js`
 
-const HOST = '127.0.0.1';
-const PORT = 9990;
+const HOST = process.env.HOST ? process.env.HOST : '127.0.0.1';
+const PORT = process.env.PORT ? Number(process.env.PORT) : 9990;
 
 async function chat(messages, maxTokens) {
     const response = await fetch(`http://${HOST}:${PORT}/v1/chat/completions`, {
