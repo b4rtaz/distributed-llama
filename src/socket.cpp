@@ -230,7 +230,6 @@ Socket SocketServer::accept() {
         throw std::runtime_error("Error accepting connection");
     setNoDelay(clientSocket);
     setQuickAck(clientSocket);
-    printf("Client connected\n");
     return Socket(clientSocket);
 }
 
@@ -261,7 +260,7 @@ bool Socket::tryRead(void* data, size_t size, unsigned long maxAttempts) {
 
 std::vector<char> Socket::readHttpRequest() {
         std::vector<char> httpRequest;
-        char buffer[1024]; // Initial buffer size
+        char buffer[1024 * 1024]; // TODO: this should be refactored asap
         ssize_t bytesRead;
         
         // Peek into the socket buffer to check available data
