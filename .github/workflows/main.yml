@@ -8,7 +8,7 @@ on:
       - main
 jobs:
   build-linux:
-    name: Build
+    name: Linux
     runs-on: ${{matrix.os}}
     strategy:
       matrix:
@@ -45,7 +45,7 @@ jobs:
         run: ./grok1-tasks-test
 
   build-windows:
-    name: Build
+    name: Windows
     runs-on: windows-latest
     steps:
       - name: Checkout Repo
