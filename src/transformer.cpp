@@ -3,8 +3,6 @@
 #include <cassert>
 #include <stdexcept>
 #include <string.h>
-#include <ostream>
-#include <iostream>
 #include "funcs.hpp"
 #include "utils.hpp"
 #include "socket.hpp"
