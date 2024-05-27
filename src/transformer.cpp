@@ -251,6 +251,10 @@ TransformerSpec Transformer::loadSpecFromFile(const char* path, const unsigned i
     spec.bufferFloatType = bufferFloatType;
     spec.nSlices = nSlices;
 
+    if (spec.nSlices > spec.nKvHeads) {
+        // TODO: https://github.com/b4rtaz/distributed-llama/issues/70
+        throw std::runtime_error("This version does not support more nodes than the number of KV heads in the model.");
+    }
     if (spec.archType == LLAMA) {
         printf("💡 arch: llama\n");
     } else if (spec.archType == GROK1) {

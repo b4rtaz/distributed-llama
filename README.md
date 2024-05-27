@@ -26,7 +26,8 @@ Python and GCC required. Download this repository and run:
 - [API Server](./src/apps/dllama-api/README.md)
 
 **Known limitations:**
-* You can run Distributed Llama only on 1, 2, 4... 2^n devices.
+* You can run Distributed Llama only on 1, 2, 4... 2^n nodes.
+* The maximum number of nodes is equal to the number of KV heads in the model [#70](https://github.com/b4rtaz/distributed-llama/issues/70). 
 * Optimized for (weights format × buffer format):
   * ARM CPUs
     * ✅ F32 × F32
