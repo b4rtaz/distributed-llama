@@ -4,10 +4,11 @@
 #include <atomic>
 #include "common/pthread.h"
 
-#define NEW_BUFFER(size) newBuffer(size)
-#define FREE_BUFFER(buffer) free(buffer)
+#define NEW_BUFFER(size) (char*)newBuffer(size)
+#define FREE_BUFFER(buffer) freeBuffer(buffer)
 
-char* newBuffer(size_t size);
+void* newBuffer(size_t size);
+void freeBuffer(void* buffer);
 unsigned long timeMs();
 unsigned int randomU32(unsigned long long *state);
 float randomF32(unsigned long long *state);

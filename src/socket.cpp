@@ -27,7 +27,7 @@ typedef SSIZE_T ssize_t;
 #define SOCKET_LAST_ERRCODE errno
 #define SOCKET_LAST_ERROR strerror(errno)
 
-static inline bool isEagainError(){
+static inline bool isEagainError() {
     #ifdef _WIN32
     return WSAGetLastError() == WSAEWOULDBLOCK;
     #else
@@ -69,11 +69,28 @@ static inline void setQuickAck(int socket) {
 #endif
 }
 
+static inline void setReuseAddr(int socket) {
+    int opt = 1;
+    #ifdef _WIN32
+    int iresult = setsockopt(socket, SOL_SOCKET, SO_REUSEADDR, (char*)&opt, sizeof(opt));
+    if (iresult == SOCKET_ERROR) {
+        closesocket(socket);
+        WSACleanup();
+        throw std::runtime_error("setsockopt failed: " + std::to_string(WSAGetLastError()));
+    }
+    #else
+    if (setsockopt(socket, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
+        close(socket);
+        throw std::runtime_error("setsockopt failed: " + std::string(strerror(errno)));
+    }
+    #endif
+}
+
 static inline void writeSocket(int socket, const void* data, size_t size) {
     while (size > 0) {
         int s = send(socket, (const char*)data, size, 0);
         if (s < 0) {
-            if(isEagainError()){
+            if (isEagainError()) {
                 continue;
             }
             throw WriteSocketException(0, "Error writing to socket");
@@ -336,21 +353,7 @@ SocketServer::SocketServer(int port) {
     socket = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (socket < 0)
         throw std::runtime_error("Cannot create socket");
-
-    int opt = 1;
-    #ifdef _WIN32
-    int iresult = setsockopt(socket, SOL_SOCKET, SO_REUSEADDR, (char*)&opt, sizeof(opt));
-    if (iresult == SOCKET_ERROR) {
-        closesocket(socket);
-        WSACleanup();
-        throw std::runtime_error("setsockopt failed: " + std::to_string(WSAGetLastError()));
-    }
-    #else
-    if (setsockopt(socket, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
-        close(socket);
-        throw std::runtime_error("setsockopt failed: " + std::string(strerror(errno)));
-    }
-    #endif
+    setReuseAddr(socket);
 
     memset(&serverAddr, 0, sizeof(serverAddr));
     serverAddr.sin_family = AF_INET;

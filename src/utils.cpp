@@ -9,45 +9,38 @@
 #define BUFFER_ALIGNMENT 16
 
 #ifdef _WIN32 
-#include <windows.h>
 #include <malloc.h>
 #else
 #include <sys/mman.h>
 #endif
 
-void* gracefullyAllocateBuffer(size_t size){
-    std::vector<char>* arr = new std::vector<char>();
-    arr->reserve(size);
-    arr->resize(size);
-    char* buffer = arr->data();
-    std::memset(buffer, 0, size);
+void* newBuffer(size_t size) {
+    void* buffer;
+#ifdef _WIN32
+    buffer = _aligned_malloc(size, BUFFER_ALIGNMENT);
+    if (buffer == NULL) {
+        fprintf(stderr, "error: _aligned_malloc failed\n");
+        exit(EXIT_FAILURE);
+    }
+#else
+    if (posix_memalign((void**)&buffer, BUFFER_ALIGNMENT, size) != 0) {
+        fprintf(stderr, "error: posix_memalign failed\n");
+        exit(EXIT_FAILURE);
+    }
+    if (mlock(buffer, size) != 0) {
+        fprintf(stderr, "🚧 Cannot allocate %zu bytes directly in RAM\n", size);
+    }
+#endif
     return buffer;
 }
 
-#ifdef _WIN32 
-char* newBuffer(size_t size) {
-    char* ptr = (char*)gracefullyAllocateBuffer(size);
-    return ptr;
-}
+void freeBuffer(void* buffer) {
+#ifdef _WIN32
+    _aligned_free(buffer);
 #else
-char* newBuffer(size_t size) {
-    char* ptr;
-    bool useGraceful = false;
-
-    if (posix_memalign((void**)&ptr, BUFFER_ALIGNMENT, size) != 0) {
-        useGraceful = true;
-    }
-    else if (mlock(ptr, size) != 0){
-        useGraceful = true;
-    }
-
-    if(useGraceful){
-        ptr = (char*)gracefullyAllocateBuffer(size);
-    }
-
-    return ptr;
-}
+    free(buffer);
 #endif
+}
 
 unsigned long timeMs() {
     struct timeval te; 

@@ -358,10 +358,10 @@ int Sampler::sample(float* logits) {
     return next;
 }
 
-void Sampler::setTemp(float temp){
+void Sampler::setTemp(float temp) {
     this->temperature = temp;
 }
 
-void Sampler::setSeed(unsigned long long seed){
+void Sampler::setSeed(unsigned long long seed) {
     this->rngState = seed;
 }
