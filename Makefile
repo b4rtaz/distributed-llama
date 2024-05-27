@@ -5,7 +5,7 @@ CXXFLAGS = -std=c++11 -Werror -O3 -march=native -mtune=native
 ifeq ($(OS),Windows_NT)
     LIBS = -lws2_32 # or -lpthreadGC2 if needed
 else
-	LIBS = -lpthread
+    LIBS = -lpthread
 endif
 
 utils: src/utils.cpp

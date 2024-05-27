@@ -7,30 +7,52 @@ on:
     branches:
       - main
 jobs:
-  build:
+  build-linux:
     name: Build
     runs-on: ${{matrix.os}}
     strategy:
       matrix:
-        os: [windows-latest, ubuntu-latest]
-        include:
-          - os: windows-latest
-            install_dependencies: choco install make
-            shell: cmd
-            platforms: 
-              - windows/amd64
-          - os: ubuntu-latest
-            install_dependencies: sudo apt-get update && sudo apt-get install build-essential
-            shell: bash
-            platforms: 
-              - linux/arm64
-              - linux/amd64
+        os:
+          - ubuntu-latest
+        platforms: 
+          - linux/arm64
+          - linux/amd64
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v3
       - name: Dependencies
         id: dependencies
-        run: ${{ matrix.install_dependencies }}
+        run: sudo apt-get update && sudo apt-get install build-essential
+      - name: Build
+        id: build
+        run: |
+          make dllama
+          make dllama-api
+          make funcs-test
+          make quants-test
+          make transformer-test
+          make llama2-tasks-test
+          make grok1-tasks-test
+      - name: funcs-test
+        run: ./funcs-test
+      - name: quants-test
+        run: ./quants-test
+      - name: transformer-test
+        run: ./transformer-test
+      - name: llama2-tasks-test
+        run: ./llama2-tasks-test
+      - name: grok1-tasks-test
+        run: ./grok1-tasks-test
+
+  build-windows:
+    name: Build
+    runs-on: windows-latest
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v3
+      - name: Dependencies
+        id: dependencies
+        run: choco install make
       - name: Build
         id: build
         run: |
