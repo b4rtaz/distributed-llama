@@ -17,17 +17,17 @@ jobs:
           - linux/arm64
           - linux/amd64
           - windows/amd64
+        include:
+          - os: windows-latest
+          script_name: .\dependencies.cmd
+          - os: ubuntu-latest
+          script_name: ./dependencies.sh
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v3
       - name: Dependencies
         id: dependencies
-        run: |
-          if [ ${{ runner.os }} == 'Linux' ]; then
-            sudo apt-get update
-            sudo apt-get install build-essential
-          elif [ ${{ runner.os }} == 'Windows' ]; then
-            choco install make
+        run: ${{ matrix.script_name }}
       - name: Build
         id: build
         run: |
