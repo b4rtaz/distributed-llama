@@ -15,10 +15,10 @@ jobs:
         os: [windows-latest, ubuntu-latest]
         include:
           - os: windows-latest
-            script_name: .\dependencies.cmd
+            script_name: .github\workflows\dependencies.cmd
             shell: cmd
           - os: ubuntu-latest
-            script_name: ./dependencies.sh
+            script_name: .github/workflows/dependencies.sh
             shell: bash
         platforms: 
           - linux/arm64
