@@ -15,9 +15,9 @@ jobs:
         os: [windows-latest, ubuntu-latest]
         include:
           - os: windows-latest
-          script_name: .\dependencies.cmd
+            script_name: .\dependencies.cmd
           - os: ubuntu-latest
-          script_name: ./dependencies.sh
+            script_name: ./dependencies.sh
         platforms: 
           - linux/arm64
           - linux/amd64
