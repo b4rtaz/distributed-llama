@@ -17,13 +17,14 @@ jobs:
           - os: windows-latest
             script_name: .github\workflows\scripts\dependencies.cmd
             shell: cmd
+            platforms: 
+              - windows/amd64
           - os: ubuntu-latest
             script_name: .github/workflows/scripts/dependencies.sh
             shell: bash
-        platforms: 
-          - linux/arm64
-          - linux/amd64
-          - windows/amd64
+            platforms: 
+              - linux/arm64
+              - linux/amd64
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v3
