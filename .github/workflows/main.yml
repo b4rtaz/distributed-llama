@@ -15,12 +15,12 @@ jobs:
         os: [windows-latest, ubuntu-latest]
         include:
           - os: windows-latest
-            script_name: .github\workflows\scripts\dependencies.cmd
+            install_dependencies: sudo apt-get update && sudo apt-get install build-essential
             shell: cmd
             platforms: 
               - windows/amd64
           - os: ubuntu-latest
-            script_name: .github/workflows/scripts/dependencies.sh
+            install_dependencies: choco install make
             shell: bash
             platforms: 
               - linux/arm64
@@ -30,7 +30,7 @@ jobs:
         uses: actions/checkout@v3
       - name: Dependencies
         id: dependencies
-        run: ${{ matrix.script_name }}
+        run: ${{ matrix.install_dependencies }}
       - name: Build
         id: build
         run: |
