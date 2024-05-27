@@ -7,8 +7,8 @@ on:
     branches:
       - main
 jobs:
-  build:
-    name: Build
+  build-linux:
+    name: Linux Build
     runs-on: ${{matrix.os}}
     strategy:
       matrix:
@@ -45,3 +45,39 @@ jobs:
         run: ./llama2-tasks-test
       - name: grok1-tasks-test
         run: ./grok1-tasks-test
+
+  build-windows:
+    name: Windows Build
+    runs-on: windows-latest
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v3
+
+      - name: Set up Dependencies
+        run: |
+          choco install make
+
+      - name: Build
+        run: |
+          make dllama
+          make dllama-api
+          make funcs-test
+          make quants-test
+          make transformer-test
+          make llama2-tasks-test
+          make grok1-tasks-test
+
+      - name: Run funcs-test
+        run: .\funcs-test.exe
+
+      - name: Run quants-test
+        run: .\quants-test.exe
+
+      - name: Run transformer-test
+        run: .\transformer-test.exe
+
+      - name: Run llama2-tasks-test
+        run: .\llama2-tasks-test.exe
+
+      - name: Run grok1-tasks-test
+        run: .\grok1-tasks-test.exe
