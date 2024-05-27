@@ -10,6 +10,8 @@
     const unsigned int varStart = threadIndex * rangeSlice + (threadIndex < rangeRest ? threadIndex : rangeRest); \
     const unsigned int varEnd = varStart + rangeSlice + (threadIndex < rangeRest ? 1 : 0);
 
+#define DEBUG_FLOATS(name, v, n) printf("⭕ %s ", name); for (int i = 0; i < n; i++) printf("%f ", v[i]); printf("\n");
+
 void softmax(float* x, const unsigned int size);
 float rms(const float* x, const unsigned int size);
 void rmsnorm(float* o, const float* x, const float ms, const float* weight, const unsigned int size, const unsigned int nThreads, const unsigned int threadIndex);

@@ -1,6 +1,7 @@
 .vscode/settings.json
 
 *.o
+*.0
 *.dSYM
 *.data
 __pycache__
