@@ -1,7 +1,7 @@
 #include <cmath>
 #include <cassert>
 #include <cstdio>
-#include <pthread.h>
+#include "common/pthread.h"
 #include "quants.hpp"
 #include "funcs.hpp"
 
@@ -145,7 +145,7 @@ void rmsnorm(float* o, const float* x, const float ms, const float* weight, cons
 }
 
 struct MatmulThreadInfo {
-    pthread_t handler;
+    dl_thread handler;
     float* output;
     const void* input;
     const void* weights;

@@ -1,13 +1,30 @@
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
+#include <iostream>
+#include <vector>
 #include <sys/time.h>
-#include <sys/mman.h>
 #include "utils.hpp"
 
 #define BUFFER_ALIGNMENT 16
 
-char* newBuffer(size_t size) {
-    char* buffer;
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <sys/mman.h>
+#include <fcntl.h>
+#include <unistd.h>
+#endif
+
+void* newBuffer(size_t size) {
+    void* buffer;
+#ifdef _WIN32
+    buffer = _aligned_malloc(size, BUFFER_ALIGNMENT);
+    if (buffer == NULL) {
+        fprintf(stderr, "error: _aligned_malloc failed\n");
+        exit(EXIT_FAILURE);
+    }
+#else
     if (posix_memalign((void**)&buffer, BUFFER_ALIGNMENT, size) != 0) {
         fprintf(stderr, "error: posix_memalign failed\n");
         exit(EXIT_FAILURE);
@@ -15,7 +32,16 @@ char* newBuffer(size_t size) {
     if (mlock(buffer, size) != 0) {
         fprintf(stderr, "🚧 Cannot allocate %zu bytes directly in RAM\n", size);
     }
+#endif
     return buffer;
+}
+
+void freeBuffer(void* buffer) {
+#ifdef _WIN32
+    _aligned_free(buffer);
+#else
+    free(buffer);
+#endif
 }
 
 unsigned long timeMs() {
@@ -35,6 +61,56 @@ unsigned int randomU32(unsigned long long *state) {
 float randomF32(unsigned long long *state) {
     // random float32 in <0,1)
     return (randomU32(state) >> 8) / 16777216.0f;
+}
+
+void openMmapFile(MmapFile* file, const char* path, size_t size) {
+    file->size = size;
+#ifdef _WIN32
+    file->hFile = CreateFileA(path, GENERIC_READ, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (file->hFile == INVALID_HANDLE_VALUE) {
+        printf("Cannot open file %s\n", path);
+        exit(EXIT_FAILURE);
+    }
+
+    file->hMapping = CreateFileMappingA(file->hFile, NULL, PAGE_READONLY, 0, 0, NULL);
+    if (file->hMapping == NULL) {
+        printf("CreateFileMappingA failed, error: %lu\n", GetLastError());
+        CloseHandle(file->hFile);
+        exit(EXIT_FAILURE);
+    }
+
+    file->data = (char*)MapViewOfFile(file->hMapping, FILE_MAP_READ, 0, 0, 0);
+    if (file->data == NULL) {
+        printf("MapViewOfFile failed!\n");
+        CloseHandle(file->hMapping);
+        CloseHandle(file->hFile);
+        exit(EXIT_FAILURE);
+    }
+#else
+    file->fd = open(path, O_RDONLY);
+    if (file->fd == -1) {
+        printf("Cannot open file %s\n", path);
+        exit(EXIT_FAILURE);
+    }
+
+    file->data = mmap(NULL, size, PROT_READ, MAP_PRIVATE, file->fd, 0);
+    if (file->data == MAP_FAILED) {
+        printf("Mmap failed!\n");
+        close(file->fd);
+        exit(EXIT_FAILURE);
+    }
+#endif
+}
+
+void closeMmapFile(MmapFile* file) {
+#ifdef _WIN32
+    UnmapViewOfFile(file->data);
+    CloseHandle(file->hMapping);
+    CloseHandle(file->hFile);
+#else
+    munmap(file->data, file->size);
+    close(file->fd);
+#endif
 }
 
 TaskLoop::TaskLoop(unsigned int nThreads, unsigned int nTasks, unsigned int nTypes, TaskLoopTask* tasks, void* userData) {
@@ -69,7 +145,7 @@ void TaskLoop::run() {
     }
 
     for (i = 1; i < nThreads; i++) {
-        int result = pthread_create(&threads[i].handler, NULL, threadHandler, (void*)&threads[i]);
+        int result = pthread_create(&threads[i].handler, NULL, (thread_func_t)threadHandler, (void*)&threads[i]);
         if (result != 0) {
             printf("Cannot created thread\n");
             exit(EXIT_FAILURE);

@@ -1,21 +1,47 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cassert>
-#include <arpa/inet.h>
-#include <netinet/tcp.h>
 #include <errno.h>
 #include <string.h>
 #include <fcntl.h>
 #include <ctime>
-#include <unistd.h>
 #include <stdexcept>
 #include <vector>
+#include <string>
+#include <iostream>
 #include "socket.hpp"
+
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h> // For inet_addr and other functions
+#include <windows.h>  // For SSIZE_T
+typedef SSIZE_T ssize_t;
+#define close closesocket
+#else
+#include <sys/socket.h>
+#include <netinet/tcp.h>
+#include <arpa/inet.h>
+#include <unistd.h>
+#endif
 
 #define SOCKET_LAST_ERRCODE errno
 #define SOCKET_LAST_ERROR strerror(errno)
 
+static inline bool isEagainError() {
+    #ifdef _WIN32
+    return WSAGetLastError() == WSAEWOULDBLOCK;
+    #else
+    return SOCKET_LAST_ERRCODE == EAGAIN;
+    #endif
+}
+
 static inline void setNonBlocking(int socket, bool enabled) {
+#ifdef _WIN32
+    u_long mode = enabled ? 1 : 0;
+    if (ioctlsocket(socket, FIONBIO, &mode) != 0) {
+        throw std::runtime_error("Error setting socket to non-blocking");
+    }
+#else
     int flags = fcntl(socket, F_GETFL, 0);
     if (enabled) {
         flags |= O_NONBLOCK;
@@ -24,6 +50,7 @@ static inline void setNonBlocking(int socket, bool enabled) {
     }
     if (fcntl(socket, F_SETFL, flags) < 0)
         throw std::runtime_error("Error setting socket to non-blocking");
+#endif
 }
 
 static inline void setNoDelay(int socket) {
@@ -33,26 +60,45 @@ static inline void setNoDelay(int socket) {
 }
 
 static inline void setQuickAck(int socket) {
+#ifndef _WIN32
 #ifdef TCP_QUICKACK
     int value = 1;
     if (setsockopt(socket, IPPROTO_TCP, TCP_QUICKACK, (char*)&value, sizeof(int)) < 0)
         throw std::runtime_error("Error setting quick ack");
 #endif
+#endif
+}
+
+static inline void setReuseAddr(int socket) {
+    int opt = 1;
+    #ifdef _WIN32
+    int iresult = setsockopt(socket, SOL_SOCKET, SO_REUSEADDR, (char*)&opt, sizeof(opt));
+    if (iresult == SOCKET_ERROR) {
+        closesocket(socket);
+        WSACleanup();
+        throw std::runtime_error("setsockopt failed: " + std::to_string(WSAGetLastError()));
+    }
+    #else
+    if (setsockopt(socket, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
+        close(socket);
+        throw std::runtime_error("setsockopt failed: " + std::string(strerror(errno)));
+    }
+    #endif
 }
 
 static inline void writeSocket(int socket, const void* data, size_t size) {
     while (size > 0) {
-        int s = send(socket, (char*)data, size, 0);
+        int s = send(socket, (const char*)data, size, 0);
         if (s < 0) {
-            if (SOCKET_LAST_ERRCODE == EAGAIN) {
+            if (isEagainError()) {
                 continue;
             }
-            throw WriteSocketException(SOCKET_LAST_ERRCODE, SOCKET_LAST_ERROR);
+            throw WriteSocketException(0, "Error writing to socket");
         } else if (s == 0) {
             throw WriteSocketException(0, "Socket closed");
         }
         size -= s;
-        data = (char*)data + s;
+        data = (const char*)data + s;
     }
 }
 
@@ -60,9 +106,9 @@ static inline bool tryReadSocket(int socket, void* data, size_t size, unsigned l
     // maxAttempts = 0 means infinite attempts
     size_t s = size;
     while (s > 0) {
-        int r = recv(socket, data, s, 0);
+        int r = recv(socket, (char*)data, s, 0);
         if (r < 0) {
-            if (SOCKET_LAST_ERRCODE == EAGAIN) {
+            if (isEagainError()) {
                 if (s == size && maxAttempts > 0) {
                     maxAttempts--;
                     if (maxAttempts == 0) {
@@ -71,7 +117,7 @@ static inline bool tryReadSocket(int socket, void* data, size_t size, unsigned l
                 }
                 continue;
             }
-            throw ReadSocketException(SOCKET_LAST_ERRCODE, SOCKET_LAST_ERROR);
+            throw ReadSocketException(0, "Error reading from socket");
         } else if (r == 0) {
             throw ReadSocketException(0, "Socket closed");
         }
@@ -82,7 +128,9 @@ static inline bool tryReadSocket(int socket, void* data, size_t size, unsigned l
 }
 
 static inline void readSocket(int socket, void* data, size_t size) {
-    assert(tryReadSocket(socket, data, size, 0));
+    if (!tryReadSocket(socket, data, size, 0)) {
+        throw std::runtime_error("Error reading from socket");
+    }
 }
 
 ReadSocketException::ReadSocketException(int code, const char* message) {
@@ -169,9 +217,9 @@ void SocketPool::writeMany(unsigned int n, SocketIo* ios) {
             if (io->size > 0) {
                 isWriting = true;
                 int socket = sockets[io->socketIndex];
-                ssize_t s = send(socket, io->data, io->size, 0);
+                ssize_t s = send(socket, (const char*)io->data, io->size, 0);
                 if (s < 0) {
-                    if (SOCKET_LAST_ERRCODE == EAGAIN) {
+                    if (isEagainError()) {
                         continue;
                     }
                     throw WriteSocketException(SOCKET_LAST_ERRCODE, SOCKET_LAST_ERROR);
@@ -201,7 +249,7 @@ void SocketPool::readMany(unsigned int n, SocketIo* ios) {
                 int socket = sockets[io->socketIndex];
                 ssize_t r = recv(socket, (char*)io->data, io->size, 0);
                 if (r < 0) {
-                    if (SOCKET_LAST_ERRCODE == EAGAIN) {
+                    if (isEagainError()) {
                         continue;
                     }
                     throw ReadSocketException(SOCKET_LAST_ERRCODE, SOCKET_LAST_ERROR);
@@ -294,30 +342,59 @@ SocketServer::SocketServer(int port) {
     const char* host = "0.0.0.0";
     struct sockaddr_in serverAddr;
 
-    socket = ::socket(AF_INET, SOCK_STREAM, 0);
+    #ifdef _WIN32
+    WSADATA wsaData;
+    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
+        throw std::runtime_error("WSAStartup failed: " + std::to_string(WSAGetLastError()));
+    }
+    #endif
+
+    socket = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (socket < 0)
         throw std::runtime_error("Cannot create socket");
+    setReuseAddr(socket);
 
     memset(&serverAddr, 0, sizeof(serverAddr));
     serverAddr.sin_family = AF_INET;
     serverAddr.sin_port = htons(port);
     serverAddr.sin_addr.s_addr = inet_addr(host);
 
-    int bindResult = bind(socket, (struct sockaddr*)&serverAddr, sizeof(serverAddr));
+    int bindResult;
+    #ifdef _WIN32
+    bindResult = bind(socket, (SOCKADDR*)&serverAddr, sizeof(serverAddr));
+    if (bindResult == SOCKET_ERROR) {
+        int error = WSAGetLastError();
+        closesocket(socket);
+        WSACleanup();
+        throw std::runtime_error("Cannot bind port: " + std::to_string(error));
+    }
+    #else
+    bindResult = bind(socket, (struct sockaddr*)&serverAddr, sizeof(serverAddr));
     if (bindResult < 0) {
-        printf("Cannot bind %s:%d\n", host, port);
-        throw std::runtime_error("Cannot bind port");
+        close(socket);
+        throw std::runtime_error("Cannot bind port: " + std::string(strerror(errno)));
+    }
+    #endif
+
+    int listenResult = listen(socket, SOMAXCONN);
+    if (listenResult != 0) {
+        #ifdef _WIN32
+        closesocket(socket);
+        WSACleanup();
+        throw std::runtime_error("Cannot listen on port: " + std::to_string(WSAGetLastError()));
+        #else
+        close(socket);
+        throw std::runtime_error("Cannot listen on port: " + std::string(strerror(errno)));
+        #endif
     }
 
-    int listenResult = listen(socket, 1);
-    if (listenResult != 0) {
-        printf("Cannot listen %s:%d\n", host, port);
-        throw std::runtime_error("Cannot listen port");
-    }
     printf("Listening on %s:%d...\n", host, port);
 }
 
 SocketServer::~SocketServer() {
     shutdown(socket, 2);
+    #ifdef _WIN32
+    WSACleanup();
+    #endif
     close(socket);
 }

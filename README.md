@@ -158,9 +158,11 @@ To add more worker nodes, just add more addresses to the `--workers` argument.
 
 [Share your results](https://github.com/b4rtaz/distributed-llama/discussions)!
 
-## 💻 How to Run on MacOS or Linux
+## 💻 How to Run on MacOS, Linux, or Windows
 
-You need to have x86_64 AVX2 CPU or ARM CPU. Different devices may have different CPUs. The below instructions are for Debian-based distributions but you can easily adapt them to your distribution or macOS.
+You need to have x86_64 AVX2 CPU or ARM CPU. Different devices may have different CPUs. The below instructions are for Debian-based distributions but you can easily adapt them to your distribution, macOS, or Windows.
+
+### MacOS and Linux
 
 1. Install Git and G++:
 ```sh
@@ -186,6 +188,35 @@ sudo nice -n -20 ./dllama inference --model ../dllama_llama-2-7b_q40.bin --token
 7. To run the root node in the chat mode:
 ```sh
 sudo nice -n -20 ./dllama chat --model ../dllama_llama-2-7b-chat_q40.bin --tokenizer ../dllama-llama2-tokenizer.t --weights-float-type q40 --buffer-float-type q80 --nthreads 4 --workers 192.168.0.1:9998
+```
+
+### Windows
+
+1. Install Git and Mingw (Chocolatey):
+  - https://chocolatey.org/install
+```powershell
+choco install mingw
+```
+2. Clone this repository:
+```sh
+git clone https://github.com/b4rtaz/distributed-llama.git
+```
+3. Compile Distributed Llama:
+```sh
+make dllama
+```
+4. Transfer weights and the tokenizer file to the root node.
+5. Run worker nodes on worker devices:
+```sh
+./dllama worker --port 9998 --nthreads 4
+```
+6. Run root node on the root device:
+```sh
+./dllama inference --model ../dllama_llama-2-7b_q40.bin --tokenizer ../dllama-llama2-tokenizer.t --weights-float-type q40 --buffer-float-type q80 --prompt "Hello world" --steps 16 --nthreads 4 --workers 192.168.0.1:9998
+```
+7. To run the root node in the chat mode:
+```sh
+./dllama chat --model ../dllama_llama-2-7b-chat_q40.bin --tokenizer ../dllama-llama2-tokenizer.t --weights-float-type q40 --buffer-float-type q80 --nthreads 4 --workers 192.168.0.1:9998
 ```
 
 [Share your results](https://github.com/b4rtaz/distributed-llama/discussions)!

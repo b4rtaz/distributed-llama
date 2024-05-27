@@ -12,3 +12,4 @@ run*.sh
 server
 /dllama
 /dllama-*
+*.exe

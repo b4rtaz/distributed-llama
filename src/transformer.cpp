@@ -2,10 +2,7 @@
 #include <cmath>
 #include <cassert>
 #include <stdexcept>
-#include <fcntl.h>
 #include <string.h>
-#include <sys/mman.h>
-#include <unistd.h>
 #include "funcs.hpp"
 #include "utils.hpp"
 #include "socket.hpp"
@@ -285,10 +282,14 @@ TransformerSpec Transformer::loadSpecFromFile(const char* path, const unsigned i
     printf("💡 ropeTheta: %.1f\n", spec.ropeTheta);
 
     fseek(fd, 0, SEEK_END);
-    size_t fileSize = ftell(fd);
+    long fileSize = ftell(fd);
+    if (fileSize == -1L) {
+        fclose(fd);
+        throw std::runtime_error("Error determining model file size");
+    }
     fclose(fd);
 
-    spec.fileSize = fileSize;
+    spec.fileSize = static_cast<size_t>(fileSize);
     return spec;
 }
 
@@ -607,24 +608,18 @@ static size_t readSlicedMatmulWeights(MatmulSlice* slice, char* weights0, Socket
 }
 
 Transformer Transformer::loadRootFromFile(const char* path, TransformerSpec* spec, SocketPool* socketPool) {
-    int fd = open(path, O_RDONLY);
-    if (fd == -1) {
-        printf("Cannot open file %s\n", path);
-        exit(EXIT_FAILURE);
-    }
-    char* data = (char*)mmap(NULL, spec->fileSize, PROT_READ, MAP_PRIVATE, fd, 0);
-    if (data == MAP_FAILED) {
-        printf("Mmap failed!\n");
-        exit(EXIT_FAILURE);
-    }
-    char* weights = data + spec->headerSize;
-    Transformer transformer = Transformer::loadRoot(weights, spec, socketPool);
+    MmapFile file;
+    openMmapFile(&file, path, spec->fileSize);
+
+    char* weights = ((char*)file.data) + spec->headerSize;
+    Transformer transformer = Transformer::loadRoot((char*)weights, spec, socketPool);
+
 #if ALLOC_WEIGHTS
-    munmap(data, spec->fileSize);
-    close(fd);
+    closeMmapFile(&file);
 #else
-    // TODO: handler should be released in deconstructor
+    // TODO: handler should be released in destructor
 #endif
+
     return transformer;
 }
 
@@ -682,7 +677,7 @@ Transformer Transformer::loadRoot(char* data, TransformerSpec* spec, SocketPool*
 
     long missedBytes = (long)(w - data) - spec->fileSize + spec->headerSize;
     if (missedBytes != 0) {
-        printf("Missed %ld bytes\n", missedBytes);
+        printf("The model file is missing %ld bytes\n", missedBytes);
         exit(EXIT_FAILURE);
     }
 
