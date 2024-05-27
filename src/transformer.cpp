@@ -669,9 +669,7 @@ Transformer Transformer::loadRoot(char* data, TransformerSpec* spec, SocketPool*
 
     long missedBytes = (long)(w - data) - spec->fileSize + spec->headerSize;
     if (missedBytes != 0) {
-        printf("Missed %ld bytes\n", missedBytes);
-        printf("File Size %ld bytes\n", spec->fileSize);
-        printf("Header Size %ld bytes\n", spec->headerSize);
+        printf("The model file is missing %ld bytes\n", missedBytes);
         exit(EXIT_FAILURE);
     }
 
