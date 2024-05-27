@@ -36,32 +36,12 @@ enum class HttpMethod {
 
 class HttpRequest {
 public:
-    std::string path;
-    std::unordered_map<std::string, std::string> headers;
-    std::string body;
-    json parsedJson;
-    HttpMethod method;
-    std::string getMethod() {
-        switch(method) {
-            case HttpMethod::METHOD_GET:
-                return "GET";
-            case HttpMethod::METHOD_POST:
-                return "POST";
-            case HttpMethod::METHOD_PUT:
-                return "PUT";
-            case HttpMethod::METHOD_DELETE:
-                return "DELETE";
-            case HttpMethod::METHOD_UNKNOWN:
-            default:
-                return "UNKNOWN";
-        }
-    }
-};
+    static HttpRequest read(Socket& socket) {
+        HttpRequest req(&socket);
 
-class HttpParser {
-public:
-    static HttpRequest parseRequest(const std::string& request) {
-        HttpRequest httpRequest;
+        std::vector<char> httpRequest = socket.readHttpRequest();
+        // Parse the HTTP request
+        std::string request = std::string(httpRequest.begin(), httpRequest.end());
 
         // Split request into lines
         std::istringstream iss(request);
@@ -72,8 +52,8 @@ public:
         std::istringstream lineStream(line);
         std::string methodStr, path;
         lineStream >> methodStr >> path;
-        httpRequest.method = parseMethod(methodStr);
-        httpRequest.path = path;
+        req.method = parseMethod(methodStr);
+        req.path = path;
 
         // Parse headers
         while (std::getline(iss, line) && line != "\r") {
@@ -85,56 +65,102 @@ public:
                 value.erase(std::remove_if(value.begin(), value.end(), [](unsigned char c) {
                     return std::isspace(c) || !std::isprint(c);
                 }), value.end());
-                httpRequest.headers[key] = value;
+                req.headers[key] = value;
             }
         }
 
         // Parse body
-        std::getline(iss, httpRequest.body, '\0');
+        std::getline(iss, req.body, '\0');
 
-        if (httpRequest.body.size() > 0) {
+        if (req.body.size() > 0) {
             // printf("body: %s\n", httpRequest.body.c_str());
-            httpRequest.parsedJson = json::parse(httpRequest.body);
+            req.parsedJson = json::parse(req.body);
         }
-        return httpRequest;
+        return req;
     }
-private:
+
     static HttpMethod parseMethod(const std::string& method) {
-        if (method == "GET") {
-            return HttpMethod::METHOD_GET;
-        } else if (method == "POST") {
-            return HttpMethod::METHOD_POST;
-        } else if (method == "PUT") {
-            return HttpMethod::METHOD_PUT;
-        } else if (method == "DELETE") {
-            return HttpMethod::METHOD_DELETE;
-        } else {
-            return HttpMethod::METHOD_UNKNOWN;
-        }
+        if (method == "GET") return HttpMethod::METHOD_GET;
+        if (method == "POST") return HttpMethod::METHOD_POST;
+        if (method == "PUT") return HttpMethod::METHOD_PUT;
+        if (method == "DELETE") return HttpMethod::METHOD_DELETE;
+        return HttpMethod::METHOD_UNKNOWN;
+    }
+
+private:
+    Socket* socket;
+public:
+    std::string path;
+    std::unordered_map<std::string, std::string> headers;
+    std::string body;
+    json parsedJson;
+    HttpMethod method;
+
+    HttpRequest(Socket* socket) {
+        this->socket = socket;
+    }
+
+    std::string getMethod() {
+        if (method == HttpMethod::METHOD_GET) return "GET";
+        if (method == HttpMethod::METHOD_POST) return "POST";
+        if (method == HttpMethod::METHOD_PUT) return "PUT";
+        if (method == HttpMethod::METHOD_DELETE) return "DELETE";
+        return "UNKNOWN";
+    }
+
+    void writeNotFound() {
+        const char* data = "HTTP/1.1 404 Not Found\r\n";
+        socket->write(data, strlen(data));
+    }
+
+    void writeJson(std::string json) {
+        std::ostringstream buffer;
+        buffer << "HTTP/1.1 200 OK\r\n"
+            << "Content-Type: application/json; charset=utf-8\r\n"
+            << "Content-Length: " << json.length() << "\r\n\r\n" << json;
+        std::string data = buffer.str();
+        socket->write(data.c_str(), data.size());
+    }
+
+    void writeStreamStartChunk() {
+        std::ostringstream buffer;
+        buffer << "HTTP/1.1 200 OK\r\n"
+            << "Content-Type: text/event-stream; charset=utf-8\r\n"
+            << "Connection: close\r\n"
+            << "Transfer-Encoding: chunked\r\n\r\n";
+        std::string data = buffer.str();
+        socket->write(data.c_str(), data.size());
+    }
+
+    void writeStreamChunk(const std::string data) {
+        std::ostringstream buffer;
+        buffer << std::hex << data.size() << "\r\n" << data << "\r\n";
+        std::string d = buffer.str();
+        socket->write(d.c_str(), d.size());
+    }
+
+    void writeStreamEndChunk() {
+        const char* endChunk = "0000\r\n\r\n";
+        socket->write(endChunk, strlen(endChunk));
     }
 };
 
 struct Route {
     std::string path;
     HttpMethod method;
-    std::function<void(Socket&, HttpRequest&)> handler;
+    std::function<void(HttpRequest&)> handler;
 };
 
 class Router {
 public:
-    static void routeRequest(Socket& client_socket, HttpRequest& request, std::vector<Route>& routes) {
+    static void resolve(HttpRequest& request, std::vector<Route>& routes) {
         for (const auto& route : routes) {
             if (request.method == route.method && request.path == route.path) {
-                route.handler(client_socket, request);
+                route.handler(request);
                 return;
             }
         }
-        notFoundHandler(client_socket);
-    }
-private:
-    static void notFoundHandler(Socket& client_socket) {
-        const char* data = "HTTP/1.1 404 Not Found\r\n";
-        client_socket.write(data, strlen(data));
+        request.writeNotFound();
     }
 };
 
@@ -154,38 +180,7 @@ std::string buildChatPrompt(Tokenizer *tokenizer, const std::vector<ChatMessage>
     return oss.str();
 }
 
-void writeJsonResponse(Socket& socket, std::string json) {
-    std::ostringstream buffer;
-    buffer << "HTTP/1.1 200 OK\r\n"
-        << "Content-Type: application/json; charset=utf-8\r\n"
-        << "Content-Length: " << json.length() << "\r\n\r\n" << json;
-    std::string data = buffer.str();
-    socket.write(data.c_str(), data.size());
-}
-
-void writeStreamStartChunk(Socket& socket) {
-    std::ostringstream buffer;
-    buffer << "HTTP/1.1 200 OK\r\n"
-        << "Content-Type: text/event-stream; charset=utf-8\r\n"
-        << "Connection: close\r\n"
-        << "Transfer-Encoding: chunked\r\n\r\n";
-    std::string data = buffer.str();
-    socket.write(data.c_str(), data.size());
-}
-
-void writeStreamChunk(Socket& socket, const std::string data) {
-    std::ostringstream buffer;
-    buffer << std::hex << data.size() << "\r\n" << data << "\r\n";
-    std::string d = buffer.str();
-    socket.write(d.c_str(), d.size());
-}
-
-void writeStreamEndChunk(Socket& socket) {
-    const char* endChunk = "0000\r\n\r\n";
-    socket.write(endChunk, strlen(endChunk));
-}
-
-void writeChatCompletionChunk(Socket &socket, const std::string &delta, const bool stop){
+void writeChatCompletionChunk(HttpRequest &request, const std::string &delta, const bool stop){
     ChunkChoice choice;
     if (stop) {
         choice.finish_reason = "stop";
@@ -196,15 +191,15 @@ void writeChatCompletionChunk(Socket &socket, const std::string &delta, const bo
 
     std::ostringstream buffer;
     buffer << "data: " << ((json)chunk).dump() << "\r\n\r\n";
-    writeStreamChunk(socket, buffer.str());
+    request.writeStreamChunk(buffer.str());
 
     if (stop) {
-        writeStreamChunk(socket, "data: [DONE]");
-        writeStreamEndChunk(socket);
+        request.writeStreamChunk("data: [DONE]");
+        request.writeStreamEndChunk();
     }
 }
 
-void handleCompletionsRequest(Socket& socket, HttpRequest& request, Inference* inference, Tokenizer* tokenizer, Sampler* sampler, AppArgs* args, TransformerSpec* spec) {
+void handleCompletionsRequest(HttpRequest& request, Inference* inference, Tokenizer* tokenizer, Sampler* sampler, AppArgs* args, TransformerSpec* spec) {
     InferenceParams params;
     params.temperature = args->temperature;
     params.top_p = args->topp;
@@ -244,7 +239,7 @@ void handleCompletionsRequest(Socket& socket, HttpRequest& request, Inference* i
     generated.get_allocator().allocate(params.max_tokens);
 
     if (params.stream) {
-        writeStreamStartChunk(socket);
+        request.writeStreamStartChunk();
     }
 
     int promptLength = params.prompt.length();
@@ -298,7 +293,7 @@ void handleCompletionsRequest(Socket& socket, HttpRequest& request, Inference* i
 
             generated.push_back(string);
             if (params.stream) {
-                writeChatCompletionChunk(socket, string, false);
+                writeChatCompletionChunk(request, string, false);
             }
         }
     }
@@ -310,16 +305,16 @@ void handleCompletionsRequest(Socket& socket, HttpRequest& request, Inference* i
         completion.usage = ChatUsage(nPromptTokens, generated.size(), nPromptTokens + generated.size());
 
         std::string chatJson = ((json)completion).dump();
-        writeJsonResponse(socket, chatJson);
+        request.writeJson(chatJson);
     } else {
-        writeChatCompletionChunk(socket, "", true);
+        writeChatCompletionChunk(request, "", true);
     }
     printf("🔶\n");
     fflush(stdout);
 }
 
-void handleModelsRequest(Socket& client_socket, HttpRequest& request) {
-    writeJsonResponse(client_socket,
+void handleModelsRequest(HttpRequest& request) {
+    request.writeJson(
         "{ \"object\": \"list\","
         "\"data\": ["
         "{ \"id\": \"dl\", \"object\": \"model\", \"created\": 0, \"owned_by\": \"user\" }"
@@ -334,26 +329,21 @@ void server(Inference* inference, SocketPool* socketPool, Tokenizer *tokenizer, 
         {
             "/v1/chat/completions",
             HttpMethod::METHOD_POST,
-            std::bind(&handleCompletionsRequest, std::placeholders::_1, std::placeholders::_2, inference, tokenizer, sampler, args, spec)
+            std::bind(&handleCompletionsRequest, std::placeholders::_1, inference, tokenizer, sampler, args, spec)
         },
         {
             "/v1/models",
             HttpMethod::METHOD_GET,
-            std::bind(&handleModelsRequest, std::placeholders::_1, std::placeholders::_2)
+            std::bind(&handleModelsRequest, std::placeholders::_1)
         }
     };
 
     while (true) {
         try {
-            // Accept incoming connection
             Socket client = server->accept();
-            // Read the HTTP request
-            std::vector<char> httpRequest = client.readHttpRequest();
-            // Parse the HTTP request
-            HttpRequest request = HttpParser::parseRequest(std::string(httpRequest.begin(), httpRequest.end()));
-            // Handle the HTTP request
+            HttpRequest request = HttpRequest::read(client);
             printf("🔷 %s %s\n", request.getMethod().c_str(), request.path.c_str());
-            Router::routeRequest(client, request, routes);
+            Router::resolve(request, routes);
         } catch (ReadSocketException& ex) {
             printf("Read socket error: %d %s\n", ex.code, ex.message);
         } catch (WriteSocketException& ex) {
