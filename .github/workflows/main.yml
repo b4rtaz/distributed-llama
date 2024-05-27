@@ -30,7 +30,6 @@ jobs:
       - name: Dependencies
         id: dependencies
         run: ${{ matrix.script_name }}
-        shell: ${{ matrix.shell }}
       - name: Build
         id: build
         run: |
@@ -41,19 +40,13 @@ jobs:
           make transformer-test
           make llama2-tasks-test
           make grok1-tasks-test
-        shell: ${{ matrix.shell }}
       - name: funcs-test
         run: ./funcs-test
-        shell: ${{ matrix.shell }}
       - name: quants-test
         run: ./quants-test
-        shell: ${{ matrix.shell }}
       - name: transformer-test
         run: ./transformer-test
-        shell: ${{ matrix.shell }}
       - name: llama2-tasks-test
         run: ./llama2-tasks-test
-        shell: ${{ matrix.shell }}
       - name: grok1-tasks-test
         run: ./grok1-tasks-test
-        shell: ${{ matrix.shell }}
