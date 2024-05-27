@@ -95,7 +95,7 @@ static inline void writeSocket(int socket, const void* data, size_t size) {
             }
             throw WriteSocketException(0, "Error writing to socket");
         } else if (s == 0) {
-            throw ReadSocketException(0, "Socket closed");
+            throw WriteSocketException(0, "Socket closed");
         }
         size -= s;
         data = (const char*)data + s;

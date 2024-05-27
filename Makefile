@@ -1,12 +1,11 @@
 CXX = g++
 CXXFLAGS = -std=c++11 -Werror -O3 -march=native -mtune=native
 
-# Default settings
-LIBS = -lpthread
-
 # Conditional settings for Windows
 ifeq ($(OS),Windows_NT)
     LIBS = -lws2_32 # or -lpthreadGC2 if needed
+else
+	LIBS = -lpthread
 endif
 
 utils: src/utils.cpp
