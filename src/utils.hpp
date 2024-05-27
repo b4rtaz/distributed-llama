@@ -4,14 +4,33 @@
 #include <atomic>
 #include "common/pthread.h"
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 #define NEW_BUFFER(size) (char*)newBuffer(size)
 #define FREE_BUFFER(buffer) freeBuffer(buffer)
 
 void* newBuffer(size_t size);
 void freeBuffer(void* buffer);
+
 unsigned long timeMs();
 unsigned int randomU32(unsigned long long *state);
 float randomF32(unsigned long long *state);
+
+struct MmapFile {
+    void* data;
+    size_t size;
+#ifdef _WIN32
+    HANDLE hFile;
+    HANDLE hMapping;
+#else
+    int fd;
+#endif
+};
+
+void openMmapFile(MmapFile* file, const char* path, size_t size);
+void closeMmapFile(MmapFile* file);
 
 typedef void (TaskLoopHandler)(unsigned int nThreads, unsigned int threadIndex, void* userData);
 typedef struct {

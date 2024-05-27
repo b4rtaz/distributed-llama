@@ -2,9 +2,7 @@
 #include <cmath>
 #include <cassert>
 #include <stdexcept>
-#include <fcntl.h>
 #include <string.h>
-#include <unistd.h>
 #include <ostream>
 #include <iostream>
 #include "funcs.hpp"
@@ -14,15 +12,6 @@
 
 #define ALLOC_WEIGHTS true
 #define IS_ROOT_SLICE(sliceIndex) (sliceIndex == 0)
-
-#ifdef _WIN32
-#include <windows.h>
-#include <io.h>
-#define fseek _fseeki64
-#define ftell _ftelli64
-#else
-#include <sys/mman.h>
-#endif
 
 RowMatmulSlice::RowMatmulSlice(FloatType type, int nSlices, int n, int d) {
     assert(d % nSlices == 0);
@@ -613,74 +602,19 @@ static size_t readSlicedMatmulWeights(MatmulSlice* slice, char* weights0, Socket
 }
 
 Transformer Transformer::loadRootFromFile(const char* path, TransformerSpec* spec, SocketPool* socketPool) {
-#ifdef _WIN32
-    HANDLE hFile = CreateFileA(path, GENERIC_READ, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-    if (hFile == INVALID_HANDLE_VALUE) {
-        printf("Cannot open file %s\n", path);
-        exit(EXIT_FAILURE);
-    }
+    MmapFile file;
+    openMmapFile(&file, path, spec->fileSize);
 
-    HANDLE hMapping = CreateFileMappingA(hFile, NULL, PAGE_READONLY, 0, 0, NULL);
-    if (hMapping == NULL) {
-        printf("CreateFileMappingA failed, error: %lu\n", GetLastError());
-        CloseHandle(hFile);
-        exit(EXIT_FAILURE);
-    }
-
-    char* data = (char*)MapViewOfFile(hMapping, FILE_MAP_READ, 0, 0, 0);
-    if (data == NULL) {
-        printf("MapViewOfFile failed!\n");
-        CloseHandle(hMapping);
-        CloseHandle(hFile);
-        exit(EXIT_FAILURE);
-    }
-
-    std::cout << "MapViewOfFile succeeded. data = " << static_cast<void*>(data) << std::endl;
-
-    char* weights = data + spec->headerSize;
-    std::cout << "weights = " << static_cast<void*>(weights) << std::endl;
-
-    Transformer transformer = Transformer::loadRoot(weights, spec, socketPool);
+    char* weights = ((char*)file.data) + spec->headerSize;
+    Transformer transformer = Transformer::loadRoot((char*)weights, spec, socketPool);
 
 #if ALLOC_WEIGHTS
-    UnmapViewOfFile(data);
-    CloseHandle(hMapping);
-    CloseHandle(hFile);
+    closeMmapFile(&file);
 #else
     // TODO: handler should be released in destructor
 #endif
 
     return transformer;
-#else
-    int fd = open(path, O_RDONLY);
-    if (fd == -1) {
-        printf("Cannot open file %s\n", path);
-        exit(EXIT_FAILURE);
-    }
-
-    char* data = (char*)mmap(NULL, spec->fileSize, PROT_READ, MAP_PRIVATE, fd, 0);
-    if (data == MAP_FAILED) {
-        printf("Mmap failed!\n");
-        close(fd);
-        exit(EXIT_FAILURE);
-    }
-
-    std::cout << "mmap succeeded. data = " << static_cast<void*>(data) << std::endl;
-
-    char* weights = data + spec->headerSize;
-    std::cout << "weights = " << static_cast<void*>(weights) << std::endl;
-
-    Transformer transformer = Transformer::loadRoot(weights, spec, socketPool);
-
-#if ALLOC_WEIGHTS
-    munmap(data, spec->fileSize);
-    close(fd);
-#else
-    // TODO: handler should be released in destructor
-#endif
-
-    return transformer;
-#endif
 }
 
 Transformer Transformer::loadRoot(char* data, TransformerSpec* spec, SocketPool* socketPool) {

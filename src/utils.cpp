@@ -8,10 +8,16 @@
 
 #define BUFFER_ALIGNMENT 16
 
-#ifdef _WIN32 
+#ifdef _WIN32
+#include <windows.h>
 #include <malloc.h>
+#include <io.h>
+#define fseek _fseeki64
+#define ftell _ftelli64
 #else
 #include <sys/mman.h>
+#include <fcntl.h>
+#include <unistd.h>
 #endif
 
 void* newBuffer(size_t size) {
@@ -59,6 +65,56 @@ unsigned int randomU32(unsigned long long *state) {
 float randomF32(unsigned long long *state) {
     // random float32 in <0,1)
     return (randomU32(state) >> 8) / 16777216.0f;
+}
+
+void openMmapFile(MmapFile* file, const char* path, size_t size) {
+    file->size = size;
+#ifdef _WIN32
+    file->hFile = CreateFileA(path, GENERIC_READ, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (file->hFile == INVALID_HANDLE_VALUE) {
+        printf("Cannot open file %s\n", path);
+        exit(EXIT_FAILURE);
+    }
+
+    file->hMapping = CreateFileMappingA(file->hFile, NULL, PAGE_READONLY, 0, 0, NULL);
+    if (file->hMapping == NULL) {
+        printf("CreateFileMappingA failed, error: %lu\n", GetLastError());
+        CloseHandle(file->hFile);
+        exit(EXIT_FAILURE);
+    }
+
+    file->data = (char*)MapViewOfFile(file->hMapping, FILE_MAP_READ, 0, 0, 0);
+    if (file->data == NULL) {
+        printf("MapViewOfFile failed!\n");
+        CloseHandle(file->hMapping);
+        CloseHandle(file->hFile);
+        exit(EXIT_FAILURE);
+    }
+#else
+    file->fd = open(path, O_RDONLY);
+    if (file->fd == -1) {
+        printf("Cannot open file %s\n", path);
+        exit(EXIT_FAILURE);
+    }
+
+    file->data = mmap(NULL, size, PROT_READ, MAP_PRIVATE, file->fd, 0);
+    if (file->data == MAP_FAILED) {
+        printf("Mmap failed!\n");
+        close(file->fd);
+        exit(EXIT_FAILURE);
+    }
+#endif
+}
+
+void closeMmapFile(MmapFile* file) {
+#ifdef _WIN32
+    UnmapViewOfFile(file->data);
+    CloseHandle(file->hMapping);
+    CloseHandle(file->hFile);
+#else
+    munmap(file->data, file->size);
+    close(file->fd);
+#endif
 }
 
 TaskLoop::TaskLoop(unsigned int nThreads, unsigned int nTasks, unsigned int nTypes, TaskLoopTask* tasks, void* userData) {
