@@ -15,12 +15,12 @@ jobs:
         os: [windows-latest, ubuntu-latest]
         include:
           - os: windows-latest
-            install_dependencies: sudo apt-get update && sudo apt-get install build-essential
+            install_dependencies: choco install make
             shell: cmd
             platforms: 
               - windows/amd64
           - os: ubuntu-latest
-            install_dependencies: choco install make
+            install_dependencies: sudo apt-get update && sudo apt-get install build-essential
             shell: bash
             platforms: 
               - linux/arm64
