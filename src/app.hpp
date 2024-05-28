@@ -36,6 +36,9 @@ public:
     // worker
     int port;
 
+    // API specific
+    std::string chat_template;
+
     static AppArgs parse(int argc, char** argv, bool hasMode);
 };
 

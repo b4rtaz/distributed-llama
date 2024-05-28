@@ -164,19 +164,49 @@ public:
     }
 };
 
-/*
-Generally speaking, the tokenizer.config.json would contain the chat template for the model
-and depending on the model used you could set the chat template to follow
-could possibly just for simplicity set this in ServerArgs with --chat-template
-for this code draft I am assuming the use of llama 3 instruct
-*/
-std::string buildChatPrompt(Tokenizer *tokenizer, const std::vector<ChatMessage> &messages){
+std::string buildChatPrompt(Tokenizer *tokenizer, AppArgs* args, const std::vector<ChatMessage> &messages){
     std::ostringstream oss;
-    for (const auto& message : messages) {
-        oss << "<|start_header_id|>" << message.role << "<|end_header_id|>\n\n" << message.content << "<|eot_id|>";
+    std::string chat_template = std::string(args->chat_template);
+    
+    if(chat_template == "llama3"){
+        for (const auto& message : messages) {
+            oss << "<|start_header_id|>" << message.role << "<|end_header_id|>\n\n" << message.content << "<|eot_id|>";
+        }
+
+        oss << "<|start_header_id|>assistant<|end_header_id|>\n\n";
+    }
+    else if(chat_template == "llama2"){
+        for (int i = 0; i < messages.size(); ++i) {
+            const auto& message = messages[i];
+            if(i == 0 && message.role == "system"){
+                oss << "[INST] <<SYS>>\n" << message.content << "\n<</SYS>>\n\n[/INST]</s>";
+            }
+            else{
+                oss << "[INST] " << message.content << " [/INST]";
+            }
+        }
+    }
+    else if(chat_template == "chatml"){
+        for (const auto& message : messages) {
+            oss << "<|im_start|>" << message.role << "\n" << message.content << "<|im_end|>\n";
+        }
+        oss << "<|im_start|>assistant\n";
+    }
+    else if(chat_template == "openchat"){
+        for (int i = 0; i < messages.size(); ++i) {
+            const auto& message = messages[i];
+            if(i == 0 && message.role == "system"){
+                oss << message.content << "<|end_of_turn|>";
+            }
+            else if(message.role == "user"){
+                oss << "GPT4 Correct User: " << message.content << "<|end_of_turn|>";
+            }
+            else if(message.role == "assistant"){
+                oss << "GPT4 Correct Assistant: " << message.content << "<|end_of_turn|>";
+            }
+        }
     }
 
-    oss << "<|start_header_id|>assistant<|end_header_id|>\n\n";
     return oss.str();
 }
 
@@ -205,7 +235,7 @@ void handleCompletionsRequest(HttpRequest& request, Inference* inference, Tokeni
     params.top_p = args->topp;
     params.seed = args->seed;
     params.stream = false;
-    params.prompt = buildChatPrompt(tokenizer, parseChatMessages(request.parsedJson["messages"]));
+    params.prompt = buildChatPrompt(tokenizer, args, parseChatMessages(request.parsedJson["messages"]));
     params.max_tokens = spec->seqLen - params.prompt.size();
 
     if (request.parsedJson.contains("stream")) {
