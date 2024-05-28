@@ -206,6 +206,17 @@ std::string buildChatPrompt(Tokenizer *tokenizer, AppArgs* args, const std::vect
             }
         }
     }
+    else if(chat_template == "openchat3"){
+        auto capitalize = [](const std::string& input) -> std::string {
+            return input.empty() ? input : std::string(1, std::toupper(input[0])) + input.substr(1);
+        };
+        for (int i = 0; i < messages.size(); ++i) {
+            const auto& message = messages[i];
+            oss << "<|start_header_id|>" << "GPT4 Correct " << capitalize(message.role) << "<|end_header_id|>\n\n" << message.content << "<|eot_id|>";
+        }
+
+        oss << "<|start_header_id|>GPT4 Correct Assistant<|end_header_id|>\n\n";
+    }
 
     return oss.str();
 }
