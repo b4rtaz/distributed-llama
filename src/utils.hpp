@@ -2,6 +2,7 @@
 #define UTILS_HPP
 
 #include <atomic>
+#include <cstdio>
 #include "common/pthread.h"
 
 #ifdef _WIN32
