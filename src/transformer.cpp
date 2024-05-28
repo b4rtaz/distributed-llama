@@ -286,6 +286,7 @@ TransformerSpec Transformer::loadSpecFromFile(const char* path, const unsigned i
     printf("💡 ropeTheta: %.1f\n", spec.ropeTheta);
 
     spec.fileSize = (size_t)seekToEnd(fd);
+    fclose(fd);
     return spec;
 }
 
