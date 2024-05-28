@@ -63,6 +63,16 @@ float randomF32(unsigned long long *state) {
     return (randomU32(state) >> 8) / 16777216.0f;
 }
 
+long seekToEnd(FILE* file) {
+#ifdef _WIN32
+    _fseeki64(file, 0, SEEK_END);
+    return _ftelli64(file);
+#else
+    fseek(file, 0, SEEK_END);
+    return ftell(file);
+#endif
+}
+
 void openMmapFile(MmapFile* file, const char* path, size_t size) {
     file->size = size;
 #ifdef _WIN32

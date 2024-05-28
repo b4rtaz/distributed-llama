@@ -17,6 +17,7 @@ void freeBuffer(void* buffer);
 unsigned long timeMs();
 unsigned int randomU32(unsigned long long *state);
 float randomF32(unsigned long long *state);
+long seekToEnd(FILE* file);
 
 struct MmapFile {
     void* data;

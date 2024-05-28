@@ -285,15 +285,7 @@ TransformerSpec Transformer::loadSpecFromFile(const char* path, const unsigned i
     printf("💡 nSlices: %d\n", spec.nSlices);
     printf("💡 ropeTheta: %.1f\n", spec.ropeTheta);
 
-    fseek(fd, 0, SEEK_END);
-    long fileSize = ftell(fd);
-    if (fileSize == -1L) {
-        fclose(fd);
-        throw std::runtime_error("Error determining model file size");
-    }
-    fclose(fd);
-
-    spec.fileSize = static_cast<size_t>(fileSize);
+    spec.fileSize = (size_t)seekToEnd(fd);
     return spec;
 }
 
