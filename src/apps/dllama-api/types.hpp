@@ -50,7 +50,7 @@ struct ChatCompletionChunk {
     std::vector<ChunkChoice> choices;
 
     ChatCompletionChunk(ChunkChoice &choice_) 
-        : id("cmpl-0"), object("chat.completion"), model("Distributed Model") {
+        : id("cmpl-c0"), object("chat.completion"), model("Distributed Model") {
         created = std::time(nullptr); // Set created to current Unix timestamp
         choices.push_back(choice_);
     }
@@ -61,6 +61,7 @@ struct ChatUsage {
     int prompt_tokens;
     int completion_tokens;
     int total_tokens;
+
     ChatUsage() : prompt_tokens(0), completion_tokens(0), total_tokens(0) {}
     ChatUsage(int pt, int ct, int tt) : prompt_tokens(pt), completion_tokens(ct), total_tokens(tt) {}
 };
@@ -73,15 +74,16 @@ struct ChatCompletion {
     std::vector<Choice> choices;
     ChatUsage usage;
 
-    ChatCompletion(Choice &choice_) 
-        : id("cmpl-0"), object("chat.completion"), model("Distributed Model") {
+    ChatCompletion() : id(), object(), model() {}
+    ChatCompletion(const Choice &choice_, const ChatUsage& usage_) 
+        : id("cmpl-j0"), object("chat.completion"), model("Distributed Model"), usage(usage_) {
         created = std::time(nullptr); // Set created to current Unix timestamp
         choices.push_back(choice_);
     }
 };
 
 struct InferenceParams {
-    std::string prompt;
+    std::vector<ChatMessage> messages;
     int max_tokens;
     float temperature;
     float top_p;
@@ -115,11 +117,18 @@ void to_json(json& j, const ChatCompletionChunk& completion) {
         {"choices", completion.choices}};
 }
 
+void to_json(json& j, const ChatUsage& usage) {
+    j = json{{"completion_tokens", usage.completion_tokens},
+        {"prompt_tokens", usage.prompt_tokens},
+        {"total_tokens", usage.total_tokens}};
+}
+
 void to_json(json& j, const ChatCompletion& completion) {
     j = json{{"id", completion.id},
         {"object", completion.object},
         {"created", completion.created},
         {"model", completion.model},
+        {"usage", completion.usage},
         {"choices", completion.choices}};
 }
 

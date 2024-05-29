@@ -37,12 +37,13 @@ async function ask(system, user, maxTokens) {
             content: user
         }
     ], maxTokens);
-    console.log(`${response.choices[0].message.content}`);
+    console.log(response.usage);
+    console.log(response.choices[0].message.content);
 }
 
 async function main() {
-    await ask('You are an excellent math teacher.', 'What is 1 + 2?', 64);
-    await ask('You are a romantic.', 'Where is Europe?', 64);
+    await ask('You are an excellent math teacher.', 'What is 1 + 2?', 128);
+    await ask('You are a romantic.', 'Where is Europe?', 128);
 }
 
 main();
