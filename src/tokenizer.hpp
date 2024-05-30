@@ -13,8 +13,7 @@ typedef struct {
     int id;
 } TokenIndex;
 
-struct TokenizerHeader {
-    unsigned int magic;
+struct TokenizerOldHeader {
     unsigned int vocabSize;
     unsigned int maxTokenLength;
     int bosId;
@@ -22,18 +21,32 @@ struct TokenizerHeader {
     int padId;
 };
 
+enum TokenizerHeaderKey {
+    TOK_VERSION = 0,
+    TOK_VOCAB_SIZE = 1,
+    MAX_TOKEN_LENGTH = 2,
+    BOS_ID = 3,
+    EOS_ID = 4,
+    PAD_ID = 5,
+    CHAT_EOS_ID = 6,
+    CHAT_TEMPLATE = 7,
+};
+
 class Tokenizer {
 private:
     unsigned int maxTokenLength;
-    char** vocab;
     float* vocabScores;
     TokenIndex *sortedVocab;
     int vocabSize;
     unsigned char bytePieces[512]; // stores all single-byte strings
 
 public:
+    char** vocab;
     int bosId;
     int eosId;
+    int chatEosId; // -1 if not used
+    int nChatTemplates;
+    char** chatTemplate;
 
     Tokenizer(char* tokenizer_path, int vocab_size);
     ~Tokenizer();

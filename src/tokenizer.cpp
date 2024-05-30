@@ -35,26 +35,82 @@ void safePrintf(char *piece) {
     }
 }
 
-Tokenizer::Tokenizer(char* tokenizerPath, int vocabSize) {
-    // i should have written the vocab_size into the tokenizer file... sigh
-    this->vocabSize = vocabSize;
+Tokenizer::Tokenizer(char* tokenizerPath, int modelVocabSize) {
+    eosId = -1;
+    bosId = -1;
+    chatEosId = -1;
+    nChatTemplates = 0;
 
     // read in the file
     FILE *file = fopen(tokenizerPath, "rb");
     if (!file)
         throw std::runtime_error("Failed to open tokenizer file");
-    TokenizerHeader header;
-    if (fread(&header, sizeof(TokenizerHeader), 1, file) != 1)
-        throw std::runtime_error("Cannot read tokenizer header");
+    int magic;
+    if (fread(&magic, sizeof(int), 1, file) != 1)
+        throw std::runtime_error("Cannot read tokenizer magic number");
 
-    if (header.magic != 0x567123 || header.vocabSize != vocabSize)
+    if (magic == 0x567123) {
+        TokenizerOldHeader header;
+        if (fread(&header, sizeof(TokenizerOldHeader), 1, file) != 1)
+            throw std::runtime_error("Cannot read tokenizer header");
+        maxTokenLength = header.maxTokenLength;
+        vocabSize = header.vocabSize;
+        bosId = header.bosId;
+        eosId = header.eosId;
+    } else if (magic == 0x567124) {
+        TransformerHeaderKey key;
+        int headerSize;
+        if (fread(&headerSize, sizeof(int), 1, file) != 1)
+            throw std::runtime_error("Cannot read tokenizer header size");
+        int nKv = (headerSize - 2 * sizeof(int)) / sizeof(int);
+        int buffer[nKv];
+        if (fread(&buffer, nKv * sizeof(int), 1, file) != 1) {
+            throw std::runtime_error("Cannot read header values");
+        }
+        int version = -1;
+        for (int i = 0; i < nKv; i += 2) {
+            int key = buffer[i];
+            int value = buffer[i + 1];
+            if (key == TOK_VERSION) version = value;
+            else if (key == TOK_VOCAB_SIZE) vocabSize = value;
+            else if (key == MAX_TOKEN_LENGTH) maxTokenLength = (unsigned int)value;
+            else if (key == BOS_ID) bosId = value;
+            else if (key == EOS_ID) eosId = value;
+            else if (key == CHAT_EOS_ID) chatEosId = value;
+            else if (key == CHAT_TEMPLATE) nChatTemplates = value;
+            else if (key == PAD_ID) {} // ignore
+            else {
+                throw std::runtime_error("Invalid tokenizer header key");
+            }
+        }
+
+        if (nChatTemplates > 0) {
+            unsigned int templateSizes[nChatTemplates];
+            if (fread(&templateSizes, sizeof(templateSizes), 1, file) != 1) {
+                throw std::runtime_error("Cannot read chat template sizes");
+            }
+            chatTemplate = new char*[nChatTemplates];
+            for (int t = 0; t < nChatTemplates; t++) {
+                chatTemplate[t] = new char[templateSizes[t] + 1];
+                if (templateSizes[t] == 0) {
+                    chatTemplate[t][0] = '\0';
+                } else if (fread(chatTemplate[t], templateSizes[t], 1, file) != 1) {
+                    throw std::runtime_error("Cannot read chat template");
+                }
+                printf("📄 chatTemplate[%d]: %s\n", t, chatTemplate[t]);
+            }
+        }
+    } else {
         throw std::runtime_error("Invalid tokenizer file");
+    }
 
-    maxTokenLength = header.maxTokenLength;
-    bosId = header.bosId;
-    eosId = header.eosId;
+    if (maxTokenLength < 1 || vocabSize != modelVocabSize) {
+        throw std::runtime_error("Tokenizer file is invalid or incompatible with model");
+    }
+
     if (bosId >= 0) printf("📄 bosId: %d\n", bosId);
     if (eosId >= 0) printf("📄 eosId: %d\n", eosId);
+    if (chatEosId >= 0) printf("📄 chatEosId: %d\n", chatEosId);
 
     // malloc space to hold the scores and the strings
     vocab = (char**)malloc(vocabSize * sizeof(char*));
@@ -80,6 +136,10 @@ Tokenizer::Tokenizer(char* tokenizerPath, int vocabSize) {
 }
 
 Tokenizer::~Tokenizer() {
+    if (nChatTemplates > 0) {
+        for (int t = 0; t < nChatTemplates; t++) delete[] chatTemplate[t];
+        delete[] chatTemplate;
+    }
     for (int i = 0; i < vocabSize; i++) { free(vocab[i]); }
     free(vocab);
     free(vocabScores);

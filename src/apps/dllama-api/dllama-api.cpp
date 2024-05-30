@@ -165,22 +165,6 @@ public:
     }
 };
 
-/*
-Generally speaking, the tokenizer.config.json would contain the chat template for the model
-and depending on the model used you could set the chat template to follow
-could possibly just for simplicity set this in ServerArgs with --chat-template
-for this code draft I am assuming the use of llama 3 instruct
-*/
-std::string buildChatPrompt(Tokenizer *tokenizer, const std::vector<ChatMessage> &messages){
-    std::ostringstream oss;
-    for (const auto& message : messages) {
-        oss << "<|start_header_id|>" << message.role << "<|end_header_id|>\n\n" << message.content << "<|eot_id|>";
-    }
-
-    oss << "<|start_header_id|>assistant<|end_header_id|>\n\n";
-    return oss.str();
-}
-
 void writeChatCompletionChunk(HttpRequest &request, const std::string &delta, const bool stop){
     ChunkChoice choice;
     if (stop) {
@@ -256,6 +240,9 @@ private:
     TransformerSpec* spec;
     NaiveCache naiveCache;
 
+    int eosId;
+    std::string eos;
+
 public:
     ApiServer(
         Inference* inference,
@@ -268,6 +255,26 @@ public:
         this->sampler = sampler;
         this->args = args;
         this->spec = spec;
+        eosId = (tokenizer->chatEosId >= 0) ? tokenizer->chatEosId : tokenizer->eosId;
+        assert(eosId >= 0);
+        eos = tokenizer->vocab[eosId];
+    }
+
+    std::string buildChatPrompt(std::vector<ChatMessage> messages) {
+        assert(tokenizer->nChatTemplates == 5);
+
+        std::ostringstream buffer;
+        for (const auto& message : messages) {
+            buffer << tokenizer->chatTemplate[0]; // chatMessageStart
+            buffer << tokenizer->chatTemplate[1]; // chatRoleStart
+            buffer << message.role;
+            buffer << tokenizer->chatTemplate[2]; // chatRoleEnd
+            buffer << message.content;
+            buffer << tokenizer->chatTemplate[3]; // chatMessageEnd
+        }
+
+        buffer << tokenizer->chatTemplate[4]; // chatGenerationPrompt
+        return buffer.str();
     }
 
     void complete(HttpRequest& request) {
@@ -280,7 +287,7 @@ public:
         printf("🔸");
         fflush(stdout);
 
-        std::string inputPrompt = buildChatPrompt(tokenizer, deltaPrompt);
+        std::string inputPrompt = buildChatPrompt(deltaPrompt);
         int promptLength = inputPrompt.size();
         int nPromptTokens;
         int promptTokens[promptLength + 3];
@@ -316,7 +323,7 @@ public:
                 int prevToken = token;
                 token = sampler->sample(logits);
 
-                if (token == tokenizer->eosId) {
+                if (token == eosId) {
                     printf("🔴");
                     break;
                 }
@@ -332,20 +339,18 @@ public:
                 bool maybeEos = false;
                 size_t deltaSize = delta.size();
                 if (nStops > 0 && deltaSize > 0) {
-                    bool eos = false;
-                    for (size_t s = 0; s < nStops; s++) {
-                        size_t stopSize = params.stop[s].size();
-                        if (params.stop[s].compare(0, deltaSize, delta) == 0) {
-                            if (stopSize <= deltaSize) {
-                                eos = true;
-                                break;
-                            } else {
-                                maybeEos = true;
-                                break;
-                            }
+                    bool isEos = false;
+                    size_t eosSize = eos.size();
+                    if (eos.compare(0, deltaSize, delta) == 0) {
+                        if (eosSize <= deltaSize) {
+                            isEos = true;
+                            break;
+                        } else {
+                            maybeEos = true;
+                            break;
                         }
                     }
-                    if (eos) {
+                    if (isEos) {
                         printf("⭕");
                         break;
                     }

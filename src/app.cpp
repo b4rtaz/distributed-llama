@@ -113,12 +113,12 @@ void App::run(AppArgs* args, void (*program)(Inference* inference, SocketPool* s
 
     TransformerSpec spec = Transformer::loadSpecFromFile(args->modelPath, nSlices, args->weightsFloatType, args->bufferFloatType);
     TransformerArch arch = TransformerArchFactory::create(&spec);
+    Tokenizer tokenizer(args->tokenizerPath, spec.vocabSize);
 
     if (args->steps == 0 || args->steps > spec.seqLen) {
         args->steps = spec.seqLen;
     }
 
-    Tokenizer tokenizer(args->tokenizerPath, spec.vocabSize);
     Transformer transformer = Transformer::loadRootFromFile(args->modelPath, &spec, socketPool);
     socketPool->setTurbo(true);
 
