@@ -201,7 +201,9 @@ void Tokenizer::encode(char *text, int *tokens, int *nTokens, bool addBos, bool 
     if (text[0] != '\0') {
         char space[] = " ";
         int dummy_prefix = str_lookup(space, sortedVocab, vocabSize);
-        tokens[(*nTokens)++] = dummy_prefix;
+        // TODO: this condition saves us from segmentation fault
+        if (dummy_prefix != -1)
+            tokens[(*nTokens)++] = dummy_prefix;
     }
 
     // Okay UTF-8 time. This will get messy. Here is the reference from Wikipedia:

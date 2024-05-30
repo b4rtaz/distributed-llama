@@ -68,10 +68,7 @@ if __name__ == '__main__':
                 scores.append(score)
                 specialTokenIndex += 1
 
-            maxTokenLength = max(len(t) for t in tokens)
-
             writer.writeTokenizer(outputFile, {
-                'max_token_length': maxTokenLength,
                 'bos_id': bosId,
                 'eos_id': eosId,
                 'chat_eos_id': chatEosId,
