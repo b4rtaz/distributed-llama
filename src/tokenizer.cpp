@@ -83,6 +83,7 @@ Tokenizer::Tokenizer(char* tokenizerPath, int modelVocabSize) {
                 throw std::runtime_error("Invalid tokenizer header key");
             }
         }
+        assert(version == 0);
 
         if (nChatTemplates > 0) {
             unsigned int templateSizes[nChatTemplates];
