@@ -1,6 +1,7 @@
 import sys
 import struct
 import base64
+writer = __import__('tokenizer-writer')
 
 # Format of input file:
 # ```
@@ -28,16 +29,32 @@ specialTokens = [
 ]
 bosId = 128000
 eosId = 128001
+chatEosId = 128009
+chatTemplate = {
+    'chat_message_start': '',
+    'chat_role_start': '<|start_header_id|>',
+    'chat_role_end': '<|end_header_id|>\n\n',
+    'chat_message_end': '<|eot_id|>',
+    'chat_generation_prompt': '<|start_header_id|>assistant<|end_header_id|>\n\n',
+    'chat_extra_stop': ''
+}
+
+def printUsage():
+    print('Usage: python convert-tokenizer-llama3.py <tokenizerPath>')
+    print()
+    print('Options:')
+    print('  <tokenizerPath> The path to the Llama 3 tokenizer model (tokenizer.model)')
 
 if __name__ == '__main__':
     if (len(sys.argv) < 2):
-        print('Invalid usage')
+        printUsage()
         exit(1)
 
     modelPath = sys.argv[1]
+    outputFileName = 'dllama_tokenizer_llama3.t'
 
     with open(modelPath, 'r') as inputFile:
-        with open('dllama_tokenizer_llama3.t', 'wb') as outputFile:
+        with open(outputFileName, 'wb') as outputFile:
             inputLines = inputFile.readlines()
             nLines = len(inputLines)
 
@@ -58,22 +75,10 @@ if __name__ == '__main__':
                 scores.append(score)
                 specialTokenIndex += 1
 
-            vocabSize = len(tokens)
-            maxTokenLength = max(len(t) for t in tokens)
+            writer.writeTokenizer(outputFile, {
+                'bos_id': bosId,
+                'eos_id': eosId,
+                'chat_eos_id': chatEosId,
+            }, chatTemplate, tokens, scores)
 
-            outputFile.write(struct.pack('IIIiii',
-                0x567123,
-                vocabSize,
-                maxTokenLength,
-                bosId,
-                eosId,
-                -1))
-
-            for i in range(0, vocabSize):
-                outputFile.write(struct.pack('fI', scores[i], len(tokens[i])))
-                outputFile.write(tokens[i])
-
-            print(f'maxTokenLength={maxTokenLength}')
-            print(f'bosId={bosId}')
-            print(f'eosId={eosId}')
-            print(f'vocabSize={vocabSize}')
+    print(f'✅ Created {outputFileName}')
