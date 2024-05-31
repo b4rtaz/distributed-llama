@@ -186,8 +186,8 @@ public:
                     if (delta != NULL) {
                         printf("%s", delta);
                         fflush(stdout);
-                        eosDetector->clear();
                     }
+                    eosDetector->clear();
                 }
                 if (eosType == EOS) break;
             }

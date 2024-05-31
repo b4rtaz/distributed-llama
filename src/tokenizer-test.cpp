@@ -87,6 +87,49 @@ void testEosDetectorWithPadding() {
 }
 
 
+void testEosDetectorWithLongPadding() {
+    const char* stops[1] = { "|end|" };
+    EosDetector detector(EOS_ID, 1, stops, 5, 5);
+
+    // "lipsum"
+    {
+        ASSERT_EOS_TYPE(detector.append(1, "lipsum"), NOT_EOS);
+        char* delta = detector.getDelta();
+        assert(delta != NULL);
+        assert(strcmp(delta, "lipsum") == 0);
+    }
+
+    // "lorem"
+    detector.clear();
+    {
+        ASSERT_EOS_TYPE(detector.append(1, "lorem"), NOT_EOS);
+        char* delta = detector.getDelta();
+        assert(delta != NULL);
+        assert(strcmp(delta, "lorem") == 0);
+    }
+
+    // "hello" + EOS
+    detector.clear();
+    {
+        ASSERT_EOS_TYPE(detector.append(1, "hello"), NOT_EOS);
+        char* delta = detector.getDelta();
+        assert(delta != NULL);
+        assert(strcmp(delta, "lorem") == 0);
+    }
+
+    // "lorem|enQ"
+    detector.clear();
+    {
+        ASSERT_EOS_TYPE(detector.append(1, "lorem|"), MAYBE_EOS);
+        ASSERT_EOS_TYPE(detector.append(2, "enQ"), NOT_EOS);
+        char* delta = detector.getDelta();
+        assert(delta != NULL);
+        assert(strcmp(delta, "lorem|enQ") == 0);
+    }
+
+    printf("✅ EosDetector with long padding\n");
+}
+
 void testEosDetectorWithoutPadding() {
     const char* stops[1] = { "<eos>" };
     EosDetector detector(EOS_ID, 1, stops, 0, 0);
@@ -130,6 +173,7 @@ void testEosDetectorWithoutPadding() {
 
 int main() {
     testEosDetectorWithPadding();
+    testEosDetectorWithLongPadding();
     testEosDetectorWithoutPadding();
     return EXIT_SUCCESS;
 }

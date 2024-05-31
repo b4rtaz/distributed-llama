@@ -39,9 +39,15 @@ chatTemplate = {
     'chat_extra_stop': ''
 }
 
+def printUsage():
+    print('Usage: python convert-tokenizer-llama3.py <tokenizerPath>')
+    print()
+    print('Options:')
+    print('  <tokenizerPath> The path to the Llama 3 tokenizer model (tokenizer.model)')
+
 if __name__ == '__main__':
     if (len(sys.argv) < 2):
-        print('Invalid usage')
+        printUsage()
         exit(1)
 
     modelPath = sys.argv[1]
