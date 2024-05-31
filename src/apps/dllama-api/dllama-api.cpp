@@ -316,7 +316,7 @@ public:
                 char* piece = tokenizer->decode(prevToken, token);
                 bool isSafe = isSafePiece(piece);
 
-                int eosType = eosDetector->append(token, isSafe ? piece : "");
+                EosDetectorType eosType = eosDetector->append(token, isSafe ? piece : "");
 
                 if (isSafePiece(piece)) {
                     printf("%s", piece);
@@ -411,14 +411,8 @@ void server(Inference* inference, SocketPool* socketPool, Tokenizer *tokenizer, 
 
     SocketServer* server = new SocketServer(args->port);
 
-    const bool hasExtraStop = tokenizer->chatTemplate[5][0] != '\0';
-    const int nStops = hasExtraStop ? 2 : 1;
-    char* stops[nStops];
-    stops[0] = tokenizer->vocab[tokenizer->chatEosId];
-    if (hasExtraStop)
-        stops[1] = tokenizer->chatTemplate[5];
-
-    EosDetector eosDetector(tokenizer->chatEosId, nStops, (const char**)stops, 1, 1);
+    TokenizerStops stops(tokenizer);
+    EosDetector eosDetector(tokenizer->chatEosId, stops.nStops, stops.stops, stops.maxStopLength, stops.maxStopLength);
     ApiServer api(inference, tokenizer, sampler, args, spec, &eosDetector);
 
     printf("Server URL: http://127.0.0.1:%d/v1/\n", args->port);

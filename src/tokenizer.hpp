@@ -6,7 +6,6 @@
 
 bool isSafePiece(char *piece);
 void safePrintf(char *piece);
-void readStdin(const char* guide, char* buffer, size_t bufsize);
 
 typedef struct {
     char *str;
@@ -76,6 +75,15 @@ public:
     int sample(float* logits);
     void setTemp(float temp);
     void setSeed(unsigned long long rngSeed);
+};
+
+class TokenizerStops {
+public:
+    const char** stops;
+    size_t nStops;
+    size_t maxStopLength;
+    TokenizerStops(Tokenizer* tokenizer);
+    ~TokenizerStops();
 };
 
 enum EosDetectorType {

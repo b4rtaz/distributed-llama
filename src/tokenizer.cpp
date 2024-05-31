@@ -369,18 +369,6 @@ int sample_topp(float* probabilities, int n, float topp, ProbIndex* probindex, f
     return probindex[last_idx].index; // in case of rounding errors
 }
 
-void readStdin(const char* guide, char* buffer, size_t bufsize) {
-    fflush(stdin);
-    // read a line from stdin, up to but not including \n
-    printf("%s", guide);
-    if (fgets(buffer, bufsize, stdin) != NULL) {
-        size_t len = strlen(buffer);
-        if (len > 0 && buffer[len - 1] == '\n') {
-            buffer[len - 1] = '\0'; // strip newline
-        }
-    }
-}
-
 Sampler::Sampler(int vocab_size, float temperature, float topp, unsigned long long rngSeed) {
     this->vocab_size = vocab_size;
     this->temperature = temperature;
@@ -425,6 +413,26 @@ void Sampler::setTemp(float temp) {
 
 void Sampler::setSeed(unsigned long long seed) {
     this->rngState = seed;
+}
+
+TokenizerStops::TokenizerStops(Tokenizer* tokenizer) {
+    assert(tokenizer->nChatTemplates == 6);
+    const bool hasExtraStop = tokenizer->chatTemplate[5][0] != '\0';
+    nStops = hasExtraStop ? 2 : 1;
+    char** s = new char*[nStops];
+    s[0] = tokenizer->vocab[tokenizer->chatEosId];
+    if (hasExtraStop)
+        s[1] = tokenizer->chatTemplate[5];
+    maxStopLength = 0;
+    for (size_t i = 0; i < nStops; i++) {
+        size_t len = strlen(s[i]);
+        if (len > maxStopLength) maxStopLength = len;
+    }
+    stops = (const char**)s;
+}
+
+TokenizerStops::~TokenizerStops() {
+    delete[] stops;
 }
 
 EosDetector::EosDetector(int eosId, size_t nStops, const char** stops, int paddingLeft, int paddingRight) {
