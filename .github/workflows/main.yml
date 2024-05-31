@@ -30,6 +30,7 @@ jobs:
           make dllama-api
           make funcs-test
           make quants-test
+          make tokenizer-test
           make transformer-test
           make llama2-tasks-test
           make grok1-tasks-test
@@ -37,6 +38,8 @@ jobs:
         run: ./funcs-test
       - name: quants-test
         run: ./quants-test
+      - name: tokenizer-test
+        run: ./tokenizer-test
       - name: transformer-test
         run: ./transformer-test
       - name: llama2-tasks-test
@@ -60,6 +63,7 @@ jobs:
           make dllama-api
           make funcs-test
           make quants-test
+          make tokenizer-test
           make transformer-test
           make llama2-tasks-test
           make grok1-tasks-test
@@ -67,6 +71,8 @@ jobs:
         run: ./funcs-test
       - name: quants-test
         run: ./quants-test
+      - name: tokenizer-test
+        run: ./tokenizer-test
       - name: transformer-test
         run: ./transformer-test
       - name: llama2-tasks-test

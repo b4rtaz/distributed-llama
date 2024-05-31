@@ -238,30 +238,21 @@ private:
     Sampler* sampler;
     AppArgs* args;
     TransformerSpec* spec;
+    EosDetector* eosDetector;
     NaiveCache naiveCache;
 
-    int eosId;
-    std::string eos;
-
 public:
-    ApiServer(
-        Inference* inference,
-        Tokenizer* tokenizer,
-        Sampler* sampler,
-        AppArgs* args,
-        TransformerSpec* spec) {
+    ApiServer( Inference* inference, Tokenizer* tokenizer, Sampler* sampler, AppArgs* args, TransformerSpec* spec, EosDetector* eosDetector) {
         this->inference = inference;
         this->tokenizer = tokenizer;
         this->sampler = sampler;
         this->args = args;
         this->spec = spec;
-        eosId = (tokenizer->chatEosId >= 0) ? tokenizer->chatEosId : tokenizer->eosId;
-        assert(eosId >= 0);
-        eos = tokenizer->vocab[eosId];
+        this->eosDetector = eosDetector;
     }
 
     std::string buildChatPrompt(std::vector<ChatMessage> messages) {
-        assert(tokenizer->nChatTemplates == 5);
+        assert(tokenizer->nChatTemplates == 6);
 
         std::ostringstream buffer;
         for (const auto& message : messages) {
@@ -308,7 +299,6 @@ public:
             request.writeStreamStartChunk();
         }
 
-        std::string delta;
         std::string buffer;
         size_t nStops = params.stop.size();
 
@@ -323,45 +313,27 @@ public:
                 int prevToken = token;
                 token = sampler->sample(logits);
 
-                if (token == eosId) {
-                    printf("🔴");
-                    break;
-                }
-
                 char* piece = tokenizer->decode(prevToken, token);
+                bool isSafe = isSafePiece(piece);
+
+                int eosType = eosDetector->append(token, isSafe ? piece : "");
 
                 if (isSafePiece(piece)) {
                     printf("%s", piece);
                     fflush(stdout);
-                    delta += piece;
                 }
 
-                bool maybeEos = false;
-                size_t deltaSize = delta.size();
-                if (nStops > 0 && deltaSize > 0) {
-                    bool isEos = false;
-                    size_t eosSize = eos.size();
-                    if (eos.compare(0, deltaSize, delta) == 0) {
-                        if (eosSize <= deltaSize) {
-                            isEos = true;
-                            break;
-                        } else {
-                            maybeEos = true;
-                            break;
-                        }
+                if (eosType == NOT_EOS || eosType == EOS) {
+                    char* delta = eosDetector->getDelta();
+                    if (delta != NULL) {
+                        std::string deltaStr(delta);
+                        if (params.stream)
+                            writeChatCompletionChunk(request, deltaStr, false);
+                        buffer += deltaStr;
                     }
-                    if (isEos) {
-                        printf("⭕");
-                        break;
-                    }
+                    eosDetector->clear();
                 }
-
-                if (!maybeEos) {
-                    if (params.stream)
-                        writeChatCompletionChunk(request, delta, false);
-                    buffer += delta;
-                    delta.clear();
-                }
+                if (eosType == EOS) break;
             }
         }
 
@@ -432,9 +404,24 @@ void handleModelsRequest(HttpRequest& request) {
 }
 
 void server(Inference* inference, SocketPool* socketPool, Tokenizer *tokenizer, Sampler *sampler, AppArgs* args, TransformerSpec* spec) {
+    if (tokenizer->chatEosId < 0) {
+        printf("⛔ 0.8.0 version introduced a new format of the tokenizer that includes chatEosId. Please update your tokenizer.\n");
+        exit(EXIT_FAILURE);
+    }
+
     SocketServer* server = new SocketServer(args->port);
+
+    const bool hasExtraStop = tokenizer->chatTemplate[5][0] != '\0';
+    const int nStops = hasExtraStop ? 2 : 1;
+    char* stops[nStops];
+    stops[0] = tokenizer->vocab[tokenizer->chatEosId];
+    if (hasExtraStop)
+        stops[1] = tokenizer->chatTemplate[5];
+
+    EosDetector eosDetector(tokenizer->chatEosId, nStops, (const char**)stops, 1, 1);
+    ApiServer api(inference, tokenizer, sampler, args, spec, &eosDetector);
+
     printf("Server URL: http://127.0.0.1:%d/v1/\n", args->port);
-    ApiServer api(inference, tokenizer, sampler, args, spec);
 
     std::vector<Route> routes = {
         {

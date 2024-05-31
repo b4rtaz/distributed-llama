@@ -36,6 +36,7 @@ chatTemplate = {
     'chat_role_end': '<|end_header_id|>\n\n',
     'chat_message_end': '<|eot_id|>',
     'chat_generation_prompt': '<|start_header_id|>assistant<|end_header_id|>\n\n',
+    'chat_extra_stop': ''
 }
 
 if __name__ == '__main__':

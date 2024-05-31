@@ -86,6 +86,7 @@ Tokenizer::Tokenizer(char* tokenizerPath, int modelVocabSize) {
         assert(version == 0);
 
         if (nChatTemplates > 0) {
+            assert(nChatTemplates == 6);
             unsigned int templateSizes[nChatTemplates];
             if (fread(&templateSizes, sizeof(templateSizes), 1, file) != 1) {
                 throw std::runtime_error("Cannot read chat template sizes");
@@ -424,4 +425,78 @@ void Sampler::setTemp(float temp) {
 
 void Sampler::setSeed(unsigned long long seed) {
     this->rngState = seed;
+}
+
+EosDetector::EosDetector(int eosId, size_t nStops, const char** stops, int paddingLeft, int paddingRight) {
+    this->eosId = eosId;
+    this->nStops = nStops;
+    this->stops = stops;
+    this->stopSizes = new size_t[nStops];
+    for (size_t s = 0; s < nStops; s++) {
+        stopSizes[s] = strlen(stops[s]);
+        printf("🛑 stop: %s\n", stops[s]);
+    }
+    this->bufferPos = 0;
+    this->bufferSize = 0;
+    this->paddingLeft = paddingLeft;
+    this->paddingRight = paddingRight;
+}
+
+EosDetector::~EosDetector() {
+    if (bufferSize > 0)
+        delete[] buffer;
+    delete[] stopSizes;
+}
+
+EosDetectorType EosDetector::append(int tokenId, const char* piece) {
+    int pieceLength = strlen(piece);
+    int length = bufferPos + pieceLength + 1;
+    if (length > bufferSize) {
+        char* newBuffer = new char[length];
+        if (bufferPos > 0)
+            memcpy(newBuffer, buffer, bufferPos);
+        if (bufferSize > 0)
+            delete[] buffer;
+        buffer = newBuffer;
+    }
+    memcpy(buffer + bufferPos, piece, pieceLength + 1);
+    bufferPos += pieceLength;
+
+    // detection
+
+    if (tokenId == eosId) {
+        eosPos = bufferPos - pieceLength;
+        return EOS;
+    }
+    eosPos = -1;
+
+    for (size_t s = 0; s < nStops; s++) {
+        size_t stopSize = stopSizes[s];
+        if (bufferPos > stopSize + paddingLeft + paddingRight) continue;
+
+        for (int lo = 0; lo <= paddingLeft; lo++) {
+            int n = bufferPos - lo;
+            if (n == 0 || n > stopSize + paddingRight) continue;
+            if (n > stopSize) n = stopSize;
+            if (strncmp(buffer + lo, stops[s], n) == 0) {
+                if (n == stopSize) {
+                    eosPos = lo;
+                    return EOS;
+                }
+                return MAYBE_EOS;
+            }
+        }
+    }
+    return NOT_EOS;
+}
+
+char* EosDetector::getDelta() {
+    if (eosPos == -1) return buffer;
+    if (eosPos == 0) return NULL;
+    buffer[eosPos] = '\0';
+    return buffer;
+}
+
+void EosDetector::clear() {
+    bufferPos = 0;
 }

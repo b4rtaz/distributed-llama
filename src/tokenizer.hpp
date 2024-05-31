@@ -44,7 +44,7 @@ public:
     char** vocab;
     int bosId;
     int eosId;
-    int chatEosId; // -1 if not used
+    int chatEosId;
     int nChatTemplates;
     char** chatTemplate;
 
@@ -76,6 +76,33 @@ public:
     int sample(float* logits);
     void setTemp(float temp);
     void setSeed(unsigned long long rngSeed);
+};
+
+enum EosDetectorType {
+    MAYBE_EOS = 0,
+    EOS = 1,
+    NOT_EOS = 2,
+};
+
+class EosDetector {
+private:
+    int eosId;
+    size_t nStops;
+    const char** stops;
+    size_t* stopSizes;
+    size_t bufferPos;
+    size_t bufferSize;
+    int eosPos;
+    int paddingLeft;
+    int paddingRight;
+public:
+    char* buffer;
+    EosDetector(int eosId, size_t nStops, const char** stops, int paddingLeft, int paddingRight);
+    ~EosDetector();
+
+    EosDetectorType append(int tokenId, const char* piece);
+    char* getDelta();
+    void clear();
 };
 
 #endif

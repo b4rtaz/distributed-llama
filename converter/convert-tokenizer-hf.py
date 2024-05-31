@@ -56,7 +56,7 @@ if __name__ == '__main__':
         print()
         print('⭐ To create the tokenizer file you need to manually specify chat template values. Enter \\n for new line.')
         templateChat = {}
-        templateKeys = ['chat_message_start', 'chat_role_start', 'chat_role_end', 'chat_message_end', 'chat_generation_prompt']
+        templateKeys = ['chat_message_start', 'chat_role_start', 'chat_role_end', 'chat_message_end', 'chat_generation_prompt', 'chat_extra_stop']
         for key in templateKeys:
             value = input(f'⏩ Enter value for chat template key "{key}":\n')
             templateChat[key] = value.replace('\\n', '\n')
