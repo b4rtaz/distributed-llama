@@ -1,5 +1,6 @@
 #include <cassert>
 #include <cstring>
+#include <cstdlib>
 #include "tokenizer.hpp"
 
 #define ASSERT_EOS_TYPE(type, expected) \
