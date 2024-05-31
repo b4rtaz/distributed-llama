@@ -416,7 +416,11 @@ void Sampler::setSeed(unsigned long long seed) {
 }
 
 TokenizerStops::TokenizerStops(Tokenizer* tokenizer) {
-    assert(tokenizer->nChatTemplates == 6);
+    if (tokenizer->nChatTemplates != 6) {
+        printf("⛔ 0.8.0 version introduced a new format of the tokenizer that includes the chat template. Please update your tokenizer.\n");
+        exit(EXIT_FAILURE);
+    }
+
     const bool hasExtraStop = tokenizer->chatTemplate[5][0] != '\0';
     nStops = hasExtraStop ? 2 : 1;
     char** s = new char*[nStops];

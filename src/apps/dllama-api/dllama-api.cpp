@@ -404,11 +404,6 @@ void handleModelsRequest(HttpRequest& request) {
 }
 
 void server(Inference* inference, SocketPool* socketPool, Tokenizer *tokenizer, Sampler *sampler, AppArgs* args, TransformerSpec* spec) {
-    if (tokenizer->chatEosId < 0) {
-        printf("⛔ 0.8.0 version introduced a new format of the tokenizer that includes chatEosId. Please update your tokenizer.\n");
-        exit(EXIT_FAILURE);
-    }
-
     SocketServer* server = new SocketServer(args->port);
 
     TokenizerStops stops(tokenizer);
