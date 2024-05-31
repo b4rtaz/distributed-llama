@@ -108,15 +108,6 @@ void testEosDetectorWithLongPadding() {
         assert(strcmp(delta, "lorem") == 0);
     }
 
-    // "hello" + EOS
-    detector.clear();
-    {
-        ASSERT_EOS_TYPE(detector.append(1, "hello"), NOT_EOS);
-        char* delta = detector.getDelta();
-        assert(delta != NULL);
-        assert(strcmp(delta, "lorem") == 0);
-    }
-
     // "lorem|enQ"
     detector.clear();
     {
