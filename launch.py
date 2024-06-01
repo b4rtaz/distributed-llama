@@ -4,6 +4,11 @@ import requests
 
 # ['model-url', 'tokenizer-url', 'weights-float-type', 'buffer-float-type', 'model-type']
 MODELS = {
+    'llama3_8b_q40': [
+        'https://huggingface.co/b4rtaz/Llama-3-8B-Q40-Distributed-Llama/resolve/main/dllama_model_meta-llama-3-8b_q40.m?download=true',
+        'https://huggingface.co/b4rtaz/Llama-3-8B-Q40-Distributed-Llama/resolve/main/dllama_tokenizer_llama3.t?download=true',
+        'q40', 'q80', 'base'
+    ],
     'llama3_8b_instruct_q40': [
         'https://huggingface.co/b4rtaz/Llama-3-8B-Q40-Instruct-Distributed-Llama/resolve/main/dllama_model_lama3_instruct_q40.m?download=true',
         'https://huggingface.co/b4rtaz/Llama-3-8B-Q40-Instruct-Distributed-Llama/resolve/main/dllama_tokenizer_llama3.t?download=true',
@@ -11,11 +16,12 @@ MODELS = {
     ]
 }
 
-ALIASES = {
-    'llama3_instruct': 'llama3_8b_instruct_q40'
-}
-
 def downloadFile(url: str, path: str):
+    if (os.path.isfile(path)):
+        fileName = os.path.basename(path)
+        result = input(f'❓ {fileName} already exists, do you want to download again? ("Y" if yes): ')
+        if (result.upper() != 'Y'):
+            return
     response = requests.get(url, stream=True)
     response.raise_for_status()
     print(f'📄 {url}')
@@ -64,8 +70,6 @@ if __name__ == '__main__':
     os.chdir(os.path.dirname(__file__))
 
     modelName = sys.argv[1].replace('-', '_')
-    if modelName in ALIASES:
-        modelName = ALIASES[modelName]
     if modelName not in MODELS:
         print(f'Model is not supported: {modelName}')
         exit(1)
