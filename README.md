@@ -50,6 +50,41 @@ The project is split up into two parts:
 
 You always need the root node and you can add 2^n - 1 worker nodes to speed up the inference. The RAM usage of the neural network is split up across all nodes. The root node requires a bit more RAM than worker nodes.
 
+### 🎹 Commands
+
+* `dllama inference` - run the inference with a simple benchmark,
+* `dllama chat` - run the CLI chat,
+* `dllama worker` - run the worker node,
+* `dllama-api` - run the API server.
+
+Inference, Chat, API
+
+| Argument                     | Description                                                      | Example                                |
+| ---------------------------- | ---------------------------------------------------------------- | -------------------------------------- |
+| `--model <path>`             | Path to model.                                                   | `dllama_model_meta-llama-3-8b_q40.m`   |
+| `--tokenizer <path>`         | Tokenizer to model.                                              | `dllama_tokenizer_llama3.t`            |
+| `--buffer-float-type <type>` | Float precision of synchronization.                              | `q80`                                  |
+| `--workers <workers>`        | Addresses of workers (ip:port), separated by space.              | `0.0.0.1:9991 10.0.0.2:9991`           |
+
+Inference, Chat, Worker, API
+
+| Argument                     | Description                                                      | Example                             |
+| ---------------------------- | ---------------------------------------------------------------- | ----------------------------------- |
+| `--nthreads <n>`             | Amount of threads. Don't set a higher value than number of CPUs. | `4`                                 |
+
+Worker, API
+
+| Argument                     | Description                       | Example           |
+| ---------------------------- | --------------------------------- | ----------------- |
+| `--port <port>`              | Binding port.                     | `9999`            |
+
+Inference
+
+| Argument                     | Description                    | Example            |
+| ---------------------------- | ------------------------------ | ------------------ |
+| `--prompt <prompt>`          | Initial prompt.                | `"Hello World"`    |
+| `--steps <steps>`            | Number of tokens to generate.  | `256`              |
+
 ## 📊 Measurements
 
 ### Average Token Generation Time
