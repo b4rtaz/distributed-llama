@@ -11,9 +11,9 @@ Tensor parallelism is all you need. Run LLMs on weak devices or make powerful de
   <sub><sup>Distributed Llama running Llama 2 70B on 8 Raspberry Pi 4B devices</sup></sub>
 </p>
 
-### 🔥 Start by Single Command
+### 🔥 Setup Root Node by Single Command
 
-Python 3 and C++ compiler required.
+Python 3 and C++ compiler required. The command will download the model and the tokenizer.
 
 | Model                   | Purpose   | Size     | Command                                   |
 | ----------------------- | --------- | -------- | ----------------------------------------- |
