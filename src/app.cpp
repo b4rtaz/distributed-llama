@@ -23,7 +23,7 @@ AppArgs AppArgs::parse(int argc, char** argv, bool hasMode) {
     args.modelPath = NULL;
     args.tokenizerPath = NULL;
     args.prompt = NULL;
-    args.weightsFloatType = F32;
+    args.weightsFloatType = FUNK;
     args.bufferFloatType = F32;
     args.nWorkers = 0;
     args.port = 9990;

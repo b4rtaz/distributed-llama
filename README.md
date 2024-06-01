@@ -4,7 +4,6 @@
 
 [![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/b4rtaz/distributed-llama/.github%2Fworkflows%2Fmain.yml?style=flat-square)](https://github.com/b4rtaz/distributed-llama/actions) [![License: MIT](https://img.shields.io/github/license/mashape/apistatus.svg?style=flat-square)](/LICENSE) [![Discord](https://img.shields.io/discord/1245814812353495070?style=flat-square&color=%23788AD1)](https://discord.gg/7M4BXkM4)
 
-
 Tensor parallelism is all you need. Run LLMs on weak devices or make powerful devices even more powerful by distributing the workload and dividing the RAM usage. This project proves that it's possible split the workload of LLMs across multiple devices and achieve a significant speedup. Distributed Llama allows you to run huge LLMs in-house. The project uses TCP sockets to synchronize the state. You can easily configure your AI cluster by using a home router.
 
 <p align="center">
@@ -12,20 +11,23 @@ Tensor parallelism is all you need. Run LLMs on weak devices or make powerful de
   <sub><sup>Distributed Llama running Llama 2 70B on 8 Raspberry Pi 4B devices</sup></sub>
 </p>
 
-<!--
-**🔥 Run Distributed Llama by single command**
+**🔥 Download Model & Build by Single Command**
 
-Python and GCC required. Download this repository and run:
+Python 3 and GCC required.
 
-* Llama 3 8B: `python download-model.py llama3`
-* Llama 3 8B Instruct: `python download-model.py llama3_instruct`
-* TinyLlama: `python download-model.py tinylama`
--->
+**Chat & API**
+
+* Llama 3 8B Instruct: `python launch.py llama3_instruct`
+
+**Convert Model Manually**
+
+* [Llama 2](./docs/LLAMA.md#how-to-run-llama-2)
+* [Llama 3](./docs/LLAMA.md#how-to-run-llama-3)
 
 **Supported modes:**
 
-- Inference
-- Chat
+- Inference CLI
+- Chat CLI
 - [API Server](./src/apps/dllama-api/README.md)
 
 **Known limitations:**
@@ -111,11 +113,6 @@ All tests below were conducted on c3d-highcpu-30 (30 vCPU, 15 core, 59 GB memory
 | Llama 3 8B  | **544 kB**<br><sub><sup>(S: 272 kB, R: 272 kB)</sup></sub>   | **1632 kB**<br><sub><sup>(S: 816 kB, R: 816 kB)</sup></sub>   | **3808 kB**<br><sub><sup>(S: 1904 kB, R: 1904 kB)</sup></sub>    |
 
 <sub><sup>S - sent data from the root node to workers, R - received data by the root node from workers, tested on 0.7.1 version</sup></sub>
-
-## Download Model and Run
-
-* [How to Run Llama 2](./docs/LLAMA.md#how-to-run-llama-2)
-* [How to Run Llama 3](./docs/LLAMA.md#how-to-run-llama-3)
 
 ## 📟 How to Run on Raspberry Pi Devices
 

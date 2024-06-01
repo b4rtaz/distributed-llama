@@ -220,7 +220,8 @@ TransformerSpec Transformer::loadSpecFromFile(const char* path, const unsigned i
             throw std::runtime_error("Cannot read header values");
         }
         int nKv = (spec.headerSize - 2 * sizeof(int)) / sizeof(int);
-        int modelWeightsFloatType = -1;
+
+        FloatType modelWeightsFloatType = FUNK;
         for (int i = 0; i < nKv; i += 2) {
             int key = buffer[i];
             int value = buffer[i + 1];
@@ -237,17 +238,19 @@ TransformerSpec Transformer::loadSpecFromFile(const char* path, const unsigned i
             else if (key == SEQ_LEN) spec.seqLen = value;
             else if (key == HIDDEN_ACT) spec.hiddenAct = (TransformerHiddenAct)value;
             else if (key == ROPE_THETA) spec.ropeTheta = (float)value;
-            else if (key == WEIGHTS_FLOAT_TYPE) modelWeightsFloatType = value;
+            else if (key == WEIGHTS_FLOAT_TYPE) weightsFloatType = (FloatType)value;
             else {
                 throw std::runtime_error("Unsupported header key");
             }
         }
 
-        if (modelWeightsFloatType != -1 && modelWeightsFloatType != weightsFloatType)
-            throw std::runtime_error("Model has different weights float type than passed in argument");
+        
     } else {
         throw std::runtime_error("Unsupported model file");
     }
+
+    if (weightsFloatType == FUNK)
+        throw std::runtime_error("Not specified weights float type");
 
     spec.headSize = spec.dim / spec.nHeads;
     spec.kvDim = (spec.dim * spec.nKvHeads) / spec.nHeads;

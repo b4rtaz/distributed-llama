@@ -18,6 +18,8 @@ int getNumbersPerBatch(FloatType type) {
             return QK40;
         case Q80:
             return QK80;
+        case FUNK:
+            break;
     }
     fprintf(stderr, "Unsupported float type %d\n", type);
     exit(EXIT_FAILURE);
@@ -41,6 +43,8 @@ long getBatchBytes(FloatType type, int n, int d) {
                 int blocks = n / QK80 * d;
                 return blocks * sizeof(BlockQ80);
             }
+        case FUNK:
+            break;
     }
     fprintf(stderr, "Unsupported float type %d\n", type);
     exit(EXIT_FAILURE);
