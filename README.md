@@ -12,6 +12,7 @@ Tensor parallelism is all you need. Run LLMs on weak devices or make powerful de
   <sub><sup>Distributed Llama running Llama 2 70B on 8 Raspberry Pi 4B devices</sup></sub>
 </p>
 
+<!--
 **🔥 Run Distributed Llama by single command**
 
 Python and GCC required. Download this repository and run:
@@ -19,6 +20,7 @@ Python and GCC required. Download this repository and run:
 * Llama 3 8B: `python download-model.py llama3`
 * Llama 3 8B Instruct: `python download-model.py llama3_instruct`
 * TinyLlama: `python download-model.py tinylama`
+-->
 
 **Supported modes:**
 
