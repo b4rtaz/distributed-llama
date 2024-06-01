@@ -1,5 +1,4 @@
 import sys
-import struct
 import base64
 writer = __import__('tokenizer-writer')
 

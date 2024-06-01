@@ -22,6 +22,7 @@ def convert(modelPath, outputPath, targetFloatType):
         params['arch_type'] = 0xABCD00
         params['n_experts'] = 0
         params['n_active_experts'] = 0
+        params['weights_float_type'] = targetFloatType
         if ('rope_theta' in params):
             params['rope_theta'] = int(params['rope_theta'])
 
@@ -107,8 +108,8 @@ if __name__ == '__main__':
     modelPath = sys.argv[1]
     targetFloatType = parseFloatType(sys.argv[2])
 
-    modelName = modelPath.split('/')[-1]
-    outputFileName = f'dllama_model_{modelName.lower()}_{targetFloatType}.m'
+    modelName = os.path.basename(modelPath)
+    outputFileName = f'dllama_model_{modelName.lower()}_{sys.argv[2]}.m'
 
     print(f'Model name: {modelName}')
     print(f'Target float type: {targetFloatType}')

@@ -2,27 +2,17 @@ import os
 import sys
 import requests
 
+# ['model-url', 'tokenizer-url', 'weights-float-type', 'buffer-float-type', 'model-type']
 MODELS = {
-    'llama3_8b_q40': [
-        'https://huggingface.co/b4rtaz/llama-3-8b-distributed-llama/resolve/main/dllama_meta-llama-3-8b_q40.bin?download=true',
-        'https://huggingface.co/b4rtaz/llama-3-8b-distributed-llama/resolve/main/dllama_meta-llama3-tokenizer.t?download=true',
-    ],
     'llama3_8b_instruct_q40': [
-        'https://huggingface.co/Azamorn/Meta-Llama-3-8B-Instruct-Distributed/resolve/main/dllama_original_q40.bin?download=true',
-        'https://huggingface.co/Azamorn/Meta-Llama-3-8B-Instruct-Distributed/resolve/main/dllama-llama3-tokenizer.t?download=true',
-    ],
-    'tinylama_1.1b_3t_q40': [
-        'https://huggingface.co/b4rtaz/tinyllama-1.1b-1431k-3t-distributed-llama/resolve/main/dllama_model_tinylama_1.1b_3t_q40.m?download=true',
-        'https://huggingface.co/b4rtaz/tinyllama-1.1b-1431k-3t-distributed-llama/resolve/main/dllama_tokenizer_tinylama_1.1b_3t_q40.t?download=true'
+        'https://huggingface.co/b4rtaz/Llama-3-8B-Q40-Instruct-Distributed-Llama/resolve/main/dllama_model_lama3_instruct_q40.m?download=true',
+        'https://huggingface.co/b4rtaz/Llama-3-8B-Q40-Instruct-Distributed-Llama/resolve/main/dllama_tokenizer_llama3.t?download=true',
+        'q40', 'q80', 'chat'
     ]
 }
 
 ALIASES = {
-    'llama3': 'llama3_8b_q40',
-    'llama3_8b': 'llama3_8b_q40',
-    'llama3_instruct': 'llama3_8b_instruct_q40',
-    'llama3_8b_instruct': 'llama3_8b_instruct_q40',
-    'tinylama': 'tinylama_1.1b_3t_q40'
+    'llama3_instruct': 'llama3_8b_instruct_q40'
 }
 
 def downloadFile(url: str, path: str):
@@ -80,8 +70,13 @@ if __name__ == '__main__':
         print(f'Model is not supported: {modelName}')
         exit(1)
 
-    (modelPath, tokenizerPath) = download(modelName, MODELS[modelName])
-    command = f'./dllama inference --model {modelPath} --tokenizer {tokenizerPath} --weights-float-type q40 --buffer-float-type q80 --nthreads 4 --steps 64 --prompt "Hello world"'
+    model = MODELS[modelName]
+    (modelPath, tokenizerPath) = download(modelName, model)
+    if (model[4] == 'chat'):
+        command = './dllama chat'
+    else:
+        command = './dllama inference --steps 64 --prompt "Hello world"'
+    command += f' --model {modelPath} --tokenizer {tokenizerPath} --buffer-float-type {model[3]} --nthreads 4'
 
     print('To run Distributed Llama you need to execute:')
     print('--- copy start ---')

@@ -4,6 +4,7 @@
 #include <cstdint>
 
 enum FloatType {
+    FUNK = -1,
     F32 = 0,
     F16 = 1,
     Q40 = 2,
