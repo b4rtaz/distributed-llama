@@ -4,7 +4,7 @@ import json
 import torch
 import math
 import numpy as np
-from writer import writeTensor, writeHeader, parseFloatType, FloatType
+from writer import writeTensor, writeHeader, parseFloatType, strFloatType, FloatType
 from pathlib import Path
 
 LAYER_CHUNK_SIZE = 48
@@ -107,12 +107,13 @@ if __name__ == '__main__':
 
     modelPath = sys.argv[1]
     targetFloatType = parseFloatType(sys.argv[2])
+    targetFloatTypeStr = strFloatType(targetFloatType)
 
     modelName = os.path.basename(modelPath)
-    outputFileName = f'dllama_model_{modelName.lower()}_{sys.argv[2]}.m'
+    outputFileName = f'dllama_model_{modelName.lower()}_{targetFloatTypeStr}.m'
 
     print(f'Model name: {modelName}')
-    print(f'Target float type: {targetFloatType}')
+    print(f'Target float type: {targetFloatTypeStr}')
     print(f'Target file: {outputFileName}')
 
     convert(modelPath, outputFileName, targetFloatType)

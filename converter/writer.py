@@ -23,6 +23,9 @@ def parseFloatType(type):
         return floatType
     raise Exception(f'{type} is not supported')
 
+def strFloatType(type):
+    return floatTypeNames[type]
+
 def writeQuantizedQ40Tensor(file, x):
     x = x.to(torch.float32).numpy().astype(np.float32)
     blockSize = 32
@@ -105,7 +108,7 @@ def writeTensor(file, tensor, floatType):
     else:
         raise Exception(f'Unknown float type')
     t1 = time.time()
-    print(f'Saved {floatTypeNames[floatType]} tensor in {t1 - t0:.2f}s, {nBytes} bytes')
+    print(f'Saved {strFloatType(floatType)} tensor in {t1 - t0:.2f}s, {nBytes} bytes')
 
 def writeHeader(file, params):
     headerKeys = {
