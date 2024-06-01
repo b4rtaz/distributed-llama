@@ -116,7 +116,6 @@ All tests below were conducted on c3d-highcpu-30 (30 vCPU, 15 core, 59 GB memory
 
 * [How to Run Llama 2](./docs/LLAMA.md#how-to-run-llama-2)
 * [How to Run Llama 3](./docs/LLAMA.md#how-to-run-llama-3)
-* [How to Run Grok-1](./docs/GROK.md)
 
 ## 📟 How to Run on Raspberry Pi Devices
 
