@@ -30,14 +30,7 @@ specialTokens = [
 bosId = 128000
 eosId = 128001
 chatEosId = 128009
-chatTemplate = {
-    'chat_message_start': '',
-    'chat_role_start': '<|start_header_id|>',
-    'chat_role_end': '<|end_header_id|>\n\n',
-    'chat_message_end': '<|eot_id|>',
-    'chat_generation_prompt': '<|start_header_id|>assistant<|end_header_id|>\n\n',
-    'chat_extra_stop': ''
-}
+chatTemplate = "{% set loop_messages = messages %}{% for message in loop_messages %}{% set content = '<|start_header_id|>' + message['role'] + '<|end_header_id|>\n\n'+ message['content'] | trim + '<|eot_id|>' %}{% if loop.index0 == 0 %}{% set content = bos_token + content %}{% endif %}{{ content }}{% endfor %}{% if add_generation_prompt %}{{ '<|start_header_id|>assistant<|end_header_id|>\n\n' }}{% endif %}"
 
 def printUsage():
     print('Usage: python convert-tokenizer-llama3.py <tokenizerPath>')
@@ -79,6 +72,6 @@ if __name__ == '__main__':
                 'bos_id': bosId,
                 'eos_id': eosId,
                 'chat_eos_id': chatEosId,
-            }, chatTemplate, tokens, scores)
+            }, tokens, scores, chatTemplate.encode('utf-8'), None)
 
     print(f'✅ Created {outputFileName}')

@@ -2,6 +2,7 @@
 #define TOKENIZER_HPP
 
 #include <cstdio>
+#include <string>
 #include "tasks.hpp"
 
 bool isSafePiece(char *piece);
@@ -29,6 +30,7 @@ enum TokenizerHeaderKey {
     PAD_ID = 5,
     CHAT_EOS_ID = 6,
     CHAT_TEMPLATE = 7,
+    CHAT_STOP = 8,
 };
 
 class Tokenizer {
@@ -44,8 +46,8 @@ public:
     int bosId;
     int eosId;
     int chatEosId;
-    int nChatTemplates;
-    char** chatTemplate;
+    char* chatTemplate;
+    char* chatStop;
 
     Tokenizer(char* tokenizer_path, int vocab_size);
     ~Tokenizer();
@@ -77,13 +79,32 @@ public:
     void setSeed(unsigned long long rngSeed);
 };
 
-class TokenizerStops {
+class TokenizerChatStops {
 public:
     const char** stops;
     size_t nStops;
     size_t maxStopLength;
-    TokenizerStops(Tokenizer* tokenizer);
-    ~TokenizerStops();
+    TokenizerChatStops(Tokenizer* tokenizer);
+    ~TokenizerChatStops();
+};
+
+enum ChatTemplateType {
+    TEMPLATE_LLAMA3 = 0,
+    TEMPLATE_ZEPHYR = 1,
+    TEMPLATE_CHATML = 2,
+};
+
+struct ChatItem {
+    std::string role;
+    std::string message;
+};
+
+class ChatTemplate {
+public:
+    const char* eos;
+    ChatTemplateType type;
+    ChatTemplate(const char* chatTemplate, const char* eos);
+    std::string generate(unsigned int nMessages, ChatItem* items, bool appendGenerationPrompt);
 };
 
 enum EosDetectorType {

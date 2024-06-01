@@ -7,6 +7,7 @@
 #include <ctime>
 #include <cassert>
 #include <stdexcept>
+#include <sstream>
 #include "funcs.hpp"
 #include "utils.hpp"
 #include "tokenizer.hpp"
@@ -39,7 +40,8 @@ Tokenizer::Tokenizer(char* tokenizerPath, int modelVocabSize) {
     eosId = -1;
     bosId = -1;
     chatEosId = -1;
-    nChatTemplates = 0;
+    chatTemplate = NULL;
+    chatStop = NULL;
 
     // read in the file
     FILE *file = fopen(tokenizerPath, "rb");
@@ -68,6 +70,8 @@ Tokenizer::Tokenizer(char* tokenizerPath, int modelVocabSize) {
             throw std::runtime_error("Cannot read header values");
         }
         int version = -1;
+        int chatTemplateLength = -1;
+        int chatStopLength = -1;
         for (int i = 0; i < nKv; i += 2) {
             int key = buffer[i];
             int value = buffer[i + 1];
@@ -77,30 +81,26 @@ Tokenizer::Tokenizer(char* tokenizerPath, int modelVocabSize) {
             else if (key == BOS_ID) bosId = value;
             else if (key == EOS_ID) eosId = value;
             else if (key == CHAT_EOS_ID) chatEosId = value;
-            else if (key == CHAT_TEMPLATE) nChatTemplates = value;
+            else if (key == CHAT_TEMPLATE) chatTemplateLength = value;
+            else if (key == CHAT_STOP) chatStopLength = value;
             else if (key == PAD_ID) {} // ignore
             else {
-                throw std::runtime_error("Invalid tokenizer header key");
+                throw std::runtime_error("Invalid tokenizer header key:" + std::to_string(key));
             }
         }
-        assert(version == 0);
 
-        if (nChatTemplates > 0) {
-            assert(nChatTemplates == 6);
-            unsigned int templateSizes[nChatTemplates];
-            if (fread(&templateSizes, sizeof(templateSizes), 1, file) != 1) {
-                throw std::runtime_error("Cannot read chat template sizes");
-            }
-            chatTemplate = new char*[nChatTemplates];
-            for (int t = 0; t < nChatTemplates; t++) {
-                chatTemplate[t] = new char[templateSizes[t] + 1];
-                if (templateSizes[t] == 0) {
-                    chatTemplate[t][0] = '\0';
-                } else if (fread(chatTemplate[t], templateSizes[t], 1, file) != 1) {
-                    throw std::runtime_error("Cannot read chat template");
-                }
-                printf("📄 chatTemplate[%d]: %s\n", t, chatTemplate[t]);
-            }
+        if (version != 1)
+            throw std::runtime_error("Old tokenizer version, please regenerate your tokenizer");
+
+        if (chatTemplateLength > 0) {
+            chatTemplate = new char[chatTemplateLength];
+            if (fread(chatTemplate, chatTemplateLength, 1, file) != 1)
+                throw std::runtime_error("Cannot read chat template from tokenizer file");
+        }
+        if (chatStopLength > 0) {
+            chatStop = new char[chatStopLength];
+            if (fread(chatStop, chatStopLength, 1, file) != 1)
+                throw std::runtime_error("Cannot read chat stop from tokenizer file");
         }
     } else {
         throw std::runtime_error("Invalid tokenizer file");
@@ -138,10 +138,9 @@ Tokenizer::Tokenizer(char* tokenizerPath, int modelVocabSize) {
 }
 
 Tokenizer::~Tokenizer() {
-    if (nChatTemplates > 0) {
-        for (int t = 0; t < nChatTemplates; t++) delete[] chatTemplate[t];
-        delete[] chatTemplate;
-    }
+    if (chatTemplate != NULL) delete[] chatTemplate;
+    if (chatStop != NULL) delete[] chatStop;
+
     for (int i = 0; i < vocabSize; i++) { free(vocab[i]); }
     free(vocab);
     free(vocabScores);
@@ -415,18 +414,13 @@ void Sampler::setSeed(unsigned long long seed) {
     this->rngState = seed;
 }
 
-TokenizerStops::TokenizerStops(Tokenizer* tokenizer) {
-    if (tokenizer->nChatTemplates != 6) {
-        printf("⛔ 0.8.0 version introduced a new format of the tokenizer that includes the chat template. Please update your tokenizer.\n");
-        exit(EXIT_FAILURE);
-    }
-
-    const bool hasExtraStop = tokenizer->chatTemplate[5][0] != '\0';
+TokenizerChatStops::TokenizerChatStops(Tokenizer* tokenizer) {
+    const bool hasExtraStop = tokenizer->chatStop != NULL;
     nStops = hasExtraStop ? 2 : 1;
     char** s = new char*[nStops];
     s[0] = tokenizer->vocab[tokenizer->chatEosId];
     if (hasExtraStop)
-        s[1] = tokenizer->chatTemplate[5];
+        s[1] = tokenizer->chatStop;
     maxStopLength = 0;
     for (size_t i = 0; i < nStops; i++) {
         size_t len = strlen(s[i]);
@@ -435,8 +429,47 @@ TokenizerStops::TokenizerStops(Tokenizer* tokenizer) {
     stops = (const char**)s;
 }
 
-TokenizerStops::~TokenizerStops() {
+TokenizerChatStops::~TokenizerChatStops() {
     delete[] stops;
+}
+
+ChatTemplate::ChatTemplate(const char* chatTemplate, const char* eos) {
+    if (chatTemplate == NULL)
+        throw std::runtime_error("The tokenizer does not include chat template");
+
+    printf("⭐ chat template: ");
+    if (strstr(chatTemplate, "<|start_header_id|>") != NULL) {
+        type = TEMPLATE_LLAMA3;
+        printf("llama3\n");
+    } else if (strstr(chatTemplate, "<|user|>") != NULL) {
+        type = TEMPLATE_ZEPHYR;
+        printf("zephyr\n");
+    } else if (strstr(chatTemplate, "<|im_start|>") != NULL) {
+        type = TEMPLATE_CHATML;
+        printf("chatml\n");
+    } else throw new std::runtime_error("Not supported chat template");
+    this->eos = eos;
+}
+
+std::string ChatTemplate::generate(unsigned int nMessages, ChatItem* items, bool appendGenerationPrompt) {
+    std::ostringstream buffer;
+    if (type == TEMPLATE_LLAMA3) {
+        for (unsigned int i = 0; i < nMessages; i++)
+            buffer << "<|start_header_id|>" << items[i].role << "<|end_header_id|>\n\n" << items[i].message << eos;
+        if (appendGenerationPrompt)
+            buffer << "<|start_header_id|>assistant<|end_header_id|>\n\n";
+    } else if (type == TEMPLATE_CHATML) {
+        for (unsigned int i = 0; i < nMessages; i++)
+            buffer << "<|im_start|>" << items[i].role << "\n" << items[i].message << "<|im_end|>\n";
+        if (appendGenerationPrompt)
+            buffer << "<|im_start|>assistant\n";
+    } else if (type == TEMPLATE_ZEPHYR) {
+        for (unsigned int i = 0; i < nMessages; i++)
+            buffer << "<|" << items[i].role << "|>\n" << items[i].message << eos << "\n";
+        if (appendGenerationPrompt)
+            buffer << "<|assistant|>\n";
+    }
+    return buffer.str();
 }
 
 EosDetector::EosDetector(int eosId, size_t nStops, const char** stops, int paddingLeft, int paddingRight) {

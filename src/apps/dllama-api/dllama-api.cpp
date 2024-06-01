@@ -239,33 +239,18 @@ private:
     AppArgs* args;
     TransformerSpec* spec;
     EosDetector* eosDetector;
+    ChatTemplate* chatTemplate;
     NaiveCache naiveCache;
 
 public:
-    ApiServer( Inference* inference, Tokenizer* tokenizer, Sampler* sampler, AppArgs* args, TransformerSpec* spec, EosDetector* eosDetector) {
+    ApiServer( Inference* inference, Tokenizer* tokenizer, Sampler* sampler, AppArgs* args, TransformerSpec* spec, EosDetector* eosDetector, ChatTemplate* chatTemplate) {
         this->inference = inference;
         this->tokenizer = tokenizer;
         this->sampler = sampler;
         this->args = args;
         this->spec = spec;
         this->eosDetector = eosDetector;
-    }
-
-    std::string buildChatPrompt(std::vector<ChatMessage> messages) {
-        assert(tokenizer->nChatTemplates == 6);
-
-        std::ostringstream buffer;
-        for (const auto& message : messages) {
-            buffer << tokenizer->chatTemplate[0]; // chatMessageStart
-            buffer << tokenizer->chatTemplate[1]; // chatRoleStart
-            buffer << message.role;
-            buffer << tokenizer->chatTemplate[2]; // chatRoleEnd
-            buffer << message.content;
-            buffer << tokenizer->chatTemplate[3]; // chatMessageEnd
-        }
-
-        buffer << tokenizer->chatTemplate[4]; // chatGenerationPrompt
-        return buffer.str();
+        this->chatTemplate = chatTemplate;
     }
 
     void complete(HttpRequest& request) {
@@ -278,14 +263,18 @@ public:
         printf("🔸");
         fflush(stdout);
 
-        std::string inputPrompt = buildChatPrompt(deltaPrompt);
+        size_t nInputItems = deltaPrompt.size();
+        ChatItem inputItems[nInputItems];
+        for (size_t i = 0; i < nInputItems; i++) {
+            inputItems[i].role = deltaPrompt[i].role;
+            inputItems[i].message = deltaPrompt[i].content;
+        }
+
+        std::string inputPrompt = chatTemplate->generate(nInputItems, inputItems, true);
         int promptLength = inputPrompt.size();
         int nPromptTokens;
         int promptTokens[promptLength + 3];
-        char prompt[promptLength + 1];
-        prompt[promptLength] = 0;
-        strcpy(prompt, inputPrompt.c_str());
-        tokenizer->encode(prompt, promptTokens, &nPromptTokens, true, false);
+        tokenizer->encode((char*)inputPrompt.c_str(), promptTokens, &nPromptTokens, true, false);
         int promptEndPos = startPos + nPromptTokens;
 
         for (size_t j = 0; j < deltaPrompt.size(); j++) {
@@ -406,9 +395,10 @@ void handleModelsRequest(HttpRequest& request) {
 void server(Inference* inference, SocketPool* socketPool, Tokenizer *tokenizer, Sampler *sampler, AppArgs* args, TransformerSpec* spec) {
     SocketServer* server = new SocketServer(args->port);
 
-    TokenizerStops stops(tokenizer);
+    TokenizerChatStops stops(tokenizer);
+    ChatTemplate chatTemplate(tokenizer->chatTemplate, stops.stops[0]);
     EosDetector eosDetector(tokenizer->chatEosId, stops.nStops, stops.stops, stops.maxStopLength, stops.maxStopLength);
-    ApiServer api(inference, tokenizer, sampler, args, spec, &eosDetector);
+    ApiServer api(inference, tokenizer, sampler, args, spec, &eosDetector, &chatTemplate);
 
     printf("Server URL: http://127.0.0.1:%d/v1/\n", args->port);
 

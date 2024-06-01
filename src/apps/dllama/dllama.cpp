@@ -115,40 +115,27 @@ private:
     Sampler* sampler;
     AppArgs* args;
     TransformerSpec* spec;
+    ChatTemplate* chatTemplate;
     EosDetector* eosDetector;
 
 public:
-    Chat(Inference* inference, Tokenizer* tokenizer, Sampler* sampler, AppArgs* args, TransformerSpec* spec, EosDetector* eosDetector) {
+    Chat(Inference* inference, Tokenizer* tokenizer, Sampler* sampler, AppArgs* args, TransformerSpec* spec, EosDetector* eosDetector, ChatTemplate* chatTemplate) {
         this->inference = inference;
         this->tokenizer = tokenizer;
         this->sampler = sampler;
         this->args = args;
         this->spec = spec;
         this->eosDetector = eosDetector;
-    }
-
-    std::string buildMessage(const std::string& role, std::string& message, bool addGenerationPrompt) {
-        std::ostringstream buffer;
-        buffer << tokenizer->chatTemplate[0]; // chatMessageStart
-        buffer << tokenizer->chatTemplate[1]; // chatRoleStart
-        buffer << role;
-        buffer << tokenizer->chatTemplate[2]; // chatRoleEnd
-        buffer << message;
-        buffer << tokenizer->chatTemplate[3]; // chatMessageEnd
-        if (addGenerationPrompt) {
-            buffer << tokenizer->chatTemplate[4]; // chatGenerationPrompt
-        }
-        return buffer.str();
+        this->chatTemplate = chatTemplate;
     }
 
     void chat() {
-        std::string inputPrompt;
         char inputBuffer[2048];
 
         size_t sysPromptLength = readStdin("💻 System prompt (optional): ", inputBuffer, sizeof(inputBuffer));
+        std::vector<ChatItem> deltaItems;
         if (sysPromptLength > 0) {
-            std::string sysPrompt = inputBuffer;
-            inputPrompt += buildMessage("system", sysPrompt, false);
+            deltaItems.push_back(ChatItem{"system", inputBuffer});
         }
 
         pos_t pos = 0;
@@ -159,8 +146,15 @@ public:
                 userPromptLength = readStdin("\n👱 User\n> ", inputBuffer, sizeof(inputBuffer));
             } while (userPromptLength == 0);
 
-            std::string userPrompt = inputBuffer;
-            inputPrompt += buildMessage("user", userPrompt, true);
+            deltaItems.push_back(ChatItem{"user", inputBuffer});
+
+            size_t nChatItems = deltaItems.size();
+            ChatItem chatItems[nChatItems];
+            for (size_t j = 0; j < nChatItems; j++) {
+                chatItems[j].role = deltaItems[j].role;
+                chatItems[j].message = deltaItems[j].message;
+            }
+            std::string inputPrompt = chatTemplate->generate(deltaItems.size(), chatItems, true);
 
             int* inputTokens = new int[inputPrompt.size() + 3];
             int nInputTokens;
@@ -200,10 +194,11 @@ public:
 };
 
 void chat(Inference* inference, SocketPool* socketPool, Tokenizer* tokenizer, Sampler* sampler, AppArgs* args, TransformerSpec* spec) {
-    TokenizerStops stops(tokenizer);
+    TokenizerChatStops stops(tokenizer);
+    ChatTemplate chatTemplate(tokenizer->chatTemplate, stops.stops[0]);
     EosDetector eosDetector(tokenizer->chatEosId, stops.nStops, stops.stops, stops.maxStopLength, stops.maxStopLength);
 
-    Chat chat(inference, tokenizer, sampler, args, spec, &eosDetector);
+    Chat chat(inference, tokenizer, sampler, args, spec, &eosDetector, &chatTemplate);
     chat.chat();
 }
 
