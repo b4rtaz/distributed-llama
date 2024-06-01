@@ -4,6 +4,11 @@ import requests
 
 # ['model-url', 'tokenizer-url', 'weights-float-type', 'buffer-float-type', 'model-type']
 MODELS = {
+    'tinyllama_1_1b_3t_q40': [
+        'https://huggingface.co/b4rtaz/TinyLlama-1.1B-3T-Distributed-Llama/resolve/main/dllama_model_tinylama_1.1b_3t_q40.m?download=true',
+        'https://huggingface.co/b4rtaz/TinyLlama-1.1B-3T-Distributed-Llama/resolve/main/dllama_tokenizer_tinylama_1.1b_3t.t?download=true',
+        'q40', 'q80', 'base'
+    ],
     'llama3_8b_q40': [
         'https://huggingface.co/b4rtaz/Llama-3-8B-Q40-Distributed-Llama/resolve/main/dllama_model_meta-llama-3-8b_q40.m?download=true',
         'https://huggingface.co/b4rtaz/Llama-3-8B-Q40-Distributed-Llama/resolve/main/dllama_tokenizer_llama3.t?download=true',
