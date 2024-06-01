@@ -451,21 +451,21 @@ ChatTemplate::ChatTemplate(const char* chatTemplate, const char* eos) {
     this->eos = eos;
 }
 
-std::string ChatTemplate::generate(unsigned int nMessages, ChatItem** items, bool appendGenerationPrompt) {
+std::string ChatTemplate::generate(unsigned int nMessages, ChatItem* items, bool appendGenerationPrompt) {
     std::ostringstream buffer;
     if (type == TEMPLATE_LLAMA3) {
         for (unsigned int i = 0; i < nMessages; i++)
-            buffer << "<|start_header_id|>" << items[i]->role << "<|end_header_id|>\n\n" << items[i]->message << eos;
+            buffer << "<|start_header_id|>" << items[i].role << "<|end_header_id|>\n\n" << items[i].message << eos;
         if (appendGenerationPrompt)
             buffer << "<|start_header_id|>assistant<|end_header_id|>\n\n";
     } else if (type == TEMPLATE_CHATML) {
         for (unsigned int i = 0; i < nMessages; i++)
-            buffer << "<|im_start|>" << items[i]->role << "\n" << items[i]->message << "<|im_end|>\n";
+            buffer << "<|im_start|>" << items[i].role << "\n" << items[i].message << "<|im_end|>\n";
         if (appendGenerationPrompt)
             buffer << "<|im_start|>assistant\n";
     } else if (type == TEMPLATE_ZEPHYR) {
         for (unsigned int i = 0; i < nMessages; i++)
-            buffer << "<|" << items[i]->role << "|>\n" << items[i]->message << eos << "\n";
+            buffer << "<|" << items[i].role << "|>\n" << items[i].message << eos << "\n";
         if (appendGenerationPrompt)
             buffer << "<|assistant|>\n";
     }

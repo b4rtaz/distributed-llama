@@ -149,9 +149,11 @@ public:
             deltaItems.push_back(ChatItem{"user", inputBuffer});
 
             size_t nChatItems = deltaItems.size();
-            ChatItem* chatItems[nChatItems];
-            for (size_t j = 0; j < nChatItems; j++)
-                chatItems[j] = &deltaItems[j];
+            ChatItem chatItems[nChatItems];
+            for (size_t j = 0; j < nChatItems; j++) {
+                chatItems[j].role = deltaItems[j].role;
+                chatItems[j].message = deltaItems[j].message;
+            }
             std::string inputPrompt = chatTemplate->generate(deltaItems.size(), chatItems, true);
 
             int* inputTokens = new int[inputPrompt.size() + 3];

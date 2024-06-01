@@ -104,7 +104,7 @@ public:
     const char* eos;
     ChatTemplateType type;
     ChatTemplate(const char* chatTemplate, const char* eos);
-    std::string generate(unsigned int nMessages, ChatItem** items, bool appendGenerationPrompt);
+    std::string generate(unsigned int nMessages, ChatItem* items, bool appendGenerationPrompt);
 };
 
 enum EosDetectorType {

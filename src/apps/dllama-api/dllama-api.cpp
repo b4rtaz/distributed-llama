@@ -270,7 +270,7 @@ public:
             inputItems[i].message = deltaPrompt[i].content;
         }
 
-        std::string inputPrompt = chatTemplate->generate(nInputItems, (ChatItem**)&inputItems, true);
+        std::string inputPrompt = chatTemplate->generate(nInputItems, inputItems, true);
         int promptLength = inputPrompt.size();
         int nPromptTokens;
         int promptTokens[promptLength + 3];
