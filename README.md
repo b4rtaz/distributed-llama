@@ -69,9 +69,9 @@ Inference, Chat, API
 
 Inference, Chat, Worker, API
 
-| Argument                     | Description                                                      | Example                             |
-| ---------------------------- | ---------------------------------------------------------------- | ----------------------------------- |
-| `--nthreads <n>`             | Amount of threads. Don't set a higher value than number of CPUs. | `4`                                 |
+| Argument                     | Description                                                           | Example                             |
+| ---------------------------- | --------------------------------------------------------------------- | ----------------------------------- |
+| `--nthreads <n>`             | Amount of threads. Don't set a higher value than number of CPU cores. | `4`                                 |
 
 Worker, API
 
