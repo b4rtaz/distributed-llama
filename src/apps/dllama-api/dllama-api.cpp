@@ -433,8 +433,11 @@ void server(Inference* inference, SocketPool* socketPool, Tokenizer *tokenizer, 
 
 int main(int argc, char *argv[]) {
     initQuants();
+    initSockets();
 
     AppArgs args = AppArgs::parse(argc, argv, false);
     App::run(&args, server);
+
+    cleanupSockets();
     return EXIT_SUCCESS;
 }

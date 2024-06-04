@@ -6,12 +6,16 @@
 #include <exception>
 #include <vector>
 
+void initSockets();
+void cleanupSockets();
+
 class ReadSocketException : public std::exception {
 public:
     int code;
     const char* message;
     ReadSocketException(int code, const char* message);
 };
+
 class WriteSocketException : public std::exception {
 public:
     int code;
