@@ -10,7 +10,6 @@
 
 #ifdef _WIN32
 #include <windows.h>
-#include <malloc.h>
 #else
 #include <sys/mman.h>
 #include <fcntl.h>
