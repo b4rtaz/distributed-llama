@@ -219,27 +219,33 @@ void worker(AppArgs* args) {
 
 int main(int argc, char *argv[]) {
     initQuants();
+    initSockets();
 
     AppArgs args = AppArgs::parse(argc, argv, true);
+    bool success = false;
 
     if (args.mode != NULL) {
         if (strcmp(args.mode, "inference") == 0) {
             args.benchmark = true;
             App::run(&args, generate);
-            return EXIT_SUCCESS;
+            success = true;
         } else if (strcmp(args.mode, "generate") == 0) {
             args.benchmark = false;
             App::run(&args, generate);
-            return EXIT_SUCCESS;
+            success = true;
         } else if (strcmp(args.mode, "chat") == 0) {
             App::run(&args, chat);
-            return EXIT_SUCCESS;
+            success = true;
         } else if (strcmp(args.mode, "worker") == 0) {
             worker(&args);
-            return EXIT_SUCCESS;
+            success = true;
         }
     }
 
+    cleanupSockets();
+
+    if (success)
+        return EXIT_SUCCESS;
     fprintf(stderr, "Invalid usage\n");
     return EXIT_FAILURE;
 }

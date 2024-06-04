@@ -75,7 +75,6 @@ static inline void setReuseAddr(int socket) {
     int iresult = setsockopt(socket, SOL_SOCKET, SO_REUSEADDR, (char*)&opt, sizeof(opt));
     if (iresult == SOCKET_ERROR) {
         closesocket(socket);
-        WSACleanup();
         throw std::runtime_error("setsockopt failed: " + std::to_string(WSAGetLastError()));
     }
     #else
@@ -131,6 +130,21 @@ static inline void readSocket(int socket, void* data, size_t size) {
     if (!tryReadSocket(socket, data, size, 0)) {
         throw std::runtime_error("Error reading from socket");
     }
+}
+
+void initSockets() {
+#ifdef _WIN32
+    WSADATA wsaData;
+    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
+        throw std::runtime_error("WSAStartup failed: " + std::to_string(WSAGetLastError()));
+    }
+#endif
+}
+
+void cleanupSockets() {
+#ifdef _WIN32
+    WSACleanup();
+#endif
 }
 
 ReadSocketException::ReadSocketException(int code, const char* message) {
@@ -342,13 +356,6 @@ SocketServer::SocketServer(int port) {
     const char* host = "0.0.0.0";
     struct sockaddr_in serverAddr;
 
-    #ifdef _WIN32
-    WSADATA wsaData;
-    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
-        throw std::runtime_error("WSAStartup failed: " + std::to_string(WSAGetLastError()));
-    }
-    #endif
-
     socket = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (socket < 0)
         throw std::runtime_error("Cannot create socket");
@@ -365,7 +372,6 @@ SocketServer::SocketServer(int port) {
     if (bindResult == SOCKET_ERROR) {
         int error = WSAGetLastError();
         closesocket(socket);
-        WSACleanup();
         throw std::runtime_error("Cannot bind port: " + std::to_string(error));
     }
     #else
@@ -380,7 +386,6 @@ SocketServer::SocketServer(int port) {
     if (listenResult != 0) {
         #ifdef _WIN32
         closesocket(socket);
-        WSACleanup();
         throw std::runtime_error("Cannot listen on port: " + std::to_string(WSAGetLastError()));
         #else
         close(socket);
@@ -393,8 +398,5 @@ SocketServer::SocketServer(int port) {
 
 SocketServer::~SocketServer() {
     shutdown(socket, 2);
-    #ifdef _WIN32
-    WSACleanup();
-    #endif
     close(socket);
 }
