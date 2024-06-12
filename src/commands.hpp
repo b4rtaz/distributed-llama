@@ -4,6 +4,11 @@
 #include <cstdio>
 #include "quants.hpp"
 
+// RESPONSIBILITIES
+//
+// *Slice - calculates sizes, offsets, slice sizes etc. It is not responsible for memory allocation. It may help in the loading of data.
+// *Command - allocates memory for weights, performs calculations.
+
 typedef unsigned short pos_t;
 typedef uint8_t slice_index_t;
 

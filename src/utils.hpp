@@ -18,9 +18,6 @@
 
 #define DEBUG_FLOATS(name, v, n) printf("⭕ %s ", name); for (int i = 0; i < n; i++) printf("%f ", v[i]); printf("\n");
 
-#define NEW_BUFFER(size) (char*)newBuffer(size)
-#define FREE_BUFFER(buffer) freeBuffer(buffer)
-
 void* newBuffer(size_t size);
 void freeBuffer(void* buffer);
 

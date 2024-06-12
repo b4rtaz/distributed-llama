@@ -176,7 +176,7 @@ void grokSyncMoeMulRearrange(TASK_ARGS) {
     TASK_VARIABLES;
 
     if (threadIndex == 0 && spec->nSlices > 1) {
-        char* hbq = transformer->buffer->getUnit(TB_SLICED_HB_QUANTIZED);
+        char* hbq = (char*)transformer->buffer->getUnit(TB_SLICED_HB_QUANTIZED);
         size_t bufferBytes = transformer->buffer->getUnitBytes(TB_SLICED_HB_QUANTIZED);
         size_t bufferSliceBytes = transformer->buffer->getSlicedBytes(TB_SLICED_HB_QUANTIZED);
 
@@ -205,7 +205,7 @@ void grokMoeBlock2(TASK_ARGS) {
     TASK_VARIABLES;
 
     float* xb2 = (float*)transformer->buffer->getSliced(TB_SLICED_XB2, transformer->sliceIndex);
-    char* hbq = transformer->buffer->getUnit(TB_SLICED_HB_QUANTIZED);
+    char* hbq = (char*)transformer->buffer->getUnit(TB_SLICED_HB_QUANTIZED);
     size_t rowBytes = getBatchBytes(spec->bufferFloatType, spec->hiddenDim, 1);
 
     uint8_t* indexes = (uint8_t*)transformer->buffer->getUnit(TB_UNIT_MOE_INDEXES);

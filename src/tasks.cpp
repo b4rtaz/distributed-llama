@@ -42,7 +42,7 @@ void TransformerArch::W(TaskLoopHandler* handler, unsigned int taskType) {
 }
 
 void syncUnitBuffer(unsigned int nThreads, unsigned int threadIndex, TransformerContext* ctx, uint8_t bufferIndex) {
-    char* buffer = ctx->transformer->buffer->getUnit(bufferIndex);
+    void* buffer = ctx->transformer->buffer->getUnit(bufferIndex);
     size_t bufferBytes = ctx->transformer->buffer->getUnitBytes(bufferIndex);
 
     if (ctx->socketPool != NULL) {
@@ -84,7 +84,7 @@ void syncSliceOfSlicedBuffer(unsigned int nThreads, unsigned int threadIndex, Tr
         if (threadIndex != 0) return;
 
         // worker
-        char* buffer = ctx->transformer->buffer->getSliced(bufferIndex, ctx->transformer->sliceIndex);
+        void* buffer = ctx->transformer->buffer->getSliced(bufferIndex, ctx->transformer->sliceIndex);
         ctx->socket->write(buffer, bufferBytes);
     }
 }
@@ -114,7 +114,7 @@ void syncMissingSlicesOfSlicedBuffer(unsigned int nThreads, unsigned int threadI
         // worker
         for (slice_index_t sliceIndex = 0; sliceIndex < ctx->transformer->spec->nSlices; sliceIndex++) {
             if (sliceIndex != ctx->transformer->sliceIndex) {
-                char* buffer = ctx->transformer->buffer->getSliced(bufferIndex, sliceIndex);
+                void* buffer = ctx->transformer->buffer->getSliced(bufferIndex, sliceIndex);
                 ctx->socket->read(buffer, sliceBytes);
             }
         }

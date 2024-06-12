@@ -126,7 +126,7 @@ TransformerSpec Transformer::loadSpecFromFile(const char* path, const unsigned i
 
 TransformerBuffer::TransformerBuffer(TransformerSpec* spec) {
     nSlices = spec->nSlices;
-    buffers = new char*[TB_LENGTH];
+    buffers = new void*[TB_LENGTH];
     bufferBytes = new size_t[TB_LENGTH];
 
     bufferBytes[TB_UNIT_XB] = spec->dim * sizeof(float);
@@ -146,8 +146,8 @@ TransformerBuffer::TransformerBuffer(TransformerSpec* spec) {
         bufferBytes[TB_UNIT_MOE_INDEXES] = spec->nActiveExperts * sizeof(uint8_t);
         bufferBytes[TB_UNIT_MOE_WEIGHTS] = spec->nActiveExperts * sizeof(float);
 
-        buffers[TB_UNIT_MOE_INDEXES] = NEW_BUFFER(bufferBytes[TB_UNIT_MOE_INDEXES]);
-        buffers[TB_UNIT_MOE_WEIGHTS] = NEW_BUFFER(bufferBytes[TB_UNIT_MOE_WEIGHTS]);
+        buffers[TB_UNIT_MOE_INDEXES] = newBuffer(bufferBytes[TB_UNIT_MOE_INDEXES]);
+        buffers[TB_UNIT_MOE_WEIGHTS] = newBuffer(bufferBytes[TB_UNIT_MOE_WEIGHTS]);
     } else {
         bufferBytes[TB_UNIT_MOE_INDEXES] = 0;
         bufferBytes[TB_UNIT_MOE_WEIGHTS] = 0;
@@ -155,34 +155,34 @@ TransformerBuffer::TransformerBuffer(TransformerSpec* spec) {
 
     for (int i = 0; i < TB_LENGTH - TB_NO_PAIRS; i += 2) {
         int bytes = bufferBytes[i];
-        buffers[i] = NEW_BUFFER(bufferBytes[i]);
+        buffers[i] = newBuffer(bufferBytes[i]);
         if (spec->bufferFloatType == F32) {
             buffers[i + 1] = buffers[i];
         } else {
-            buffers[i + 1] = NEW_BUFFER(bufferBytes[i + 1]);
+            buffers[i + 1] = newBuffer(bufferBytes[i + 1]);
         }
     }
 }
 
 TransformerBuffer::~TransformerBuffer() {
     if (bufferBytes[TB_UNIT_MOE_INDEXES] > 0 && bufferBytes[TB_UNIT_MOE_WEIGHTS] > 0) {
-        FREE_BUFFER(buffers[TB_UNIT_MOE_INDEXES]);
-        FREE_BUFFER(buffers[TB_UNIT_MOE_WEIGHTS]);
+        freeBuffer(buffers[TB_UNIT_MOE_INDEXES]);
+        freeBuffer(buffers[TB_UNIT_MOE_WEIGHTS]);
     }
 
     for (int i = 0; i < TB_LENGTH - TB_NO_PAIRS; i += 2) {
         if (bufferBytes[i] > 0) {
             if (buffers[i] != buffers[i + 1]) {
-                FREE_BUFFER(buffers[i + 1]);
+                freeBuffer(buffers[i + 1]);
             }
-            FREE_BUFFER(buffers[i]);
+            freeBuffer(buffers[i]);
         }
     }
     delete[] bufferBytes;
     delete[] buffers;
 }
 
-char* TransformerBuffer::getUnit(uint8_t bufferIndex) {
+void* TransformerBuffer::getUnit(uint8_t bufferIndex) {
     return buffers[bufferIndex];
 }
 
@@ -190,9 +190,9 @@ size_t TransformerBuffer::getUnitBytes(uint8_t bufferIndex) {
     return bufferBytes[bufferIndex];
 }
 
-char* TransformerBuffer::getSliced(uint8_t bufferIndex, slice_index_t sliceIndex) {
+void* TransformerBuffer::getSliced(uint8_t bufferIndex, slice_index_t sliceIndex) {
     size_t sliceBytes = getSlicedBytes(bufferIndex);
-    return buffers[bufferIndex] + sliceBytes * sliceIndex;
+    return ((char*)buffers[bufferIndex]) + sliceBytes * sliceIndex;
 }
 
 size_t TransformerBuffer::getSlicedBytes(uint8_t bufferIndex) {
@@ -214,13 +214,13 @@ Transformer::Transformer(TransformerSpec* spec, slice_index_t sliceIndex, Accele
         tokenEmbeddingTableBytes = spec->vocabSize * spec->dim * sizeof(float);
         rmsFinalBytes = spec->dim * sizeof(float);
 
-        tokenEmbeddingTable = NEW_BUFFER(tokenEmbeddingTableBytes);
-        rmsFinal = NEW_BUFFER(rmsFinalBytes);
+        tokenEmbeddingTable = (float*)newBuffer(tokenEmbeddingTableBytes);
+        rmsFinal = (float*)newBuffer(rmsFinalBytes);
 
         wclsMm = new MatmulCommand(spec->dim, spec->vocabSize, F32, spec->weightsFloatType, acc);
 
-        x = (float*)NEW_BUFFER(spec->dim * sizeof(float));
-        logits = (float*)NEW_BUFFER(spec->vocabSize * sizeof(float));
+        x = (float*)newBuffer(spec->dim * sizeof(float));
+        logits = (float*)newBuffer(spec->vocabSize * sizeof(float));
     }
 
     ropeSlice = new RopeSlice(spec->dim, spec->kvDim, spec->nKvHeads, spec->nSlices, spec->seqLen, spec->headSize, spec->ropeTheta, sliceIndex);
@@ -246,12 +246,12 @@ Transformer::~Transformer() {
     delete[] blocks;
 
     if (IS_ROOT_SLICE(sliceIndex)) {
-        FREE_BUFFER(tokenEmbeddingTable);
-        FREE_BUFFER(rmsFinal);
+        freeBuffer(tokenEmbeddingTable);
+        freeBuffer(rmsFinal);
         delete wclsMm;
 
-        FREE_BUFFER(x);
-        FREE_BUFFER(logits);
+        freeBuffer(x);
+        freeBuffer(logits);
     }
 
     delete ropeSlice;
@@ -269,20 +269,20 @@ TransformerBlock::TransformerBlock(TransformerSpec* spec, slice_index_t sliceInd
         rmsMoeBytes = spec->dim * sizeof(float);
         rmsFfn2Bytes = spec->dim * sizeof(float);
 
-        rmsAtt = (float*)NEW_BUFFER(rmsAttBytes);
-        rmsFfn = (float*)NEW_BUFFER(rmsFfnBytes);
+        rmsAtt = (float*)newBuffer(rmsAttBytes);
+        rmsFfn = (float*)newBuffer(rmsFfnBytes);
         if (spec->archType == GROK1) {
-            rmsMoe = (float*)NEW_BUFFER(rmsMoeBytes);
-            rmsFfn2 = (float*)NEW_BUFFER(rmsFfn2Bytes);
+            rmsMoe = (float*)newBuffer(rmsMoeBytes);
+            rmsFfn2 = (float*)newBuffer(rmsFfn2Bytes);
         }
     }
 
     kvCacheSlice = new KvCacheSlice(spec->kvDim, spec->seqLen, spec->nSlices);
-    keyCache = (float*)NEW_BUFFER(kvCacheSlice->keyCacheSize);
-    valueCache = (float*)NEW_BUFFER(kvCacheSlice->valueCacheSize);
+    keyCache = (float*)newBuffer(kvCacheSlice->keyCacheSize);
+    valueCache = (float*)newBuffer(kvCacheSlice->valueCacheSize);
 
     multiHeadAttSlice = new MultiHeadAttSlice(spec->nHeads, spec->seqLen, spec->nSlices, sliceIndex);
-    att = (float*)NEW_BUFFER(multiHeadAttSlice->attSize);
+    att = (float*)newBuffer(multiHeadAttSlice->attSize);
 
     q0Slice = new RowMatmulSlice(spec->weightsFloatType, spec->nSlices, spec->dim, spec->dim);
     k0Slice = new RowMatmulSlice(spec->weightsFloatType, spec->nSlices, spec->dim, spec->kvDim);
@@ -294,13 +294,13 @@ TransformerBlock::TransformerBlock(TransformerSpec* spec, slice_index_t sliceInd
     v0mm = new MatmulCommand(v0Slice->n, v0Slice->d0, spec->bufferFloatType, spec->weightsFloatType, acc);
     wo0mm = new MatmulCommand(wo0Slice->n0, wo0Slice->d, spec->bufferFloatType, spec->weightsFloatType, acc);
 
-    qo0 = (float*)NEW_BUFFER(q0Slice->d0 * sizeof(float));
+    qo0 = (float*)newBuffer(q0Slice->d0 * sizeof(float));
 
     if (spec->nExperts > 0) {
         moeUpAndGate0Slice = new RowMatmulSlice(spec->weightsFloatType, spec->nSlices, spec->dim, spec->hiddenDim);
         moeDown0Slice = new RowMatmulSlice(spec->weightsFloatType, spec->nSlices, spec->hiddenDim, spec->dim);
 
-        moeRouterProbs = (float*)NEW_BUFFER(spec->nExperts * sizeof(float));
+        moeRouterProbs = (float*)newBuffer(spec->nExperts * sizeof(float));
 
         moeUpMm = new MatmulCommand*[spec->nExperts];
         moeGateMm = new MatmulCommand*[spec->nExperts];
@@ -313,8 +313,8 @@ TransformerBlock::TransformerBlock(TransformerSpec* spec, slice_index_t sliceInd
             moeDownMm[e] = new MatmulCommand(moeDown0Slice->n, moeDown0Slice->d0, spec->bufferFloatType, spec->weightsFloatType, acc);
         }
 
-        expertGate = (float*)NEW_BUFFER(moeUpAndGate0Slice->d0 * spec->nExperts * sizeof(float));
-        expertDown = (float*)NEW_BUFFER(moeDown0Slice->d0 * (spec->nExperts - 1) * sizeof(float));
+        expertGate = (float*)newBuffer(moeUpAndGate0Slice->d0 * spec->nExperts * sizeof(float));
+        expertDown = (float*)newBuffer(moeDown0Slice->d0 * (spec->nExperts - 1) * sizeof(float));
     } else {
         w10Slice = new RowMatmulSlice(spec->weightsFloatType, spec->nSlices, spec->dim, spec->hiddenDim);
         w20Slice = new ColMatmulSlice(spec->weightsFloatType, spec->nSlices, spec->hiddenDim, spec->dim);
@@ -324,32 +324,32 @@ TransformerBlock::TransformerBlock(TransformerSpec* spec, slice_index_t sliceInd
         w20mm = new MatmulCommand(w20Slice->n0, w20Slice->d, spec->bufferFloatType, spec->weightsFloatType, acc);
         w30mm = new MatmulCommand(w30Slice->n, w30Slice->d0, spec->bufferFloatType, spec->weightsFloatType, acc);
 
-        hb20 = (float*)NEW_BUFFER(w30Slice->d0 * sizeof(float));
+        hb20 = (float*)newBuffer(w30Slice->d0 * sizeof(float));
     }
 }
 
 TransformerBlock::~TransformerBlock() {
     if (IS_ROOT_SLICE(sliceIndex)) {
-        FREE_BUFFER(rmsAtt);
-        FREE_BUFFER(rmsFfn);
+        freeBuffer(rmsAtt);
+        freeBuffer(rmsFfn);
         if (spec->archType == GROK1) {
-            FREE_BUFFER(rmsMoe);
-            FREE_BUFFER(rmsFfn2);
+            freeBuffer(rmsMoe);
+            freeBuffer(rmsFfn2);
         }
     }
 
     delete kvCacheSlice;
-    FREE_BUFFER(keyCache);
-    FREE_BUFFER(valueCache);
+    freeBuffer(keyCache);
+    freeBuffer(valueCache);
     delete multiHeadAttSlice;
-    FREE_BUFFER(att);
+    freeBuffer(att);
 
     delete q0Slice;
     delete k0Slice;
     delete v0Slice;
     delete wo0Slice;
 
-    FREE_BUFFER(qo0);
+    freeBuffer(qo0);
 
     delete q0mm;
     delete k0mm;
@@ -369,10 +369,10 @@ TransformerBlock::~TransformerBlock() {
         delete[] moeUpMm;
         delete[] moeGateMm;
         delete[] moeDownMm;
-        FREE_BUFFER(moeRouterProbs);
+        freeBuffer(moeRouterProbs);
 
-        FREE_BUFFER(expertGate);
-        FREE_BUFFER(expertDown);
+        freeBuffer(expertGate);
+        freeBuffer(expertDown);
     } else {
         delete w10Slice;
         delete w20Slice;
@@ -382,12 +382,12 @@ TransformerBlock::~TransformerBlock() {
         delete w20mm;
         delete w30mm;
 
-        FREE_BUFFER(hb20);
+        freeBuffer(hb20);
     }
 }
 
 static size_t loadSlicedMatmulWeights(const uint8_t nSlices, MatmulSlice* slice, char* source, MatmulCommand* mm, SocketPool* socketPool) {
-    char* buffer = NEW_BUFFER(slice->sliceBytes);
+    char* buffer = (char*)newBuffer(slice->sliceBytes);
     size_t loadedBytes = 0;
     for (uint8_t s = 0; s < nSlices; s++) {
         slice_index_t sliceIndex = (s + 1) % nSlices;
@@ -399,7 +399,7 @@ static size_t loadSlicedMatmulWeights(const uint8_t nSlices, MatmulSlice* slice,
             mm->loadWeights(buffer);
         }
     }
-    FREE_BUFFER(buffer);
+    freeBuffer(buffer);
     return loadedBytes;
 }
 
@@ -441,7 +441,7 @@ Transformer Transformer::loadRoot(char* data, TransformerSpec* spec, SocketPool*
 
     char* w = data;
 
-    w += loadRootWeights(&transformer.tokenEmbeddingTable, w, transformer.tokenEmbeddingTableBytes);
+    w += loadRootWeights((char**)&transformer.tokenEmbeddingTable, w, transformer.tokenEmbeddingTableBytes);
 
     for (int i = 0; i < spec->nLayers; i++) {
         TransformerBlock* block = transformer.blocks[i];
@@ -473,7 +473,7 @@ Transformer Transformer::loadRoot(char* data, TransformerSpec* spec, SocketPool*
         }
     }
 
-    w += loadRootWeights(&transformer.rmsFinal, w, transformer.rmsFinalBytes);
+    w += loadRootWeights((char**)&transformer.rmsFinal, w, transformer.rmsFinalBytes);
     w += transformer.wclsMm->loadWeights(w);
 
     long missedBytes = (long)(w - data) - spec->fileSize + spec->headerSize;

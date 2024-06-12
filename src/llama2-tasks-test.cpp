@@ -550,7 +550,7 @@ int main() {
     size_t afterBlockBytes  = /* norm */ 16384 + /* embedding */ 524288000;
     spec.fileSize = beforeBlockBytes + blockBytes + afterBlockBytes + spec.headerSize;
     size_t dataSize = beforeBlockBytes + blockBytes + afterBlockBytes;
-    char* data = NEW_BUFFER(dataSize);
+    char* data = (char*)newBuffer(dataSize);
     memset(data, 0, dataSize);
 
     unsigned long long state = 800000010L;
@@ -584,7 +584,7 @@ int main() {
     loop.run();
     long t1 = timeMs();
 
-    FREE_BUFFER(data);
+    freeBuffer(data);
 
     int ix = -1;
     for (int i = 0; i < spec.dim; i++) {

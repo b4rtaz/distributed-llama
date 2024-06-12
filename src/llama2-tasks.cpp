@@ -101,7 +101,7 @@ void llamaQuantizeMultiheadAtt(TASK_ARGS) {
 void llamaAtt(TASK_ARGS) {
     TASK_VARIABLES;
 
-    char* xbq0 = transformer->buffer->getSliced(TB_UNIT_XB_QUANTIZED, transformer->sliceIndex);
+    void* xbq0 = transformer->buffer->getSliced(TB_UNIT_XB_QUANTIZED, transformer->sliceIndex);
     float* xbv0 = (float*)transformer->buffer->getSliced(TB_SLICED_XBV, transformer->sliceIndex);
 
     block->wo0mm->forward(xbq0, xbv0, nThreads, threadIndex);

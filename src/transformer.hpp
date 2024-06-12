@@ -142,14 +142,14 @@ public:
 class TransformerBuffer {
 public:
     uint8_t nSlices;
-    char** buffers;
+    void** buffers;
     size_t* bufferBytes;
 
     TransformerBuffer(TransformerSpec* spec);
     ~TransformerBuffer();
-    char* getUnit(uint8_t bufferIndex);
+    void* getUnit(uint8_t bufferIndex);
     size_t getUnitBytes(uint8_t bufferIndex);
-    char* getSliced(uint8_t bufferIndex, slice_index_t sliceIndex);
+    void* getSliced(uint8_t bufferIndex, slice_index_t sliceIndex);
     size_t getSlicedBytes(uint8_t bufferIndex);
 };
 
@@ -162,9 +162,9 @@ public:
     slice_index_t sliceIndex;
 
     size_t tokenEmbeddingTableBytes;
-    char* tokenEmbeddingTable;
+    float* tokenEmbeddingTable;
     size_t rmsFinalBytes;
-    char* rmsFinal;
+    float* rmsFinal;
     MatmulCommand* wclsMm;
 
     pos_t pos;

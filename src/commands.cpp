@@ -128,7 +128,7 @@ MatmulCommand::MatmulCommand(const unsigned int n, const unsigned int d, const F
     this->accSize = getBatchBytes(weightsFloatType, n, this->accD);
     this->cpuD = acc->divCpu(d);
     this->cpuSize = getBatchBytes(weightsFloatType, n, this->cpuD);
-    this->cpuWeights = NEW_BUFFER(this->cpuSize);
+    this->cpuWeights = newBuffer(this->cpuSize);
 
     if (this->accD != 0) {
         this->accMatmulIndex = acc->accelerator->allocateMatmul(weightsFloatType, n, this->accD);
@@ -136,7 +136,7 @@ MatmulCommand::MatmulCommand(const unsigned int n, const unsigned int d, const F
 };
 
 MatmulCommand::~MatmulCommand() {
-    FREE_BUFFER(cpuWeights);
+    freeBuffer(cpuWeights);
 }
 
 size_t MatmulCommand::loadWeights(const void* source) {
@@ -161,7 +161,7 @@ LlamaRopeCommand::LlamaRopeCommand(RopeSlice *slice) {
     this->slice = slice;
 
     size_t cacheBytes = slice->seqLen * slice->sliceDim * sizeof(float);
-    cache = (float*)NEW_BUFFER(cacheBytes);
+    cache = (float*)newBuffer(cacheBytes);
     printf("🕒 ropeCache: %ld kB\n", cacheBytes / 1024);
 
     for (pos_t pos = 0; pos < slice->seqLen; pos++) {
@@ -178,7 +178,7 @@ LlamaRopeCommand::LlamaRopeCommand(RopeSlice *slice) {
 };
 
 LlamaRopeCommand::~LlamaRopeCommand() {
-    FREE_BUFFER(cache);
+    freeBuffer(cache);
 }
 
 void LlamaRopeCommand::forward(bool isQ, float* qOrK, pos_t pos, unsigned int nThreads, unsigned int threadIndex) {
