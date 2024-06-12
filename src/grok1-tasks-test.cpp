@@ -52,7 +52,7 @@ int main() {
     size_t afterBlockBytes  = (spec.dim + spec.dim * spec.vocabSize) * sizeof(float);
     spec.fileSize = spec.headerSize + beforeBlockBytes + blockBytes + afterBlockBytes;
 
-    char* weights = NEW_BUFFER(beforeBlockBytes + blockBytes + afterBlockBytes);
+    char* weights = (char*)newBuffer(beforeBlockBytes + blockBytes + afterBlockBytes);
     long nFloats = blockBytes / sizeof(float);
     float* block = (float*)&weights[beforeBlockBytes];
 
@@ -60,7 +60,8 @@ int main() {
     for (int f = 0; f < nFloats; f++) block[f] = randomF32(&state) / 100.0;
 
     SocketPool socketPool(0, NULL);
-    Transformer transformer = Transformer::loadRoot((char*)weights, &spec, &socketPool);
+    AcceleratorContext acc(0, 1, NULL);
+    Transformer transformer = Transformer::loadRoot(weights, &spec, &socketPool, &acc);
     transformer.pos = 0;
 
     float* x = transformer.x;
@@ -81,7 +82,7 @@ int main() {
     loop.run();
     long t1 = timeMs();
 
-    FREE_BUFFER(weights);
+    freeBuffer(weights);
 
     compare(&x[0], expectedOutput_0_4, 4);
     compare(&x[256], expectedOutput_256_260, 4);

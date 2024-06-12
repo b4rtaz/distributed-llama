@@ -4,40 +4,8 @@
 #include <cstddef>
 #include <cstdint>
 #include "quants.hpp"
+#include "commands.hpp"
 #include "socket.hpp"
-
-typedef unsigned short pos_t;
-
-class MatmulSlice {
-public:
-    size_t bytes;
-    size_t sliceBytes;
-    virtual size_t splitWeights(uint8_t sliceIndex, char* weights, char* weights0) = 0;
-};
-
-class RowMatmulSlice : public MatmulSlice {
-public:
-    FloatType type;
-    int nSlices;
-    int n;
-    int d0;
-
-    RowMatmulSlice(FloatType type, int nSlices, int n, int d);
-    size_t splitWeights(uint8_t sliceIndex, char* weights, char* weights0);
-    unsigned int dOffset(uint8_t sliceIndex);
-};
-
-class ColMatmulSlice : public MatmulSlice {
-public:
-    FloatType type;
-    int nSlices;
-    int n;
-    int n0;
-    int d;
-
-    ColMatmulSlice(FloatType type, int nSlices, int n, int d);
-    size_t splitWeights(uint8_t sliceIndex, char* weights, char* weights0);
-};
 
 enum TransformerHeaderKey {
     VERSION = 0,
@@ -103,57 +71,11 @@ struct TransformerSpec {
     uint8_t nSlices;
 };
 
-class RopeSlice {
-public:
-    unsigned int qDim0;
-    unsigned int qDimStart;
-    unsigned int qDimEnd;
-    unsigned int qShift;
-    unsigned int kvDim0;
-    unsigned int kvDimStart;
-    unsigned int sliceDim;
-    TransformerSpec* spec;
-    RopeSlice(TransformerSpec* spec, uint8_t sliceIndex);
-    virtual ~RopeSlice();
-    virtual void forward(bool isQ, float* qOrK, pos_t pos, unsigned int nThreads, unsigned int threadIndex) = 0;
-};
-
-class LlamaRopeSlice : public RopeSlice {
-private:
-    float* cache;
-public:
-    LlamaRopeSlice(TransformerSpec* spec, uint8_t sliceIndex);
-    ~LlamaRopeSlice();
-    void forward(bool isQ, float* qOrK, pos_t pos, unsigned int nThreads, unsigned int threadIndex);
-};
-
-class FalconRopeSlice : public RopeSlice {
-public:
-    using RopeSlice::RopeSlice;
-    void forward(bool isQ, float* qOrK, pos_t pos, unsigned int nThreads, unsigned int threadIndex);
-};
-
-class KvCacheSlice {
-public:
-    unsigned int kvDim0;
-    float* keyCache;
-    float* valueCache;
-    KvCacheSlice(unsigned int kvDim, unsigned int seqLen, unsigned int nSlices);
-    ~KvCacheSlice();
-};
-
-class MultiHeadAttSlice {
-public:
-    unsigned int nHeads0;
-    float* att;
-    MultiHeadAttSlice(unsigned int nHeads, unsigned int seqLen, unsigned int nSlices, uint8_t sliceIndex);
-    ~MultiHeadAttSlice();
-};
-
 class TransformerBlock {
 public:
-    uint8_t sliceIndex;
+    slice_index_t sliceIndex;
     TransformerSpec *spec;
+    AcceleratorContext* acc;
 
     size_t rmsAttBytes;
     float* rmsAtt;
@@ -164,41 +86,42 @@ public:
     size_t rmsFfn2Bytes;
     float* rmsFfn2;
 
-    char* q0;
+    MatmulCommand *q0mm;
+    MatmulCommand *k0mm;
+    MatmulCommand *v0mm;
+    MatmulCommand *wo0mm;
     RowMatmulSlice* q0Slice;
-    char* k0;
     RowMatmulSlice* k0Slice;
-    char* v0;
     RowMatmulSlice* v0Slice;
-    char* wo0;
     ColMatmulSlice* wo0Slice;
 
-    char* w10;
+    MatmulCommand *w10mm;
+    MatmulCommand *w20mm;
+    MatmulCommand *w30mm;
     RowMatmulSlice* w10Slice;
-    char* w20;
     ColMatmulSlice* w20Slice;
-    char* w30;
     RowMatmulSlice* w30Slice;
 
-    char* moeRouter;
-    size_t moeRouterBytes;
+    MatmulCommand* moeRouterMm;
     RowMatmulSlice* moeUpAndGate0Slice;
-    char** moeUp;
-    char** moeGate;
     RowMatmulSlice* moeDown0Slice;
-    char** moeDown;
-    float* moeRouterProbs;
+    MatmulCommand** moeUpMm;
+    MatmulCommand** moeGateMm;
+    MatmulCommand** moeDownMm;
 
+    float* moeRouterProbs;
     float* expertGate;
     float* expertDown;
-
     float* hb20;
 
     KvCacheSlice* kvCacheSlice;
+    float* keyCache;
+    float* valueCache;
     MultiHeadAttSlice* multiHeadAttSlice;
+    float* att;
     float* qo0;
 
-    TransformerBlock(TransformerSpec* spec, uint8_t sliceIndex);
+    TransformerBlock(TransformerSpec* spec, slice_index_t sliceIndex, AcceleratorContext* acc);
     ~TransformerBlock();
 };
 
@@ -219,46 +142,47 @@ public:
 class TransformerBuffer {
 public:
     uint8_t nSlices;
-    char** buffers;
+    void** buffers;
     size_t* bufferBytes;
 
     TransformerBuffer(TransformerSpec* spec);
     ~TransformerBuffer();
-    char* getUnit(uint8_t bufferIndex);
+    void* getUnit(uint8_t bufferIndex);
     size_t getUnitBytes(uint8_t bufferIndex);
-    char* getSliced(uint8_t bufferIndex, uint8_t sliceIndex);
+    void* getSliced(uint8_t bufferIndex, slice_index_t sliceIndex);
     size_t getSlicedBytes(uint8_t bufferIndex);
 };
 
 class Transformer {
 public:
     TransformerSpec* spec;
+    AcceleratorContext* acc;
     TransformerBlock** blocks;
     TransformerBuffer* buffer;
-    uint8_t sliceIndex;
+    slice_index_t sliceIndex;
 
     size_t tokenEmbeddingTableBytes;
-    char* tokenEmbeddingTable;
+    float* tokenEmbeddingTable;
     size_t rmsFinalBytes;
-    char* rmsFinal;
-    size_t wclsBytes;
-    char* wcls;
+    float* rmsFinal;
+    MatmulCommand* wclsMm;
 
     pos_t pos;
     float rms;
     float* x;
     float* logits;
     RopeSlice* ropeSlice;
+    RopeCommand* rope;
 
     ~Transformer();
 
     static TransformerSpec loadSpecFromFile(const char* path, const unsigned int nSlices, FloatType weightsFloatType, FloatType bufferFloatType);
-    static Transformer loadRootFromFile(const char* path, TransformerSpec* spec, SocketPool* socketPool);
-    static Transformer loadRoot(char* data, TransformerSpec* spec, SocketPool* socketPool);
-    static Transformer loadSlice(TransformerSpec* spec, Socket* socket);
+    static Transformer loadRootFromFile(const char* path, TransformerSpec* spec, SocketPool* socketPool, AcceleratorContext* acc);
+    static Transformer loadRoot(char* data, TransformerSpec* spec, SocketPool* socketPool, AcceleratorContext* acc);
+    static Transformer loadSlice(TransformerSpec* spec, Socket* socket, AcceleratorContext* acc);
 
 private:
-    Transformer(TransformerSpec* spec, uint8_t sliceIndex);
+    Transformer(TransformerSpec* spec, slice_index_t sliceIndex, AcceleratorContext* acc);
 };
 
 #endif

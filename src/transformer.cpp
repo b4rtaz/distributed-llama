@@ -1,184 +1,13 @@
 #include <cstdio>
-#include <cmath>
 #include <cassert>
 #include <stdexcept>
 #include <string.h>
-#include "funcs.hpp"
 #include "utils.hpp"
 #include "socket.hpp"
+#include "commands.hpp"
 #include "transformer.hpp"
 
-#define ALLOC_WEIGHTS true
 #define IS_ROOT_SLICE(sliceIndex) (sliceIndex == 0)
-
-RowMatmulSlice::RowMatmulSlice(FloatType type, int nSlices, int n, int d) {
-    assert(d % nSlices == 0);
-
-    this->type = type;
-    this->nSlices = nSlices;
-    this->d0 = d / nSlices;
-    this->n = n;
-    this->bytes = getBatchBytes(type, this->n, d);
-    this->sliceBytes = getBatchBytes(type, this->n, this->d0);
-}
-
-size_t RowMatmulSlice::splitWeights(uint8_t sliceIndex, char* weights, char* weights0) {
-    int numbersPerBatch = getNumbersPerBatch(this->type);
-    int batchBytes = getBatchBytes(this->type, numbersPerBatch, 1);
-
-    int n = this->n / numbersPerBatch;
-    size_t offset = this->d0 * sliceIndex * n * batchBytes;
-    size_t copiedBytes = 0;
-
-    for (int d = 0; d < this->d0; d++) {
-        for (int j = 0; j < n; j++) {
-            long o = (d * n + j) * batchBytes;
-
-            memcpy(weights0 + o, weights + offset + o, batchBytes);
-            copiedBytes += batchBytes;
-        }
-    }
-    return copiedBytes;
-}
-
-unsigned int RowMatmulSlice::dOffset(uint8_t sliceIndex) {
-    return this->d0 * sliceIndex;
-}
-
-ColMatmulSlice::ColMatmulSlice(FloatType type, int nSlices, int n, int d) {
-    assert(n % nSlices == 0);
-
-    this->type = type;
-    this->nSlices = nSlices;
-    this->n = n;
-    this->n0 = n / nSlices;
-    this->d = d;
-    this->bytes = getBatchBytes(type, n, d);
-    this->sliceBytes = getBatchBytes(type, this->n0, d);
-}
-
-size_t ColMatmulSlice::splitWeights(uint8_t sliceIndex, char* weights, char* weights0) {
-    int numbersPerBatch = getNumbersPerBatch(this->type);
-    int batchBytes = getBatchBytes(this->type, numbersPerBatch, 1);
-    assert(n0 % numbersPerBatch == 0);
-
-    int n = this->n / numbersPerBatch;
-    int rowBytes = n * batchBytes;
-    int row0Bytes = (n0 / numbersPerBatch) * batchBytes;
-    int rowOffsetBytes = sliceIndex * row0Bytes;
-
-    size_t copiedBytes = 0;
-    for (int d = 0; d < this->d; d++) {
-        memcpy(&weights0[row0Bytes * d], &weights[rowBytes * d + rowOffsetBytes], row0Bytes);
-        copiedBytes += row0Bytes;
-    }
-    return copiedBytes;
-}
-
-RopeSlice::RopeSlice(TransformerSpec* spec, uint8_t sliceIndex) {
-    assert(spec->dim >= spec->kvDim);
-    assert(spec->dim % spec->nSlices == 0);
-    assert(spec->kvDim % spec->nSlices == 0);
-
-    qDim0 = spec->dim / spec->nSlices;
-    kvDim0 = spec->kvDim / spec->nSlices;
-    assert(qDim0 % 2 == 0);
-    assert(kvDim0 % 2 == 0);
-    kvDimStart = kvDim0 * sliceIndex;
-    qDimStart = qDim0 * sliceIndex;
-    qDimEnd = qDimStart + qDim0;
-    qShift = qDimStart - kvDimStart;
-    sliceDim = qDimEnd - kvDimStart;
-    assert(sliceDim % 2 == 0);
-    this->spec = spec;
-}
-
-RopeSlice::~RopeSlice() {}
-
-LlamaRopeSlice::LlamaRopeSlice(TransformerSpec* spec, uint8_t sliceIndex) : RopeSlice(spec, sliceIndex) {
-    size_t cacheBytes = spec->seqLen * sliceDim * sizeof(float);
-    cache = (float*)NEW_BUFFER(cacheBytes);
-    printf("🕒 ropeCache: %ld kB\n", cacheBytes / 1024);
-
-    for (pos_t pos = 0; pos < spec->seqLen; pos++) {
-        for (unsigned int i = kvDimStart; i < qDimEnd; i += 2) {
-            const unsigned int headDim = i % spec->headSize;
-            const float freq = 1.0f / powf(spec->ropeTheta, headDim / (float)spec->headSize);
-            const float val = pos * freq;
-            const float fcr = cosf(val);
-            const float fci = sinf(val);
-            cache[pos * sliceDim + (i - kvDimStart)] = fcr;
-            cache[pos * sliceDim + (i - kvDimStart) + 1] = fci;
-        }
-    }
-}
-
-LlamaRopeSlice::~LlamaRopeSlice() {
-    FREE_BUFFER(cache);
-}
-
-void LlamaRopeSlice::forward(bool isQ, float* qOrK, pos_t pos, unsigned int nThreads, unsigned int threadIndex) {
-    const unsigned int dim0Half = (isQ ? qDim0 : kvDim0) / 2;
-    const unsigned int shift = isQ ? qShift : 0;
-    SPLIT_RANGE_TO_THREADS(s, e, 0, dim0Half, nThreads, threadIndex);
-    const unsigned int iStart = s * 2;
-    const unsigned int iEnd = e * 2;
-
-    for (unsigned int i = iStart; i < iEnd; i += 2) {
-        float fcr = cache[pos * sliceDim + shift + i];
-        float fci = cache[pos * sliceDim + shift + i + 1];
-        float v0 = qOrK[i];
-        float v1 = qOrK[i + 1];
-        qOrK[i]   = v0 * fcr - v1 * fci;
-        qOrK[i + 1] = v0 * fci + v1 * fcr;
-    }
-}
-
-void FalconRopeSlice::forward(bool isQ, float* qOrK, pos_t pos, unsigned int nThreads, unsigned int threadIndex) {
-    // TODO: this implementation allows only a small number of slices (because it requires dim0 % headSize == 0). This could be improved.
-    unsigned int dimStart = isQ ? qDimStart : kvDimStart;
-    unsigned int dim0 = isQ ? qDim0 : kvDim0;
-    unsigned int headSize = isQ ? spec->headSize : spec->kvDim / spec->nKvHeads;
-    assert(dimStart % headSize == 0);
-    assert(dim0 % headSize == 0);
-    unsigned int nHeads0 = dim0 / headSize;
-    SPLIT_RANGE_TO_THREADS(h0s, h0e, 0, nHeads0, nThreads, threadIndex);
-
-    for (unsigned int h = h0s; h < h0e; h++) {
-        for (unsigned int j = 0; j < headSize / 2; j++) {
-            float freq = 1.0f / powf(spec->ropeTheta, 2.0f * (float)j / (float)headSize);
-            float val = pos * freq;
-            float fcr = cosf(val);
-            float fci = sinf(val);
-            float q0 = qOrK[h * headSize + j];
-            float q1 = qOrK[h * headSize + j + headSize / 2];
-            qOrK[h * headSize + j] = q0 * fcr - q1 * fci;
-            qOrK[h * headSize + j + headSize / 2] = q0 * fci + q1 * fcr;
-        }
-    }
-}
-
-KvCacheSlice::KvCacheSlice(unsigned int kvDim, unsigned int seqLen, unsigned int nSlices) {
-    assert(kvDim % nSlices == 0);
-    kvDim0 = kvDim / nSlices;
-    keyCache = (float*)NEW_BUFFER(seqLen * kvDim0 * sizeof(float));
-    valueCache = (float*)NEW_BUFFER(seqLen * kvDim0 * sizeof(float));
-}
-
-KvCacheSlice::~KvCacheSlice() {
-    FREE_BUFFER(keyCache);
-    FREE_BUFFER(valueCache);
-}
-
-MultiHeadAttSlice::MultiHeadAttSlice(unsigned int nHeads, unsigned int seqLen, unsigned int nSlices, uint8_t sliceIndex) {
-    assert(nHeads % nSlices == 0);
-    nHeads0 = nHeads / nSlices;
-    att = (float*)NEW_BUFFER(seqLen * nHeads0 * sizeof(float));
-}
-
-MultiHeadAttSlice::~MultiHeadAttSlice() {
-    FREE_BUFFER(att);
-}
 
 TransformerSpec Transformer::loadSpecFromFile(const char* path, const unsigned int nSlices, FloatType weightsFloatType, FloatType bufferFloatType) {
     TransformerSpec spec;
@@ -243,8 +72,6 @@ TransformerSpec Transformer::loadSpecFromFile(const char* path, const unsigned i
                 throw std::runtime_error("Unsupported header key");
             }
         }
-
-        
     } else {
         throw std::runtime_error("Unsupported model file");
     }
@@ -299,7 +126,7 @@ TransformerSpec Transformer::loadSpecFromFile(const char* path, const unsigned i
 
 TransformerBuffer::TransformerBuffer(TransformerSpec* spec) {
     nSlices = spec->nSlices;
-    buffers = new char*[TB_LENGTH];
+    buffers = new void*[TB_LENGTH];
     bufferBytes = new size_t[TB_LENGTH];
 
     bufferBytes[TB_UNIT_XB] = spec->dim * sizeof(float);
@@ -319,8 +146,8 @@ TransformerBuffer::TransformerBuffer(TransformerSpec* spec) {
         bufferBytes[TB_UNIT_MOE_INDEXES] = spec->nActiveExperts * sizeof(uint8_t);
         bufferBytes[TB_UNIT_MOE_WEIGHTS] = spec->nActiveExperts * sizeof(float);
 
-        buffers[TB_UNIT_MOE_INDEXES] = NEW_BUFFER(bufferBytes[TB_UNIT_MOE_INDEXES]);
-        buffers[TB_UNIT_MOE_WEIGHTS] = NEW_BUFFER(bufferBytes[TB_UNIT_MOE_WEIGHTS]);
+        buffers[TB_UNIT_MOE_INDEXES] = newBuffer(bufferBytes[TB_UNIT_MOE_INDEXES]);
+        buffers[TB_UNIT_MOE_WEIGHTS] = newBuffer(bufferBytes[TB_UNIT_MOE_WEIGHTS]);
     } else {
         bufferBytes[TB_UNIT_MOE_INDEXES] = 0;
         bufferBytes[TB_UNIT_MOE_WEIGHTS] = 0;
@@ -328,34 +155,34 @@ TransformerBuffer::TransformerBuffer(TransformerSpec* spec) {
 
     for (int i = 0; i < TB_LENGTH - TB_NO_PAIRS; i += 2) {
         int bytes = bufferBytes[i];
-        buffers[i] = NEW_BUFFER(bufferBytes[i]);
+        buffers[i] = newBuffer(bufferBytes[i]);
         if (spec->bufferFloatType == F32) {
             buffers[i + 1] = buffers[i];
         } else {
-            buffers[i + 1] = NEW_BUFFER(bufferBytes[i + 1]);
+            buffers[i + 1] = newBuffer(bufferBytes[i + 1]);
         }
     }
 }
 
 TransformerBuffer::~TransformerBuffer() {
     if (bufferBytes[TB_UNIT_MOE_INDEXES] > 0 && bufferBytes[TB_UNIT_MOE_WEIGHTS] > 0) {
-        FREE_BUFFER(buffers[TB_UNIT_MOE_INDEXES]);
-        FREE_BUFFER(buffers[TB_UNIT_MOE_WEIGHTS]);
+        freeBuffer(buffers[TB_UNIT_MOE_INDEXES]);
+        freeBuffer(buffers[TB_UNIT_MOE_WEIGHTS]);
     }
 
     for (int i = 0; i < TB_LENGTH - TB_NO_PAIRS; i += 2) {
         if (bufferBytes[i] > 0) {
             if (buffers[i] != buffers[i + 1]) {
-                FREE_BUFFER(buffers[i + 1]);
+                freeBuffer(buffers[i + 1]);
             }
-            FREE_BUFFER(buffers[i]);
+            freeBuffer(buffers[i]);
         }
     }
     delete[] bufferBytes;
     delete[] buffers;
 }
 
-char* TransformerBuffer::getUnit(uint8_t bufferIndex) {
+void* TransformerBuffer::getUnit(uint8_t bufferIndex) {
     return buffers[bufferIndex];
 }
 
@@ -363,42 +190,44 @@ size_t TransformerBuffer::getUnitBytes(uint8_t bufferIndex) {
     return bufferBytes[bufferIndex];
 }
 
-char* TransformerBuffer::getSliced(uint8_t bufferIndex, uint8_t sliceIndex) {
+void* TransformerBuffer::getSliced(uint8_t bufferIndex, slice_index_t sliceIndex) {
     size_t sliceBytes = getSlicedBytes(bufferIndex);
-    return buffers[bufferIndex] + sliceBytes * sliceIndex;
+    return ((char*)buffers[bufferIndex]) + sliceBytes * sliceIndex;
 }
 
 size_t TransformerBuffer::getSlicedBytes(uint8_t bufferIndex) {
     return bufferBytes[bufferIndex] / nSlices;
 }
 
-Transformer::Transformer(TransformerSpec* spec, uint8_t sliceIndex) {
+Transformer::Transformer(TransformerSpec* spec, slice_index_t sliceIndex, AcceleratorContext* acc) {
     this->spec = spec;
     this->sliceIndex = sliceIndex;
+    this->acc = acc;
 
     buffer = new TransformerBuffer(spec);
     blocks = new TransformerBlock*[spec->nLayers];
     for (int i = 0; i < spec->nLayers; i++) {
-        blocks[i] = new TransformerBlock(spec, sliceIndex);
+        blocks[i] = new TransformerBlock(spec, sliceIndex, acc);
     }
 
     if (IS_ROOT_SLICE(sliceIndex)) {
         tokenEmbeddingTableBytes = spec->vocabSize * spec->dim * sizeof(float);
         rmsFinalBytes = spec->dim * sizeof(float);
-        wclsBytes = getBatchBytes(spec->weightsFloatType, spec->vocabSize, spec->dim);
-#if ALLOC_WEIGHTS
-        tokenEmbeddingTable = NEW_BUFFER(tokenEmbeddingTableBytes);
-        rmsFinal = NEW_BUFFER(rmsFinalBytes);
-        wcls = NEW_BUFFER(wclsBytes);
-#endif
-        x = (float*)NEW_BUFFER(spec->dim * sizeof(float));
-        logits = (float*)NEW_BUFFER(spec->vocabSize * sizeof(float));
+
+        tokenEmbeddingTable = (float*)newBuffer(tokenEmbeddingTableBytes);
+        rmsFinal = (float*)newBuffer(rmsFinalBytes);
+
+        wclsMm = new MatmulCommand(spec->dim, spec->vocabSize, F32, spec->weightsFloatType, acc);
+
+        x = (float*)newBuffer(spec->dim * sizeof(float));
+        logits = (float*)newBuffer(spec->vocabSize * sizeof(float));
     }
 
+    ropeSlice = new RopeSlice(spec->dim, spec->kvDim, spec->nKvHeads, spec->nSlices, spec->seqLen, spec->headSize, spec->ropeTheta, sliceIndex);
     if (spec->archType == GROK1 || spec->archType == MIXTRAL) {
-        ropeSlice = new FalconRopeSlice(spec, sliceIndex);
+        rope = new FalconRopeCommand(ropeSlice);
     } else {
-        ropeSlice = new LlamaRopeSlice(spec, sliceIndex);
+        rope = new LlamaRopeCommand(ropeSlice);
     }
 
     TransformerBlock* b = blocks[0];
@@ -417,192 +246,165 @@ Transformer::~Transformer() {
     delete[] blocks;
 
     if (IS_ROOT_SLICE(sliceIndex)) {
-#if ALLOC_WEIGHTS
-        FREE_BUFFER(tokenEmbeddingTable);
-        FREE_BUFFER(rmsFinal);
-        FREE_BUFFER(wcls);
-#endif
-        FREE_BUFFER(x);
-        FREE_BUFFER(logits);
+        freeBuffer(tokenEmbeddingTable);
+        freeBuffer(rmsFinal);
+        delete wclsMm;
+
+        freeBuffer(x);
+        freeBuffer(logits);
     }
 
     delete ropeSlice;
+    delete rope;
 }
 
-TransformerBlock::TransformerBlock(TransformerSpec* spec, uint8_t sliceIndex) {
+TransformerBlock::TransformerBlock(TransformerSpec* spec, slice_index_t sliceIndex, AcceleratorContext* acc) {
     this->sliceIndex = sliceIndex;
     this->spec = spec;
+    this->acc = acc;
 
     if (IS_ROOT_SLICE(sliceIndex)) {
         rmsAttBytes = spec->dim * sizeof(float);
         rmsFfnBytes = spec->dim * sizeof(float);
         rmsMoeBytes = spec->dim * sizeof(float);
         rmsFfn2Bytes = spec->dim * sizeof(float);
-#if ALLOC_WEIGHTS
-        rmsAtt = (float*)NEW_BUFFER(rmsAttBytes);
-        rmsFfn = (float*)NEW_BUFFER(rmsFfnBytes);
+
+        rmsAtt = (float*)newBuffer(rmsAttBytes);
+        rmsFfn = (float*)newBuffer(rmsFfnBytes);
         if (spec->archType == GROK1) {
-            rmsMoe = (float*)NEW_BUFFER(rmsMoeBytes);
-            rmsFfn2 = (float*)NEW_BUFFER(rmsFfn2Bytes);
+            rmsMoe = (float*)newBuffer(rmsMoeBytes);
+            rmsFfn2 = (float*)newBuffer(rmsFfn2Bytes);
         }
-#endif
     }
 
     kvCacheSlice = new KvCacheSlice(spec->kvDim, spec->seqLen, spec->nSlices);
+    keyCache = (float*)newBuffer(kvCacheSlice->keyCacheSize);
+    valueCache = (float*)newBuffer(kvCacheSlice->valueCacheSize);
+
     multiHeadAttSlice = new MultiHeadAttSlice(spec->nHeads, spec->seqLen, spec->nSlices, sliceIndex);
+    att = (float*)newBuffer(multiHeadAttSlice->attSize);
 
     q0Slice = new RowMatmulSlice(spec->weightsFloatType, spec->nSlices, spec->dim, spec->dim);
     k0Slice = new RowMatmulSlice(spec->weightsFloatType, spec->nSlices, spec->dim, spec->kvDim);
     v0Slice = new RowMatmulSlice(spec->weightsFloatType, spec->nSlices, spec->dim, spec->kvDim);
     wo0Slice = new ColMatmulSlice(spec->weightsFloatType, spec->nSlices, spec->dim, spec->dim);
 
-    qo0 = (float*)NEW_BUFFER(q0Slice->d0 * sizeof(float));
+    q0mm = new MatmulCommand(q0Slice->n, q0Slice->d0, spec->bufferFloatType, spec->weightsFloatType, acc);
+    k0mm = new MatmulCommand(k0Slice->n, k0Slice->d0, spec->bufferFloatType, spec->weightsFloatType, acc);
+    v0mm = new MatmulCommand(v0Slice->n, v0Slice->d0, spec->bufferFloatType, spec->weightsFloatType, acc);
+    wo0mm = new MatmulCommand(wo0Slice->n0, wo0Slice->d, spec->bufferFloatType, spec->weightsFloatType, acc);
 
-#if ALLOC_WEIGHTS
-    q0 = NEW_BUFFER(q0Slice->sliceBytes);
-    k0 = NEW_BUFFER(k0Slice->sliceBytes);
-    v0 = NEW_BUFFER(v0Slice->sliceBytes);
-    wo0 = NEW_BUFFER(wo0Slice->sliceBytes);
-#endif
+    qo0 = (float*)newBuffer(q0Slice->d0 * sizeof(float));
 
     if (spec->nExperts > 0) {
         moeUpAndGate0Slice = new RowMatmulSlice(spec->weightsFloatType, spec->nSlices, spec->dim, spec->hiddenDim);
         moeDown0Slice = new RowMatmulSlice(spec->weightsFloatType, spec->nSlices, spec->hiddenDim, spec->dim);
 
-        moeRouterBytes = getBatchBytes(spec->weightsFloatType, spec->dim, spec->nExperts);
-        moeRouterProbs = (float*)NEW_BUFFER(spec->nExperts * sizeof(float));
+        moeRouterProbs = (float*)newBuffer(spec->nExperts * sizeof(float));
 
-        moeUp = new char*[spec->nExperts];
-        moeGate = new char*[spec->nExperts];
-        moeDown = new char*[spec->nExperts];
-
-#if ALLOC_WEIGHTS
-        moeRouter = NEW_BUFFER(moeRouterBytes);
+        moeUpMm = new MatmulCommand*[spec->nExperts];
+        moeGateMm = new MatmulCommand*[spec->nExperts];
+        moeDownMm = new MatmulCommand*[spec->nExperts];
+        moeRouterMm = new MatmulCommand(spec->dim, spec->nExperts, F32, spec->weightsFloatType, acc);
 
         for (int e = 0; e < spec->nExperts; e++) {
-            moeUp[e] = NEW_BUFFER(moeUpAndGate0Slice->sliceBytes);
-            moeGate[e] = NEW_BUFFER(moeUpAndGate0Slice->sliceBytes);
-            moeDown[e] = NEW_BUFFER(moeDown0Slice->sliceBytes);
+            moeUpMm[e] = new MatmulCommand(moeUpAndGate0Slice->n, moeUpAndGate0Slice->d0, spec->bufferFloatType, spec->weightsFloatType, acc);
+            moeGateMm[e] = new MatmulCommand(moeUpAndGate0Slice->n, moeUpAndGate0Slice->d0, spec->bufferFloatType, spec->weightsFloatType, acc);
+            moeDownMm[e] = new MatmulCommand(moeDown0Slice->n, moeDown0Slice->d0, spec->bufferFloatType, spec->weightsFloatType, acc);
         }
-#endif
-        expertGate = (float*)NEW_BUFFER(moeUpAndGate0Slice->d0 * spec->nExperts * sizeof(float));
-        expertDown = (float*)NEW_BUFFER(moeDown0Slice->d0 * (spec->nExperts - 1) * sizeof(float));
+
+        expertGate = (float*)newBuffer(moeUpAndGate0Slice->d0 * spec->nExperts * sizeof(float));
+        expertDown = (float*)newBuffer(moeDown0Slice->d0 * (spec->nExperts - 1) * sizeof(float));
     } else {
         w10Slice = new RowMatmulSlice(spec->weightsFloatType, spec->nSlices, spec->dim, spec->hiddenDim);
         w20Slice = new ColMatmulSlice(spec->weightsFloatType, spec->nSlices, spec->hiddenDim, spec->dim);
         w30Slice = new RowMatmulSlice(spec->weightsFloatType, spec->nSlices, spec->dim, spec->hiddenDim);
 
-#if ALLOC_WEIGHTS
-        w10 = NEW_BUFFER(w10Slice->sliceBytes);
-        w20 = NEW_BUFFER(w20Slice->sliceBytes);
-        w30 = NEW_BUFFER(w30Slice->sliceBytes);
-#endif
+        w10mm = new MatmulCommand(w10Slice->n, w10Slice->d0, spec->bufferFloatType, spec->weightsFloatType, acc);
+        w20mm = new MatmulCommand(w20Slice->n0, w20Slice->d, spec->bufferFloatType, spec->weightsFloatType, acc);
+        w30mm = new MatmulCommand(w30Slice->n, w30Slice->d0, spec->bufferFloatType, spec->weightsFloatType, acc);
 
-        hb20 = (float*)NEW_BUFFER(w30Slice->d0 * sizeof(float));
+        hb20 = (float*)newBuffer(w30Slice->d0 * sizeof(float));
     }
 }
 
 TransformerBlock::~TransformerBlock() {
     if (IS_ROOT_SLICE(sliceIndex)) {
-#if ALLOC_WEIGHTS
-        FREE_BUFFER(rmsAtt);
-        FREE_BUFFER(rmsFfn);
+        freeBuffer(rmsAtt);
+        freeBuffer(rmsFfn);
         if (spec->archType == GROK1) {
-            FREE_BUFFER(rmsMoe);
-            FREE_BUFFER(rmsFfn2);
+            freeBuffer(rmsMoe);
+            freeBuffer(rmsFfn2);
         }
-#endif
     }
 
     delete kvCacheSlice;
+    freeBuffer(keyCache);
+    freeBuffer(valueCache);
     delete multiHeadAttSlice;
+    freeBuffer(att);
 
     delete q0Slice;
     delete k0Slice;
     delete v0Slice;
     delete wo0Slice;
 
-    FREE_BUFFER(qo0);
+    freeBuffer(qo0);
 
-#if ALLOC_WEIGHTS
-    FREE_BUFFER(q0);
-    FREE_BUFFER(k0);
-    FREE_BUFFER(v0);
-    FREE_BUFFER(wo0);
-#endif
+    delete q0mm;
+    delete k0mm;
+    delete v0mm;
+    delete wo0mm;
 
     if (spec->nExperts > 0) {
         delete moeUpAndGate0Slice;
         delete moeDown0Slice;
 
-#if ALLOC_WEIGHTS
         for (int e = 0; e < spec->nExperts; e++) {
-            FREE_BUFFER(moeUp[e]);
-            FREE_BUFFER(moeGate[e]);
-            FREE_BUFFER(moeDown[e]);
+            delete moeUpMm[e];
+            delete moeGateMm[e];
+            delete moeDownMm[e];
         }
 
-        FREE_BUFFER(moeRouter);
-#endif
-        delete[] moeUp;
-        delete[] moeGate;
-        delete[] moeDown;
-        FREE_BUFFER(moeRouterProbs);
+        delete[] moeUpMm;
+        delete[] moeGateMm;
+        delete[] moeDownMm;
+        freeBuffer(moeRouterProbs);
 
-        FREE_BUFFER(expertGate);
-        FREE_BUFFER(expertDown);
+        freeBuffer(expertGate);
+        freeBuffer(expertDown);
     } else {
         delete w10Slice;
         delete w20Slice;
         delete w30Slice;
 
-#if ALLOC_WEIGHTS
-        FREE_BUFFER(w10);
-        FREE_BUFFER(w20);
-        FREE_BUFFER(w30);
-#endif
+        delete w10mm;
+        delete w20mm;
+        delete w30mm;
 
-        FREE_BUFFER(hb20);
+        freeBuffer(hb20);
     }
 }
 
-static size_t loadSlicedMatmulWeights(uint8_t nSlices, MatmulSlice* slice, char* weights, char** weights0, SocketPool* socketPool) {
-#if ALLOC_WEIGHTS
-    if (nSlices > 1) {
-        char* temp = NEW_BUFFER(slice->bytes);
-        memcpy(temp, weights, slice->bytes);
-
-        size_t loadedBytes = 0;
-        for (uint8_t s = 0; s < nSlices; s++) {
-            uint8_t sliceIndex = (s + 1) % nSlices; // Root slice must be loaded last because we want keep root weights in the memory.
-            loadedBytes += slice->splitWeights(sliceIndex, temp, *weights0);
-            if (sliceIndex > 0) {
-                unsigned int socketIndex = sliceIndex - 1;
-                socketPool->write(socketIndex, *weights0, slice->sliceBytes);
-            }
+static size_t loadSlicedMatmulWeights(const uint8_t nSlices, MatmulSlice* slice, char* source, MatmulCommand* mm, SocketPool* socketPool) {
+    char* buffer = (char*)newBuffer(slice->sliceBytes);
+    size_t loadedBytes = 0;
+    for (uint8_t s = 0; s < nSlices; s++) {
+        slice_index_t sliceIndex = (s + 1) % nSlices;
+        loadedBytes += slice->splitWeights(sliceIndex, source, buffer);
+        if (sliceIndex > 0) {
+            unsigned int socketIndex = sliceIndex - 1;
+            socketPool->write(socketIndex, buffer, slice->sliceBytes);
+        } else {
+            mm->loadWeights(buffer);
         }
-
-        assert(loadedBytes == slice->bytes);
-        FREE_BUFFER(temp);
-        return loadedBytes;
-    } else {
-        size_t loadedBytes = slice->splitWeights(0, weights, *weights0);
-        assert(loadedBytes == slice->bytes);
-        return loadedBytes;
     }
-#else
-    assert(nSlices == 1);
-    *weights0 = weights;
-    return slice->bytes;
-#endif
+    freeBuffer(buffer);
+    return loadedBytes;
 }
 
-static size_t loadRootMatmulWeights(char** target, char* source, size_t bytes) {
-#if ALLOC_WEIGHTS
+static size_t loadRootWeights(char** target, char* source, size_t bytes) {
     memcpy(*target, source, bytes);
-#else
-    *target = source;
-#endif
     return bytes;
 }
 
@@ -611,30 +413,26 @@ static size_t readSlicedMatmulWeights(MatmulSlice* slice, char* weights0, Socket
     return slice->sliceBytes;
 }
 
-Transformer Transformer::loadRootFromFile(const char* path, TransformerSpec* spec, SocketPool* socketPool) {
+Transformer Transformer::loadRootFromFile(const char* path, TransformerSpec* spec, SocketPool* socketPool, AcceleratorContext* acc) {
     MmapFile file;
     openMmapFile(&file, path, spec->fileSize);
 
     char* weights = ((char*)file.data) + spec->headerSize;
-    Transformer transformer = Transformer::loadRoot((char*)weights, spec, socketPool);
+    Transformer transformer = Transformer::loadRoot((char*)weights, spec, socketPool, acc);
 
-#if ALLOC_WEIGHTS
     closeMmapFile(&file);
-#else
-    // TODO: handler should be released in destructor
-#endif
 
     return transformer;
 }
 
-Transformer Transformer::loadRoot(char* data, TransformerSpec* spec, SocketPool* socketPool) {
+Transformer Transformer::loadRoot(char* data, TransformerSpec* spec, SocketPool* socketPool, AcceleratorContext* acc) {
     assert(socketPool->nSockets == spec->nSlices - 1);
 
-    const uint8_t sliceIndex = 0; // Root slice
-    Transformer transformer(spec, sliceIndex);
+    const slice_index_t sliceIndex = 0; // Root slice
+    Transformer transformer(spec, sliceIndex, acc);
 
     if (spec->nSlices > 1) {
-        for (uint8_t sliceIndex = 1; sliceIndex < spec->nSlices; sliceIndex++) {
+        for (slice_index_t sliceIndex = 1; sliceIndex < spec->nSlices; sliceIndex++) {
             unsigned int socketIndex = sliceIndex - 1;
             socketPool->write(socketIndex, (char*)&sliceIndex, sizeof(uint8_t));
             socketPool->write(socketIndex, (char*)spec, sizeof(TransformerSpec));
@@ -643,41 +441,40 @@ Transformer Transformer::loadRoot(char* data, TransformerSpec* spec, SocketPool*
 
     char* w = data;
 
-    w += loadRootMatmulWeights(&transformer.tokenEmbeddingTable, w, transformer.tokenEmbeddingTableBytes);
+    w += loadRootWeights((char**)&transformer.tokenEmbeddingTable, w, transformer.tokenEmbeddingTableBytes);
 
     for (int i = 0; i < spec->nLayers; i++) {
         TransformerBlock* block = transformer.blocks[i];
-
-        w += loadSlicedMatmulWeights(spec->nSlices, block->q0Slice, w, &block->q0, socketPool);
-        w += loadSlicedMatmulWeights(spec->nSlices, block->k0Slice, w, &block->k0, socketPool);
-        w += loadSlicedMatmulWeights(spec->nSlices, block->v0Slice, w, &block->v0, socketPool);
-        w += loadSlicedMatmulWeights(spec->nSlices, block->wo0Slice, w, &block->wo0, socketPool);
+        w += loadSlicedMatmulWeights(spec->nSlices, block->q0Slice, w, block->q0mm, socketPool);
+        w += loadSlicedMatmulWeights(spec->nSlices, block->k0Slice, w, block->k0mm, socketPool);
+        w += loadSlicedMatmulWeights(spec->nSlices, block->v0Slice, w, block->v0mm, socketPool);
+        w += loadSlicedMatmulWeights(spec->nSlices, block->wo0Slice, w, block->wo0mm, socketPool);
 
         if (spec->nExperts > 0) {
-            w += loadRootMatmulWeights(&block->moeRouter, w, block->moeRouterBytes);
+            w += block->moeRouterMm->loadWeights(w);
 
             for (int e = 0; e < spec->nExperts; e++) {
-                w += loadSlicedMatmulWeights(spec->nSlices, block->moeUpAndGate0Slice, w, &block->moeUp[e], socketPool);
-                w += loadSlicedMatmulWeights(spec->nSlices, block->moeUpAndGate0Slice, w, &block->moeGate[e], socketPool);
-                w += loadSlicedMatmulWeights(spec->nSlices, block->moeDown0Slice, w, &block->moeDown[e], socketPool);
+                w += loadSlicedMatmulWeights(spec->nSlices, block->moeUpAndGate0Slice, w, block->moeUpMm[e], socketPool);
+                w += loadSlicedMatmulWeights(spec->nSlices, block->moeUpAndGate0Slice, w, block->moeGateMm[e], socketPool);
+                w += loadSlicedMatmulWeights(spec->nSlices, block->moeDown0Slice, w, block->moeDownMm[e], socketPool);
             }
         } else {
-            w += loadSlicedMatmulWeights(spec->nSlices, block->w10Slice, w, &block->w10, socketPool);
-            w += loadSlicedMatmulWeights(spec->nSlices, block->w20Slice, w, &block->w20, socketPool);
-            w += loadSlicedMatmulWeights(spec->nSlices, block->w30Slice, w, &block->w30, socketPool);
+            w += loadSlicedMatmulWeights(spec->nSlices, block->w10Slice, w, block->w10mm, socketPool);
+            w += loadSlicedMatmulWeights(spec->nSlices, block->w20Slice, w, block->w20mm, socketPool);
+            w += loadSlicedMatmulWeights(spec->nSlices, block->w30Slice, w, block->w30mm, socketPool);
         }
 
-        w += loadRootMatmulWeights((char**)&block->rmsAtt, w, block->rmsAttBytes);
-        w += loadRootMatmulWeights((char**)&block->rmsFfn, w, block->rmsFfnBytes);
+        w += loadRootWeights((char**)&block->rmsAtt, w, block->rmsAttBytes);
+        w += loadRootWeights((char**)&block->rmsFfn, w, block->rmsFfnBytes);
 
         if (spec->archType == GROK1) {
-            w += loadRootMatmulWeights((char**)&block->rmsMoe, w, block->rmsMoeBytes);
-            w += loadRootMatmulWeights((char**)&block->rmsFfn2, w, block->rmsFfn2Bytes);
+            w += loadRootWeights((char**)&block->rmsMoe, w, block->rmsMoeBytes);
+            w += loadRootWeights((char**)&block->rmsFfn2, w, block->rmsFfn2Bytes);
         }
     }
 
-    w += loadRootMatmulWeights(&transformer.rmsFinal, w, transformer.rmsFinalBytes);
-    w += loadRootMatmulWeights(&transformer.wcls, w, transformer.wclsBytes);
+    w += loadRootWeights((char**)&transformer.rmsFinal, w, transformer.rmsFinalBytes);
+    w += transformer.wclsMm->loadWeights(w);
 
     long missedBytes = (long)(w - data) - spec->fileSize + spec->headerSize;
     if (missedBytes != 0) {
@@ -689,8 +486,8 @@ Transformer Transformer::loadRoot(char* data, TransformerSpec* spec, SocketPool*
     return transformer;
 }
 
-Transformer Transformer::loadSlice(TransformerSpec* spec, Socket* socket) {
-    uint8_t sliceIndex;
+Transformer Transformer::loadSlice(TransformerSpec* spec, Socket* socket, AcceleratorContext* acc) {
+    slice_index_t sliceIndex;
     socket->read((char*)&sliceIndex, sizeof(uint8_t));
     socket->read((char*)spec, sizeof(TransformerSpec));
 
@@ -698,31 +495,70 @@ Transformer Transformer::loadSlice(TransformerSpec* spec, Socket* socket) {
     printf("💡 nSlices: %d\n", spec->nSlices);
 
     assert(sliceIndex >= 1);
-    Transformer transformer(spec, sliceIndex);
+    Transformer transformer(spec, sliceIndex, acc);
+
+    size_t bufferSize = 0;
+    // TODO: this is ugly
+    for (int i = 0; i < spec->nLayers; i++) {
+        TransformerBlock* block = transformer.blocks[i];
+        if (block->k0Slice->sliceBytes > bufferSize) bufferSize = block->k0Slice->sliceBytes;
+        if (block->q0Slice->sliceBytes > bufferSize) bufferSize = block->q0Slice->sliceBytes;
+        if (block->wo0Slice->sliceBytes > bufferSize) bufferSize = block->wo0Slice->sliceBytes;
+        if (spec->nExperts > 0) {
+            if (block->moeUpAndGate0Slice[0].sliceBytes > bufferSize) bufferSize = block->moeUpAndGate0Slice[0].sliceBytes;
+            if (block->moeDown0Slice[0].sliceBytes > bufferSize) bufferSize = block->moeDown0Slice[0].sliceBytes;
+        } else {
+            if (block->w10Slice->sliceBytes > bufferSize) bufferSize = block->w10Slice->sliceBytes;
+            if (block->w20Slice->sliceBytes > bufferSize) bufferSize = block->w20Slice->sliceBytes;
+            if (block->w30Slice->sliceBytes > bufferSize) bufferSize = block->w30Slice->sliceBytes;
+        }
+    }
+
+    char* buffer = new char[bufferSize];
 
     for (int i = 0; i < spec->nLayers; i++) {
         TransformerBlock* block = transformer.blocks[i];
         size_t blockBytes = 0;
         long t0 = timeMs();
-        blockBytes += readSlicedMatmulWeights(block->q0Slice, block->q0, socket);
-        blockBytes += readSlicedMatmulWeights(block->k0Slice, block->k0, socket);
-        blockBytes += readSlicedMatmulWeights(block->v0Slice, block->v0, socket);
-        blockBytes += readSlicedMatmulWeights(block->wo0Slice, block->wo0, socket);
+
+        socket->read(buffer, block->q0Slice->sliceBytes);
+        blockBytes += block->q0mm->loadWeights(buffer);
+
+        socket->read(buffer, block->k0Slice->sliceBytes);
+        blockBytes += block->k0mm->loadWeights(buffer);
+
+        socket->read(buffer, block->v0Slice->sliceBytes);
+        blockBytes += block->v0mm->loadWeights(buffer);
+
+        socket->read(buffer, block->wo0Slice->sliceBytes);
+        blockBytes += block->wo0mm->loadWeights(buffer);
 
         if (spec->nExperts > 0) {
             for (int e = 0; e < spec->nExperts; e++) {
-                blockBytes += readSlicedMatmulWeights(block->moeUpAndGate0Slice, block->moeUp[e], socket);
-                blockBytes += readSlicedMatmulWeights(block->moeUpAndGate0Slice, block->moeGate[e], socket);
-                blockBytes += readSlicedMatmulWeights(block->moeDown0Slice, block->moeDown[e], socket);
+                socket->read(buffer, block->moeUpAndGate0Slice->sliceBytes);
+                blockBytes += block->moeUpMm[e]->loadWeights(buffer);
+
+                socket->read(buffer, block->moeUpAndGate0Slice->sliceBytes);
+                blockBytes += block->moeGateMm[e]->loadWeights(buffer);
+
+                socket->read(buffer, block->moeDown0Slice->sliceBytes);
+                blockBytes += block->moeDownMm[e]->loadWeights(buffer);
             }
         } else {
-            blockBytes += readSlicedMatmulWeights(block->w10Slice, block->w10, socket);
-            blockBytes += readSlicedMatmulWeights(block->w20Slice, block->w20, socket);
-            blockBytes += readSlicedMatmulWeights(block->w30Slice, block->w30, socket);
+            socket->read(buffer, block->w10Slice->sliceBytes);
+            blockBytes += block->w10mm->loadWeights(buffer);
+
+            socket->read(buffer, block->w20Slice->sliceBytes);
+            blockBytes += block->w20mm->loadWeights(buffer);
+
+            socket->read(buffer, block->w30Slice->sliceBytes);
+            blockBytes += block->w30mm->loadWeights(buffer);
         }
 
         float kbs = blockBytes / (float)(timeMs() - t0);
         printf("⏩ Received %ld kB for block %d (%.0f kB/s)\n", blockBytes / 1024, i, kbs);
     }
+
+    delete[] buffer;
     return transformer;
 }

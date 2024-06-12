@@ -1,9 +1,10 @@
 #include <cmath>
 #include <cassert>
 #include <cstdio>
+#include <stdexcept>
 #include "common/pthread.h"
-#include "quants.hpp"
 #include "funcs.hpp"
+#include "utils.hpp"
 
 #if defined(__ARM_NEON)
     #include <arm_neon.h>
