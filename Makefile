@@ -46,8 +46,8 @@ quants-test: src/quants.cpp utils quants
 	$(CXX) $(CXXFLAGS) src/quants-test.cpp -o quants-test utils.o quants.o $(LIBS)
 tokenizer-test: src/tokenizer-test.cpp tokenizer funcs commands utils quants
 	$(CXX) $(CXXFLAGS) src/tokenizer-test.cpp -o tokenizer-test tokenizer.o funcs.o commands.o utils.o quants.o $(LIBS)
-transformer-test: src/transformer-test.cpp funcs commands utils quants transformer socket
-	$(CXX) $(CXXFLAGS) src/transformer-test.cpp -o transformer-test funcs.o commands.o utils.o quants.o transformer.o socket.o $(LIBS)
+commands-test: src/commands-test.cpp funcs commands utils quants transformer socket
+	$(CXX) $(CXXFLAGS) src/commands-test.cpp -o commands-test funcs.o commands.o utils.o quants.o transformer.o socket.o $(LIBS)
 llama2-tasks-test: src/llama2-tasks-test.cpp utils quants funcs commands socket transformer tasks llama2-tasks tokenizer
 	$(CXX) $(CXXFLAGS) src/llama2-tasks-test.cpp -o llama2-tasks-test utils.o quants.o funcs.o commands.o socket.o transformer.o tasks.o llama2-tasks.o tokenizer.o $(LIBS)
 grok1-tasks-test: src/grok1-tasks-test.cpp utils quants funcs commands socket transformer tasks llama2-tasks grok1-tasks tokenizer
