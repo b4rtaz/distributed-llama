@@ -60,7 +60,8 @@ int main() {
     for (int f = 0; f < nFloats; f++) block[f] = randomF32(&state) / 100.0;
 
     SocketPool socketPool(0, NULL);
-    Transformer transformer = Transformer::loadRoot((char*)weights, &spec, &socketPool);
+    AcceleratorContext acc(0, 1, NULL);
+    Transformer transformer = Transformer::loadRoot((char*)weights, &spec, &socketPool, &acc);
     transformer.pos = 0;
 
     float* x = transformer.x;

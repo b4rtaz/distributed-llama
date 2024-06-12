@@ -28,7 +28,7 @@ void testRopeSlice(const TransformerArchType archType, const int nSliceTests, co
                 for (int j = 0; j < spec.dim; j++) q[j] = 1.0;
                 for (int j = 0; j < spec.kvDim; j++) k[j] = 1.0;
 
-                for (uint8_t sliceIndex = 0; sliceIndex < spec.nSlices; sliceIndex++) {
+                for (slice_index_t sliceIndex = 0; sliceIndex < spec.nSlices; sliceIndex++) {
                     RopeSlice* slice;
                     if (archType == LLAMA) {
                         slice = new LlamaRopeSlice(&spec, sliceIndex);

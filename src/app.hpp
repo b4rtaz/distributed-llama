@@ -1,10 +1,10 @@
-#ifndef FUNCS_HPP
-#define FUNCS_HPP
+#ifndef APP_HPP
+#define APP_HPP
 
 #include "quants.hpp"
 #include "transformer.hpp"
 #include "utils.hpp"
-#include "socket.hpp"
+#include "utils.hpp"
 #include "app.hpp"
 #include "transformer.hpp"
 #include "tasks.hpp"
@@ -46,7 +46,7 @@ public:
 
 class App {
 public:
-    static void run(AppArgs* args, void (*program)(Inference* inference, SocketPool* socketPool, Tokenizer* tokenizer, Sampler* sampler, AppArgs* args, TransformerSpec* spec));
+    static void run(AppArgs* args, void (*program)(Inference* inference, SocketPool* socketPool, Tokenizer* tokenizer, Sampler* sampler, AppArgs* args, TransformerSpec* spec, AcceleratorContext* acc));
 };
 
 #endif

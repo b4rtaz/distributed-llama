@@ -56,7 +56,7 @@ void grokMoeRmsNorm(TASK_ARGS) {
 void grokMoeRouter(TASK_ARGS) {
     TASK_VARIABLES;
     float* xb = (float*)transformer->buffer->getUnit(TB_UNIT_XB);
-    matmul(spec->weightsFloatType, F32, block->moeRouterProbs, xb, block->moeRouter, spec->dim, spec->nExperts, nThreads, threadIndex);
+    block->moeRouterMm->forward(xb, block->moeRouterProbs, nThreads, threadIndex);
 }
 
 void grokMoeRouterSoftmax(TASK_ARGS) {
@@ -137,8 +137,9 @@ void grokMoeBlock0(TASK_ARGS) {
 
         float* expertUp = &hb[block->moeUpAndGate0Slice->d0 * ae];
         float* expertGate = &block->expertGate[block->moeUpAndGate0Slice->d0 * ae];
-        matmul(spec->weightsFloatType, spec->bufferFloatType, expertUp, xb, block->moeUp[e], block->moeUpAndGate0Slice->n, block->moeUpAndGate0Slice->d0, nThreads, threadIndex);
-        matmul(spec->weightsFloatType, spec->bufferFloatType, expertGate, xb, block->moeGate[e], block->moeUpAndGate0Slice->n, block->moeUpAndGate0Slice->d0, nThreads, threadIndex);
+
+        block->moeUpMm[e]->forward(xb, expertUp, nThreads, threadIndex);
+        block->moeGateMm[e]->forward(xb, expertGate, nThreads, threadIndex);
     }
 }
 
@@ -217,7 +218,7 @@ void grokMoeBlock2(TASK_ARGS) {
         char* expertUp = &hbq[rowBytes * ae];
         float* expertDown = ae == 0 ? xb2 : &block->expertDown[block->moeDown0Slice->d0 * (ae - 1)];
 
-        matmul(spec->weightsFloatType, spec->bufferFloatType, expertDown, expertUp, block->moeDown[e], block->moeDown0Slice->n, block->moeDown0Slice->d0, nThreads, threadIndex);
+        block->moeDownMm[e]->forward(expertUp, expertDown, nThreads, threadIndex);
 
         mulScalar(expertDown, weight, block->moeDown0Slice->d0, nThreads, threadIndex);
         if (ae > 0) {
@@ -263,7 +264,7 @@ void grokMoeAdd(TASK_ARGS) {
 
 void grokFinalize(TASK_ARGS) {
     TASK_VARIABLES;
-    matmul(spec->weightsFloatType, F32, transformer->logits, transformer->x, transformer->wcls, spec->dim, spec->vocabSize, nThreads, threadIndex);
+    transformer->wclsMm->forward(transformer->x, transformer->logits, nThreads, threadIndex);
 }
 
 void grokFinalize2(TASK_ARGS) {

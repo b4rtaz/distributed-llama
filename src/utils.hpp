@@ -9,6 +9,15 @@
 #include <windows.h>
 #endif
 
+#define SPLIT_RANGE_TO_THREADS(varStart, varEnd, rangeStart, rangeEnd, nThreads, threadIndex) \
+    const unsigned int rangeLen = (rangeEnd - rangeStart); \
+    const unsigned int rangeSlice = rangeLen / nThreads; \
+    const unsigned int rangeRest = rangeLen % nThreads; \
+    const unsigned int varStart = threadIndex * rangeSlice + (threadIndex < rangeRest ? threadIndex : rangeRest); \
+    const unsigned int varEnd = varStart + rangeSlice + (threadIndex < rangeRest ? 1 : 0);
+
+#define DEBUG_FLOATS(name, v, n) printf("⭕ %s ", name); for (int i = 0; i < n; i++) printf("%f ", v[i]); printf("\n");
+
 #define NEW_BUFFER(size) (char*)newBuffer(size)
 #define FREE_BUFFER(buffer) freeBuffer(buffer)
 
