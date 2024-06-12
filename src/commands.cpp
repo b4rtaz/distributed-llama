@@ -1,5 +1,6 @@
 #include <cassert>
 #include <cstring>
+#include <cmath>
 #include "utils.hpp"
 #include "funcs.hpp"
 #include "commands.hpp"
