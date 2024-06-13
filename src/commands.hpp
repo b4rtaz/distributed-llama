@@ -3,6 +3,7 @@
 
 #include <cstdio>
 #include "quants.hpp"
+#include "accelerator.hpp"
 
 // RESPONSIBILITIES
 //
@@ -73,15 +74,6 @@ public:
     unsigned int nHeads0;
     size_t attSize;
     MultiHeadAttSlice(unsigned int nHeads, unsigned int seqLen, unsigned int nSlices, slice_index_t sliceIndex);
-};
-
-class Accelerator {
-public:
-    virtual const unsigned int allocateMatmul(const FloatType floatType, const unsigned int n, const unsigned int d) = 0;
-    virtual void loadMatmulWeights(const unsigned int matmulIndex, const void* weights) = 0;
-    virtual void beginForwardMatmul(const unsigned int matmulIndex, const void* input) = 0;
-    virtual void endForwardMatmul(const unsigned int matmulIndex, float* output) = 0;
-    virtual void closeMatmul(const unsigned int matmulIndex) = 0;
 };
 
 class AcceleratorContext {

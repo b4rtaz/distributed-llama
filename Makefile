@@ -8,6 +8,17 @@ else
     LIBS = -lpthread
 endif
 
+ifdef DLLAMA_VULKAN
+LIBS += -lvulkan
+OBJS += accelerator-vulkan.o
+CXXFLAGS += -DDLLAMA_VULKAN
+
+accelerator-vulkan.o: src/accelerator-vulkan.cpp
+	$(CXX) $(CXXFLAGS) -c src/accelerator-vulkan.cpp -o accelerator-vulkan.o
+accelerator-vulkan-test: src/accelerator-vulkan-test.cpp funcs utils quants accelerator-vulkan.o
+	$(CXX) $(CXXFLAGS) src/accelerator-vulkan-test.cpp -o accelerator-vulkan-test funcs.o utils.o quants.o accelerator-vulkan.o $(LIBS)
+endif
+
 utils: src/utils.cpp
 	$(CXX) $(CXXFLAGS) -c src/utils.cpp -o utils.o
 quants: src/quants.cpp
@@ -35,10 +46,10 @@ tokenizer: src/tokenizer.cpp
 app: src/app.cpp
 	$(CXX) $(CXXFLAGS) -c src/app.cpp -o app.o
 
-dllama: src/apps/dllama/dllama.cpp utils quants funcs commands socket transformer tasks llama2-tasks grok1-tasks mixtral-tasks tokenizer app
-	$(CXX) $(CXXFLAGS) src/apps/dllama/dllama.cpp -o dllama utils.o quants.o funcs.o commands.o socket.o transformer.o tasks.o llama2-tasks.o grok1-tasks.o mixtral-tasks.o tokenizer.o app.o $(LIBS)
-dllama-api: src/apps/dllama-api/dllama-api.cpp utils quants funcs commands socket transformer tasks llama2-tasks grok1-tasks mixtral-tasks tokenizer app
-	$(CXX) $(CXXFLAGS) src/apps/dllama-api/dllama-api.cpp -o dllama-api utils.o quants.o funcs.o commands.o socket.o transformer.o tasks.o llama2-tasks.o grok1-tasks.o mixtral-tasks.o tokenizer.o app.o $(LIBS)
+dllama: src/apps/dllama/dllama.cpp utils quants funcs commands socket transformer tasks llama2-tasks grok1-tasks mixtral-tasks tokenizer app ${OBJS}
+	$(CXX) $(CXXFLAGS) src/apps/dllama/dllama.cpp -o dllama utils.o quants.o funcs.o commands.o socket.o transformer.o tasks.o llama2-tasks.o grok1-tasks.o mixtral-tasks.o tokenizer.o app.o ${OBJS} $(LIBS)
+dllama-api: src/apps/dllama-api/dllama-api.cpp utils quants funcs commands socket transformer tasks llama2-tasks grok1-tasks mixtral-tasks tokenizer app ${OBJS}
+	$(CXX) $(CXXFLAGS) src/apps/dllama-api/dllama-api.cpp -o dllama-api utils.o quants.o funcs.o commands.o socket.o transformer.o tasks.o llama2-tasks.o grok1-tasks.o mixtral-tasks.o tokenizer.o app.o ${OBJS} $(LIBS)
 
 funcs-test: src/funcs-test.cpp funcs utils quants
 	$(CXX) $(CXXFLAGS) src/funcs-test.cpp -o funcs-test funcs.o utils.o quants.o $(LIBS)

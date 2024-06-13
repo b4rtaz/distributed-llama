@@ -6,6 +6,9 @@
 #include <stdexcept>
 #include <ctime>
 #include "app.hpp"
+#ifdef DLLAMA_VULKAN
+    #include "accelerator-vulkan.hpp"
+#endif
 
 FloatType parseFloatType(char* val) {
     if (strcmp(val, "f32") == 0) return F32;
@@ -119,7 +122,13 @@ void App::run(AppArgs* args, void (*program)(Inference* inference, SocketPool* s
         args->steps = spec.seqLen;
     }
 
-    AcceleratorContext acc(0, 1, NULL);
+    Accelerator* accelerator = NULL;
+    unsigned int accNominator = 0;
+#ifdef DLLAMA_VULKAN
+    accelerator = new AcceleratorVulkan();
+    accNominator = 16;
+#endif
+    AcceleratorContext acc(0, 32, accelerator);
     Transformer transformer = Transformer::loadRootFromFile(args->modelPath, &spec, socketPool, &acc);
     socketPool->setTurbo(true);
 
@@ -130,4 +139,7 @@ void App::run(AppArgs* args, void (*program)(Inference* inference, SocketPool* s
     program(&inference, socketPool, &tokenizer, &sampler, args, &spec, &acc);
 
     delete socketPool;
+#ifdef DLLAMA_VULKAN
+    delete accelerator;
+#endif
 }
