@@ -125,10 +125,11 @@ void App::run(AppArgs* args, void (*program)(Inference* inference, SocketPool* s
     Accelerator* accelerator = NULL;
     unsigned int accNominator = 0;
 #ifdef DLLAMA_VULKAN
-    accelerator = new AcceleratorVulkan();
-    accNominator = 16;
+    VulkanContext vulkanContext = VulkanContext();
+    accelerator = new AcceleratorVulkan(&vulkanContext);
+    accNominator = 32;
 #endif
-    AcceleratorContext acc(0, 32, accelerator);
+    AcceleratorContext acc(accNominator, 32, accelerator);
     Transformer transformer = Transformer::loadRootFromFile(args->modelPath, &spec, socketPool, &acc);
     socketPool->setTurbo(true);
 

@@ -1,0 +1,39 @@
+#version 450
+
+#define FLOAT_TYPE float
+#define N_THREADS 32
+
+layout(local_size_x = N_THREADS, local_size_y = 1, local_size_z = 1) in;
+
+layout(binding = 0) readonly buffer inputBuffer { FLOAT_TYPE inpt[]; };
+layout(binding = 1) readonly buffer weightsBuffer { FLOAT_TYPE weights[]; };
+layout(binding = 2) writeonly buffer outputBuffer { FLOAT_TYPE outp[]; };
+layout(binding = 3) readonly uniform metadataBuffer { uint n; };
+
+shared float temp[N_THREADS];
+
+void main() {
+    const uint nn = n / N_THREADS;
+    const uint threadIndex = uint(gl_LocalInvocationID.x);
+    const uint d = uint(gl_GlobalInvocationID.y);
+    const uint iOffset = threadIndex * nn;
+    const uint wOffset = d * n + iOffset;
+
+    float s = 0.0;
+    for (uint i = 0; i < nn; i++) {
+        s += inpt[iOffset + i] * weights[wOffset + i];
+    }
+    temp[threadIndex] = s;
+
+    barrier();
+
+    for (uint i = N_THREADS / 2; i > 0; i >>= 1) {
+        if (threadIndex < i)
+            temp[threadIndex] += temp[threadIndex + i];
+        barrier();
+    }
+
+    if (threadIndex == 0) {
+        outp[d] = temp[0];
+    }
+}

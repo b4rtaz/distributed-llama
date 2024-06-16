@@ -118,7 +118,7 @@ unsigned int AcceleratorContext::divAcc(unsigned int value) {
     return (nominator * value) / denominator;
 }
 
-MatmulCommand::MatmulCommand(const unsigned int n, const unsigned int d, const FloatType inputFloatType, const FloatType weightsFloatType, AcceleratorContext* acc) {
+MatmulCommand::MatmulCommand(const unsigned int n, const unsigned int d, const FloatType weightsFloatType, const FloatType inputFloatType, AcceleratorContext* acc) {
     this->n = n;
     this->d = d;
     this->inputFloatType = inputFloatType;
@@ -128,32 +128,41 @@ MatmulCommand::MatmulCommand(const unsigned int n, const unsigned int d, const F
     this->accSize = getBatchBytes(weightsFloatType, n, this->accD);
     this->cpuD = acc->divCpu(d);
     this->cpuSize = getBatchBytes(weightsFloatType, n, this->cpuD);
-    this->cpuWeights = newBuffer(this->cpuSize);
 
+    // printf("matmulCommand cpuD=%d, cpuSize=%zu, accD=%d, accSize=%zu\n", cpuD, cpuSize, accD, accSize);
+    if (this->cpuD != 0)
+        this->cpuWeights = newBuffer(this->cpuSize);
     if (this->accD != 0) {
-        this->accMatmulIndex = acc->accelerator->allocateMatmul(weightsFloatType, n, this->accD);
+        this->accMatmulIndex = acc->accelerator->allocateMatmul(weightsFloatType, inputFloatType, n, this->accD);
     }
 };
 
 MatmulCommand::~MatmulCommand() {
-    freeBuffer(cpuWeights);
+    if (this->cpuD != 0)
+        freeBuffer(cpuWeights);
 }
 
 size_t MatmulCommand::loadWeights(const void* source) {
-    memcpy(cpuWeights, source, cpuSize);
-    if (this->accD != 0) {
-        acc->accelerator->loadMatmulWeights(this->accMatmulIndex, &((char*)source)[cpuSize]);
+    if (cpuD != 0) {
+        memcpy(cpuWeights, source, cpuSize);
+    }
+    if (accD != 0) {
+        acc->accelerator->loadMatmulWeights(accMatmulIndex, &((char*)source)[cpuSize]);
     }
     return cpuSize + accSize;
 }
 
 void MatmulCommand::forward(const void* input, float* output, const unsigned int nThreads, const unsigned int threadIndex) {
-    if (this->accD != 0 && threadIndex == 0) {
-        acc->accelerator->beginForwardMatmul(this->accMatmulIndex, input);
+    if (accD != 0 && threadIndex == 0) {
+        acc->accelerator->beginForwardMatmul(accMatmulIndex, input);
     }
-    matmul(weightsFloatType, inputFloatType, output, input, cpuWeights, n, cpuD, nThreads, threadIndex);
-    if (this->accD != 0 && threadIndex == nThreads - 1) {
-        acc->accelerator->endForwardMatmul(this->accMatmulIndex, &output[cpuD]);
+    if (cpuD != 0) {
+        matmul(weightsFloatType, inputFloatType, output, input, cpuWeights, n, cpuD, nThreads, threadIndex);
+    }
+    if (accD != 0 && threadIndex == 0) {
+        float* gpuOutput = &output[cpuD];
+        acc->accelerator->endForwardMatmul(accMatmulIndex, gpuOutput);
+        // DEBUG_FLOATS("gpu", gpuOutput, 8);
     }
 }
 

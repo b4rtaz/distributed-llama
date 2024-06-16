@@ -1,0 +1,63 @@
+#version 450
+
+#extension GL_EXT_shader_explicit_arithmetic_types_float16 : require
+#extension GL_EXT_shader_explicit_arithmetic_types_int8 : require
+
+#define FLOAT_TYPE float
+
+#define QK_40 32
+#define N_THREADS 8
+
+layout(local_size_x = N_THREADS, local_size_y = 1, local_size_z = 1) in;
+
+struct BlockQ40 {
+    float16_t d;
+    uint8_t qs[16];
+};
+
+layout(binding = 0) readonly buffer inputBuffer { float inpt[]; };
+layout(binding = 1) readonly buffer weightsBuffer { BlockQ40 weights[]; };
+layout(binding = 2) writeonly buffer outputBuffer { float outp[]; };
+layout(binding = 3) readonly uniform metadataBuffer { uint n; };
+
+shared float temp[N_THREADS];
+
+void main() {
+    const uint nn = n / N_THREADS;
+    const uint nb = n / QK_40;
+    const uint nbn = nb / N_THREADS;
+    const uint threadIndex = uint(gl_LocalInvocationID.x);
+    const uint d = uint(gl_GlobalInvocationID.y);
+
+    const uint iOffset = threadIndex * nn;
+    const uint wOffset = d * nb + threadIndex * nbn;
+
+    float s = 0.0;
+    for (uint i = 0; i < nbn; i++) {
+        float ws = float(weights[wOffset + i].d);
+        uint io = iOffset + i * QK_40;
+        for (uint j = 0; j < QK_40 / 2; j++) {
+            float i0 = inpt[io + j];
+            float i1 = inpt[io + j + QK_40 / 2];
+
+            uint wq = uint(weights[wOffset + i].qs[j]);
+            float w0 = ((wq & 0xF) - 8.0f);
+            float w1 = ((wq >>  4) - 8.0f);
+
+            s += (i0 * w0 + i1 * w1) * ws;
+        }
+    }
+    temp[threadIndex] = s;
+
+    barrier();
+
+    for (uint i = N_THREADS / 2; i > 0; i >>= 1) {
+        if (threadIndex < i)
+            temp[threadIndex] += temp[threadIndex + i];
+        barrier();
+    }
+
+    if (threadIndex == 0) {
+        outp[d] = temp[0];
+    }
+}

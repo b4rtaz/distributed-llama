@@ -16,7 +16,7 @@
     const unsigned int varStart = threadIndex * rangeSlice + (threadIndex < rangeRest ? threadIndex : rangeRest); \
     const unsigned int varEnd = varStart + rangeSlice + (threadIndex < rangeRest ? 1 : 0);
 
-#define DEBUG_FLOATS(name, v, n) printf("⭕ %s ", name); for (int i = 0; i < n; i++) printf("%f ", v[i]); printf("\n");
+#define DEBUG_FLOATS(name, v, n) printf("⭕ %s ", name); for (int i = 0; i < n; i++) printf("%.3f ", v[i]); printf("\n");
 
 void* newBuffer(size_t size);
 void freeBuffer(void* buffer);

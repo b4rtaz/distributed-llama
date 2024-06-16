@@ -13,3 +13,4 @@ server
 /dllama
 /dllama-*
 *.exe
+*.spv

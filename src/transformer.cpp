@@ -217,7 +217,7 @@ Transformer::Transformer(TransformerSpec* spec, slice_index_t sliceIndex, Accele
         tokenEmbeddingTable = (float*)newBuffer(tokenEmbeddingTableBytes);
         rmsFinal = (float*)newBuffer(rmsFinalBytes);
 
-        wclsMm = new MatmulCommand(spec->dim, spec->vocabSize, F32, spec->weightsFloatType, acc);
+        wclsMm = new MatmulCommand(spec->dim, spec->vocabSize, spec->weightsFloatType, F32, acc);
 
         x = (float*)newBuffer(spec->dim * sizeof(float));
         logits = (float*)newBuffer(spec->vocabSize * sizeof(float));
@@ -289,10 +289,10 @@ TransformerBlock::TransformerBlock(TransformerSpec* spec, slice_index_t sliceInd
     v0Slice = new RowMatmulSlice(spec->weightsFloatType, spec->nSlices, spec->dim, spec->kvDim);
     wo0Slice = new ColMatmulSlice(spec->weightsFloatType, spec->nSlices, spec->dim, spec->dim);
 
-    q0mm = new MatmulCommand(q0Slice->n, q0Slice->d0, spec->bufferFloatType, spec->weightsFloatType, acc);
-    k0mm = new MatmulCommand(k0Slice->n, k0Slice->d0, spec->bufferFloatType, spec->weightsFloatType, acc);
-    v0mm = new MatmulCommand(v0Slice->n, v0Slice->d0, spec->bufferFloatType, spec->weightsFloatType, acc);
-    wo0mm = new MatmulCommand(wo0Slice->n0, wo0Slice->d, spec->bufferFloatType, spec->weightsFloatType, acc);
+    q0mm = new MatmulCommand(q0Slice->n, q0Slice->d0, spec->weightsFloatType, spec->bufferFloatType, acc);
+    k0mm = new MatmulCommand(k0Slice->n, k0Slice->d0, spec->weightsFloatType, spec->bufferFloatType, acc);
+    v0mm = new MatmulCommand(v0Slice->n, v0Slice->d0, spec->weightsFloatType, spec->bufferFloatType, acc);
+    wo0mm = new MatmulCommand(wo0Slice->n0, wo0Slice->d, spec->weightsFloatType, spec->bufferFloatType, acc);
 
     qo0 = (float*)newBuffer(q0Slice->d0 * sizeof(float));
 
@@ -305,12 +305,12 @@ TransformerBlock::TransformerBlock(TransformerSpec* spec, slice_index_t sliceInd
         moeUpMm = new MatmulCommand*[spec->nExperts];
         moeGateMm = new MatmulCommand*[spec->nExperts];
         moeDownMm = new MatmulCommand*[spec->nExperts];
-        moeRouterMm = new MatmulCommand(spec->dim, spec->nExperts, F32, spec->weightsFloatType, acc);
+        moeRouterMm = new MatmulCommand(spec->dim, spec->nExperts, spec->weightsFloatType, F32, acc);
 
         for (int e = 0; e < spec->nExperts; e++) {
-            moeUpMm[e] = new MatmulCommand(moeUpAndGate0Slice->n, moeUpAndGate0Slice->d0, spec->bufferFloatType, spec->weightsFloatType, acc);
-            moeGateMm[e] = new MatmulCommand(moeUpAndGate0Slice->n, moeUpAndGate0Slice->d0, spec->bufferFloatType, spec->weightsFloatType, acc);
-            moeDownMm[e] = new MatmulCommand(moeDown0Slice->n, moeDown0Slice->d0, spec->bufferFloatType, spec->weightsFloatType, acc);
+            moeUpMm[e] = new MatmulCommand(moeUpAndGate0Slice->n, moeUpAndGate0Slice->d0, spec->weightsFloatType, spec->bufferFloatType, acc);
+            moeGateMm[e] = new MatmulCommand(moeUpAndGate0Slice->n, moeUpAndGate0Slice->d0, spec->weightsFloatType, spec->bufferFloatType, acc);
+            moeDownMm[e] = new MatmulCommand(moeDown0Slice->n, moeDown0Slice->d0, spec->weightsFloatType, spec->bufferFloatType, acc);
         }
 
         expertGate = (float*)newBuffer(moeUpAndGate0Slice->d0 * spec->nExperts * sizeof(float));
@@ -320,9 +320,9 @@ TransformerBlock::TransformerBlock(TransformerSpec* spec, slice_index_t sliceInd
         w20Slice = new ColMatmulSlice(spec->weightsFloatType, spec->nSlices, spec->hiddenDim, spec->dim);
         w30Slice = new RowMatmulSlice(spec->weightsFloatType, spec->nSlices, spec->dim, spec->hiddenDim);
 
-        w10mm = new MatmulCommand(w10Slice->n, w10Slice->d0, spec->bufferFloatType, spec->weightsFloatType, acc);
-        w20mm = new MatmulCommand(w20Slice->n0, w20Slice->d, spec->bufferFloatType, spec->weightsFloatType, acc);
-        w30mm = new MatmulCommand(w30Slice->n, w30Slice->d0, spec->bufferFloatType, spec->weightsFloatType, acc);
+        w10mm = new MatmulCommand(w10Slice->n, w10Slice->d0, spec->weightsFloatType, spec->bufferFloatType,acc);
+        w20mm = new MatmulCommand(w20Slice->n0, w20Slice->d, spec->weightsFloatType, spec->bufferFloatType, acc);
+        w30mm = new MatmulCommand(w30Slice->n, w30Slice->d0, spec->weightsFloatType, spec->bufferFloatType, acc);
 
         hb20 = (float*)newBuffer(w30Slice->d0 * sizeof(float));
     }

@@ -102,7 +102,7 @@ private:
     unsigned int accMatmulIndex;
     AcceleratorContext* acc;
 public:
-    MatmulCommand(const unsigned int n, const unsigned int d, const FloatType inputFloatType, const FloatType weightsFloatType, AcceleratorContext* acc);
+    MatmulCommand(const unsigned int n, const unsigned int d, const FloatType weightsFloatType, const FloatType inputFloatType, AcceleratorContext* acc);
     ~MatmulCommand();
     size_t loadWeights(const void* source);
     void forward(const void* input, float* output, const unsigned int nThreads, const unsigned int threadIndex);
