@@ -1,5 +1,6 @@
 #version 450
 
+#extension GL_EXT_control_flow_attributes : enable
 #extension GL_EXT_shader_explicit_arithmetic_types_float16 : require
 #extension GL_EXT_shader_explicit_arithmetic_types_int8 : require
 
@@ -38,7 +39,7 @@ void main() {
     for (uint i = start; i < end; i++) {
         uint io = i * QK_40;
         float s0 = 0.0;
-        for (uint j = 0; j < QK_40 / 2; j++) {
+        [[unroll]] for (uint j = 0; j < QK_40 / 2; j++) {
             float i0 = inpt[io + j];
             float i1 = inpt[io + j + QK_40 / 2];
 
@@ -54,7 +55,7 @@ void main() {
 
     barrier();
 
-    for (uint i = N_THREADS / 2; i > 0; i >>= 1) {
+    [[unroll]] for (uint i = N_THREADS / 2; i > 0; i >>= 1) {
         if (threadIndex < i)
             temp[threadIndex] += temp[threadIndex + i];
         barrier();
