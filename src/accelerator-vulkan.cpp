@@ -69,13 +69,21 @@ VulkanContext::VulkanContext() {
     vk::InstanceCreateInfo instanceCreateInfo(createInstanceFlags, &appInfo, instanceLayers, instanceExtensions);
     instance = vk::createInstance(instanceCreateInfo);
 
-    physicalDevice = instance.enumeratePhysicalDevices()
-        //.back();
-        .front();
+    auto physicalDevices = instance.enumeratePhysicalDevices();
+    physicalDevice = physicalDevices.front();
+    if (physicalDevices.size() > 1)
+        printf("WARN: found %lu Vulkan devices, chosen first\n", physicalDevices.size());
 
     vk::PhysicalDeviceProperties deviceProps = physicalDevice.getProperties();
     printf("🌋 device: %s\n", (char*)deviceProps.deviceName);
     printf("🌋 deviceApiVersion: %d.%d.%d\n", VK_VERSION_MAJOR(deviceProps.apiVersion), VK_VERSION_MINOR(deviceProps.apiVersion), VK_VERSION_PATCH(deviceProps.apiVersion));
+    printf("🌋 maxComputeSharedMemory: %d kB\n", deviceProps.limits.maxComputeSharedMemorySize / 1024);
+
+    vk::PhysicalDeviceMemoryProperties memoryProperties = physicalDevice.getMemoryProperties();
+    for (unsigned int h = 0; h < memoryProperties.memoryHeapCount; h++) {
+        if (memoryProperties.memoryHeaps[h].flags & vk::MemoryHeapFlagBits::eDeviceLocal)
+            printf("🌋 heap[%u]: %llu MB\n", h, memoryProperties.memoryHeaps[h].size / (1024 * 1024));
+    }
 
     vk::PhysicalDeviceFeatures deviceFeatures = physicalDevice.getFeatures();
 
@@ -100,7 +108,6 @@ VulkanContext::VulkanContext() {
         return Prop.queueFlags & vk::QueueFlagBits::eCompute;
     });
     queueFamilyIndex = std::distance(queueFamilyProps.begin(), propIt);
-    printf("🌋 queueFamilyIndex: %d\n", queueFamilyIndex);
 
     const float queuePriority = 1.0f;
     vk::DeviceQueueCreateInfo deviceQueueCreateInfo(vk::DeviceQueueCreateFlags(), queueFamilyIndex, 1, &queuePriority);
