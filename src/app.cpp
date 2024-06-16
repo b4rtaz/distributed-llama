@@ -112,6 +112,24 @@ AppArgs AppArgs::parse(int argc, char** argv, bool hasMode) {
     return args;
 }
 
+AcceleratorManager::AcceleratorManager(AppArgs* args) {
+    if (args->acceleratorNominator > 0 && args->acceleratorDenominator > 0) {
+        printf("🚀 acceleratorRatio: %d/%d\n", args->acceleratorNominator, args->acceleratorDenominator);
+#ifdef DLLAMA_VULKAN
+        accelerator = new AcceleratorVulkan();
+#endif
+    } else {
+        accelerator = NULL;
+    }
+    context = new AcceleratorContext(args->acceleratorNominator, args->acceleratorDenominator, accelerator);
+}
+
+AcceleratorManager::~AcceleratorManager() {
+    if (accelerator != NULL)
+        delete accelerator;
+    delete context;
+}
+
 TransformerArch TransformerArchFactory::create(TransformerSpec* spec) {
     if (spec->archType == LLAMA) return buildLlamaArch(spec);
     if (spec->archType == GROK1) return buildGrok1Arch(spec);
@@ -139,25 +157,15 @@ void App::run(AppArgs* args, void (*program)(Inference* inference, SocketPool* s
         args->steps = spec.seqLen;
     }
 
-    Accelerator* accelerator = NULL;
-    if (args->acceleratorNominator > 0 && args->acceleratorDenominator > 0) {
-        printf("🚀 acceleratorRatio: %d/%d\n", args->acceleratorNominator, args->acceleratorDenominator);
-#ifdef DLLAMA_VULKAN
-        accelerator = new AcceleratorVulkan();
-#endif
-    }
-
-    AcceleratorContext acc(args->acceleratorNominator, args->acceleratorDenominator, accelerator);
-    Transformer transformer = Transformer::loadRootFromFile(args->modelPath, &spec, socketPool, &acc);
+    AcceleratorManager acceleratorManager(args);
+    Transformer transformer = Transformer::loadRootFromFile(args->modelPath, &spec, socketPool, acceleratorManager.context);
     socketPool->setTurbo(true);
 
     Inference inference = Inference(&arch, args->nThreads, &transformer, socketPool);
 
     Sampler sampler(spec.vocabSize, args->temperature, args->topp, args->seed);
 
-    program(&inference, socketPool, &tokenizer, &sampler, args, &spec, &acc);
+    program(&inference, socketPool, &tokenizer, &sampler, args, &spec, acceleratorManager.context);
 
     delete socketPool;
-    if (accelerator != NULL)
-        delete accelerator;
 }

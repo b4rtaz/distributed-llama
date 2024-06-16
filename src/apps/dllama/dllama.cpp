@@ -210,8 +210,8 @@ void worker(AppArgs* args) {
     SocketServer server(args->port);
     Socket socket = server.accept();
     TransformerSpec spec;
-    AcceleratorContext acc(0, 1, NULL);
-    Transformer transformer = Transformer::loadSlice(&spec, &socket, &acc);
+    AcceleratorManager acceleratorManager(args);
+    Transformer transformer = Transformer::loadSlice(&spec, &socket, acceleratorManager.context);
     TransformerArch arch = TransformerArchFactory::create(&spec);
 
     Worker worker = Worker(&arch, args->nThreads, &transformer, &socket);

@@ -41,6 +41,14 @@ public:
     static AppArgs parse(int argc, char** argv, bool hasMode);
 };
 
+class AcceleratorManager {
+public:
+    Accelerator* accelerator;
+    AcceleratorContext* context;
+    AcceleratorManager(AppArgs* args);
+    ~AcceleratorManager();
+};
+
 class TransformerArchFactory {
 public:
     static TransformerArch create(TransformerSpec* spec);
