@@ -6,7 +6,7 @@
 #define FLOAT_TYPE float
 
 #define QK_40_80 32
-#define N_THREADS 32
+#define N_THREADS 16
 
 layout(local_size_x = N_THREADS, local_size_y = 1, local_size_z = 1) in;
 
