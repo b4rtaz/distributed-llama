@@ -32,6 +32,8 @@ public:
     pos_t steps;
     bool benchmark;
     unsigned long long seed;
+    unsigned int acceleratorNominator;
+    unsigned int acceleratorDenominator;
 
     // worker
     int port;

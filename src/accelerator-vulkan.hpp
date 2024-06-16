@@ -17,15 +17,38 @@ public:
     ~VulkanContext();
 };
 
+enum CopyBufferVulkanDirection {
+    FROM_HOST_TO_DEVICE,
+    FROM_DEVICE_TO_HOST
+};
+
+class CopyBufferVulkan {
+public:
+    VulkanContext* context;
+    uint32_t bufferSize;
+    vk::Buffer deviceBuffer;
+    vk::Buffer hostBuffer;
+    vk::DeviceMemory hostMemory;
+    vk::Fence fence;
+    vk::CommandBuffer commandBuffer;
+    bool direction;
+    CopyBufferVulkan(VulkanContext* context, const uint32_t bufferSize, vk::Buffer& deviceBuffer, CopyBufferVulkanDirection direction);
+    ~CopyBufferVulkan();
+    void copy(void* data);
+};
+
 class BufferVulkan {
 public:
     VulkanContext* context;
     size_t bufferSize;
-    vk::Buffer buffer;
+    vk::Buffer deviceBuffer;
     vk::DeviceMemory deviceMemory;
+    bool isHostVisible;
+    CopyBufferVulkan* copy;
 
-    BufferVulkan(VulkanContext* context, const uint32_t bufferSize, vk::BufferUsageFlags usageFlags);
-    void load(const void* data);
+    BufferVulkan(VulkanContext* context, const uint32_t bufferSize, vk::BufferUsageFlags usageFlags, bool fastCopy, CopyBufferVulkanDirection direction);
+    void write(const void* data);
+    void read(void* data);
     void destroy();
 };
 
@@ -47,11 +70,11 @@ struct MatmulVulkan {
 
 class AcceleratorVulkan : public Accelerator {
 private:
-    VulkanContext* context;
+    VulkanContext context;
     std::vector<MatmulVulkan> matmuls;
 
 public:
-    AcceleratorVulkan(VulkanContext* context);
+    AcceleratorVulkan();
     ~AcceleratorVulkan();
     unsigned int allocateMatmul(const FloatType weightsFloatType, const FloatType inputFloatType, const unsigned int n, const unsigned int d);
     void loadMatmulWeights(const unsigned int matmulIndex, const void* weights);

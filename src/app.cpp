@@ -19,6 +19,19 @@ FloatType parseFloatType(char* val) {
     exit(EXIT_FAILURE);
 }
 
+void parseAcceleratorRatio(const char* val, unsigned int* nominator, unsigned* denominator) {
+    const char* sep = strchr(val, '/');
+    if (sep == NULL)
+        throw std::runtime_error("Cannot parse accelerator ratio");
+    size_t pos = sep - val;
+    size_t len = strlen(val);
+    char buffer[len];
+    memcpy(buffer, val, len);
+    buffer[pos] = '\0';
+    *nominator = atoi(buffer);
+    *denominator = atoi(&buffer[pos + 1]);
+}
+
 AppArgs AppArgs::parse(int argc, char** argv, bool hasMode) {
     AppArgs args;
     args.mode = NULL;
@@ -34,6 +47,8 @@ AppArgs AppArgs::parse(int argc, char** argv, bool hasMode) {
     args.topp = 0.9f;
     args.steps = 0;
     args.seed = (unsigned long long)time(NULL);
+    args.acceleratorNominator = 0;
+    args.acceleratorDenominator = 0;
 
     int i = 1;
     if (hasMode && argc > 1) {
@@ -87,6 +102,8 @@ AppArgs AppArgs::parse(int argc, char** argv, bool hasMode) {
             args.topp = atof(argv[i + 1]);
         } else if (strcmp(argv[i], "--seed") == 0) {
             args.seed = atoll(argv[i + 1]);
+        } else if (strcmp(argv[i], "--accelerator") == 0) {
+            parseAcceleratorRatio(argv[i + 1], &args.acceleratorNominator, &args.acceleratorDenominator);
         } else {
             printf("Unknown option %s\n", argv[i]);
             exit(EXIT_FAILURE);
@@ -123,13 +140,14 @@ void App::run(AppArgs* args, void (*program)(Inference* inference, SocketPool* s
     }
 
     Accelerator* accelerator = NULL;
-    unsigned int accNominator = 0;
+    if (args->acceleratorNominator > 0 && args->acceleratorDenominator > 0) {
+        printf("🚀 acceleratorRatio: %d/%d\n", args->acceleratorNominator, args->acceleratorDenominator);
 #ifdef DLLAMA_VULKAN
-    VulkanContext vulkanContext = VulkanContext();
-    accelerator = new AcceleratorVulkan(&vulkanContext);
-    accNominator = 32;
+        accelerator = new AcceleratorVulkan();
 #endif
-    AcceleratorContext acc(accNominator, 32, accelerator);
+    }
+
+    AcceleratorContext acc(args->acceleratorNominator, args->acceleratorDenominator, accelerator);
     Transformer transformer = Transformer::loadRootFromFile(args->modelPath, &spec, socketPool, &acc);
     socketPool->setTurbo(true);
 
@@ -140,7 +158,6 @@ void App::run(AppArgs* args, void (*program)(Inference* inference, SocketPool* s
     program(&inference, socketPool, &tokenizer, &sampler, args, &spec, &acc);
 
     delete socketPool;
-#ifdef DLLAMA_VULKAN
-    delete accelerator;
-#endif
+    if (accelerator != NULL)
+        delete accelerator;
 }

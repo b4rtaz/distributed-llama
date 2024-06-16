@@ -15,8 +15,7 @@ bool compareOutputs(unsigned int d, float* cpu, float* gpu) {
 
 int main() {
     initQuants();
-    VulkanContext context = VulkanContext();
-    AcceleratorVulkan accelerator = AcceleratorVulkan(&context);
+    AcceleratorVulkan accelerator = AcceleratorVulkan();
 
     bool success = true;
     unsigned long long state = 1000000L;

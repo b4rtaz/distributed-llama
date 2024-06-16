@@ -211,7 +211,7 @@ void matmulF16(const MatmulThreadInfo* a) {
 }
 
 void matmulQ40(const MatmulThreadInfo* a) {
-    const int blocksPerRow = 8;
+    const int blocksPerRow = 1; // TODO: remove this variable
     const int k = QK40 * blocksPerRow;
     BlockQ40* w = (BlockQ40*)a->weights;
     assert(a->n % k == 0);
