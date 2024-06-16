@@ -82,7 +82,7 @@ VulkanContext::VulkanContext() {
     vk::PhysicalDeviceMemoryProperties memoryProperties = physicalDevice.getMemoryProperties();
     for (unsigned int h = 0; h < memoryProperties.memoryHeapCount; h++) {
         if (memoryProperties.memoryHeaps[h].flags & vk::MemoryHeapFlagBits::eDeviceLocal)
-            printf("🌋 heap[%u]: %llu MB\n", h, memoryProperties.memoryHeaps[h].size / (1024 * 1024));
+            printf("🌋 heap[%u]: %lu MB\n", h, ((unsigned long)memoryProperties.memoryHeaps[h].size) / (1024 * 1024));
     }
 
     vk::PhysicalDeviceFeatures deviceFeatures = physicalDevice.getFeatures();
