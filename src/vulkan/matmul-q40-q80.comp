@@ -6,7 +6,7 @@
 #define FLOAT_TYPE float
 
 #define QK_40_80 32
-#define N_THREADS 16
+#define N_THREADS 32
 
 layout(local_size_x = N_THREADS, local_size_y = 1, local_size_z = 1) in;
 
@@ -39,23 +39,22 @@ void main() {
 
     const uint wOffset = d * nb;
 
-    float s = 0.0;
+    float16_t s = float16_t(0.0);
     for (uint i = start; i < end; i++) {
-        float is = float(inpt[i].d);
-        float ws = float(weights[wOffset + i].d);
-
+        float16_t s0 = float16_t(0.0);
         for (uint j = 0; j < QK_40_80 / 2; j++) {
-            float i0 = int(inpt[i].qs[j]) * is;
-            float i1 = int(inpt[i].qs[j + QK_40_80 / 2]) * is;
+            float16_t i0 = float16_t(inpt[i].qs[j]);
+            float16_t i1 = float16_t(inpt[i].qs[j + QK_40_80 / 2]);
 
-            uint wq = uint(weights[wOffset + i].qs[j]);
-            float w0 = ((wq & 0xF) - 8.0f);
-            float w1 = ((wq >>  4) - 8.0f);
+            uint8_t wq = weights[wOffset + i].qs[j];
+            float16_t w0 = float16_t(wq & 0xF) - float16_t(8.0f);
+            float16_t w1 = float16_t(wq >>  4) - float16_t(8.0f);
 
-            s += (i0 * w0 + i1 * w1) * ws;
+            s0 += i0 * w0 + i1 * w1;
         }
+        s += s0 * inpt[i].d * weights[wOffset + i].d;
     }
-    temp[threadIndex] = s;
+    temp[threadIndex] = float(s);
 
     barrier();
 

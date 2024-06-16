@@ -36,18 +36,19 @@ void main() {
 
     float s = 0.0;
     for (uint i = start; i < end; i++) {
-        float ws = float(weights[wOffset + i].d);
         uint io = i * QK_40;
+        float s0 = 0.0;
         for (uint j = 0; j < QK_40 / 2; j++) {
             float i0 = inpt[io + j];
             float i1 = inpt[io + j + QK_40 / 2];
 
             uint wq = uint(weights[wOffset + i].qs[j]);
-            float w0 = ((wq & 0xF) - 8.0f);
-            float w1 = ((wq >>  4) - 8.0f);
+            float w0 = (wq & 0xF) - 8.0f;
+            float w1 = (wq >>  4) - 8.0f;
 
-            s += (i0 * w0 + i1 * w1) * ws;
+            s0 += i0 * w0 + i1 * w1;
         }
+        s += s0 * float(weights[wOffset + i].d);
     }
     temp[threadIndex] = s;
 
