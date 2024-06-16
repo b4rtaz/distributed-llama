@@ -42,15 +42,15 @@ int main() {
 
         matmul(F32, F32, outputCpu, input, weights, n, d, 1, 0);
 
-        DEBUG_FLOATS("gpu", outputGpu, 8);
+        DEBUG_FLOATS("matmul f32xf32", outputGpu, 8);
 
         if (compareOutputs(d, outputCpu, outputGpu))
-            printf("✅ gpu matmul f32xf32\n");
+            printf("✅ matmul f32xf32\n");
         else
             success = false;
     }
 
-    for (unsigned n = 512; n <= 4096; n += 512) {
+    for (unsigned n = 512; n <= 704; n += 32) {
         const unsigned d = 128;
         float input[n];
         const unsigned weightsN = (n * d) / QK40;
@@ -74,15 +74,15 @@ int main() {
 
         matmul(Q40, F32, outputCpu, input, weights, n, d, 1, 0);
 
-        DEBUG_FLOATS("gpu", outputGpu, 8);
+        DEBUG_FLOATS("matmul q40xf32", outputGpu, 8);
 
         if (compareOutputs(d, outputCpu, outputGpu))
-            printf("✅ gpu matmul q40xf32 (n=%d)\n", n);
+            printf("✅ matmul q40xf32 (n=%d)\n", n);
         else
             success = false;
     }
 
-    for (unsigned n = 512; n <= 4096; n += 512) {
+    for (unsigned n = 512; n <= 704; n += 32) {
         const unsigned d = 128;
         const unsigned inputN = n / QK80;
         const unsigned weightsN = (n * d) / QK40;
@@ -108,12 +108,12 @@ int main() {
         accelerator.beginForwardMatmul(mmIndex, input);
         accelerator.endForwardMatmul(mmIndex, outputGpu);
 
-        DEBUG_FLOATS("gpu", outputGpu, 8);
+        DEBUG_FLOATS("matmul q40xq80", outputGpu, 8);
 
         matmul(Q40, Q80, outputCpu, input, weights, n, d, 1, 0);
 
         if (compareOutputs(d, outputCpu, outputGpu))
-            printf("✅ gpu matmul q40xq80 (n=%d)\n", n);
+            printf("✅ matmul q40xq80 (n=%d)\n", n);
         else
             success = false;
     }

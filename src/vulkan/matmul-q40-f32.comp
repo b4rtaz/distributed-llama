@@ -6,7 +6,7 @@
 #define FLOAT_TYPE float
 
 #define QK_40 32
-#define N_THREADS 8
+#define N_THREADS 16
 
 layout(local_size_x = N_THREADS, local_size_y = 1, local_size_z = 1) in;
 
@@ -23,19 +23,21 @@ layout(binding = 3) readonly uniform metadataBuffer { uint n; };
 shared float temp[N_THREADS];
 
 void main() {
-    const uint nn = n / N_THREADS;
-    const uint nb = n / QK_40;
-    const uint nbn = nb / N_THREADS;
     const uint threadIndex = uint(gl_LocalInvocationID.x);
     const uint d = uint(gl_GlobalInvocationID.y);
+    const uint nb = n / QK_40;
 
-    const uint iOffset = threadIndex * nn;
-    const uint wOffset = d * nb + threadIndex * nbn;
+    const uint slice = nb / N_THREADS;
+    const uint rest = nb % N_THREADS;
+    const uint start = threadIndex * slice + (threadIndex < rest ? threadIndex : rest);
+    const uint end = start + slice + (threadIndex < rest ? 1 : 0);
+
+    const uint wOffset = d * nb;
 
     float s = 0.0;
-    for (uint i = 0; i < nbn; i++) {
+    for (uint i = start; i < end; i++) {
         float ws = float(weights[wOffset + i].d);
-        uint io = iOffset + i * QK_40;
+        uint io = i * QK_40;
         for (uint j = 0; j < QK_40 / 2; j++) {
             float i0 = inpt[io + j];
             float i1 = inpt[io + j + QK_40 / 2];
