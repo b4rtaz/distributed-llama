@@ -50,7 +50,7 @@ int main() {
             success = false;
     }
 
-    for (unsigned n = 256; n <= 4096; n *= 2) {
+    for (unsigned n = 512; n <= 4096; n += 512) {
         const unsigned d = 128;
         float input[n];
         const unsigned weightsN = (n * d) / QK40;
@@ -82,7 +82,7 @@ int main() {
             success = false;
     }
 
-    for (unsigned n = 256; n <= 4096; n *= 2) {
+    for (unsigned n = 512; n <= 4096; n += 512) {
         const unsigned d = 128;
         const unsigned inputN = n / QK80;
         const unsigned weightsN = (n * d) / QK40;

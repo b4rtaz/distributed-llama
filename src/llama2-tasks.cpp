@@ -163,6 +163,12 @@ void llamaFfn0(TASK_ARGS) {
 
     block->w10mm->forward(xb, hb0, nThreads, threadIndex);
     block->w30mm->forward(xb, block->hb20, nThreads, threadIndex);
+}
+
+void llamaFfn1(TASK_ARGS) {
+    TASK_VARIABLES;
+
+    float* hb0 = (float*)transformer->buffer->getSliced(TB_SLICED_HB, transformer->sliceIndex);
 
     if (spec->hiddenAct == SILU) {
         silu(hb0, block->w10Slice->d0, nThreads, threadIndex);
@@ -174,12 +180,12 @@ void llamaFfn0(TASK_ARGS) {
     mul(hb0, block->hb20, block->w10Slice->d0, nThreads, threadIndex);
 }
 
-void llamaFfn1(TASK_ARGS) {
+void llamaFfn2(TASK_ARGS) {
     TASK_VARIABLES;
     quantizeSlicedBuffer(nThreads, threadIndex, ctx, true, TB_SLICED_HB, TB_SLICED_HB_QUANTIZED);
 }
 
-void llamaFfn2(TASK_ARGS) {
+void llamaFfn3(TASK_ARGS) {
     TASK_VARIABLES;
 
     float *hb = (float*)transformer->buffer->getSliced(TB_SLICED_HB_QUANTIZED, transformer->sliceIndex);
@@ -188,22 +194,22 @@ void llamaFfn2(TASK_ARGS) {
     block->w20mm->forward(hb, xbv, nThreads, threadIndex);
 }
 
-void llamaQuantizeFfn2(TASK_ARGS) {
+void llamaQuantizeFfn3(TASK_ARGS) {
     TASK_VARIABLES;
     quantizeSlicedBuffer(nThreads, threadIndex, ctx, false, TB_SLICED_XBV, TB_SLICED_XBV_QUANTIZED);
 }
 
-void llamaSyncFfn2(TASK_ARGS) {
+void llamaSyncFfn3(TASK_ARGS) {
     TASK_VARIABLES;
     syncSliceOfSlicedBuffer(nThreads, threadIndex, ctx, TB_SLICED_XBV_QUANTIZED);
 }
 
-void llamaDequantizeFfn2(TASK_ARGS) {
+void llamaDequantizeFfn3(TASK_ARGS) {
     TASK_VARIABLES;
     dequantizeSlicedBuffer(nThreads, threadIndex, ctx, false, TB_SLICED_XBV_QUANTIZED, TB_SLICED_XBV);
 }
 
-void llamaMergeFfn2(TASK_ARGS) {
+void llamaMergeFfn3(TASK_ARGS) {
     TASK_VARIABLES;
     for (slice_index_t sliceIndex = 0; sliceIndex < spec->nSlices; sliceIndex++) {
         float* xbv = (float*)transformer->buffer->getSliced(TB_SLICED_XBV, sliceIndex);
@@ -265,10 +271,11 @@ TransformerArch buildLlamaArch(TransformerSpec* spec) {
         a.I(llamaFfn0, TASK_TYPE_INFERENCE);
         a.I(llamaFfn1, TASK_TYPE_INFERENCE);
         a.I(llamaFfn2, TASK_TYPE_INFERENCE);
-        a.I(llamaQuantizeFfn2, TASK_TYPE_INFERENCE);
-        a.I(llamaSyncFfn2, TASK_TYPE_TRANSFER);
-        a.I(llamaDequantizeFfn2, TASK_TYPE_INFERENCE);
-        a.I(llamaMergeFfn2, TASK_TYPE_INFERENCE);
+        a.I(llamaFfn3, TASK_TYPE_INFERENCE);
+        a.I(llamaQuantizeFfn3, TASK_TYPE_INFERENCE);
+        a.I(llamaSyncFfn3, TASK_TYPE_TRANSFER);
+        a.I(llamaDequantizeFfn3, TASK_TYPE_INFERENCE);
+        a.I(llamaMergeFfn3, TASK_TYPE_INFERENCE);
         a.I(llamaNextBlock, TASK_TYPE_INFERENCE);
     }
     a.I(llamaRmsFinal, TASK_TYPE_INFERENCE);
@@ -290,8 +297,9 @@ TransformerArch buildLlamaArch(TransformerSpec* spec) {
         a.W(llamaFfn0, TASK_TYPE_INFERENCE);
         a.W(llamaFfn1, TASK_TYPE_INFERENCE);
         a.W(llamaFfn2, TASK_TYPE_INFERENCE);
-        a.W(llamaQuantizeFfn2, TASK_TYPE_INFERENCE);
-        a.W(llamaSyncFfn2, TASK_TYPE_TRANSFER);
+        a.W(llamaFfn3, TASK_TYPE_INFERENCE);
+        a.W(llamaQuantizeFfn3, TASK_TYPE_INFERENCE);
+        a.W(llamaSyncFfn3, TASK_TYPE_TRANSFER);
         a.W(llamaNextBlock, TASK_TYPE_INFERENCE);
     }
     return a;
