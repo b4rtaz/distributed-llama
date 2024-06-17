@@ -9,9 +9,15 @@ else
 endif
 
 ifdef DLLAMA_VULKAN
+ifeq ($(OS),Windows_NT)
+LIBS += -L$(VK_SDK_PATH)\lib -lvulkan-1
+OBJS += accelerator-vulkan.o
+CXXFLAGS += -DDLLAMA_VULKAN -I$(VK_SDK_PATH)\include
+else
 LIBS += -lvulkan
 OBJS += accelerator-vulkan.o
 CXXFLAGS += -DDLLAMA_VULKAN
+endif
 
 accelerator-vulkan.o: src/accelerator-vulkan.cpp
 	$(CXX) $(CXXFLAGS) -c src/accelerator-vulkan.cpp -o accelerator-vulkan.o
