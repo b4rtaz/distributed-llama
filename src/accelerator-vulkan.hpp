@@ -32,6 +32,7 @@ public:
     vk::Fence fence;
     vk::CommandBuffer commandBuffer;
     bool direction;
+    void *hostPointer;
     CopyBufferVulkan(VulkanContext* context, const uint32_t bufferSize, vk::Buffer& deviceBuffer, CopyBufferVulkanDirection direction);
     ~CopyBufferVulkan();
     void copy(void* data);
@@ -45,6 +46,7 @@ public:
     vk::DeviceMemory deviceMemory;
     bool isHostVisible;
     CopyBufferVulkan* copy;
+    void *hostPointer;
 
     BufferVulkan(VulkanContext* context, const uint32_t bufferSize, vk::BufferUsageFlags usageFlags, bool fastCopy, CopyBufferVulkanDirection direction);
     void write(const void* data);

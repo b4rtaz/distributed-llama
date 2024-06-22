@@ -20,7 +20,7 @@ FloatType parseFloatType(char* val) {
 }
 
 void parseAcceleratorRatio(const char* val, unsigned int* nominator, unsigned* denominator) {
-    const char* sep = strchr(val, '/');
+    const char* sep = strstr(val, "/");
     if (sep == NULL)
         throw std::runtime_error("Cannot parse accelerator ratio");
     size_t pos = sep - val;

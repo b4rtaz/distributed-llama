@@ -177,9 +177,13 @@ CopyBufferVulkan::CopyBufferVulkan(VulkanContext* context, const uint32_t buffer
 	commandBuffer.end();
 
     fence = context->device.createFence(vk::FenceCreateInfo());
+
+    hostPointer = context->device.mapMemory(hostMemory, 0, bufferSize);
 }
 
 CopyBufferVulkan::~CopyBufferVulkan() {
+    context->device.unmapMemory(hostMemory);
+
 	context->device.destroyFence(fence);
 	context->device.freeCommandBuffers(context->commandPool, 1, &commandBuffer);
 
@@ -189,9 +193,7 @@ CopyBufferVulkan::~CopyBufferVulkan() {
 
 void CopyBufferVulkan::copy(void* data) {
     if (direction == FROM_HOST_TO_DEVICE) {
-        void* local = context->device.mapMemory(hostMemory, 0, bufferSize);
-        memcpy(local, data, bufferSize);
-        context->device.unmapMemory(hostMemory);
+        memcpy(hostPointer, data, bufferSize);
     }
 
     context->device.resetFences({ fence });
@@ -201,9 +203,7 @@ void CopyBufferVulkan::copy(void* data) {
 	auto result = context->device.waitForFences({ fence }, true, uint64_t(-1));
 
     if (direction == FROM_DEVICE_TO_HOST) {
-        void* local = context->device.mapMemory(hostMemory, 0, bufferSize);
-        memcpy(data, local, bufferSize);
-        context->device.unmapMemory(hostMemory);
+        memcpy(data, hostPointer, bufferSize);
     }
 }
 
@@ -211,7 +211,9 @@ BufferVulkan::BufferVulkan(VulkanContext* context, const uint32_t bufferSize, vk
     this->context = context;
     this->bufferSize = bufferSize;
 
-    uint32_t memoryTypeIndex = findMemoryTypeIndex(context, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eDeviceLocal);
+    uint32_t memoryTypeIndex = MEMORY_TYPE_INDEX_NOT_FOUND;
+
+    memoryTypeIndex = findMemoryTypeIndex(context, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eDeviceLocal);
     if (memoryTypeIndex != MEMORY_TYPE_INDEX_NOT_FOUND) {
         isHostVisible = true;
     } else {
@@ -225,17 +227,29 @@ BufferVulkan::BufferVulkan(VulkanContext* context, const uint32_t bufferSize, vk
     deviceBuffer = b.first;
     deviceMemory = b.second;
 
-    if (!isHostVisible && fastCopy)
-        copy = new CopyBufferVulkan(context, bufferSize, deviceBuffer, direction);
-    else
+    if (fastCopy) {
+        if (isHostVisible) {
+            hostPointer = context->device.mapMemory(deviceMemory, 0, bufferSize);
+            copy = NULL;
+        } else {
+            hostPointer = NULL;
+            copy = new CopyBufferVulkan(context, bufferSize, deviceBuffer, direction);
+        }
+    } else {
+        hostPointer = NULL;
         copy = NULL;
+    }
 }
 
 void BufferVulkan::write(const void* data) {
     if (isHostVisible) {
-        void* local = context->device.mapMemory(deviceMemory, 0, bufferSize);
-        memcpy(local, data, bufferSize);
-        context->device.unmapMemory(deviceMemory);
+        if (hostPointer != NULL) {
+            memcpy(hostPointer, data, bufferSize);
+        } else {
+            void* local = context->device.mapMemory(deviceMemory, 0, bufferSize);
+            memcpy(local, data, bufferSize);
+            context->device.unmapMemory(deviceMemory);
+        }
     } else if (copy != NULL) {
         assert(copy->direction == FROM_HOST_TO_DEVICE);
         copy->copy((void*)data);
@@ -247,9 +261,13 @@ void BufferVulkan::write(const void* data) {
 
 void BufferVulkan::read(void* data) {
     if (isHostVisible) {
-        void* local = context->device.mapMemory(deviceMemory, 0, bufferSize);
-        memcpy(data, local, bufferSize);
-        context->device.unmapMemory(deviceMemory);
+        if (hostPointer != NULL) {
+            memcpy(data, hostPointer, bufferSize);
+        } else {
+            void* local = context->device.mapMemory(deviceMemory, 0, bufferSize);
+            memcpy(data, local, bufferSize);
+            context->device.unmapMemory(deviceMemory);
+        }
     } else if (copy != NULL) {
         assert(copy->direction == FROM_DEVICE_TO_HOST);
         copy->copy(data);
@@ -259,6 +277,9 @@ void BufferVulkan::read(void* data) {
 }
 
 void BufferVulkan::destroy() {
+    if (isHostVisible && hostPointer != NULL)
+        context->device.unmapMemory(deviceMemory);
+
     this->context->device.freeMemory(deviceMemory);
     this->context->device.destroyBuffer(deviceBuffer);
     if (copy != NULL)
