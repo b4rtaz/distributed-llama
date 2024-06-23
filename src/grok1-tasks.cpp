@@ -138,8 +138,15 @@ void grokMoeBlock0(TASK_ARGS) {
         float* expertUp = &hb[block->moeUpAndGate0Slice->d0 * ae];
         float* expertGate = &block->expertGate[block->moeUpAndGate0Slice->d0 * ae];
 
+
+        block->moeUpMm[e]->begin(xb, threadIndex);
+        block->moeGateMm[e]->begin(xb, threadIndex);
+
         block->moeUpMm[e]->forward(xb, expertUp, nThreads, threadIndex);
         block->moeGateMm[e]->forward(xb, expertGate, nThreads, threadIndex);
+
+        block->moeUpMm[e]->end(expertUp, threadIndex);
+        block->moeGateMm[e]->end(expertGate, threadIndex);
     }
 }
 
@@ -218,7 +225,9 @@ void grokMoeBlock2(TASK_ARGS) {
         char* expertUp = &hbq[rowBytes * ae];
         float* expertDown = ae == 0 ? xb2 : &block->expertDown[block->moeDown0Slice->d0 * (ae - 1)];
 
+        block->moeDownMm[e]->begin(expertUp, threadIndex);
         block->moeDownMm[e]->forward(expertUp, expertDown, nThreads, threadIndex);
+        block->moeDownMm[e]->end(expertDown, threadIndex);
 
         mulScalar(expertDown, weight, block->moeDown0Slice->d0, nThreads, threadIndex);
         if (ae > 0) {

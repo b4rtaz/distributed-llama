@@ -105,6 +105,8 @@ public:
     MatmulCommand(const unsigned int n, const unsigned int d, const FloatType weightsFloatType, const FloatType inputFloatType, AcceleratorContext* acc);
     ~MatmulCommand();
     size_t loadWeights(const void* source);
+    void begin(const void* input, const unsigned int threadIndex);
+    void end(float* output, const unsigned int threadIndex);
     void forward(const void* input, float* output, const unsigned int nThreads, const unsigned int threadIndex);
 };
 

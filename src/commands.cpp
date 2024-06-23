@@ -152,17 +152,23 @@ size_t MatmulCommand::loadWeights(const void* source) {
     return cpuSize + accSize;
 }
 
-void MatmulCommand::forward(const void* input, float* output, const unsigned int nThreads, const unsigned int threadIndex) {
+void MatmulCommand::begin(const void* input, const unsigned int threadIndex) {
     if (accD != 0 && threadIndex == 0) {
         acc->accelerator->beginForwardMatmul(accMatmulIndex, input);
     }
-    if (cpuD != 0) {
-        matmul(weightsFloatType, inputFloatType, output, input, cpuWeights, n, cpuD, nThreads, threadIndex);
-    }
+}
+
+void MatmulCommand::end(float* output, const unsigned int threadIndex) {
     if (accD != 0 && threadIndex == 0) {
         float* gpuOutput = &output[cpuD];
         acc->accelerator->endForwardMatmul(accMatmulIndex, gpuOutput);
         // DEBUG_FLOATS("gpu", gpuOutput, 8);
+    }
+}
+
+void MatmulCommand::forward(const void* input, float* output, const unsigned int nThreads, const unsigned int threadIndex) {
+    if (cpuD != 0) {
+        matmul(weightsFloatType, inputFloatType, output, input, cpuWeights, n, cpuD, nThreads, threadIndex);
     }
 }
 

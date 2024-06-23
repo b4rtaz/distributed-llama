@@ -39,9 +39,17 @@ void llamaQkv(TASK_ARGS) {
     float *k0 = &block->keyCache[transformer->pos * block->kvCacheSlice->kvDim0];
     float* v0 = &block->valueCache[transformer->pos * block->kvCacheSlice->kvDim0];
 
+    block->q0mm->begin(xbq, threadIndex);
+    block->k0mm->begin(xbq, threadIndex);
+    block->v0mm->begin(xbq, threadIndex);
+
     block->q0mm->forward(xbq, block->qo0, nThreads, threadIndex);
     block->k0mm->forward(xbq, k0, nThreads, threadIndex);
     block->v0mm->forward(xbq, v0, nThreads, threadIndex);
+
+    block->q0mm->end(block->qo0, threadIndex);
+    block->k0mm->end(k0, threadIndex);
+    block->v0mm->end(v0, threadIndex);
 }
 
 void llamaRope(TASK_ARGS) {
@@ -104,7 +112,9 @@ void llamaAtt(TASK_ARGS) {
     void* xbq0 = transformer->buffer->getSliced(TB_UNIT_XB_QUANTIZED, transformer->sliceIndex);
     float* xbv0 = (float*)transformer->buffer->getSliced(TB_SLICED_XBV, transformer->sliceIndex);
 
+    block->wo0mm->begin(xbq0, threadIndex);
     block->wo0mm->forward(xbq0, xbv0, nThreads, threadIndex);
+    block->wo0mm->end(xbv0, threadIndex);
 }
 
 void llamaQuantizeAtt(TASK_ARGS) {
@@ -161,8 +171,15 @@ void llamaFfn0(TASK_ARGS) {
     float* xb = (float*)transformer->buffer->getUnit(TB_UNIT_XB_QUANTIZED);
     float* hb0 = (float*)transformer->buffer->getSliced(TB_SLICED_HB, transformer->sliceIndex);
 
+
+    block->w10mm->begin(xb, threadIndex);
+    block->w30mm->begin(xb, threadIndex);
+
     block->w10mm->forward(xb, hb0, nThreads, threadIndex);
     block->w30mm->forward(xb, block->hb20, nThreads, threadIndex);
+
+    block->w10mm->end(hb0, threadIndex);
+    block->w30mm->end(block->hb20, threadIndex);
 }
 
 void llamaFfn1(TASK_ARGS) {
@@ -191,7 +208,9 @@ void llamaFfn3(TASK_ARGS) {
     float *hb = (float*)transformer->buffer->getSliced(TB_SLICED_HB_QUANTIZED, transformer->sliceIndex);
     float *xbv = (float*)transformer->buffer->getSliced(TB_SLICED_XBV, transformer->sliceIndex);
 
+    block->w20mm->begin(hb, threadIndex);
     block->w20mm->forward(hb, xbv, nThreads, threadIndex);
+    block->w20mm->end(xbv, threadIndex);
 }
 
 void llamaQuantizeFfn3(TASK_ARGS) {
@@ -241,7 +260,9 @@ void llamaRmsFinalNorm(TASK_ARGS) {
 
 void llamaFinalize(TASK_ARGS) {
     TASK_VARIABLES;
+    transformer->wclsMm->begin(transformer->x, threadIndex);
     transformer->wclsMm->forward(transformer->x, transformer->logits, nThreads, threadIndex);
+    transformer->wclsMm->end(transformer->logits, threadIndex);
 }
 
 TransformerArch buildLlamaArch(TransformerSpec* spec) {
