@@ -9,17 +9,24 @@ else
 endif
 
 ifdef DLLAMA_VULKAN
+CGLSLC = glslc
+
 ifeq ($(OS),Windows_NT)
 LIBS += -L$(VK_SDK_PATH)\lib -lvulkan-1
-OBJS += accelerator-vulkan.o
 CXXFLAGS += -DDLLAMA_VULKAN -I$(VK_SDK_PATH)\include
 else
 LIBS += -lvulkan
-OBJS += accelerator-vulkan.o
 CXXFLAGS += -DDLLAMA_VULKAN
 endif
 
-accelerator-vulkan.o: src/accelerator-vulkan.cpp
+OBJS += accelerator-vulkan.o
+DEPS += accelerator-vulkan accelerator-vulkan-shaders
+
+accelerator-vulkan-shaders:
+	$(CGLSLC) -c src/vulkan/matmul-f32-f32.comp -o src/vulkan/matmul-f32-f32.spv
+	$(CGLSLC) -c src/vulkan/matmul-q40-f32.comp -o src/vulkan/matmul-q40-f32.spv
+	$(CGLSLC) -c src/vulkan/matmul-q40-q80.comp -o src/vulkan/matmul-q40-q80.spv
+accelerator-vulkan: src/accelerator-vulkan.cpp
 	$(CXX) $(CXXFLAGS) -c src/accelerator-vulkan.cpp -o accelerator-vulkan.o
 accelerator-vulkan-test: src/accelerator-vulkan-test.cpp funcs utils quants accelerator-vulkan.o
 	$(CXX) $(CXXFLAGS) src/accelerator-vulkan-test.cpp -o accelerator-vulkan-test funcs.o utils.o quants.o accelerator-vulkan.o $(LIBS)
@@ -52,9 +59,9 @@ tokenizer: src/tokenizer.cpp
 app: src/app.cpp
 	$(CXX) $(CXXFLAGS) -c src/app.cpp -o app.o
 
-dllama: src/apps/dllama/dllama.cpp utils quants funcs commands socket transformer tasks llama2-tasks grok1-tasks mixtral-tasks tokenizer app ${OBJS}
+dllama: src/apps/dllama/dllama.cpp utils quants funcs commands socket transformer tasks llama2-tasks grok1-tasks mixtral-tasks tokenizer app ${DEPS}
 	$(CXX) $(CXXFLAGS) src/apps/dllama/dllama.cpp -o dllama utils.o quants.o funcs.o commands.o socket.o transformer.o tasks.o llama2-tasks.o grok1-tasks.o mixtral-tasks.o tokenizer.o app.o ${OBJS} $(LIBS)
-dllama-api: src/apps/dllama-api/dllama-api.cpp utils quants funcs commands socket transformer tasks llama2-tasks grok1-tasks mixtral-tasks tokenizer app ${OBJS}
+dllama-api: src/apps/dllama-api/dllama-api.cpp utils quants funcs commands socket transformer tasks llama2-tasks grok1-tasks mixtral-tasks tokenizer app ${DEPS}
 	$(CXX) $(CXXFLAGS) src/apps/dllama-api/dllama-api.cpp -o dllama-api utils.o quants.o funcs.o commands.o socket.o transformer.o tasks.o llama2-tasks.o grok1-tasks.o mixtral-tasks.o tokenizer.o app.o ${OBJS} $(LIBS)
 
 funcs-test: src/funcs-test.cpp funcs utils quants
