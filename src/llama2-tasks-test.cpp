@@ -562,8 +562,7 @@ int main() {
     for (int i = 0; i < mm; i++) mmData[i] = randomF32(&state) / 120.0;
 
     SocketPool socketPool(0, NULL);
-    AcceleratorContext acc(0, 1, NULL);
-    Transformer transformer = Transformer::loadRoot((char*)data, &spec, &socketPool, &acc);
+    Transformer transformer = Transformer::loadRoot((char*)data, &spec, &socketPool);
     transformer.pos = 0;
 
     float* x = transformer.x;

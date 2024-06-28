@@ -392,7 +392,7 @@ void handleModelsRequest(HttpRequest& request) {
         "] }");
 }
 
-void server(Inference* inference, SocketPool* socketPool, Tokenizer *tokenizer, Sampler *sampler, AppArgs* args, TransformerSpec* spec, AcceleratorContext* acc) {
+void server(Inference* inference, SocketPool* socketPool, Tokenizer *tokenizer, Sampler *sampler, AppArgs* args, TransformerSpec* spec) {
     SocketServer* server = new SocketServer(args->port);
 
     TokenizerChatStops stops(tokenizer);
