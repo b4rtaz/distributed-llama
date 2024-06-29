@@ -31,17 +31,17 @@ Supported architectures: Llama, Mixtral, Grok
 ### 🚧 Known Limitations
 
 * You can run Distributed Llama only on 1, 2, 4... 2^n nodes.
-* The maximum number of nodes is equal to the number of KV heads in the model [#70](https://github.com/b4rtaz/distributed-llama/issues/70). 
-* Optimized for (weights format × buffer format):
+* The maximum number of nodes is equal to the number of KV heads in the model [#70](https://github.com/b4rtaz/distributed-llama/issues/70).
+* CPU support only, GPU support is planned, optimized for (weights format × buffer format):
   * ARM CPUs
     * ✅ F32 × F32
     * ❌ F16 × F32
-    * ❌ Q40 × F32
+    * ✅ Q40 × F32
     * ✅ Q40 × Q80
   * x86_64 AVX2 CPUs
-    * ❌ F32 × F32
+    * ✅ F32 × F32
     * ❌ F16 × F32
-    * ❌ Q40 × F32
+    * ✅ Q40 × F32
     * ✅ Q40 × Q80
 
 ### 👷 Architecture
