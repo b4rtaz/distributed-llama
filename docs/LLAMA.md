@@ -21,6 +21,7 @@ wget https://huggingface.co/b4rtaz/llama-2-distributed-llama/resolve/main/dllama
 6. Build the project:
 ```bash
 make dllama
+make dllama-api
 ```
 7. Run:
 ```bash
@@ -61,6 +62,7 @@ python converter/convert-tokenizer-llama3.py path/to/tokenizer.model
 10. Build the project:
 ```bash
 make dllama
+make dllama-api
 ```
 11. Run the Distributed Llama:
 ```bash

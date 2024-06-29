@@ -66,7 +66,7 @@ Inference, Chat, API
 | `--model <path>`             | Path to model.                                                   | `dllama_model_meta-llama-3-8b_q40.m`   |
 | `--tokenizer <path>`         | Tokenizer to model.                                              | `dllama_tokenizer_llama3.t`            |
 | `--buffer-float-type <type>` | Float precision of synchronization.                              | `q80`                                  |
-| `--workers <workers>`        | Addresses of workers (ip:port), separated by space.              | `0.0.0.1:9991 10.0.0.2:9991`           |
+| `--workers <workers>`        | Addresses of workers (ip:port), separated by space.              | `10.0.0.1:9991 10.0.0.2:9991`          |
 
 Inference, Chat, Worker, API
 
@@ -158,6 +158,7 @@ sudo apt install git
 ```sh
 git clone https://github.com/b4rtaz/distributed-llama.git
 make dllama
+make dllama-api
 ```
 6. Transfer weights and the tokenizer file to the root device.
 7. Optional: assign static IP addresses.
@@ -196,6 +197,7 @@ sudo apt install git build-essential
 ```sh
 git clone https://github.com/b4rtaz/distributed-llama.git
 make dllama
+make dllama-api
 ```
 
 Continue to point 3.
@@ -210,6 +212,7 @@ choco install mingw
 ```sh
 git clone https://github.com/b4rtaz/distributed-llama.git
 make dllama
+make dllama-api
 ```
 
 Continue to point 3.
