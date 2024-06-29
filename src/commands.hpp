@@ -75,42 +75,16 @@ public:
     MultiHeadAttSlice(unsigned int nHeads, unsigned int seqLen, unsigned int nSlices, slice_index_t sliceIndex);
 };
 
-class Accelerator {
-public:
-    virtual const unsigned int allocateMatmul(const FloatType floatType, const unsigned int n, const unsigned int d) = 0;
-    virtual void loadMatmulWeights(const unsigned int matmulIndex, const void* weights) = 0;
-    virtual void beginForwardMatmul(const unsigned int matmulIndex, const void* input) = 0;
-    virtual void endForwardMatmul(const unsigned int matmulIndex, float* output) = 0;
-    virtual void closeMatmul(const unsigned int matmulIndex) = 0;
-};
-
-class AcceleratorContext {
-public:
-    // ratio
-    unsigned int nominator;
-    unsigned int denominator;
-    Accelerator* accelerator;
-
-    AcceleratorContext(unsigned int nominator, unsigned int denominator, Accelerator* accelerator);
-    unsigned int divCpu(unsigned int value);
-    unsigned int divAcc(unsigned int value);
-};
-
 class MatmulCommand {
 private:
     FloatType inputFloatType;
     FloatType weightsFloatType;
     unsigned int n;
     unsigned int d;
-    unsigned int cpuD;
-    unsigned int accD;
     size_t cpuSize;
-    size_t accSize;
     void* cpuWeights;
-    unsigned int accMatmulIndex;
-    AcceleratorContext* acc;
 public:
-    MatmulCommand(const unsigned int n, const unsigned int d, const FloatType inputFloatType, const FloatType weightsFloatType, AcceleratorContext* acc);
+    MatmulCommand(const unsigned int n, const unsigned int d, const FloatType inputFloatType, const FloatType weightsFloatType);
     ~MatmulCommand();
     size_t loadWeights(const void* source);
     void forward(const void* input, float* output, const unsigned int nThreads, const unsigned int threadIndex);

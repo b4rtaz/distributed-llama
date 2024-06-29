@@ -14,7 +14,7 @@
 #include "../../tokenizer.hpp"
 #include "../../app.hpp"
 
-void generate(Inference* inference, SocketPool* socketPool, Tokenizer *tokenizer, Sampler *sampler, AppArgs* args, TransformerSpec* spec, AcceleratorContext* acc) {
+void generate(Inference* inference, SocketPool* socketPool, Tokenizer *tokenizer, Sampler *sampler, AppArgs* args, TransformerSpec* spec) {
     if (args->prompt == NULL)
         throw std::runtime_error("Prompt is required");
 
@@ -193,7 +193,7 @@ public:
     }
 };
 
-void chat(Inference* inference, SocketPool* socketPool, Tokenizer* tokenizer, Sampler* sampler, AppArgs* args, TransformerSpec* spec, AcceleratorContext* acc) {
+void chat(Inference* inference, SocketPool* socketPool, Tokenizer* tokenizer, Sampler* sampler, AppArgs* args, TransformerSpec* spec) {
     TokenizerChatStops stops(tokenizer);
     ChatTemplate chatTemplate(tokenizer->chatTemplate, stops.stops[0]);
     EosDetector eosDetector(tokenizer->chatEosId, stops.nStops, stops.stops, stops.maxStopLength, stops.maxStopLength);
@@ -210,8 +210,7 @@ void worker(AppArgs* args) {
     SocketServer server(args->port);
     Socket socket = server.accept();
     TransformerSpec spec;
-    AcceleratorContext acc(0, 1, NULL);
-    Transformer transformer = Transformer::loadSlice(&spec, &socket, &acc);
+    Transformer transformer = Transformer::loadSlice(&spec, &socket);
     TransformerArch arch = TransformerArchFactory::create(&spec);
 
     Worker worker = Worker(&arch, args->nThreads, &transformer, &socket);

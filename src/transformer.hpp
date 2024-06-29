@@ -75,7 +75,6 @@ class TransformerBlock {
 public:
     slice_index_t sliceIndex;
     TransformerSpec *spec;
-    AcceleratorContext* acc;
 
     size_t rmsAttBytes;
     float* rmsAtt;
@@ -121,7 +120,7 @@ public:
     float* att;
     float* qo0;
 
-    TransformerBlock(TransformerSpec* spec, slice_index_t sliceIndex, AcceleratorContext* acc);
+    TransformerBlock(TransformerSpec* spec, slice_index_t sliceIndex);
     ~TransformerBlock();
 };
 
@@ -156,7 +155,6 @@ public:
 class Transformer {
 public:
     TransformerSpec* spec;
-    AcceleratorContext* acc;
     TransformerBlock** blocks;
     TransformerBuffer* buffer;
     slice_index_t sliceIndex;
@@ -177,12 +175,12 @@ public:
     ~Transformer();
 
     static TransformerSpec loadSpecFromFile(const char* path, const unsigned int nSlices, FloatType weightsFloatType, FloatType bufferFloatType);
-    static Transformer loadRootFromFile(const char* path, TransformerSpec* spec, SocketPool* socketPool, AcceleratorContext* acc);
-    static Transformer loadRoot(char* data, TransformerSpec* spec, SocketPool* socketPool, AcceleratorContext* acc);
-    static Transformer loadSlice(TransformerSpec* spec, Socket* socket, AcceleratorContext* acc);
+    static Transformer loadRootFromFile(const char* path, TransformerSpec* spec, SocketPool* socketPool);
+    static Transformer loadRoot(char* data, TransformerSpec* spec, SocketPool* socketPool);
+    static Transformer loadSlice(TransformerSpec* spec, Socket* socket);
 
 private:
-    Transformer(TransformerSpec* spec, slice_index_t sliceIndex, AcceleratorContext* acc);
+    Transformer(TransformerSpec* spec, slice_index_t sliceIndex);
 };
 
 #endif

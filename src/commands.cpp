@@ -104,35 +104,13 @@ MultiHeadAttSlice::MultiHeadAttSlice(unsigned int nHeads, unsigned int seqLen, u
     attSize = seqLen * nHeads0 * sizeof(float);
 }
 
-AcceleratorContext::AcceleratorContext(unsigned int nominator, unsigned int denominator, Accelerator* accelerator) {
-    this->nominator = nominator;
-    this->denominator = denominator;
-    this->accelerator = accelerator;
-}
-
-unsigned int AcceleratorContext::divCpu(unsigned int value) {
-    return value - divAcc(value);
-}
-
-unsigned int AcceleratorContext::divAcc(unsigned int value) {
-    return (nominator * value) / denominator;
-}
-
-MatmulCommand::MatmulCommand(const unsigned int n, const unsigned int d, const FloatType inputFloatType, const FloatType weightsFloatType, AcceleratorContext* acc) {
+MatmulCommand::MatmulCommand(const unsigned int n, const unsigned int d, const FloatType inputFloatType, const FloatType weightsFloatType) {
     this->n = n;
     this->d = d;
     this->inputFloatType = inputFloatType;
     this->weightsFloatType = weightsFloatType;
-    this->acc = acc;
-    this->accD = acc->divAcc(d);
-    this->accSize = getBatchBytes(weightsFloatType, n, this->accD);
-    this->cpuD = acc->divCpu(d);
-    this->cpuSize = getBatchBytes(weightsFloatType, n, this->cpuD);
+    this->cpuSize = getBatchBytes(weightsFloatType, n, d);
     this->cpuWeights = newBuffer(this->cpuSize);
-
-    if (this->accD != 0) {
-        this->accMatmulIndex = acc->accelerator->allocateMatmul(weightsFloatType, n, this->accD);
-    }
 };
 
 MatmulCommand::~MatmulCommand() {
@@ -141,20 +119,11 @@ MatmulCommand::~MatmulCommand() {
 
 size_t MatmulCommand::loadWeights(const void* source) {
     memcpy(cpuWeights, source, cpuSize);
-    if (this->accD != 0) {
-        acc->accelerator->loadMatmulWeights(this->accMatmulIndex, &((char*)source)[cpuSize]);
-    }
-    return cpuSize + accSize;
+    return cpuSize;
 }
 
 void MatmulCommand::forward(const void* input, float* output, const unsigned int nThreads, const unsigned int threadIndex) {
-    if (this->accD != 0 && threadIndex == 0) {
-        acc->accelerator->beginForwardMatmul(this->accMatmulIndex, input);
-    }
-    matmul(weightsFloatType, inputFloatType, output, input, cpuWeights, n, cpuD, nThreads, threadIndex);
-    if (this->accD != 0 && threadIndex == nThreads - 1) {
-        acc->accelerator->endForwardMatmul(this->accMatmulIndex, &output[cpuD]);
-    }
+    matmul(weightsFloatType, inputFloatType, output, input, cpuWeights, n, d, nThreads, threadIndex);
 }
 
 LlamaRopeCommand::LlamaRopeCommand(RopeSlice *slice) {

@@ -100,7 +100,7 @@ TransformerArch TransformerArchFactory::create(TransformerSpec* spec) {
     exit(EXIT_FAILURE);
 }
 
-void App::run(AppArgs* args, void (*program)(Inference* inference, SocketPool* socketPool, Tokenizer* tokenizer, Sampler* sampler, AppArgs* args, TransformerSpec* spec, AcceleratorContext* acc)) {
+void App::run(AppArgs* args, void (*program)(Inference* inference, SocketPool* socketPool, Tokenizer* tokenizer, Sampler* sampler, AppArgs* args, TransformerSpec* spec)) {
     if (args->modelPath == NULL) {
         throw std::runtime_error("Model is required");
     }
@@ -119,15 +119,14 @@ void App::run(AppArgs* args, void (*program)(Inference* inference, SocketPool* s
         args->steps = spec.seqLen;
     }
 
-    AcceleratorContext acc(0, 1, NULL);
-    Transformer transformer = Transformer::loadRootFromFile(args->modelPath, &spec, socketPool, &acc);
+    Transformer transformer = Transformer::loadRootFromFile(args->modelPath, &spec, socketPool);
     socketPool->setTurbo(true);
 
     Inference inference = Inference(&arch, args->nThreads, &transformer, socketPool);
 
     Sampler sampler(spec.vocabSize, args->temperature, args->topp, args->seed);
 
-    program(&inference, socketPool, &tokenizer, &sampler, args, &spec, &acc);
+    program(&inference, socketPool, &tokenizer, &sampler, args, &spec);
 
     delete socketPool;
 }
