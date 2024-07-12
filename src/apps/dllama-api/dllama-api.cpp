@@ -396,7 +396,7 @@ void server(Inference* inference, SocketPool* socketPool, Tokenizer *tokenizer, 
     SocketServer* server = new SocketServer(args->port);
 
     TokenizerChatStops stops(tokenizer);
-    ChatTemplate chatTemplate(tokenizer->chatTemplate, stops.stops[0]);
+    ChatTemplate chatTemplate(args->chatTemplateType, tokenizer->chatTemplate, stops.stops[0]);
     EosDetector eosDetector(tokenizer->chatEosId, stops.nStops, stops.stops, stops.maxStopLength, stops.maxStopLength);
     ApiServer api(inference, tokenizer, sampler, args, spec, &eosDetector, &chatTemplate);
 
