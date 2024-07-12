@@ -433,27 +433,54 @@ TokenizerChatStops::~TokenizerChatStops() {
     delete[] stops;
 }
 
-ChatTemplate::ChatTemplate(const char* chatTemplate, const char* eos) {
-    if (chatTemplate == NULL)
-        throw std::runtime_error("The tokenizer does not include chat template");
+ChatTemplate::ChatTemplate(const ChatTemplateType type, const char* chatTemplate, const char* eos) {
+    if (type == TEMPLATE_UNKNOWN) {
+        if (chatTemplate == NULL)
+            throw std::runtime_error("The tokenizer does not include chat template");
+        if (strstr(chatTemplate, "[INST]") != NULL) {
+            this->type = TEMPLATE_LLAMA2;
+        } else if (strstr(chatTemplate, "<|start_header_id|>") != NULL) {
+            this->type = TEMPLATE_LLAMA3;
+        } else if (strstr(chatTemplate, "<|user|>") != NULL) {
+            this->type = TEMPLATE_ZEPHYR;
+        } else if (strstr(chatTemplate, "<|im_start|>") != NULL) {
+            this->type = TEMPLATE_CHATML;
+        } else {
+            throw new std::runtime_error("Not supported chat template");
+        }
+    } else {
+        this->type = type;
+    }
+    this->eos = eos;
 
     printf("⭐ chat template: ");
-    if (strstr(chatTemplate, "<|start_header_id|>") != NULL) {
-        type = TEMPLATE_LLAMA3;
+    if (this->type == TEMPLATE_LLAMA2) {
+        printf("llama2\n");
+    } else if (this->type == TEMPLATE_LLAMA3) {
         printf("llama3\n");
-    } else if (strstr(chatTemplate, "<|user|>") != NULL) {
-        type = TEMPLATE_ZEPHYR;
+    } else if (this->type == TEMPLATE_ZEPHYR) {
         printf("zephyr\n");
-    } else if (strstr(chatTemplate, "<|im_start|>") != NULL) {
-        type = TEMPLATE_CHATML;
+    } else if (this->type == TEMPLATE_CHATML) {
         printf("chatml\n");
-    } else throw new std::runtime_error("Not supported chat template");
-    this->eos = eos;
+    }
 }
 
 std::string ChatTemplate::generate(unsigned int nMessages, ChatItem* items, bool appendGenerationPrompt) {
     std::ostringstream buffer;
-    if (type == TEMPLATE_LLAMA3) {
+    if (type == TEMPLATE_LLAMA2) {
+        unsigned int i = 0;
+        if (nMessages >= 2 && items[0].role == "system" && items[1].role == "user") {
+            buffer << "[INST] <<SYS>>\n" << items[0].message << "\n<</SYS>>\n\n" << items[1].message << " [/INST]" << eos;
+            i += 2;
+        }
+        for (; i < nMessages; i++) {
+            if (items[i].role == "assistant") {
+                buffer << items[i].message << eos;
+            } else if (items[i].role == "user") {
+                buffer << "[INST] " << items[i].message << " [/INST]" << eos;
+            }
+        }
+    } else if (type == TEMPLATE_LLAMA3) {
         for (unsigned int i = 0; i < nMessages; i++)
             buffer << "<|start_header_id|>" << items[i].role << "<|end_header_id|>\n\n" << items[i].message << eos;
         if (appendGenerationPrompt)

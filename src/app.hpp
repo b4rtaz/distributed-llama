@@ -32,6 +32,7 @@ public:
     pos_t steps;
     bool benchmark;
     unsigned long long seed;
+    ChatTemplateType chatTemplateType;
 
     // worker
     int port;
