@@ -195,7 +195,7 @@ public:
 
 void chat(Inference* inference, SocketPool* socketPool, Tokenizer* tokenizer, Sampler* sampler, AppArgs* args, TransformerSpec* spec) {
     TokenizerChatStops stops(tokenizer);
-    ChatTemplate chatTemplate(tokenizer->chatTemplate, stops.stops[0]);
+    ChatTemplate chatTemplate(args->chatTemplateType, tokenizer->chatTemplate, stops.stops[0]);
     EosDetector eosDetector(tokenizer->chatEosId, stops.nStops, stops.stops, stops.maxStopLength, stops.maxStopLength);
 
     Chat chat(inference, tokenizer, sampler, args, spec, &eosDetector, &chatTemplate);

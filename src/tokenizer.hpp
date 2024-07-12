@@ -89,9 +89,11 @@ public:
 };
 
 enum ChatTemplateType {
-    TEMPLATE_LLAMA3 = 0,
-    TEMPLATE_ZEPHYR = 1,
-    TEMPLATE_CHATML = 2,
+    TEMPLATE_UNKNOWN = 0,
+    TEMPLATE_LLAMA2 = 1,
+    TEMPLATE_LLAMA3 = 2,
+    TEMPLATE_ZEPHYR = 3,
+    TEMPLATE_CHATML = 4,
 };
 
 struct ChatItem {
@@ -103,7 +105,7 @@ class ChatTemplate {
 public:
     const char* eos;
     ChatTemplateType type;
-    ChatTemplate(const char* chatTemplate, const char* eos);
+    ChatTemplate(const ChatTemplateType type, const char* chatTemplate, const char* eos);
     std::string generate(unsigned int nMessages, ChatItem* items, bool appendGenerationPrompt);
 };
 

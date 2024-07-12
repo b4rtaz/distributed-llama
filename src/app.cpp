@@ -16,6 +16,15 @@ FloatType parseFloatType(char* val) {
     exit(EXIT_FAILURE);
 }
 
+ChatTemplateType parseChatTemplateType(char* val) {
+    if (strcmp(val, "llama2") == 0) return TEMPLATE_LLAMA2;
+    if (strcmp(val, "llama3") == 0) return TEMPLATE_LLAMA3;
+    if (strcmp(val, "zephyr") == 0) return TEMPLATE_ZEPHYR;
+    if (strcmp(val, "chatml") == 0) return TEMPLATE_CHATML;
+    throw std::runtime_error("Invalid chat template type");
+
+}
+
 AppArgs AppArgs::parse(int argc, char** argv, bool hasMode) {
     AppArgs args;
     args.mode = NULL;
@@ -31,6 +40,7 @@ AppArgs AppArgs::parse(int argc, char** argv, bool hasMode) {
     args.topp = 0.9f;
     args.steps = 0;
     args.seed = (unsigned long long)time(NULL);
+    args.chatTemplateType = TEMPLATE_UNKNOWN;
 
     int i = 1;
     if (hasMode && argc > 1) {
@@ -84,6 +94,8 @@ AppArgs AppArgs::parse(int argc, char** argv, bool hasMode) {
             args.topp = atof(argv[i + 1]);
         } else if (strcmp(argv[i], "--seed") == 0) {
             args.seed = atoll(argv[i + 1]);
+        } else if (strcmp(argv[i], "--chat-template") == 0) {
+            args.chatTemplateType = parseChatTemplateType(argv[i + 1]);
         } else {
             printf("Unknown option %s\n", argv[i]);
             exit(EXIT_FAILURE);
