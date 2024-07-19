@@ -16,7 +16,7 @@ python convert-llama.py /path/to/meta/llama-2-7b q40
 ```
 5. Download the tokenizer for Llama 2:
 ```
-wget https://huggingface.co/b4rtaz/llama-2-distributed-llama/resolve/main/dllama-llama2-tokenizer.t
+wget https://huggingface.co/b4rtaz/Llama-2-Tokenizer-Distributed-Llama/resolve/main/dllama_tokenizer_llama2.t
 ```
 6. Build the project:
 ```bash
