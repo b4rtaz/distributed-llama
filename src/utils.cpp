@@ -112,6 +112,33 @@ void openMmapFile(MmapFile* file, const char* path, size_t size) {
 #endif
 }
 
+int writableMmapIndex = 0;
+
+void* allocateWritableMmapBuffer(size_t size) {
+    char path[256];
+    snprintf(path, 256, "mmap-%d", writableMmapIndex++);
+    int fd = open(path, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
+    if (fd == -1) {
+        perror("open");
+        exit(EXIT_FAILURE);
+    }
+    if (ftruncate(fd, size) == -1) {
+        perror("ftruncate");
+        close(fd);
+        exit(EXIT_FAILURE);
+    }
+    void *addr = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    if (addr == MAP_FAILED) {
+        perror("mmap");
+        close(fd);
+        exit(EXIT_FAILURE);
+    }
+    close(fd);
+    return addr;
+
+    // TODO: release somehow
+}
+
 void closeMmapFile(MmapFile* file) {
 #ifdef _WIN32
     UnmapViewOfFile(file->data);

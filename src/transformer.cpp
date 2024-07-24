@@ -9,10 +9,13 @@
 
 #define IS_ROOT_SLICE(sliceIndex) (sliceIndex == 0)
 
+#define USE_DISC_FOR_KV_CACHE 1
+
 TransformerSpec Transformer::loadSpecFromFile(const char* path, const unsigned int nSlices, FloatType weightsFloatType, FloatType bufferFloatType) {
     TransformerSpec spec;
     memset(&spec, 0, sizeof(TransformerSpec));
     spec.hiddenAct = SILU;
+    spec.ropeType = ROPE_UNKNOWN;
     spec.ropeTheta = 10000.0f;
 
     FILE* fd = fopen(path, "rb");
@@ -68,6 +71,11 @@ TransformerSpec Transformer::loadSpecFromFile(const char* path, const unsigned i
             else if (key == HIDDEN_ACT) spec.hiddenAct = (TransformerHiddenAct)value;
             else if (key == ROPE_THETA) spec.ropeTheta = (float)value;
             else if (key == WEIGHTS_FLOAT_TYPE) weightsFloatType = (FloatType)value;
+            else if (key == ROPE_SCALING_FACTOR) spec.ropeScalingFactor = (float)value;
+            else if (key == ROPE_SCALING_LOW_FREQ_FACTOR) spec.ropeScalingLowFreqFactor = (float)value;
+            else if (key == ROPE_SCALING_HIGH_FREQ_FACTORY) spec.ropeScalingHighFreqFactory = (float)value;
+            else if (key == ROPE_SCALING_ORIG_MAX_SEQ_LEN) spec.ropeScalingOrigMaxSeqLen = value;
+            else if (key == ROPE_TYPE) spec.ropeType = (TransformerRopeType)value;
             else {
                 throw std::runtime_error("Unsupported header key");
             }
@@ -78,6 +86,16 @@ TransformerSpec Transformer::loadSpecFromFile(const char* path, const unsigned i
 
     if (weightsFloatType == FUNK)
         throw std::runtime_error("Not specified weights float type");
+
+    if (spec.ropeType == ROPE_UNKNOWN) {
+        if (spec.archType == LLAMA) {
+            spec.ropeType = ROPE_LLAMA;
+        } else if (spec.archType == GROK1 || spec.archType == MIXTRAL) {
+            spec.ropeType = ROPE_FALCON;
+        } else {
+            throw std::runtime_error("Cannot resolve rope type from architecture");
+        }
+    }
 
     spec.headSize = spec.dim / spec.nHeads;
     spec.kvDim = (spec.dim * spec.nKvHeads) / spec.nHeads;
@@ -223,10 +241,14 @@ Transformer::Transformer(TransformerSpec* spec, slice_index_t sliceIndex) {
     }
 
     ropeSlice = new RopeSlice(spec->dim, spec->kvDim, spec->nKvHeads, spec->nSlices, spec->seqLen, spec->headSize, spec->ropeTheta, sliceIndex);
-    if (spec->archType == GROK1 || spec->archType == MIXTRAL) {
+    if (spec->ropeType == ROPE_FALCON) {
         rope = new FalconRopeCommand(ropeSlice);
-    } else {
+    } else if (spec->ropeType == ROPE_LLAMA) {
         rope = new LlamaRopeCommand(ropeSlice);
+    } else if (spec->ropeType == ROPE_LLAMA3_1) {
+        rope = new Llama3_1RopeCommand(ropeSlice, spec->ropeScalingFactor, spec->ropeScalingLowFreqFactor, spec->ropeScalingHighFreqFactory, spec->ropeScalingOrigMaxSeqLen);
+    } else {
+        throw std::runtime_error("Unsupported rope type");
     }
 
     TransformerBlock* b = blocks[0];
@@ -276,8 +298,13 @@ TransformerBlock::TransformerBlock(TransformerSpec* spec, slice_index_t sliceInd
     }
 
     kvCacheSlice = new KvCacheSlice(spec->kvDim, spec->seqLen, spec->nSlices);
+#if USE_DISC_FOR_KV_CACHE
+    keyCache = (float*)allocateWritableMmapBuffer(kvCacheSlice->keyCacheSize);
+    valueCache = (float*)allocateWritableMmapBuffer(kvCacheSlice->valueCacheSize);
+#else
     keyCache = (float*)newBuffer(kvCacheSlice->keyCacheSize);
     valueCache = (float*)newBuffer(kvCacheSlice->valueCacheSize);
+#endif
 
     multiHeadAttSlice = new MultiHeadAttSlice(spec->nHeads, spec->seqLen, spec->nSlices, sliceIndex);
     att = (float*)newBuffer(multiHeadAttSlice->attSize);
@@ -337,8 +364,12 @@ TransformerBlock::~TransformerBlock() {
     }
 
     delete kvCacheSlice;
+#if USE_DISC_FOR_KV_CACHE
+    // TODO
+#else
     freeBuffer(keyCache);
     freeBuffer(valueCache);
+#endif
     delete multiHeadAttSlice;
     freeBuffer(att);
 

@@ -40,6 +40,8 @@ struct MmapFile {
 void openMmapFile(MmapFile* file, const char* path, size_t size);
 void closeMmapFile(MmapFile* file);
 
+void* allocateWritableMmapBuffer(size_t size);
+
 typedef void (TaskLoopHandler)(unsigned int nThreads, unsigned int threadIndex, void* userData);
 typedef struct {
     TaskLoopHandler* handler;

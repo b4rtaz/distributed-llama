@@ -22,6 +22,11 @@ enum TransformerHeaderKey {
     HIDDEN_ACT = 11,
     ROPE_THETA = 12,
     WEIGHTS_FLOAT_TYPE = 13,
+    ROPE_SCALING_FACTOR = 14,
+    ROPE_SCALING_LOW_FREQ_FACTOR = 15,
+    ROPE_SCALING_HIGH_FREQ_FACTORY = 16,
+    ROPE_SCALING_ORIG_MAX_SEQ_LEN = 17,
+    ROPE_TYPE = 18,
 };
 
 struct TransformerFileOldHeader {
@@ -47,6 +52,13 @@ enum TransformerHiddenAct {
     SILU = 1,
 };
 
+enum TransformerRopeType {
+    ROPE_UNKNOWN = -1,
+    ROPE_LLAMA = 0,
+    ROPE_FALCON = 1,
+    ROPE_LLAMA3_1 = 2,
+};
+
 struct TransformerSpec {
     size_t headerSize;
     size_t fileSize;
@@ -65,6 +77,11 @@ struct TransformerSpec {
     int kvDim;
     int vocabSize;
     float ropeTheta;
+    TransformerRopeType ropeType;
+    float ropeScalingFactor;
+    float ropeScalingLowFreqFactor;
+    float ropeScalingHighFreqFactory;
+    int ropeScalingOrigMaxSeqLen;
 
     FloatType weightsFloatType;
     FloatType bufferFloatType;

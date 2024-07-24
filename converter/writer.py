@@ -125,7 +125,12 @@ def writeHeader(file, params):
         'max_seq_len': 10,
         'hidden_act': 11,
         'rope_theta': 12,
-        'weights_float_type': 13
+        'weights_float_type': 13,
+        'rope_scaling_factor': 14,
+        'rope_scaling_low_freq_factor': 15,
+        'rope_scaling_high_freq_factory': 16,
+        'rope_scaling_orig_max_seq_len': 17,
+        'rope_type': 18,
     }
     header = struct.pack('i', 0xA00ABCD)
 

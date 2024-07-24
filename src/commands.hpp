@@ -9,7 +9,7 @@
 // *Slice - calculates sizes, offsets, slice sizes etc. It is not responsible for memory allocation. It may help in the loading of data.
 // *Command - allocates memory for weights, performs calculations.
 
-typedef unsigned short pos_t;
+typedef unsigned int pos_t;
 typedef uint8_t slice_index_t;
 
 class MatmulSlice {
@@ -104,6 +104,19 @@ public:
     LlamaRopeCommand(RopeSlice *slice);
     ~LlamaRopeCommand();
     void forward(bool isQ, float* qOrK, pos_t pos, unsigned int nThreads, unsigned int threadIndex);
+};
+
+class Llama3_1RopeCommand : public RopeCommand {
+private:
+    RopeSlice* slice;
+    float ropeScalingFactor;
+    float ropeScalingLowFreqFactor;
+    float ropeScalingHighFreqFactory;
+    int ropeScalingOrigMaxSeqLen;
+public:
+    Llama3_1RopeCommand(RopeSlice *slice, float ropeScalingFactor, float ropeScalingLowFreqFactor, float ropeScalingHighFreqFactory, int ropeScalingOrigMaxSeqLen);
+    void forward(bool isQ, float* qOrK, pos_t pos, unsigned int nThreads, unsigned int threadIndex);
+    float scale(float freq);
 };
 
 class FalconRopeCommand : public RopeCommand {
