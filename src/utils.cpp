@@ -47,12 +47,12 @@ void freeBuffer(void* buffer) {
 
 unsigned int lastMmapFileBufferIndex = 0;
 
-void* newMmapFileBuffer(size_t size) {
+void* newMmapFileBuffer(unsigned int appInstanceId, size_t size) {
 #ifdef _WIN32
     throw new std::runtime_error("Mmap file buffer is not supported on Windows yet");
 #else
     char path[256];
-    snprintf(path, 256, "mmap-buffer-%d.data", lastMmapFileBufferIndex++);
+    snprintf(path, 256, "mmap-buffer-%d-%d.temp", appInstanceId, lastMmapFileBufferIndex++);
     int fd = open(path, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
     if (fd == -1)
         throw new std::runtime_error("Cannot create mmap buffer file");

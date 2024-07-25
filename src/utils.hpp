@@ -21,7 +21,7 @@
 void* newBuffer(size_t size);
 void freeBuffer(void* buffer);
 
-void* newMmapFileBuffer(size_t size);
+void* newMmapFileBuffer(unsigned int appInstanceId, size_t size);
 void freeMmapFileBuffer(void* addr);
 
 unsigned long timeMs();

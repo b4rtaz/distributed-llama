@@ -298,8 +298,8 @@ TransformerBlock::TransformerBlock(TransformerSpec* spec, TransformerConfig* con
 
     kvCacheSlice = new KvCacheSlice(spec->kvDim, spec->seqLen, spec->nSlices);
     if (config->useDiscForKvCache) {
-        keyCache = (float*)newMmapFileBuffer(kvCacheSlice->keyCacheSize);
-        valueCache = (float*)newMmapFileBuffer(kvCacheSlice->valueCacheSize);
+        keyCache = (float*)newMmapFileBuffer(sliceIndex, kvCacheSlice->keyCacheSize);
+        valueCache = (float*)newMmapFileBuffer(sliceIndex, kvCacheSlice->valueCacheSize);
     } else {
         keyCache = (float*)newBuffer(kvCacheSlice->keyCacheSize);
         valueCache = (float*)newBuffer(kvCacheSlice->valueCacheSize);
