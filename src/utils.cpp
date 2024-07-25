@@ -112,9 +112,24 @@ void openMmapFile(MmapFile* file, const char* path, size_t size) {
 #endif
 }
 
+void closeMmapFile(MmapFile* file) {
+#ifdef _WIN32
+    UnmapViewOfFile(file->data);
+    CloseHandle(file->hMapping);
+    CloseHandle(file->hFile);
+#else
+    munmap(file->data, file->size);
+    close(file->fd);
+#endif
+}
+
 int writableMmapIndex = 0;
 
 void* allocateWritableMmapBuffer(size_t size) {
+#ifdef _WIN32
+    fprintf(stderr, "Writable mmap buffer is not supported on Windows yet\n");
+    exit(EXIT_FAILURE);
+#else
     char path[256];
     snprintf(path, 256, "mmap-%d", writableMmapIndex++);
     int fd = open(path, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
@@ -135,19 +150,11 @@ void* allocateWritableMmapBuffer(size_t size) {
     }
     close(fd);
     return addr;
-
-    // TODO: release somehow
+#endif
 }
 
-void closeMmapFile(MmapFile* file) {
-#ifdef _WIN32
-    UnmapViewOfFile(file->data);
-    CloseHandle(file->hMapping);
-    CloseHandle(file->hFile);
-#else
-    munmap(file->data, file->size);
-    close(file->fd);
-#endif
+void releaseWritableMmapBuffer(void* addr) {
+    // TODO
 }
 
 TaskLoop::TaskLoop(unsigned int nThreads, unsigned int nTasks, unsigned int nTypes, TaskLoopTask* tasks, void* userData) {

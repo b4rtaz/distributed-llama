@@ -365,7 +365,8 @@ TransformerBlock::~TransformerBlock() {
 
     delete kvCacheSlice;
 #if USE_DISC_FOR_KV_CACHE
-    // TODO
+    releaseWritableMmapBuffer(keyCache);
+    releaseWritableMmapBuffer(valueCache);
 #else
     freeBuffer(keyCache);
     freeBuffer(valueCache);

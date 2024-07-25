@@ -41,6 +41,7 @@ void openMmapFile(MmapFile* file, const char* path, size_t size);
 void closeMmapFile(MmapFile* file);
 
 void* allocateWritableMmapBuffer(size_t size);
+void releaseWritableMmapBuffer(void* addr);
 
 typedef void (TaskLoopHandler)(unsigned int nThreads, unsigned int threadIndex, void* userData);
 typedef struct {
