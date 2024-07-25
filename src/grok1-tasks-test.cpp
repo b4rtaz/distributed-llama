@@ -30,6 +30,7 @@ int main() {
     TransformerSpec spec;
     spec.headerSize = sizeof(TransformerFileOldHeader) + sizeof(int);
     spec.archType = GROK1;
+    spec.ropeType = ROPE_FALCON;
     spec.dim = 6144;
     spec.nLayers = 1;
     spec.nHeads = 48;

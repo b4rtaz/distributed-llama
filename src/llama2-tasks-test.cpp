@@ -528,6 +528,7 @@ int main() {
     TransformerSpec spec;
     spec.headerSize = sizeof(TransformerFileOldHeader) + sizeof(int);
     spec.archType = LLAMA;
+    spec.ropeType = ROPE_LLAMA;
     spec.dim = 4096;
     spec.nLayers = 1;
     spec.headSize = 128;
