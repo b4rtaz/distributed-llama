@@ -15,17 +15,18 @@ Tensor parallelism is all you need. Run LLMs on weak devices or make powerful de
 
 Python 3 and C++ compiler required. The command will download the model and the tokenizer.
 
-| Model                   | Purpose   | Size     | Command                                   |
-| ----------------------- | --------- | -------- | ----------------------------------------- |
-| TinyLlama 1.1B 3T Q40   | Benchmark | 844 MB   | `python launch.py tinyllama_1_1b_3t_q40`  |
-| Llama 3 8B Q40          | Benchmark | 6.32 GB  | `python launch.py llama3_8b_q40`          |
-| Llama 3 8B Instruct Q40 | Chat, API | 6.32 GB  | `python launch.py llama3_8b_instruct_q40` |
+| Model                     | Purpose   | Size     | Command                                     |
+| ------------------------- | --------- | -------- | ------------------------------------------- |
+| TinyLlama 1.1B 3T Q40     | Benchmark | 844 MB   | `python launch.py tinyllama_1_1b_3t_q40`    |
+| Llama 3 8B Q40            | Benchmark | 6.32 GB  | `python launch.py llama3_8b_q40`            |
+| Llama 3 8B Instruct Q40   | Chat, API | 6.32 GB  | `python launch.py llama3_8b_instruct_q40`   |
+| Llama 3.1 8B Instruct Q40 | Chat, API | 6.32 GB  | `python launch.py llama3_1_8b_instruct_q40` |
 
 ### 🛠️ Convert Model Manually
 
 Supported architectures: Llama, Mixtral, Grok
 
-* [How to Convert Llama 2, Llama 3](./docs/LLAMA.md)
+* [How to Convert Llama 2, Llama 3, Llama 3.1](./docs/LLAMA.md)
 * [How to Convert Hugging Face Model](./docs/HUGGINGFACE.md)
 
 ### 🚧 Known Limitations
