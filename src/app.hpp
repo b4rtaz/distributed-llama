@@ -16,7 +16,8 @@
 class AppArgs {
 public:
     char* mode;
-    int nThreads; 
+    int nThreads;
+    bool useDiscForKvCache;
 
     // inference
     char* modelPath;

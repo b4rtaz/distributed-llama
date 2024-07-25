@@ -88,10 +88,15 @@ struct TransformerSpec {
     uint8_t nSlices;
 };
 
+struct TransformerConfig {
+    bool useDiscForKvCache;
+};
+
 class TransformerBlock {
 public:
     slice_index_t sliceIndex;
     TransformerSpec *spec;
+    TransformerConfig* config;
 
     size_t rmsAttBytes;
     float* rmsAtt;
@@ -137,7 +142,7 @@ public:
     float* att;
     float* qo0;
 
-    TransformerBlock(TransformerSpec* spec, slice_index_t sliceIndex);
+    TransformerBlock(TransformerSpec* spec, TransformerConfig* config, slice_index_t sliceIndex);
     ~TransformerBlock();
 };
 
@@ -172,6 +177,7 @@ public:
 class Transformer {
 public:
     TransformerSpec* spec;
+    TransformerConfig* config;
     TransformerBlock** blocks;
     TransformerBuffer* buffer;
     slice_index_t sliceIndex;
@@ -192,12 +198,12 @@ public:
     ~Transformer();
 
     static TransformerSpec loadSpecFromFile(const char* path, const unsigned int nSlices, FloatType weightsFloatType, FloatType bufferFloatType);
-    static Transformer loadRootFromFile(const char* path, TransformerSpec* spec, SocketPool* socketPool);
-    static Transformer loadRoot(char* data, TransformerSpec* spec, SocketPool* socketPool);
-    static Transformer loadSlice(TransformerSpec* spec, Socket* socket);
+    static Transformer loadRootFromFile(const char* path, TransformerSpec* spec, TransformerConfig* config, SocketPool* socketPool);
+    static Transformer loadRoot(char* data, TransformerSpec* spec, TransformerConfig* config, SocketPool* socketPool);
+    static Transformer loadSlice(TransformerSpec* spec, TransformerConfig* config, Socket* socket);
 
 private:
-    Transformer(TransformerSpec* spec, slice_index_t sliceIndex);
+    Transformer(TransformerSpec* spec, TransformerConfig* config, slice_index_t sliceIndex);
 };
 
 #endif

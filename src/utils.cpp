@@ -2,6 +2,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <exception>
 #include <vector>
 #include <sys/time.h>
 #include "utils.hpp"
@@ -42,6 +43,31 @@ void freeBuffer(void* buffer) {
 #else
     free(buffer);
 #endif
+}
+
+unsigned int lastMmapFileBufferIndex = 0;
+
+void* newMmapFileBuffer(size_t size) {
+#ifdef _WIN32
+    throw new std::runtime_error("Mmap file buffer is not supported on Windows yet");
+#else
+    char path[256];
+    snprintf(path, 256, "mmap-buffer-%d.data", lastMmapFileBufferIndex++);
+    int fd = open(path, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
+    if (fd == -1)
+        throw new std::runtime_error("Cannot create mmap buffer file");
+    if (ftruncate(fd, size) == -1)
+        throw new std::runtime_error("Cannot truncate mmap buffer file. Not enough disk space?");
+    void *addr = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    if (addr == MAP_FAILED) 
+        throw new std::runtime_error("Cannot mmap buffer file");
+    close(fd);
+    return addr;
+#endif
+}
+
+void freeMmapFileBuffer(void* addr) {
+    // TODO
 }
 
 unsigned long timeMs() {
@@ -121,40 +147,6 @@ void closeMmapFile(MmapFile* file) {
     munmap(file->data, file->size);
     close(file->fd);
 #endif
-}
-
-int writableMmapIndex = 0;
-
-void* allocateWritableMmapBuffer(size_t size) {
-#ifdef _WIN32
-    fprintf(stderr, "Writable mmap buffer is not supported on Windows yet\n");
-    exit(EXIT_FAILURE);
-#else
-    char path[256];
-    snprintf(path, 256, "mmap-%d", writableMmapIndex++);
-    int fd = open(path, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
-    if (fd == -1) {
-        perror("open");
-        exit(EXIT_FAILURE);
-    }
-    if (ftruncate(fd, size) == -1) {
-        perror("ftruncate");
-        close(fd);
-        exit(EXIT_FAILURE);
-    }
-    void *addr = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-    if (addr == MAP_FAILED) {
-        perror("mmap");
-        close(fd);
-        exit(EXIT_FAILURE);
-    }
-    close(fd);
-    return addr;
-#endif
-}
-
-void releaseWritableMmapBuffer(void* addr) {
-    // TODO
 }
 
 TaskLoop::TaskLoop(unsigned int nThreads, unsigned int nTasks, unsigned int nTypes, TaskLoopTask* tasks, void* userData) {

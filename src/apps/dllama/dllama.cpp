@@ -207,10 +207,13 @@ void worker(AppArgs* args) {
         throw std::runtime_error("Invalid port number");
     }
 
+    TransformerConfig config;
+    config.useDiscForKvCache = args->useDiscForKvCache;
+
     SocketServer server(args->port);
     Socket socket = server.accept();
     TransformerSpec spec;
-    Transformer transformer = Transformer::loadSlice(&spec, &socket);
+    Transformer transformer = Transformer::loadSlice(&spec, &config, &socket);
     TransformerArch arch = TransformerArchFactory::create(&spec);
 
     Worker worker = Worker(&arch, args->nThreads, &transformer, &socket);

@@ -48,6 +48,9 @@ int main() {
     spec.hiddenAct = GELU;
     spec.ropeTheta = 10000.0f;
 
+    TransformerConfig config;
+    config.useDiscForKvCache = false;
+
     size_t beforeBlockBytes = spec.dim * spec.vocabSize * sizeof(float);
     size_t blockBytes = 956596224;
     size_t afterBlockBytes  = (spec.dim + spec.dim * spec.vocabSize) * sizeof(float);
@@ -61,7 +64,7 @@ int main() {
     for (int f = 0; f < nFloats; f++) block[f] = randomF32(&state) / 100.0;
 
     SocketPool socketPool(0, NULL);
-    Transformer transformer = Transformer::loadRoot(weights, &spec, &socketPool);
+    Transformer transformer = Transformer::loadRoot(weights, &spec, &config, &socketPool);
     transformer.pos = 0;
 
     float* x = transformer.x;
