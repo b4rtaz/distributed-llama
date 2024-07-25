@@ -13,6 +13,7 @@ TransformerSpec Transformer::loadSpecFromFile(const char* path, const unsigned i
     TransformerSpec spec;
     memset(&spec, 0, sizeof(TransformerSpec));
     spec.hiddenAct = SILU;
+    spec.ropeType = ROPE_UNKNOWN;
     spec.ropeTheta = 10000.0f;
 
     FILE* fd = fopen(path, "rb");
@@ -68,6 +69,11 @@ TransformerSpec Transformer::loadSpecFromFile(const char* path, const unsigned i
             else if (key == HIDDEN_ACT) spec.hiddenAct = (TransformerHiddenAct)value;
             else if (key == ROPE_THETA) spec.ropeTheta = (float)value;
             else if (key == WEIGHTS_FLOAT_TYPE) weightsFloatType = (FloatType)value;
+            else if (key == ROPE_SCALING_FACTOR) spec.ropeScalingFactor = (float)value;
+            else if (key == ROPE_SCALING_LOW_FREQ_FACTOR) spec.ropeScalingLowFreqFactor = (float)value;
+            else if (key == ROPE_SCALING_HIGH_FREQ_FACTORY) spec.ropeScalingHighFreqFactory = (float)value;
+            else if (key == ROPE_SCALING_ORIG_MAX_SEQ_LEN) spec.ropeScalingOrigMaxSeqLen = value;
+            else if (key == ROPE_TYPE) spec.ropeType = (TransformerRopeType)value;
             else {
                 throw std::runtime_error("Unsupported header key");
             }
@@ -78,6 +84,16 @@ TransformerSpec Transformer::loadSpecFromFile(const char* path, const unsigned i
 
     if (weightsFloatType == FUNK)
         throw std::runtime_error("Not specified weights float type");
+
+    if (spec.ropeType == ROPE_UNKNOWN) {
+        if (spec.archType == LLAMA) {
+            spec.ropeType = ROPE_LLAMA;
+        } else if (spec.archType == GROK1 || spec.archType == MIXTRAL) {
+            spec.ropeType = ROPE_FALCON;
+        } else {
+            throw std::runtime_error("Cannot resolve rope type from architecture");
+        }
+    }
 
     spec.headSize = spec.dim / spec.nHeads;
     spec.kvDim = (spec.dim * spec.nKvHeads) / spec.nHeads;
@@ -199,14 +215,14 @@ size_t TransformerBuffer::getSlicedBytes(uint8_t bufferIndex) {
     return bufferBytes[bufferIndex] / nSlices;
 }
 
-Transformer::Transformer(TransformerSpec* spec, slice_index_t sliceIndex) {
+Transformer::Transformer(TransformerSpec* spec, TransformerConfig* config, slice_index_t sliceIndex) {
     this->spec = spec;
     this->sliceIndex = sliceIndex;
 
     buffer = new TransformerBuffer(spec);
     blocks = new TransformerBlock*[spec->nLayers];
     for (int i = 0; i < spec->nLayers; i++) {
-        blocks[i] = new TransformerBlock(spec, sliceIndex);
+        blocks[i] = new TransformerBlock(spec, config, sliceIndex);
     }
 
     if (IS_ROOT_SLICE(sliceIndex)) {
@@ -223,10 +239,14 @@ Transformer::Transformer(TransformerSpec* spec, slice_index_t sliceIndex) {
     }
 
     ropeSlice = new RopeSlice(spec->dim, spec->kvDim, spec->nKvHeads, spec->nSlices, spec->seqLen, spec->headSize, spec->ropeTheta, sliceIndex);
-    if (spec->archType == GROK1 || spec->archType == MIXTRAL) {
+    if (spec->ropeType == ROPE_FALCON) {
         rope = new FalconRopeCommand(ropeSlice);
-    } else {
+    } else if (spec->ropeType == ROPE_LLAMA) {
         rope = new LlamaRopeCommand(ropeSlice);
+    } else if (spec->ropeType == ROPE_LLAMA3_1) {
+        rope = new Llama3_1RopeCommand(ropeSlice, spec->ropeScalingFactor, spec->ropeScalingLowFreqFactor, spec->ropeScalingHighFreqFactory, spec->ropeScalingOrigMaxSeqLen);
+    } else {
+        throw std::runtime_error("Unsupported rope type");
     }
 
     TransformerBlock* b = blocks[0];
@@ -257,9 +277,10 @@ Transformer::~Transformer() {
     delete rope;
 }
 
-TransformerBlock::TransformerBlock(TransformerSpec* spec, slice_index_t sliceIndex) {
+TransformerBlock::TransformerBlock(TransformerSpec* spec, TransformerConfig* config, slice_index_t sliceIndex) {
     this->sliceIndex = sliceIndex;
     this->spec = spec;
+    this->config = config;
 
     if (IS_ROOT_SLICE(sliceIndex)) {
         rmsAttBytes = spec->dim * sizeof(float);
@@ -276,8 +297,13 @@ TransformerBlock::TransformerBlock(TransformerSpec* spec, slice_index_t sliceInd
     }
 
     kvCacheSlice = new KvCacheSlice(spec->kvDim, spec->seqLen, spec->nSlices);
-    keyCache = (float*)newBuffer(kvCacheSlice->keyCacheSize);
-    valueCache = (float*)newBuffer(kvCacheSlice->valueCacheSize);
+    if (config->useDiscForKvCache) {
+        keyCache = (float*)newMmapFileBuffer(sliceIndex, kvCacheSlice->keyCacheSize);
+        valueCache = (float*)newMmapFileBuffer(sliceIndex, kvCacheSlice->valueCacheSize);
+    } else {
+        keyCache = (float*)newBuffer(kvCacheSlice->keyCacheSize);
+        valueCache = (float*)newBuffer(kvCacheSlice->valueCacheSize);
+    }
 
     multiHeadAttSlice = new MultiHeadAttSlice(spec->nHeads, spec->seqLen, spec->nSlices, sliceIndex);
     att = (float*)newBuffer(multiHeadAttSlice->attSize);
@@ -337,8 +363,13 @@ TransformerBlock::~TransformerBlock() {
     }
 
     delete kvCacheSlice;
-    freeBuffer(keyCache);
-    freeBuffer(valueCache);
+    if (config->useDiscForKvCache) {
+        freeMmapFileBuffer(keyCache);
+        freeMmapFileBuffer(valueCache);
+    } else {
+        freeBuffer(keyCache);
+        freeBuffer(valueCache);
+    }
     delete multiHeadAttSlice;
     freeBuffer(att);
 
@@ -411,23 +442,23 @@ static size_t readSlicedMatmulWeights(MatmulSlice* slice, char* weights0, Socket
     return slice->sliceBytes;
 }
 
-Transformer Transformer::loadRootFromFile(const char* path, TransformerSpec* spec, SocketPool* socketPool) {
+Transformer Transformer::loadRootFromFile(const char* path, TransformerSpec* spec, TransformerConfig* config, SocketPool* socketPool) {
     MmapFile file;
     openMmapFile(&file, path, spec->fileSize);
 
     char* weights = ((char*)file.data) + spec->headerSize;
-    Transformer transformer = Transformer::loadRoot((char*)weights, spec, socketPool);
+    Transformer transformer = Transformer::loadRoot((char*)weights, spec, config, socketPool);
 
     closeMmapFile(&file);
 
     return transformer;
 }
 
-Transformer Transformer::loadRoot(char* data, TransformerSpec* spec, SocketPool* socketPool) {
+Transformer Transformer::loadRoot(char* data, TransformerSpec* spec, TransformerConfig* config, SocketPool* socketPool) {
     assert(socketPool->nSockets == spec->nSlices - 1);
 
     const slice_index_t sliceIndex = 0; // Root slice
-    Transformer transformer(spec, sliceIndex);
+    Transformer transformer(spec, config, sliceIndex);
 
     if (spec->nSlices > 1) {
         for (slice_index_t sliceIndex = 1; sliceIndex < spec->nSlices; sliceIndex++) {
@@ -484,7 +515,7 @@ Transformer Transformer::loadRoot(char* data, TransformerSpec* spec, SocketPool*
     return transformer;
 }
 
-Transformer Transformer::loadSlice(TransformerSpec* spec, Socket* socket) {
+Transformer Transformer::loadSlice(TransformerSpec* spec, TransformerConfig* config, Socket* socket) {
     slice_index_t sliceIndex;
     socket->read((char*)&sliceIndex, sizeof(uint8_t));
     socket->read((char*)spec, sizeof(TransformerSpec));
@@ -493,7 +524,7 @@ Transformer Transformer::loadSlice(TransformerSpec* spec, Socket* socket) {
     printf("💡 nSlices: %d\n", spec->nSlices);
 
     assert(sliceIndex >= 1);
-    Transformer transformer(spec, sliceIndex);
+    Transformer transformer(spec, config, sliceIndex);
 
     size_t bufferSize = 0;
     // TODO: this is ugly

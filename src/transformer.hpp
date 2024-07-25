@@ -22,6 +22,11 @@ enum TransformerHeaderKey {
     HIDDEN_ACT = 11,
     ROPE_THETA = 12,
     WEIGHTS_FLOAT_TYPE = 13,
+    ROPE_SCALING_FACTOR = 14,
+    ROPE_SCALING_LOW_FREQ_FACTOR = 15,
+    ROPE_SCALING_HIGH_FREQ_FACTORY = 16,
+    ROPE_SCALING_ORIG_MAX_SEQ_LEN = 17,
+    ROPE_TYPE = 18,
 };
 
 struct TransformerFileOldHeader {
@@ -47,6 +52,13 @@ enum TransformerHiddenAct {
     SILU = 1,
 };
 
+enum TransformerRopeType {
+    ROPE_UNKNOWN = -1,
+    ROPE_LLAMA = 0,
+    ROPE_FALCON = 1,
+    ROPE_LLAMA3_1 = 2,
+};
+
 struct TransformerSpec {
     size_t headerSize;
     size_t fileSize;
@@ -65,16 +77,26 @@ struct TransformerSpec {
     int kvDim;
     int vocabSize;
     float ropeTheta;
+    TransformerRopeType ropeType;
+    float ropeScalingFactor;
+    float ropeScalingLowFreqFactor;
+    float ropeScalingHighFreqFactory;
+    int ropeScalingOrigMaxSeqLen;
 
     FloatType weightsFloatType;
     FloatType bufferFloatType;
     uint8_t nSlices;
 };
 
+struct TransformerConfig {
+    bool useDiscForKvCache;
+};
+
 class TransformerBlock {
 public:
     slice_index_t sliceIndex;
     TransformerSpec *spec;
+    TransformerConfig* config;
 
     size_t rmsAttBytes;
     float* rmsAtt;
@@ -120,7 +142,7 @@ public:
     float* att;
     float* qo0;
 
-    TransformerBlock(TransformerSpec* spec, slice_index_t sliceIndex);
+    TransformerBlock(TransformerSpec* spec, TransformerConfig* config, slice_index_t sliceIndex);
     ~TransformerBlock();
 };
 
@@ -155,6 +177,7 @@ public:
 class Transformer {
 public:
     TransformerSpec* spec;
+    TransformerConfig* config;
     TransformerBlock** blocks;
     TransformerBuffer* buffer;
     slice_index_t sliceIndex;
@@ -175,12 +198,12 @@ public:
     ~Transformer();
 
     static TransformerSpec loadSpecFromFile(const char* path, const unsigned int nSlices, FloatType weightsFloatType, FloatType bufferFloatType);
-    static Transformer loadRootFromFile(const char* path, TransformerSpec* spec, SocketPool* socketPool);
-    static Transformer loadRoot(char* data, TransformerSpec* spec, SocketPool* socketPool);
-    static Transformer loadSlice(TransformerSpec* spec, Socket* socket);
+    static Transformer loadRootFromFile(const char* path, TransformerSpec* spec, TransformerConfig* config, SocketPool* socketPool);
+    static Transformer loadRoot(char* data, TransformerSpec* spec, TransformerConfig* config, SocketPool* socketPool);
+    static Transformer loadSlice(TransformerSpec* spec, TransformerConfig* config, Socket* socket);
 
 private:
-    Transformer(TransformerSpec* spec, slice_index_t sliceIndex);
+    Transformer(TransformerSpec* spec, TransformerConfig* config, slice_index_t sliceIndex);
 };
 
 #endif

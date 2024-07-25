@@ -41,6 +41,7 @@ AppArgs AppArgs::parse(int argc, char** argv, bool hasMode) {
     args.steps = 0;
     args.seed = (unsigned long long)time(NULL);
     args.chatTemplateType = TEMPLATE_UNKNOWN;
+    args.useDiscForKvCache = false;
 
     int i = 1;
     if (hasMode && argc > 1) {
@@ -48,17 +49,19 @@ AppArgs AppArgs::parse(int argc, char** argv, bool hasMode) {
         i++;
     }
     for (; i + 1 < argc; i += 2) {
-        if (strcmp(argv[i], "--model") == 0) {
-            args.modelPath = argv[i + 1];
-        } else if (strcmp(argv[i], "--tokenizer") == 0) {
-            args.tokenizerPath = argv[i + 1];
-        } else if (strcmp(argv[i], "--prompt") == 0) {
-            args.prompt = argv[i + 1];
-        } else if (strcmp(argv[i], "--weights-float-type") == 0) {
-            args.weightsFloatType = parseFloatType(argv[i + 1]);
-        } else if (strcmp(argv[i], "--buffer-float-type") == 0) {
-            args.bufferFloatType = parseFloatType(argv[i + 1]);
-        } else if (strcmp(argv[i], "--workers") == 0) {
+        char* name = argv[i];
+        char* value = argv[i + 1];
+        if (strcmp(name, "--model") == 0) {
+            args.modelPath = value;
+        } else if (strcmp(name, "--tokenizer") == 0) {
+            args.tokenizerPath = value;
+        } else if (strcmp(name, "--prompt") == 0) {
+            args.prompt = value;
+        } else if (strcmp(name, "--weights-float-type") == 0) {
+            args.weightsFloatType = parseFloatType(value);
+        } else if (strcmp(name, "--buffer-float-type") == 0) {
+            args.bufferFloatType = parseFloatType(value);
+        } else if (strcmp(name, "--workers") == 0) {
             int j = i + 1;
             for (; j < argc && argv[j][0] != '-'; j++);
             int count = j - i - 1;
@@ -82,22 +85,24 @@ AppArgs AppArgs::parse(int argc, char** argv, bool hasMode) {
             }
 
             i += count - 1;
-        } else if (strcmp(argv[i], "--port") == 0) {
-            args.port = atoi(argv[i + 1]);
-        } else if (strcmp(argv[i], "--nthreads") == 0) {
-            args.nThreads = atoi(argv[i + 1]);
-        } else if (strcmp(argv[i], "--steps") == 0) {
-            args.steps = atoi(argv[i + 1]);
-        } else if (strcmp(argv[i], "--temperature") == 0) {
-            args.temperature = atof(argv[i + 1]);
-        } else if (strcmp(argv[i], "--topp") == 0) {
-            args.topp = atof(argv[i + 1]);
-        } else if (strcmp(argv[i], "--seed") == 0) {
-            args.seed = atoll(argv[i + 1]);
-        } else if (strcmp(argv[i], "--chat-template") == 0) {
-            args.chatTemplateType = parseChatTemplateType(argv[i + 1]);
+        } else if (strcmp(name, "--port") == 0) {
+            args.port = atoi(value);
+        } else if (strcmp(name, "--nthreads") == 0) {
+            args.nThreads = atoi(value);
+        } else if (strcmp(name, "--steps") == 0) {
+            args.steps = atoi(value);
+        } else if (strcmp(name, "--temperature") == 0) {
+            args.temperature = atof(value);
+        } else if (strcmp(name, "--topp") == 0) {
+            args.topp = atof(value);
+        } else if (strcmp(name, "--seed") == 0) {
+            args.seed = atoll(value);
+        } else if (strcmp(name, "--chat-template") == 0) {
+            args.chatTemplateType = parseChatTemplateType(value);
+        } else if (strcmp(name, "--kv-cache-storage") == 0) {
+            args.useDiscForKvCache = strcmp(value, "disc") == 0;
         } else {
-            printf("Unknown option %s\n", argv[i]);
+            printf("Unknown option %s\n", name);
             exit(EXIT_FAILURE);
         }
     }
@@ -131,7 +136,10 @@ void App::run(AppArgs* args, void (*program)(Inference* inference, SocketPool* s
         args->steps = spec.seqLen;
     }
 
-    Transformer transformer = Transformer::loadRootFromFile(args->modelPath, &spec, socketPool);
+    TransformerConfig config;
+    config.useDiscForKvCache = args->useDiscForKvCache;
+
+    Transformer transformer = Transformer::loadRootFromFile(args->modelPath, &spec, &config, socketPool);
     socketPool->setTurbo(true);
 
     Inference inference = Inference(&arch, args->nThreads, &transformer, socketPool);

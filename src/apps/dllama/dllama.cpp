@@ -160,7 +160,7 @@ public:
             int nInputTokens;
             tokenizer->encode((char*)inputPrompt.c_str(), inputTokens, &nInputTokens, true, false);
 
-            pos_t userPromptEndPos = (pos_t)std::min(spec->seqLen, pos + nInputTokens - 1);
+            pos_t userPromptEndPos = (pos_t)std::min(spec->seqLen, (int)pos + nInputTokens - 1);
             for (pos_t i = 0; pos < userPromptEndPos; pos++, i++) {
                 inference->infer(inputTokens[i], pos);
                 token = inputTokens[i + 1];
@@ -207,10 +207,13 @@ void worker(AppArgs* args) {
         throw std::runtime_error("Invalid port number");
     }
 
+    TransformerConfig config;
+    config.useDiscForKvCache = args->useDiscForKvCache;
+
     SocketServer server(args->port);
     Socket socket = server.accept();
     TransformerSpec spec;
-    Transformer transformer = Transformer::loadSlice(&spec, &socket);
+    Transformer transformer = Transformer::loadSlice(&spec, &config, &socket);
     TransformerArch arch = TransformerArchFactory::create(&spec);
 
     Worker worker = Worker(&arch, args->nThreads, &transformer, &socket);

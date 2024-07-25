@@ -1,5 +1,8 @@
 #include <cassert>
 #include <cstring>
+#ifdef _WIN32
+    #define _USE_MATH_DEFINES
+#endif
 #include <cmath>
 #include "utils.hpp"
 #include "funcs.hpp"
@@ -164,6 +167,54 @@ void LlamaRopeCommand::forward(bool isQ, float* qOrK, pos_t pos, unsigned int nT
         float v1 = qOrK[i + 1];
         qOrK[i]   = v0 * fcr - v1 * fci;
         qOrK[i + 1] = v0 * fci + v1 * fcr;
+    }
+}
+
+Llama3_1RopeCommand::Llama3_1RopeCommand(RopeSlice *slice, float ropeScalingFactor, float ropeScalingLowFreqFactor, float ropeScalingHighFreqFactory, int ropeScalingOrigMaxSeqLen) {
+    this->slice = slice;
+    this->ropeScalingFactor = ropeScalingFactor;
+    this->ropeScalingLowFreqFactor = ropeScalingLowFreqFactor;
+    this->ropeScalingHighFreqFactory = ropeScalingHighFreqFactory;
+    this->ropeScalingOrigMaxSeqLen = ropeScalingOrigMaxSeqLen;
+    printf("🕒 ropeScalingFactor: %f\n", ropeScalingFactor);
+    printf("🕒 ropeScalingLowFreqFactor: %f\n", ropeScalingLowFreqFactor);
+    printf("🕒 ropeScalingHighFreqFactory: %f\n", ropeScalingHighFreqFactory);
+    printf("🕒 ropeScalingOrigMaxSeqLen: %d\n", ropeScalingOrigMaxSeqLen);
+}
+
+float Llama3_1RopeCommand::scale(float freq) {
+    float waveLen = 2.0f * M_PI * freq;
+    float lowFreqWavelen = ropeScalingOrigMaxSeqLen / ropeScalingLowFreqFactor;
+    float highFreqWavelen = ropeScalingOrigMaxSeqLen / ropeScalingHighFreqFactory;
+    if (waveLen < highFreqWavelen) {
+        return freq;
+    } else if (waveLen > lowFreqWavelen) {
+        return freq / ropeScalingFactor;
+    } else {
+        float smooth = (ropeScalingOrigMaxSeqLen / waveLen - ropeScalingLowFreqFactor) / (ropeScalingHighFreqFactory - ropeScalingLowFreqFactor);
+        return (1 - smooth) * freq / ropeScalingFactor + smooth * freq;
+    }
+}
+
+void Llama3_1RopeCommand::forward(bool isQ, float* qOrK, pos_t pos, unsigned int nThreads, unsigned int threadIndex) {
+    const unsigned int dim0Half = (isQ ? slice->qDim0 : slice->kvDim0) / 2;
+    const unsigned int shift = isQ ? slice->qShift : 0;
+    SPLIT_RANGE_TO_THREADS(s, e, 0, dim0Half, nThreads, threadIndex);
+    const unsigned int iStart = s * 2;
+    const unsigned int iEnd = e * 2;
+
+    for (unsigned int i = iStart; i < iEnd; i += 2) {
+        const unsigned int headDim = i % slice->headSize;
+        const float freq = 1.0f / powf(slice->ropeTheta, headDim / (float)slice->headSize);
+        const float val = pos * freq;
+        const float fcr = cosf(val);
+        const float fci = sinf(val);
+
+        float v0 = qOrK[i];
+        float v1 = qOrK[i + 1];
+
+        qOrK[i]     = scale(v0 * fcr - v1 * fci);
+        qOrK[i + 1] = scale(v0 * fci + v1 * fcr);
     }
 }
 
