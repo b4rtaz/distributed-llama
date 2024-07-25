@@ -1,5 +1,8 @@
 #include <cassert>
 #include <cstring>
+#ifdef _WIN32
+    #define _USE_MATH_DEFINES
+#endif
 #include <cmath>
 #include "utils.hpp"
 #include "funcs.hpp"
