@@ -380,8 +380,18 @@ void matmulQ40vQ80(const MatmulThreadInfo* a) {
         a->output[d] = hsum_float_8(acc);
     }
 #else
-    printf("matmulQ40vQ80 - not implemented\n");
-    exit(EXIT_FAILURE);
+    float group[QK40];
+    for (unsigned int d = a->ds; d < a->de; d++) {
+        float sum = 0.0;
+        for (unsigned int j = 0; j < n; j++) {
+            dequantizeQ40Row(&w[d * n + j], group, QK40);
+            float iD = convertF16ToF32(input[j].d);
+            for (unsigned int z = 0; z < QK40; z++) {
+                sum += group[z] * iD * (float)input[j].qs[z];
+            }
+        }
+        a->output[d] = sum;
+    }
 #endif
 }
 
