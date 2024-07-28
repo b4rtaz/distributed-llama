@@ -158,7 +158,7 @@ def loadConfig(folderPath: str, weightsFloatType: int):
         config = json.load(fc)
     files = []
     for fileName in allFiles:
-        if fileName.endswith('.safetensors'):
+        if fileName.endswith('.safetensors') and not fileName.startswith('.'):
             files.append(os.path.join(folderPath, fileName))
     if (len(files) == 0):
         raise Exception('Not found any model file')
