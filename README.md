@@ -6,10 +6,8 @@
 
 Tensor parallelism is all you need. Run LLMs on weak devices or make powerful devices even more powerful by distributing the workload and dividing the RAM usage. This project proves that it's possible split the workload of LLMs across multiple devices and achieve a significant speedup. Distributed Llama allows you to run huge LLMs in-house. The project uses TCP sockets to synchronize the state. You can easily configure your AI cluster by using a home router.
 
-<p align="center">
-  <img src=".github/8raspi.jpg" width="50%" alt="Distributed Llama running on 8 Raspberry Pi 4B devices" /><br />
-  <sub><sup>Distributed Llama running Llama 2 70B on 8 Raspberry Pi 4B devices</sup></sub>
-</p>
+> [!TIP]
+> Check out the new article: [🌳 How to Run Llama 3.1 405B on Home Devices? Build AI Cluster!](https://medium.com/@b4rtaz/how-to-run-llama-3-405b-on-home-devices-build-ai-cluster-ad0d5ad3473b)
 
 ### 🔥 Setup Root Node by Single Command
 
@@ -105,12 +103,17 @@ I - inference time of the root node, T - network transfer time of the root node.
 
 **Raspberry Pi 4B 8 GB**
 
-<sub><sup>Weights = Q40, Buffer = Q80, nSamples = 16, switch = TP-Link LS1008G, tested on 0.1.0 version</sup></sub>
-
 <p align="center">
-  <img src=".github/8raspi2.jpg" width="35%" alt="8 x Raspberry Pi 4B 8GB" /><br />
+  <img src=".github/8raspi2.jpg" width="25%" alt="8 x Raspberry Pi 4B 8GB" /><br />
   <sub><sup>8 x Raspberry Pi 4B 8GB</sup></sub>
 </p>
+
+<p align="center">
+  <img src=".github/8raspi.jpg" width="35%" alt="Distributed Llama running on 8 Raspberry Pi 4B devices" /><br />
+  <sub><sup>Distributed Llama running Llama 2 70B Q40 on 8 Raspberry Pi 4B devices</sup></sub>
+</p>
+
+<sub><sup>Weights = Q40, Buffer = Q80, nSamples = 16, switch = TP-Link LS1008G, tested on 0.1.0 version</sup></sub>
 
 | Model       | 1 x RasPi 4B 8 GB                                                   | 2 x RasPi 4B 8 GB                                                     | 4 x RasPi 4B 8 GB                                                                    | 8 x RasPi 4B 8 GB                                                    |
 |-------------|---------------------------------------------------------------------|-----------------------------------------------------------------------|--------------------------------------------------------------------------------------|----------------------------------------------------------------------|
