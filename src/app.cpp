@@ -41,6 +41,7 @@ AppArgs AppArgs::parse(int argc, char** argv, bool hasMode) {
     args.steps = 0;
     args.seed = (unsigned long long)time(NULL);
     args.chatTemplateType = TEMPLATE_UNKNOWN;
+    args.maxSeqLen = 0;
     args.useDiscForKvCache = false;
 
     int i = 1;
@@ -99,6 +100,8 @@ AppArgs AppArgs::parse(int argc, char** argv, bool hasMode) {
             args.seed = atoll(value);
         } else if (strcmp(name, "--chat-template") == 0) {
             args.chatTemplateType = parseChatTemplateType(value);
+        } else if (strcmp(name, "--max-seq-len") == 0) {
+            args.maxSeqLen = (unsigned int)atoi(value);
         } else if (strcmp(name, "--kv-cache-storage") == 0) {
             args.useDiscForKvCache = strcmp(value, "disc") == 0;
         } else {
@@ -128,7 +131,7 @@ void App::run(AppArgs* args, void (*program)(Inference* inference, SocketPool* s
     SocketPool* socketPool = SocketPool::connect(args->nWorkers, args->workerHosts, args->workerPorts);
     unsigned int nSlices = args->nWorkers + 1;
 
-    TransformerSpec spec = Transformer::loadSpecFromFile(args->modelPath, nSlices, args->weightsFloatType, args->bufferFloatType);
+    TransformerSpec spec = Transformer::loadSpecFromFile(args->modelPath, nSlices, args->maxSeqLen, args->weightsFloatType, args->bufferFloatType);
     TransformerArch arch = TransformerArchFactory::create(&spec);
     Tokenizer tokenizer(args->tokenizerPath, spec.vocabSize);
 

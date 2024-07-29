@@ -71,7 +71,8 @@ struct TransformerSpec {
     int nKvHeads;
     int nExperts;
     int nActiveExperts;
-    int seqLen;
+    unsigned int origSeqLen; // Original model context length
+    unsigned int seqLen; // Limited context length by the `--max-seq-len` argument
     int hiddenDim;
     TransformerHiddenAct hiddenAct;
     int kvDim;
@@ -197,7 +198,7 @@ public:
 
     ~Transformer();
 
-    static TransformerSpec loadSpecFromFile(const char* path, const unsigned int nSlices, FloatType weightsFloatType, FloatType bufferFloatType);
+    static TransformerSpec loadSpecFromFile(const char* path, const unsigned int nSlices, const unsigned int maxSeqLen, FloatType weightsFloatType, FloatType bufferFloatType);
     static Transformer loadRootFromFile(const char* path, TransformerSpec* spec, TransformerConfig* config, SocketPool* socketPool);
     static Transformer loadRoot(char* data, TransformerSpec* spec, TransformerConfig* config, SocketPool* socketPool);
     static Transformer loadSlice(TransformerSpec* spec, TransformerConfig* config, Socket* socket);
