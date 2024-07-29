@@ -134,7 +134,7 @@ LlamaRopeCommand::LlamaRopeCommand(RopeSlice *slice) {
 
     size_t cacheBytes = slice->seqLen * slice->sliceDim * sizeof(float);
     cache = (float*)newBuffer(cacheBytes);
-    printf("🕒 ropeCache: %ld kB\n", cacheBytes / 1024);
+    printf("🕒 ropeCacheSize: %ld kB\n", cacheBytes / 1024);
 
     for (pos_t pos = 0; pos < slice->seqLen; pos++) {
         for (unsigned int i = slice->kvDimStart; i < slice->qDimEnd; i += 2) {

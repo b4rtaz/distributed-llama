@@ -9,7 +9,7 @@
 
 #define IS_ROOT_SLICE(sliceIndex) (sliceIndex == 0)
 
-TransformerSpec Transformer::loadSpecFromFile(const char* path, const unsigned int nSlices, FloatType weightsFloatType, FloatType bufferFloatType) {
+TransformerSpec Transformer::loadSpecFromFile(const char* path, const unsigned int nSlices, const unsigned int maxSeqLen, FloatType weightsFloatType, FloatType bufferFloatType) {
     TransformerSpec spec;
     memset(&spec, 0, sizeof(TransformerSpec));
     spec.hiddenAct = SILU;
@@ -95,6 +95,10 @@ TransformerSpec Transformer::loadSpecFromFile(const char* path, const unsigned i
         }
     }
 
+    spec.origSeqLen = spec.seqLen;
+    if (maxSeqLen > 0 && spec.seqLen > maxSeqLen) {
+        spec.seqLen = maxSeqLen;
+    }
     spec.headSize = spec.dim / spec.nHeads;
     spec.kvDim = (spec.dim * spec.nKvHeads) / spec.nHeads;
     spec.weightsFloatType = weightsFloatType;
@@ -131,6 +135,9 @@ TransformerSpec Transformer::loadSpecFromFile(const char* path, const unsigned i
         printf("💡 nActiveExperts: %d\n", spec.nActiveExperts);
     }
     printf("💡 vocabSize: %d\n", spec.vocabSize);
+    if (spec.seqLen != spec.origSeqLen) {
+        printf("💡 origSeqLen: %d\n", spec.origSeqLen);
+    }
     printf("💡 seqLen: %d\n", spec.seqLen);
     printf("💡 nSlices: %d\n", spec.nSlices);
     printf("💡 ropeTheta: %.1f\n", spec.ropeTheta);

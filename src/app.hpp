@@ -34,6 +34,7 @@ public:
     bool benchmark;
     unsigned long long seed;
     ChatTemplateType chatTemplateType;
+    unsigned int maxSeqLen;
 
     // worker
     int port;
