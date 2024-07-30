@@ -38,20 +38,16 @@ def writeQuantizedQ40Tensor(file, x):
     deltas16 = deltas.astype(np.float16)
     ids = np.where(deltas != 0, 1.0 / deltas, 0)
     groups = np.add(groups * ids[:, np.newaxis], 8.5)
-    groups = np.where(groups < 15, groups, 15)
+    groups = np.clip(groups, 0, 15).astype(int)
+
+    gLow = groups[:, :blockHalfSize] & 0xF
+    gHigh = (groups[:, blockHalfSize:] & 0xF) << 4
+    gCombined = gLow | gHigh
 
     nBytes = 0
-    block = [0] * blockHalfSize
     for groupIndex in range(0, len(groups)):
-        group = groups[groupIndex]
         delta16 = deltas16[groupIndex]
-
-        for i in range(0, blockHalfSize):
-            x0 = int(group[i])
-            x1 = int(group[i + blockHalfSize])
-            block[i] = (x0 & 0xF) | ((x1 & 0xF) << 4)
-
-        buffer = struct.pack(f'e{blockHalfSize}B', delta16, *block)
+        buffer = struct.pack(f'e{blockHalfSize}B', delta16, *gCombined[groupIndex])
         file.write(buffer)
         nBytes += len(buffer)
     return nBytes
