@@ -46,7 +46,7 @@ def downloadFile(urls: str, path: str):
         if (result.upper() != 'Y'):
             return
 
-    lastSize = 0
+    lastSizeMb = 0
     with open(path, 'wb') as file:
         for url in urls:
             print(f'📄 {url}')
@@ -54,10 +54,10 @@ def downloadFile(urls: str, path: str):
             response.raise_for_status()
             for chunk in response.iter_content(chunk_size=4096):
                 file.write(chunk)
-                size = file.tell() // (1024 * 1024)
-                if (size - lastSize >= 8192):
-                    sys.stdout.write("\rDownloaded %i MB" % size)
-                    lastSize = size
+                sizeMb = file.tell() // (1024 * 1024)
+                if (sizeMb != lastSizeMb):
+                    sys.stdout.write("\rDownloaded %i MB" % sizeMb)
+                    lastSizeMb = sizeMb
             sys.stdout.write('\n')
     sys.stdout.write(' ✅\n')
 
