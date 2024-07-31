@@ -54,10 +54,11 @@ def downloadFile(urls: str, path: str):
             response.raise_for_status()
             for chunk in response.iter_content(chunk_size=4096):
                 file.write(chunk)
-                size = file.tell() // 1024
+                size = file.tell() // (1024 * 1024)
                 if (size - lastSize >= 8192):
-                    sys.stdout.write("\rDownloaded %i kB" % size)
+                    sys.stdout.write("\rDownloaded %i MB" % size)
                     lastSize = size
+            sys.stdout.write('\n')
     sys.stdout.write(' ✅\n')
 
 def download(modelName: str, model: list):
