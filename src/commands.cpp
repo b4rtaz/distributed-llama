@@ -113,15 +113,23 @@ MatmulCommand::MatmulCommand(const unsigned int n, const unsigned int d, const F
     this->inputFloatType = inputFloatType;
     this->weightsFloatType = weightsFloatType;
     this->cpuSize = getBatchBytes(weightsFloatType, n, d);
+#if ALLOC_MEMORY
     this->cpuWeights = newBuffer(this->cpuSize);
+#endif
 };
 
 MatmulCommand::~MatmulCommand() {
+#if ALLOC_MEMORY
     freeBuffer(cpuWeights);
+#endif
 }
 
 size_t MatmulCommand::loadWeights(const void* source) {
+#if ALLOC_MEMORY
     memcpy(cpuWeights, source, cpuSize);
+#else
+    cpuWeights = (void*)source;
+#endif
     return cpuSize;
 }
 

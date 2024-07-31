@@ -5,6 +5,8 @@
 #include <cstdio>
 #include "common/pthread.h"
 
+#define ALLOC_MEMORY true
+
 #ifdef _WIN32
 #include <windows.h>
 #endif

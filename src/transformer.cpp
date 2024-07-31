@@ -236,9 +236,10 @@ Transformer::Transformer(TransformerSpec* spec, TransformerConfig* config, slice
         tokenEmbeddingTableBytes = spec->vocabSize * spec->dim * sizeof(float);
         rmsFinalBytes = spec->dim * sizeof(float);
 
+#if ALLOC_MEMORY
         tokenEmbeddingTable = (float*)newBuffer(tokenEmbeddingTableBytes);
         rmsFinal = (float*)newBuffer(rmsFinalBytes);
-
+#endif
         wclsMm = new MatmulCommand(spec->dim, spec->vocabSize, F32, spec->weightsFloatType);
 
         x = (float*)newBuffer(spec->dim * sizeof(float));
@@ -272,8 +273,10 @@ Transformer::~Transformer() {
     delete[] blocks;
 
     if (IS_ROOT_SLICE(sliceIndex)) {
+#if ALLOC_MEMORY
         freeBuffer(tokenEmbeddingTable);
         freeBuffer(rmsFinal);
+#endif
         delete wclsMm;
 
         freeBuffer(x);
@@ -295,12 +298,14 @@ TransformerBlock::TransformerBlock(TransformerSpec* spec, TransformerConfig* con
         rmsMoeBytes = spec->dim * sizeof(float);
         rmsFfn2Bytes = spec->dim * sizeof(float);
 
+#if ALLOC_MEMORY
         rmsAtt = (float*)newBuffer(rmsAttBytes);
         rmsFfn = (float*)newBuffer(rmsFfnBytes);
         if (spec->archType == GROK1) {
             rmsMoe = (float*)newBuffer(rmsMoeBytes);
             rmsFfn2 = (float*)newBuffer(rmsFfn2Bytes);
         }
+#endif
     }
 
     kvCacheSlice = new KvCacheSlice(spec->kvDim, spec->seqLen, spec->nSlices);
@@ -360,6 +365,7 @@ TransformerBlock::TransformerBlock(TransformerSpec* spec, TransformerConfig* con
 }
 
 TransformerBlock::~TransformerBlock() {
+#if ALLOC_MEMORY
     if (IS_ROOT_SLICE(sliceIndex)) {
         freeBuffer(rmsAtt);
         freeBuffer(rmsFfn);
@@ -368,6 +374,7 @@ TransformerBlock::~TransformerBlock() {
             freeBuffer(rmsFfn2);
         }
     }
+#endif
 
     delete kvCacheSlice;
     if (config->useDiscForKvCache) {
@@ -423,6 +430,7 @@ TransformerBlock::~TransformerBlock() {
 }
 
 static size_t loadSlicedMatmulWeights(const uint8_t nSlices, MatmulSlice* slice, char* source, MatmulCommand* mm, SocketPool* socketPool) {
+#if ALLOC_MEMORY
     char* buffer = (char*)newBuffer(slice->sliceBytes);
     size_t loadedBytes = 0;
     for (uint8_t s = 0; s < nSlices; s++) {
@@ -437,10 +445,17 @@ static size_t loadSlicedMatmulWeights(const uint8_t nSlices, MatmulSlice* slice,
     }
     freeBuffer(buffer);
     return loadedBytes;
+#else
+    return mm->loadWeights(source);
+#endif
 }
 
 static size_t loadRootWeights(char** target, char* source, size_t bytes) {
+#if ALLOC_MEMORY
     memcpy(*target, source, bytes);
+#else
+    *target = source;
+#endif
     return bytes;
 }
 
@@ -456,8 +471,9 @@ Transformer Transformer::loadRootFromFile(const char* path, TransformerSpec* spe
     char* weights = ((char*)file.data) + spec->headerSize;
     Transformer transformer = Transformer::loadRoot((char*)weights, spec, config, socketPool);
 
+#if ALLOC_MEMORY
     closeMmapFile(&file);
-
+#endif
     return transformer;
 }
 
