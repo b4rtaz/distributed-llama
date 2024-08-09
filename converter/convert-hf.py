@@ -143,14 +143,6 @@ def parseHiddenAct(act: str):
         raise Exception(f'Unsupported hidden act: {act}')
     return hiddenAct
 
-def parseRopeType(rt: str):
-    ropeType = {
-        'llama3': 2, # LLAMA3_1
-    }.get(rt)
-    if (ropeType is None):
-        raise Exception(f'Unsupported rope type: {ropeType}')
-    return ropeType
-
 def loadConfig(folderPath: str, weightsFloatType: int):
     allFiles = os.listdir(folderPath)
     allFiles.sort()
@@ -158,7 +150,7 @@ def loadConfig(folderPath: str, weightsFloatType: int):
         config = json.load(fc)
     files = []
     for fileName in allFiles:
-        if fileName.endswith('.safetensors') and not fileName.startswith('.'):
+        if fileName.endswith('.safetensors'):
             files.append(os.path.join(folderPath, fileName))
     if (len(files) == 0):
         raise Exception('Not found any model file')
@@ -186,14 +178,6 @@ def loadConfig(folderPath: str, weightsFloatType: int):
     ropeTheta = config.get('rope_theta')
     if (ropeTheta is not None):
         result['rope_theta'] = int(ropeTheta)
-
-    ropeScaling = config.get('rope_scaling')
-    if (ropeScaling is not None):
-        result['rope_scaling_factor'] = int(ropeScaling['factor'])
-        result['rope_scaling_low_freq_factor'] = int(ropeScaling['low_freq_factor'])
-        result['rope_scaling_high_freq_factory'] = int(ropeScaling['high_freq_factor'])
-        result['rope_scaling_orig_max_seq_len'] = int(ropeScaling['original_max_position_embeddings'])
-        result['rope_type'] = parseRopeType(ropeScaling['rope_type'])
     return result
 
 def printUsage():

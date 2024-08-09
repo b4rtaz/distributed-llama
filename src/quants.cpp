@@ -8,7 +8,7 @@
     #include <arm_neon.h>
 #endif
 
-int getNumbersPerBatch(FloatType type) {
+int getNumbersPerBatch(FloatType type) { // F32 | F16 -> 1, Q40 | Q80 -> 32
     switch (type) {
         case F32:
             return 1;
@@ -25,7 +25,7 @@ int getNumbersPerBatch(FloatType type) {
     exit(EXIT_FAILURE);
 }
 
-long getBatchBytes(FloatType type, int n, int d) {
+long getBatchBytes(FloatType type, int n, int d) { // -->根据不同的量化方式分配内存
     switch (type) {
         case F32:
             return n * d * sizeof(float);
@@ -33,7 +33,7 @@ long getBatchBytes(FloatType type, int n, int d) {
             return n * d * sizeof(uint16_t);
         case Q40:
             {
-                assert(n % QK40 == 0);
+                assert(n % QK40 == 0); // n必须是32的整数倍
                 int blocks = n / QK40 * d;
                 return blocks * sizeof(BlockQ40);
             }
@@ -46,6 +46,7 @@ long getBatchBytes(FloatType type, int n, int d) {
         case FUNK:
             break;
     }
+    // F32 -> sizeof(float), F16 -> sizeof(uint16_t), Q40
     fprintf(stderr, "Unsupported float type %d\n", type);
     exit(EXIT_FAILURE);
 }
@@ -287,6 +288,6 @@ void dequantizeQ80Row(const BlockQ80* input, float* output, int k, unsigned int 
     }
 }
 
-void initQuants() {
+void initQuants() { // 将16位浮点数转换为32位浮点数
     initF16ToF32();
 }

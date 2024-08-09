@@ -522,17 +522,16 @@ EosDetector::~EosDetector() {
 
 EosDetectorType EosDetector::append(int tokenId, const char* piece) {
     int pieceLength = strlen(piece);
-    int newSize = bufferPos + pieceLength + 1;
-    if (newSize > bufferSize) {
-        char* newBuffer = new char[newSize];
+    int length = bufferPos + pieceLength + 1;
+    if (length > bufferSize) {
+        char* newBuffer = new char[length];
         if (bufferPos > 0)
             memcpy(newBuffer, buffer, bufferPos);
         if (bufferSize > 0)
             delete[] buffer;
         buffer = newBuffer;
-        bufferSize = newSize;
     }
-    memcpy(&buffer[bufferPos], piece, pieceLength + 1);
+    memcpy(buffer + bufferPos, piece, pieceLength + 1);
     bufferPos += pieceLength;
 
     // detection

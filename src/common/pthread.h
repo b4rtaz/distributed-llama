@@ -10,18 +10,18 @@ typedef DWORD (WINAPI *thread_func_t)(void *);
 
 static int pthread_create(dl_thread * out, void * unused, thread_func_t func, void * arg) {
     (void) unused;
-    dl_thread handle = CreateThread(NULL, 0, func, arg, 0, NULL);
-    if (handle == NULL) {
+    dl_thread handle = CreateThread(NULL, 0, func, arg, 0, NULL);// 在Windows平台上创建线程,执行方法就是threadHandler方法,也就是这里传入的func
+    if (handle == NULL) {// 如果创建失败
         return EAGAIN;
     }
 
-    *out = handle;
+    *out = handle; // 将线程存储
     return 0;
 }
 
 static int pthread_join(dl_thread thread, void * unused) {
     (void) unused;
-    DWORD ret = WaitForSingleObject(thread, INFINITE);
+    DWORD ret = WaitForSingleObject(thread, INFINITE); // INFINITE无线等待线程创建,直到线程终止
     if (ret == WAIT_FAILED) {
         return -1;
     }

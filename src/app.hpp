@@ -16,8 +16,7 @@
 class AppArgs {
 public:
     char* mode;
-    int nThreads;
-    bool useDiscForKvCache;
+    int nThreads; 
 
     // inference
     char* modelPath;
@@ -34,10 +33,14 @@ public:
     bool benchmark;
     unsigned long long seed;
     ChatTemplateType chatTemplateType;
-    unsigned int maxSeqLen;
 
     // worker
     int port;
+
+    // ---- START ----
+    // 增加动态分配的Memory Budget数组
+    std::vector<int> memoryBudgetArray;
+    // ----  END  ----
 
     static AppArgs parse(int argc, char** argv, bool hasMode);
 };

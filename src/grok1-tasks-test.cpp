@@ -30,7 +30,6 @@ int main() {
     TransformerSpec spec;
     spec.headerSize = sizeof(TransformerFileOldHeader) + sizeof(int);
     spec.archType = GROK1;
-    spec.ropeType = ROPE_FALCON;
     spec.dim = 6144;
     spec.nLayers = 1;
     spec.nHeads = 48;
@@ -48,9 +47,6 @@ int main() {
     spec.hiddenAct = GELU;
     spec.ropeTheta = 10000.0f;
 
-    TransformerConfig config;
-    config.useDiscForKvCache = false;
-
     size_t beforeBlockBytes = spec.dim * spec.vocabSize * sizeof(float);
     size_t blockBytes = 956596224;
     size_t afterBlockBytes  = (spec.dim + spec.dim * spec.vocabSize) * sizeof(float);
@@ -64,7 +60,7 @@ int main() {
     for (int f = 0; f < nFloats; f++) block[f] = randomF32(&state) / 100.0;
 
     SocketPool socketPool(0, NULL);
-    Transformer transformer = Transformer::loadRoot(weights, &spec, &config, &socketPool);
+    Transformer transformer = Transformer::loadRoot(weights, &spec, &socketPool);
     transformer.pos = 0;
 
     float* x = transformer.x;

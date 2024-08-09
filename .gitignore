@@ -4,7 +4,6 @@
 *.0
 *.dSYM
 *.data
-*.temp
 __pycache__
 
 *-test

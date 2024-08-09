@@ -15,41 +15,54 @@
 #include "../../app.hpp"
 
 void generate(Inference* inference, SocketPool* socketPool, Tokenizer *tokenizer, Sampler *sampler, AppArgs* args, TransformerSpec* spec) {
-    if (args->prompt == NULL)
+    // 这里的args就是我们在命令行传入的参数
+    /*
+    FOR ROOT Node:
+    ./dllama
+    inference -- 推理模式
+    --model /Users/fox/Desktop/暑期项目/Github/Distributed_Llama/models/llama3_8b_q40/dllama_model_llama3_8b_q40.m -- 模型权重文件
+    --tokenizer /Users/fox/Desktop/暑期项目/Github/Distributed_Llama/models/llama3_8b_q40/dllama_tokenizer_llama3_8b_q40.t -- Tokenizer文件
+    --buffer-float-type q80 -- 缓存数据类型 q80 | q40 | F32 | F16 ...,q80应该是对RAM占用最小的
+    --prompt "You are a person" -- 提示词
+    --steps 16 --nthreads 4 -- 最大步数,可以理解为最大Token数
+    --workers 10.3.10.139:9998 -- Worker的IP地址和端口
+    */
+    if (args->prompt == NULL) // 如果没有提示词
         throw std::runtime_error("Prompt is required");
 
-    // encode the (string) prompt into tokens sequence
+    // 对提示词进行编码
     int numPromptTokens = 0;
     int* promptTokens = new int[strlen(args->prompt) + 3]; // +3 for '\0', ?BOS, ?EOS
-
-    // TODO: this is a hack for Grok1. We should have a more general way to handle this
+    // 对GROK1的特殊处理
     bool addBos = spec->archType != GROK1;
 
     tokenizer->encode(args->prompt, promptTokens, &numPromptTokens, addBos, false);
     if (numPromptTokens < 1)
         throw std::runtime_error("Expected at least 1 prompt token");
-
     // start the main loop
     long start = 0;  // used to time our code, only initialized after first iteration
     int next;        // will store the next token in the sequence
     int token = promptTokens[0]; // kick off with the first token in the prompt
     pos_t pos = 0;     // position in the sequence
 
-    unsigned long inferenceTime;
-    unsigned long transferTime;
-    size_t sentBytes;
-    size_t recvBytes;
+    unsigned long inferenceTime; // 记录推理时间
+    unsigned long transferTime; // 记录Transfer时间
+    size_t sentBytes; // 记录发送字节数
+    size_t recvBytes; // 记录收到字节数
+
+    // 记录时间
     unsigned long totalGenerationTime = 0;
     unsigned long totalInferenceTime = 0;
     unsigned long totalTransferTime = 0;
-    while (pos < args->steps) {
+    while (pos < args->steps) { // 在达到最大输出提示词之前进行循环
         unsigned long startTime = timeMs();
         float* logits = inference->infer(token, pos);
 
-        inference->getStats(&inferenceTime, &transferTime);
-        socketPool->getStats(&sentBytes, &recvBytes);
+        inference->getStats(&inferenceTime, &transferTime); // 获取执行时间
+        socketPool->getStats(&sentBytes, &recvBytes); // 
 
-        // advance the state machine
+        // 如果我们仍然在input内:强制下一个输入token就是input中的下一个提示词作为输入
+        // 如果我们已经超过了input:则根据上面预测的logits获取下一个token作为输入
         if (pos < numPromptTokens - 1) {
             // if we are still processing the input prompt, force the next prompt token
             next = promptTokens[pos + 1];
@@ -60,6 +73,7 @@ void generate(Inference* inference, SocketPool* socketPool, Tokenizer *tokenizer
         pos++;
 
         unsigned long generationTime = timeMs() - startTime;
+        // 记录一个step的时间
 
         totalGenerationTime += generationTime;
         totalInferenceTime += inferenceTime;
@@ -71,15 +85,15 @@ void generate(Inference* inference, SocketPool* socketPool, Tokenizer *tokenizer
         }
 
         // print the token as string, decode it with the Tokenizer object
-        char* piece = tokenizer->decode(token, next);
+        char* piece = tokenizer->decode(token, next); // 对预测结果进行解码
 
-        if (args->benchmark)
+        if (args->benchmark) // 是否启用输出
             printf("🔶 G %4ld ms I %4ld ms T %4ld ms S %6ld kB R %6ld kB ", generationTime, inferenceTime, transferTime, sentBytes / 1024, recvBytes / 1024);
         safePrintf(piece);
         if (args->benchmark)
             printf("\n");
-        fflush(stdout);
-        token = next;
+        fflush(stdout); // 刷新输出缓存区
+        token = next; // 更新token变量,下一次推理的输入变量就是更新后的token
     }
 
     delete[] promptTokens;
@@ -160,7 +174,7 @@ public:
             int nInputTokens;
             tokenizer->encode((char*)inputPrompt.c_str(), inputTokens, &nInputTokens, true, false);
 
-            pos_t userPromptEndPos = (pos_t)std::min<unsigned int>(spec->seqLen, pos + nInputTokens - 1);
+            pos_t userPromptEndPos = (pos_t)std::min(spec->seqLen, pos + nInputTokens - 1);
             for (pos_t i = 0; pos < userPromptEndPos; pos++, i++) {
                 inference->infer(inputTokens[i], pos);
                 token = inputTokens[i + 1];
@@ -203,33 +217,32 @@ void chat(Inference* inference, SocketPool* socketPool, Tokenizer* tokenizer, Sa
 }
 
 void worker(AppArgs* args) {
-    if (args->port < 1024) {
+    if (args->port < 1024) { // 端口号限制
         throw std::runtime_error("Invalid port number");
     }
-
-    TransformerConfig config;
-    config.useDiscForKvCache = args->useDiscForKvCache;
-
-    SocketServer server(args->port);
-    Socket socket = server.accept();
-    TransformerSpec spec;
-    Transformer transformer = Transformer::loadSlice(&spec, &config, &socket);
-    TransformerArch arch = TransformerArchFactory::create(&spec);
+    // for workers:
+    SocketServer server(args->port); // 启动Server
+    Socket socket = server.accept(); // 接收数据
+    TransformerSpec spec; // 实例化一个spec
+    Transformer transformer = Transformer::loadSlice(&spec, &socket, args->memoryBudgetArray); // 从接收到的数据中加载transformer
+    TransformerArch arch = TransformerArchFactory::create(&spec); // 创建工作流
 
     Worker worker = Worker(&arch, args->nThreads, &transformer, &socket);
-    worker.work();
+    // HERE !!
+    worker.work(); // 开始工作
 }
 
 int main(int argc, char *argv[]) {
-    initQuants();
-    initSockets();
+    initQuants(); // 初始化浮点数类型
+    initSockets(); // 初始化Sockets
 
     AppArgs args = AppArgs::parse(argc, argv, true);
+    // 从命令行解析参数
     bool success = false;
 
     if (args.mode != NULL) {
         if (strcmp(args.mode, "inference") == 0) {
-            args.benchmark = true;
+            args.benchmark = true; // 设置benchmark
             App::run(&args, generate);
             success = true;
         } else if (strcmp(args.mode, "generate") == 0) {
@@ -245,7 +258,7 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    cleanupSockets();
+    cleanupSockets(); //关闭Socket
 
     if (success)
         return EXIT_SUCCESS;
