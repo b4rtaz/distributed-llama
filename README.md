@@ -240,6 +240,14 @@ To add more worker nodes, just add more addresses to the `--workers` argument.
 ./dllama inference ... --workers 192.168.0.1:9998 192.168.0.2:9998 192.168.0.3:9998
 ```
 
+## ✋ Contribution
+
+Feel free to contribute to this project. For small changes, simply create a new merge request. For larger changes, please create an issue to discuss your plans. Please follow these guidelines when contributing:
+
+* Make only minimal changes and avoid modifying files that are not necessary.
+* Ensure the code is compatible across all supported systems and CPUs.
+* This repository is maintained in English.
+
 ## 💡 License
 
 This project is released under the MIT license.
