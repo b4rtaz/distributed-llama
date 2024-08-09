@@ -38,16 +38,20 @@ def writeQuantizedQ40Tensor(file, x):
     deltas16 = deltas.astype(np.float16)
     ids = np.where(deltas != 0, 1.0 / deltas, 0)
     groups = np.add(groups * ids[:, np.newaxis], 8.5)
-    groups = np.clip(groups, 0, 15).astype(int)
-
-    gLow = groups[:, :blockHalfSize] & 0xF
-    gHigh = (groups[:, blockHalfSize:] & 0xF) << 4
-    gCombined = gLow | gHigh
+    groups = np.where(groups < 15, groups, 15)
 
     nBytes = 0
+    block = [0] * blockHalfSize
     for groupIndex in range(0, len(groups)):
+        group = groups[groupIndex]
         delta16 = deltas16[groupIndex]
-        buffer = struct.pack(f'e{blockHalfSize}B', delta16, *gCombined[groupIndex])
+
+        for i in range(0, blockHalfSize):
+            x0 = int(group[i])
+            x1 = int(group[i + blockHalfSize])
+            block[i] = (x0 & 0xF) | ((x1 & 0xF) << 4)
+
+        buffer = struct.pack(f'e{blockHalfSize}B', delta16, *block)
         file.write(buffer)
         nBytes += len(buffer)
     return nBytes
@@ -121,12 +125,7 @@ def writeHeader(file, params):
         'max_seq_len': 10,
         'hidden_act': 11,
         'rope_theta': 12,
-        'weights_float_type': 13,
-        'rope_scaling_factor': 14,
-        'rope_scaling_low_freq_factor': 15,
-        'rope_scaling_high_freq_factory': 16,
-        'rope_scaling_orig_max_seq_len': 17,
-        'rope_type': 18,
+        'weights_float_type': 13
     }
     header = struct.pack('i', 0xA00ABCD)
 

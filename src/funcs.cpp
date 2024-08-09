@@ -70,7 +70,7 @@ void softmax(float* x, const unsigned int size) {
         fs = vld1q_f32(&x[i]);
         fmaxv = vmaxq_f32(fmaxv, fs);
     }
-    maxVal = vmaxvq_f32(fmaxv);
+    maxVal = vmaxvq_f32(fmaxv); 
 #else
     // find max value (for numerical stability)
     maxVal = x[0];
@@ -79,6 +79,7 @@ void softmax(float* x, const unsigned int size) {
             maxVal = x[i];
         }
     }
+    // 针对NEON进行了优化,本质上就是找到x中的最大值,用于求Softmax
 #endif
     // exp and sum
     float sum = 0.0f;
@@ -90,17 +91,18 @@ void softmax(float* x, const unsigned int size) {
     for (unsigned int i = 0; i < size; i++) {
         x[i] /= sum;
     }
+    // 最终得到的x[i]就是softmax之后的结果
 }
 
 float rms(const float* x, const unsigned int size) {
     float ss;
 #if defined(__ARM_NEON)
     assert(size % 4 == 0);
-    float32x4_t fsq;
+    float32x4_t fsq; // float
     float32x4_t fs = vmovq_n_f32(0);
     for (unsigned int j = 0; j < size; j += 4) {
         fsq = vld1q_f32(&x[j]);
-        fs = vmlaq_f32(fs, fsq, fsq);
+        fs = vmlaq_f32(fs, fsq, fsq); // fs = fs + fsq * fsq
     }
     ss = vaddvq_f32(fs);
 #elif defined(__AVX2__)
@@ -120,22 +122,23 @@ float rms(const float* x, const unsigned int size) {
     ss /= size;
     ss += 1e-5f;
     ss = 1.0f / sqrtf(ss);
+    // printf("\n ss in rms %f \n", ss);
     return ss;
 }
 
-void rmsnorm(float* o, const float* x, const float ms, const float* weight, const unsigned int size, const unsigned int nThreads, const unsigned int threadIndex) {
+void rmsnorm(float* o, const float* x, const float ms, const float* weight, const unsigned int size, const unsigned int nThreads, const unsigned int threadIndex) { // 根据均方根值rms快速计算归一化值
     SPLIT_RANGE_TO_THREADS(start, end, 0, size, nThreads, threadIndex);
 
 #if defined(__ARM_NEON)
     assert(size % 4 == 0);
     float32x4_t fw;
     float32x4_t fx;
-    float32x4_t fss = vmovq_n_f32(ms);
+    float32x4_t fss = vmovq_n_f32(ms);// 把ms的值复制*4到fss中
     for (unsigned int j = start; j < end; j += 4) {
         fw = vld1q_f32(&weight[j]);
         fx = vld1q_f32(&x[j]);
         fx = vmulq_f32(fx, fw);
-        fx = vmulq_f32(fx, fss);
+        fx = vmulq_f32(fx, fss); // fx 和 fss点乘
         vst1q_f32(&o[j], fx);
     }
 #else
@@ -155,9 +158,9 @@ struct MatmulThreadInfo {
     unsigned int de;
 };
 
-void matmulF32(const MatmulThreadInfo* a) {
-    const float* input = (float*)a->input;
-    float* w = (float*)a->weights;
+void matmulF32(const MatmulThreadInfo* a) { // 根据不同的硬件架构实现矩阵乘法
+    const float* input = (float*)a->input; // input应该是一个一维向量
+    float* w = (float*)a->weights; // 权重矩阵
     unsigned int d, j;
 
 #if defined(__ARM_NEON)
@@ -187,10 +190,10 @@ void matmulF32(const MatmulThreadInfo* a) {
         a->output[d] = hsum_float_8(u);
     }
 #else
-    for (d = a->ds; d < a->de; d++) {
+    for (d = a->ds; d < a->de; d++) { // weight的部分列
         float val = 0.0f;
         for (j = 0; j < a->n; j++) {
-            val += w[d * a->n + j] * input[j];
+            val += w[d * a->n + j] * input[j]; // input应该是一个一维向量,weight应该是x*y的矩阵转化成1*(x*y)的向量,便于计算
         }
         a->output[d] = val;
     }
@@ -199,7 +202,7 @@ void matmulF32(const MatmulThreadInfo* a) {
 
 void matmulF16(const MatmulThreadInfo* a) {
     const float* input = (float*)a->input;
-    const uint16_t* w = (uint16_t*)a->weights;
+    const uint16_t* w = (uint16_t*)a->weights; // 使用强制类型转换为Float16
     for (unsigned int d = a->ds; d < a->de; d++) {
         float val = 0.0f;
         for (unsigned int j = 0; j < a->n; j++) {
@@ -210,9 +213,12 @@ void matmulF16(const MatmulThreadInfo* a) {
     }
 }
 
-void matmulQ40(const MatmulThreadInfo* a) {
-    const int blocksPerRow = 8;
-    const int k = QK40 * blocksPerRow;
+void matmulQ40(const MatmulThreadInfo* a, int FLAG) {
+    const int blocksPerRow = 1;
+    // const int blocksPerRow = 4;
+    // const int blocksPerRow = 8;
+    const int k = QK40 * blocksPerRow; // --> k = 128
+    // 这里修改的点是把blocksPerRow改成4了。
     BlockQ40* w = (BlockQ40*)a->weights;
     assert(a->n % k == 0);
     const float* input = (float*)a->input;
@@ -252,6 +258,7 @@ void matmulQ40(const MatmulThreadInfo* a) {
         a->output[d] = hsum_float_8(u);
     }
 #else
+    printf("\n OTHERS \n");
     for (unsigned int d = a->ds; d < a->de; d++) {
         float val = 0.0f;
         for (unsigned int j = 0; j < n; j++) {
@@ -284,7 +291,7 @@ void matmulQ80(const MatmulThreadInfo* a) {
     }
 }
 
-void matmulQ40vQ80(const MatmulThreadInfo* a) {
+void matmulQ40vQ80(const MatmulThreadInfo* a) { // input Q80 & weights Q40? 只针对NEON和AVX2有用
     const BlockQ40* w = (BlockQ40*)a->weights;
     const BlockQ80* input = (BlockQ80*)a->input;
     assert(a->n % QK40 == 0);
@@ -294,9 +301,11 @@ void matmulQ40vQ80(const MatmulThreadInfo* a) {
     float32x4_t sumv0;
     float32x4_t sumv1;
     for (unsigned int d = a->ds; d < a->de; d++) {
+        // 外层维度
         sumv0 = vmovq_n_f32(0);
         sumv1 = vmovq_n_f32(0);
         for (unsigned int j = 0; j < n; j += 2) {
+            // 内层维度
             const BlockQ40* x0 = &w[d * n + j];
             const BlockQ40* x1 = &w[d * n + j + 1];
             const BlockQ80* y0 = &input[j];
@@ -380,18 +389,8 @@ void matmulQ40vQ80(const MatmulThreadInfo* a) {
         a->output[d] = hsum_float_8(acc);
     }
 #else
-    float group[QK40];
-    for (unsigned int d = a->ds; d < a->de; d++) {
-        float sum = 0.0;
-        for (unsigned int j = 0; j < n; j++) {
-            dequantizeQ40Row(&w[d * n + j], group, QK40);
-            float iD = convertF16ToF32(input[j].d);
-            for (unsigned int z = 0; z < QK40; z++) {
-                sum += group[z] * iD * (float)input[j].qs[z];
-            }
-        }
-        a->output[d] = sum;
-    }
+    printf("matmulQ40vQ80 - not implemented\n");
+    exit(EXIT_FAILURE);
 #endif
 }
 
@@ -421,14 +420,18 @@ void matmulQ80vQ80(const MatmulThreadInfo* a) {
 //   |_________|   n | |      |_|
 //        n          |_|       1
 //                    1
-void matmul(const FloatType weightsFloatType, const FloatType inputFloatType, float* output, const void* input, const void* weights, const unsigned int n, const unsigned int d, const unsigned int nThreads, const unsigned int threadIndex) {
-    SPLIT_RANGE_TO_THREADS(ds, de, 0, d, nThreads, threadIndex);
-
+void matmul(const FloatType weightsFloatType, const FloatType inputFloatType, float* output, const void* input, const void* weights, const unsigned int n, const unsigned int d, const unsigned int nThreads, const unsigned int threadIndex, int memoryBudget, int FLAG) {
+    SPLIT_RANGE_TO_THREADS(ds, de, 0, d, nThreads, threadIndex); 
+    if(FLAG == 1)printf("\n d:%d\n", d);
     MatmulThreadInfo s;
     s.output = output;
+    // output按比例分配
     s.input = input;
     s.weights = weights;
-    s.n = n;
+    // s.n = n * memoryBudget;
+    s.n = n; // 这里的n已经 n0 * memoryBudget
+    // n: 1536 | 512
+    // ds & de: 0 & 2048
     s.ds = ds;
     s.de = de;
 
@@ -442,7 +445,7 @@ void matmul(const FloatType weightsFloatType, const FloatType inputFloatType, fl
             return;
         }
         if (weightsFloatType == Q40) {
-            matmulQ40(&s);
+            matmulQ40(&s, FLAG);
             return;
         }
         if (weightsFloatType == Q80) {
@@ -451,6 +454,7 @@ void matmul(const FloatType weightsFloatType, const FloatType inputFloatType, fl
         }
     } else if (inputFloatType == Q80) {
         if (weightsFloatType == Q40) {
+            // HERE!!!!
             matmulQ40vQ80(&s);
             return;
         }
@@ -464,7 +468,7 @@ void matmul(const FloatType weightsFloatType, const FloatType inputFloatType, fl
     exit(EXIT_FAILURE);
 }
 
-float dotProduct(const float* a, const float* b, const unsigned int size) {
+float dotProduct(const float* a, const float* b, const unsigned int size) { // a和b逐点相乘并求和
 #if defined(__ARM_NEON)
     assert(size % 4 == 0);
     float32x4_t fa;
@@ -474,7 +478,9 @@ float dotProduct(const float* a, const float* b, const unsigned int size) {
         fa = vld1q_f32(&a[i]);
         fb = vld1q_f32(&b[i]);
         fs = vmlaq_f32(fs, fa, fb);
+        // fs + fa * fb
     }
+    // 这里实际上只循环了64次?
     return vaddvq_f32(fs);
 #elif defined(__AVX2__)
     assert(size % 8 == 0);
@@ -484,6 +490,16 @@ float dotProduct(const float* a, const float* b, const unsigned int size) {
         a0 = _mm256_loadu_ps(&a[i]);
         b0 = _mm256_loadu_ps(&b[i]);
         u = _mm256_fmadd_ps(a0, b0, u);
+        // for(int i = 0; i < 1; i++){
+        //     printf("\n dotProduct a0:%f \n", a0[i]);
+        // }
+        // for(int i = 0; i < 1; i++){
+        //     printf("\n dotProduct b0:%f \n", b0[i]);
+        // }
+        // for(int i = 0; i < 1; i++){
+        //     printf("\n dotProduct u:%f \n", u[i]);
+        // }
+        // 问题是这里的b0
     }
     return hsum_float_8(u);
 #else
@@ -498,7 +514,7 @@ float dotProduct(const float* a, const float* b, const unsigned int size) {
 #define SQRT_2_OVER_PI 0.79788456080286535587989211986876f
 #define GELU_COEF_A 0.044715f
 
-void gelu(float* t, const unsigned int n, const unsigned int nThreads, const unsigned int threadIndex) {
+void gelu(float* t, const unsigned int n, const unsigned int nThreads, const unsigned int threadIndex) { // gelu激活函数
     SPLIT_RANGE_TO_THREADS(start, end, 0, n, nThreads, threadIndex);
 
     for (unsigned int i = start; i < end; i++) {
@@ -507,7 +523,7 @@ void gelu(float* t, const unsigned int n, const unsigned int nThreads, const uns
     }
 }
 
-void silu(float* t, const unsigned int n, const unsigned int nThreads, const unsigned int threadIndex) {
+void silu(float* t, const unsigned int n, const unsigned int nThreads, const unsigned int threadIndex) { // silu激活函数
     SPLIT_RANGE_TO_THREADS(start, end, 0, n, nThreads, threadIndex);
 
     for (unsigned int i = start; i < end; i++) {
@@ -516,15 +532,21 @@ void silu(float* t, const unsigned int n, const unsigned int nThreads, const uns
     }
 }
 
-void mul(float* output, const float* input, const unsigned int n, const unsigned int nThreads, const unsigned int threadIndex) {
+void mul(float* output, const float* input, const unsigned int n, const unsigned int nThreads, const unsigned int threadIndex) { // 对input和output逐点相乘,不求和,结果保存到output中
     SPLIT_RANGE_TO_THREADS(start, end, 0, n, nThreads, threadIndex);
 
     for (unsigned int i = start; i < end; i++) {
+        // if(i > 340 & i < 360){
+        //     printf("\n hb0: %f\n block->hb20: %f\n", output[i], input[i]);
+        // }
         output[i] *= input[i];
     }
+    // for (int i = 340; i < 360; i++){
+    //     printf("\n mul output\n i: %d \n hb:%f\n", i, output[i]);
+    // }
 }
 
-void mulScalar(float* output, const float c, const unsigned int n, const unsigned int nThreads, const unsigned int threadIndex) {
+void mulScalar(float* output, const float c, const unsigned int n, const unsigned int nThreads, const unsigned int threadIndex) { // output和一个常数相乘
     SPLIT_RANGE_TO_THREADS(start, end, 0, n, nThreads, threadIndex);
 
     for (unsigned int i = start; i < end; i++) {
@@ -532,7 +554,7 @@ void mulScalar(float* output, const float c, const unsigned int n, const unsigne
     }
 }
 
-void add(float* output, const float* input, const unsigned int n, const unsigned int nThreads, const unsigned int threadIndex) {
+void add(float* output, const float* input, const unsigned int n, const unsigned int nThreads, const unsigned int threadIndex) { // output和input逐点求和,结果保存到output中
     SPLIT_RANGE_TO_THREADS(start, end, 0, n, nThreads, threadIndex);
 
     for (unsigned int i = start; i < end; i++) {

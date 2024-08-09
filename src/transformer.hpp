@@ -22,11 +22,6 @@ enum TransformerHeaderKey {
     HIDDEN_ACT = 11,
     ROPE_THETA = 12,
     WEIGHTS_FLOAT_TYPE = 13,
-    ROPE_SCALING_FACTOR = 14,
-    ROPE_SCALING_LOW_FREQ_FACTOR = 15,
-    ROPE_SCALING_HIGH_FREQ_FACTORY = 16,
-    ROPE_SCALING_ORIG_MAX_SEQ_LEN = 17,
-    ROPE_TYPE = 18,
 };
 
 struct TransformerFileOldHeader {
@@ -39,65 +34,51 @@ struct TransformerFileOldHeader {
     int nActiveExperts;
     int vocabSize;
     int seqLen;
-};
+}; // --> 
 
-enum TransformerArchType {
+enum TransformerArchType { // --> 结构类型
     LLAMA = 0xABCD00,
     GROK1 = 0xABCD01,
     MIXTRAL = 0xABCD02
-};
+}; 
 
-enum TransformerHiddenAct {
+enum TransformerHiddenAct { // --> 枚举类,激活层选择
     GELU = 0,
     SILU = 1,
 };
 
-enum TransformerRopeType {
-    ROPE_UNKNOWN = -1,
-    ROPE_LLAMA = 0,
-    ROPE_FALCON = 1,
-    ROPE_LLAMA3_1 = 2,
-};
-
-struct TransformerSpec {
+struct TransformerSpec { // --> 定义一个Transformer需要的相关信息的结构体
     size_t headerSize;
     size_t fileSize;
     int version;
-    TransformerArchType archType;
-    int dim;
-    int nLayers;
-    int nHeads;
-    int headSize;
-    int nKvHeads;
-    int nExperts;
-    int nActiveExperts;
-    unsigned int origSeqLen; // Original model context length
-    unsigned int seqLen; // Limited context length by the `--max-seq-len` argument
-    int hiddenDim;
-    TransformerHiddenAct hiddenAct;
-    int kvDim;
-    int vocabSize;
-    float ropeTheta;
-    TransformerRopeType ropeType;
-    float ropeScalingFactor;
-    float ropeScalingLowFreqFactor;
-    float ropeScalingHighFreqFactory;
-    int ropeScalingOrigMaxSeqLen;
+    TransformerArchType archType; // -->模型具体架构
+    int dim; // -->模型输入和输出的向量维度
+    int nLayers; // -->Transformer中的编码器或解码器的个数
+    int nHeads; // -->MHA中的Head个数
+    int headSize; // -->MHA中每个Head的维度大小 = 总维度dim / Head个数nHeads
+    int nKvHeads; // -->Kv个数
+    int nExperts; // -->专家数量,用于稀疏化专家模型例如MoE
+    int nActiveExperts; // --> 每次推理中活跃的专家数量
+    int seqLen; // --> 输入序列的最大长度
+    int hiddenDim; // --> 隐藏层维度
+    TransformerHiddenAct hiddenAct; // --> 激活层类型
+    int kvDim; // --> Kv维度大小
+    int vocabSize; // --> 词汇表的大小，表示模型可以处理的不同词汇的数量。用于嵌入层（embedding layer）的输入和输出维度。
+    float ropeTheta; // -->控制旋转编码的频率
 
     FloatType weightsFloatType;
     FloatType bufferFloatType;
+    // 量化选择
     uint8_t nSlices;
+
+    // 定义一个memoryBudgetArray
+    std::vector<int> memoryBudgetArray;
 };
 
-struct TransformerConfig {
-    bool useDiscForKvCache;
-};
-
-class TransformerBlock {
+class TransformerBlock { // -->给Q,K,V,W分配空间
 public:
-    slice_index_t sliceIndex;
-    TransformerSpec *spec;
-    TransformerConfig* config;
+    slice_index_t sliceIndex; // unsigned char
+    TransformerSpec *spec; // 与Transformer模型相关的配置参数
 
     size_t rmsAttBytes;
     float* rmsAtt;
@@ -143,7 +124,7 @@ public:
     float* att;
     float* qo0;
 
-    TransformerBlock(TransformerSpec* spec, TransformerConfig* config, slice_index_t sliceIndex);
+    TransformerBlock(TransformerSpec* spec, slice_index_t sliceIndex);
     ~TransformerBlock();
 };
 
@@ -171,15 +152,14 @@ public:
     ~TransformerBuffer();
     void* getUnit(uint8_t bufferIndex);
     size_t getUnitBytes(uint8_t bufferIndex);
-    void* getSliced(uint8_t bufferIndex, slice_index_t sliceIndex);
-    size_t getSlicedBytes(uint8_t bufferIndex);
+    void* getSliced(uint8_t bufferIndex, slice_index_t sliceIndex, int midSumMemoryBudget, int sumMemoryBudget, bool IsRow);
+    size_t getSlicedBytes(uint8_t bufferIndex, int sumMemoryBudget, bool IsRow);
 };
 
-class Transformer {
+class Transformer { // --> 完整的Transformer结构,包括Spec,Block,Buffer等的定义
 public:
     TransformerSpec* spec;
-    TransformerConfig* config;
-    TransformerBlock** blocks;
+    TransformerBlock** blocks; // --> 通过nLayers进行循环赋予空间
     TransformerBuffer* buffer;
     slice_index_t sliceIndex;
 
@@ -198,13 +178,13 @@ public:
 
     ~Transformer();
 
-    static TransformerSpec loadSpecFromFile(const char* path, const unsigned int nSlices, const unsigned int maxSeqLen, FloatType weightsFloatType, FloatType bufferFloatType);
-    static Transformer loadRootFromFile(const char* path, TransformerSpec* spec, TransformerConfig* config, SocketPool* socketPool);
-    static Transformer loadRoot(char* data, TransformerSpec* spec, TransformerConfig* config, SocketPool* socketPool);
-    static Transformer loadSlice(TransformerSpec* spec, TransformerConfig* config, Socket* socket);
+    static TransformerSpec loadSpecFromFile(const char* path, const unsigned int nSlices, FloatType weightsFloatType, FloatType bufferFloatType, std::vector<int> memoryBudgetArray); // 从一个file中加载Transformer需要的基本配置信息
+    static Transformer loadRootFromFile(const char* path, TransformerSpec* spec, SocketPool* socketPool); // --> 从file直接加载Transformer的完整结构
+    static Transformer loadRoot(char* data, TransformerSpec* spec, SocketPool* socketPool); // --> 针对ROOT Node的加载,主要从文件中读取权重,并分发给Worker Node
+    static Transformer loadSlice(TransformerSpec* spec, Socket* socket, std::vector<int> memoryBudgetArray); // --> 针对Worker Node的加载,主要从Socket中读取权重矩阵等
 
 private:
-    Transformer(TransformerSpec* spec, TransformerConfig* config, slice_index_t sliceIndex);
+    Transformer(TransformerSpec* spec, slice_index_t sliceIndex); // --> Transformer函数
 };
 
 #endif

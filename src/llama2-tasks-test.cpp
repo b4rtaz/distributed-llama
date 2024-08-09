@@ -528,7 +528,6 @@ int main() {
     TransformerSpec spec;
     spec.headerSize = sizeof(TransformerFileOldHeader) + sizeof(int);
     spec.archType = LLAMA;
-    spec.ropeType = ROPE_LLAMA;
     spec.dim = 4096;
     spec.nLayers = 1;
     spec.headSize = 128;
@@ -545,9 +544,6 @@ int main() {
     spec.nSlices = 1;
     spec.hiddenAct = SILU;
     spec.ropeTheta = 10000.0f;
-
-    TransformerConfig config;
-    config.useDiscForKvCache = false;
 
     size_t beforeBlockBytes = /* embedding */ 524288000;
     size_t blockBytes       = 809533440;
@@ -566,7 +562,7 @@ int main() {
     for (int i = 0; i < mm; i++) mmData[i] = randomF32(&state) / 120.0;
 
     SocketPool socketPool(0, NULL);
-    Transformer transformer = Transformer::loadRoot((char*)data, &spec, &config, &socketPool);
+    Transformer transformer = Transformer::loadRoot((char*)data, &spec, &socketPool);
     transformer.pos = 0;
 
     float* x = transformer.x;

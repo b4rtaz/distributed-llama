@@ -19,7 +19,7 @@ void grokRmfFfn(TASK_ARGS) {
         float* xb2 = (float*)transformer->buffer->getUnit(TB_SLICED_XB2);
         memset(xb2, 0, spec->dim * sizeof(float));
         for (uint8_t s = 0; s < spec->nSlices; s++) {
-            float* xbv = (float*)transformer->buffer->getSliced(TB_SLICED_XBV, s);
+            float* xbv = (float*)transformer->buffer->getSliced(TB_SLICED_XBV, s ,1, 1, true);
             add(xb2, xbv, spec->dim, 1, 0);
         }
         transformer->rms = rms(xb2, spec->dim);
@@ -56,7 +56,7 @@ void grokMoeRmsNorm(TASK_ARGS) {
 void grokMoeRouter(TASK_ARGS) {
     TASK_VARIABLES;
     float* xb = (float*)transformer->buffer->getUnit(TB_UNIT_XB);
-    block->moeRouterMm->forward(xb, block->moeRouterProbs, nThreads, threadIndex);
+    block->moeRouterMm->forward(xb, block->moeRouterProbs, nThreads, threadIndex, 0);
 }
 
 void grokMoeRouterSoftmax(TASK_ARGS) {
@@ -130,7 +130,7 @@ void grokMoeBlock0(TASK_ARGS) {
 
     uint8_t* indexes = (uint8_t*)transformer->buffer->getUnit(TB_UNIT_MOE_INDEXES);
     float* xb = (float*)transformer->buffer->getUnit(TB_UNIT_XB_QUANTIZED);
-    float* hb = (float*)transformer->buffer->getSliced(TB_SLICED_HB, transformer->sliceIndex);
+    float* hb = (float*)transformer->buffer->getSliced(TB_SLICED_HB, transformer->sliceIndex,1 , 1, true);
 
     for (int ae = 0; ae < spec->nActiveExperts; ae++) {
         uint8_t e = indexes[ae];
@@ -138,14 +138,14 @@ void grokMoeBlock0(TASK_ARGS) {
         float* expertUp = &hb[block->moeUpAndGate0Slice->d0 * ae];
         float* expertGate = &block->expertGate[block->moeUpAndGate0Slice->d0 * ae];
 
-        block->moeUpMm[e]->forward(xb, expertUp, nThreads, threadIndex);
-        block->moeGateMm[e]->forward(xb, expertGate, nThreads, threadIndex);
+        block->moeUpMm[e]->forward(xb, expertUp, nThreads, threadIndex, 0);
+        block->moeGateMm[e]->forward(xb, expertGate, nThreads, threadIndex, 0);
     }
 }
 
 void grokMoeBlock1(TASK_ARGS) {
     TASK_VARIABLES;
-    float* hb = (float*)transformer->buffer->getSliced(TB_SLICED_HB, transformer->sliceIndex);
+    float* hb = (float*)transformer->buffer->getSliced(TB_SLICED_HB, transformer->sliceIndex, 1, 1, true);
 
     for (int ae = 0; ae < spec->nActiveExperts; ae++) {
         float* expertUp = &hb[block->moeUpAndGate0Slice->d0 * ae];
@@ -178,7 +178,7 @@ void grokSyncMoeMulRearrange(TASK_ARGS) {
     if (threadIndex == 0 && spec->nSlices > 1) {
         char* hbq = (char*)transformer->buffer->getUnit(TB_SLICED_HB_QUANTIZED);
         size_t bufferBytes = transformer->buffer->getUnitBytes(TB_SLICED_HB_QUANTIZED);
-        size_t bufferSliceBytes = transformer->buffer->getSlicedBytes(TB_SLICED_HB_QUANTIZED);
+        size_t bufferSliceBytes = transformer->buffer->getSlicedBytes(TB_SLICED_HB_QUANTIZED, 1, true);
 
         size_t moeUpBytes = bufferBytes / spec->nActiveExperts;
         size_t moeUp0SliceBytes = getBatchBytes(spec->bufferFloatType, block->moeUpAndGate0Slice->d0, 1);
@@ -204,7 +204,7 @@ void grokSyncMoeMulB(TASK_ARGS) {
 void grokMoeBlock2(TASK_ARGS) {
     TASK_VARIABLES;
 
-    float* xb2 = (float*)transformer->buffer->getSliced(TB_SLICED_XB2, transformer->sliceIndex);
+    float* xb2 = (float*)transformer->buffer->getSliced(TB_SLICED_XB2, transformer->sliceIndex,1 ,1, true);
     char* hbq = (char*)transformer->buffer->getUnit(TB_SLICED_HB_QUANTIZED);
     size_t rowBytes = getBatchBytes(spec->bufferFloatType, spec->hiddenDim, 1);
 
@@ -218,7 +218,7 @@ void grokMoeBlock2(TASK_ARGS) {
         char* expertUp = &hbq[rowBytes * ae];
         float* expertDown = ae == 0 ? xb2 : &block->expertDown[block->moeDown0Slice->d0 * (ae - 1)];
 
-        block->moeDownMm[e]->forward(expertUp, expertDown, nThreads, threadIndex);
+        block->moeDownMm[e]->forward(expertUp, expertDown, nThreads, threadIndex, 0);
 
         mulScalar(expertDown, weight, block->moeDown0Slice->d0, nThreads, threadIndex);
         if (ae > 0) {
@@ -264,7 +264,7 @@ void grokMoeAdd(TASK_ARGS) {
 
 void grokFinalize(TASK_ARGS) {
     TASK_VARIABLES;
-    transformer->wclsMm->forward(transformer->x, transformer->logits, nThreads, threadIndex);
+    transformer->wclsMm->forward(transformer->x, transformer->logits, nThreads, threadIndex, 0);
 }
 
 void grokFinalize2(TASK_ARGS) {

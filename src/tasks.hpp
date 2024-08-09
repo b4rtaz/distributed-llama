@@ -19,7 +19,7 @@ struct TransformerContext {
 
 typedef void (InferenceInitializer)(TransformerContext* context);
 
-struct TransformerTasks {
+struct TransformerTasks { // 任务数量nTasks和tasks->任务处理程序handler和任务类型tastType
     unsigned int nTasks;
     TaskLoopTask* tasks;
 };
@@ -36,6 +36,7 @@ public:
     void W(TaskLoopHandler* handler, unsigned int taskType);
 };
 
+// 从userData中获取Transformer | block | spec等参数
 #define TASK_VARIABLES \
     TransformerContext* ctx = (TransformerContext*)userData; \
     Transformer* transformer = ctx->transformer; \

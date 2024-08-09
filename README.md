@@ -1,259 +1,68 @@
-![Distributed Llama](.github/cover.png)
+# Distributed-Llama with Memory Budget
 
-# Distributed Llama
+## Before my work...
 
-[![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/b4rtaz/distributed-llama/.github%2Fworkflows%2Fmain.yml?style=flat-square)](https://github.com/b4rtaz/distributed-llama/actions) [![License: MIT](https://img.shields.io/github/license/mashape/apistatus.svg?style=flat-square)](/LICENSE) [![Discord](https://discordapp.com/api/guilds/1245814812353495070/widget.png?style=shield)](https://discord.com/widget?id=1245814812353495070&theme=dark)
+First of all, I would like to thank b4rtaz for his work. His distributed-llama project has provided me with some new ideas and brought great convenience to my work.
 
-Tensor parallelism is all you need. Run LLMs on weak devices or make powerful devices even more powerful by distributing the workload and dividing the RAM usage. This project proves that it's possible split the workload of LLMs across multiple devices and achieve a significant speedup. Distributed Llama allows you to run huge LLMs in-house. The project uses TCP sockets to synchronize the state. You can easily configure your AI cluster by using a home router.
+>  https://github.com/b4rtaz/distributed-llama
 
-> [!TIP]
-> Check out the new article: [🌳 How to Run Llama 3.1 405B on Home Devices? Build AI Cluster!](https://medium.com/@b4rtaz/how-to-run-llama-3-405b-on-home-devices-build-ai-cluster-ad0d5ad3473b)
+However, if you have used b4rtaz's distributed-llama project, you will find that **<u>all nodes in its project will evenly distribute the amount of calculation (only for QKV calculation, forward propagation, activation function calculation, etc., excluding operations such as loading weights of root nodes).</u>**
+For example, when spec->dim == 2048, if 4 nodes are used, each node needs to calculate 512 dimensions. But this is not the distributed result we want. **<u>We hope to make reasonable non-uniform distribution based on the memory, computing power, etc. of distributed devices.</u>** Based on this idea, I modified the source code and basically completed the above functions.
 
-### 🔥 Setup Root Node by Single Command
+## New Features: Memory Budget
 
-Python 3 and C++ compiler required. The command will download the model and the tokenizer.
+### How to use
 
-| Model                       | Purpose   | Size     | Command                                       |
-| --------------------------- | --------- | -------- | --------------------------------------------- |
-| TinyLlama 1.1B 3T Q40       | Benchmark | 844 MB   | `python launch.py tinyllama_1_1b_3t_q40`      |
-| Llama 3 8B Q40              | Benchmark | 6.32 GB  | `python launch.py llama3_8b_q40`              |
-| Llama 3 8B Instruct Q40     | Chat, API | 6.32 GB  | `python launch.py llama3_8b_instruct_q40`     |
-| Llama 3.1 8B Instruct Q40   | Chat, API | 6.32 GB  | `python launch.py llama3_1_8b_instruct_q40`   |
-| Llama 3.1 405B Instruct Q40 | Chat, API | 238 GB   | `python launch.py llama3_1_405b_instruct_q40` |
+In my fork, when you run dllama, you can add a new parameter named --memory-budget.
 
-### 🛠️ Convert Model Manually
+So your command could be:
 
-Supported architectures: Llama, Mixtral, Grok
+For Root Node:
 
-* [How to Convert Llama 2, Llama 3, Llama 3.1](./docs/LLAMA.md)
-* [How to Convert Hugging Face Model](./docs/HUGGINGFACE.md)
-
-### 🚧 Known Limitations
-
-* You can run Distributed Llama only on 1, 2, 4... 2^n nodes.
-* The maximum number of nodes is equal to the number of KV heads in the model [#70](https://github.com/b4rtaz/distributed-llama/issues/70).
-* CPU support only, GPU support is planned, optimized for (weights format × buffer format):
-  * ARM CPUs
-    * ✅ F32 × F32
-    * ❌ F16 × F32
-    * ✅ Q40 × F32
-    * ✅ Q40 × Q80
-  * x86_64 AVX2 CPUs
-    * ✅ F32 × F32
-    * ❌ F16 × F32
-    * ✅ Q40 × F32
-    * ✅ Q40 × Q80
-
-### 👷 Architecture
-
-The project is split up into two parts:
-* **Root node** - it's responsible for loading the model and weights and forward them to workers. Also, it synchronizes the state of the neural network. The root node is also a worker, it processes own slice of the neural network.
-* **Worker node** - it processes own slice of the neural network. It doesn't require any configuration related to the model.
-
-You always need the root node and you can add 2^n - 1 worker nodes to speed up the inference. The RAM usage of the neural network is split up across all nodes. The root node requires a bit more RAM than worker nodes.
-
-### 🎹 Commands
-
-* `dllama inference` - run the inference with a simple benchmark,
-* `dllama chat` - run the CLI chat,
-* `dllama worker` - run the worker node,
-* `dllama-api` - run the API server.
-
-Inference, Chat, API
-
-| Argument                     | Description                                                      | Example                                |
-| ---------------------------- | ---------------------------------------------------------------- | -------------------------------------- |
-| `--model <path>`             | Path to model.                                                   | `dllama_model_meta-llama-3-8b_q40.m`   |
-| `--tokenizer <path>`         | Tokenizer to model.                                              | `dllama_tokenizer_llama3.t`            |
-| `--buffer-float-type <type>` | Float precision of synchronization.                              | `q80`                                  |
-| `--workers <workers>`        | Addresses of workers (ip:port), separated by space.              | `10.0.0.1:9991 10.0.0.2:9991`          |
-
-Inference, Chat, Worker, API
-
-| Argument                     | Description                                                           | Example                             |
-| ---------------------------- | --------------------------------------------------------------------- | ----------------------------------- |
-| `--nthreads <n>`             | Amount of threads. Don't set a higher value than number of CPU cores. | `4`                                 |
-
-Worker, API
-
-| Argument                     | Description                       | Example           |
-| ---------------------------- | --------------------------------- | ----------------- |
-| `--port <port>`              | Binding port.                     | `9999`            |
-
-Inference
-
-| Argument                     | Description                    | Example            |
-| ---------------------------- | ------------------------------ | ------------------ |
-| `--prompt <prompt>`          | Initial prompt.                | `"Hello World"`    |
-| `--steps <steps>`            | Number of tokens to generate.  | `256`              |
-
-## 📊 Measurements
-
-### Average Token Generation Time
-
-I - inference time of the root node, T - network transfer time of the root node.
-
-**Raspberry Pi 5 8GB**
-
-<sub><sup>Weights = Q40, Buffer = Q80, nSamples = 16, switch = TP-Link LS1008G, tested on 0.3.1 version</sup></sub>
-
-| Model       | 1 x RasPi 5 8 GB                                                    | 2 x RasPi 5 8 GB                                                    | 4 x RasPi 5 8 GB                                                    |
-|-------------|---------------------------------------------------------------------|---------------------------------------------------------------------|---------------------------------------------------------------------|
-| Llama 2 7B  | **441.09 ms**, 2.26 t/s<br><sub><sup>I: 434.84 ms, T: 5.25 ms</sup></sub> | **341.46 ms**, 2.92 t/s<br><sub><sup>I: 257.78 ms, T: 83.27 ms</sup></sub>   | **219.08 ms**, 4.56 t/s 🔥<br><sub><sup>I: 163.42 ms, T: 55.25 ms</sup></sub> |
-| Llama 3 8B  | **564.31 ms**, 1.77 t/s<br><sub><sup>I: 556.67 ms, T: 6.17 ms</sup></sub> | **444.27 ms**, 2.25 t/s<br><sub><sup>I: 362.73 ms, T: 80.11 ms</sup></sub>   | **331.47 ms**, 3.01 t/s 🔥<br><sub><sup>I: 267.62 ms, T: 62.34 ms</sup></sub> |
-
-**Raspberry Pi 4B 8 GB**
-
-<p align="center">
-  <img src=".github/8raspi2.jpg" width="25%" alt="8 x Raspberry Pi 4B 8GB" /><br />
-  <sub><sup>8 x Raspberry Pi 4B 8GB</sup></sub>
-</p>
-
-<p align="center">
-  <img src=".github/8raspi.jpg" width="35%" alt="Distributed Llama running on 8 Raspberry Pi 4B devices" /><br />
-  <sub><sup>Distributed Llama running Llama 2 70B Q40 on 8 Raspberry Pi 4B devices</sup></sub>
-</p>
-
-<sub><sup>Weights = Q40, Buffer = Q80, nSamples = 16, switch = TP-Link LS1008G, tested on 0.1.0 version</sup></sub>
-
-| Model       | 1 x RasPi 4B 8 GB                                                   | 2 x RasPi 4B 8 GB                                                     | 4 x RasPi 4B 8 GB                                                                    | 8 x RasPi 4B 8 GB                                                    |
-|-------------|---------------------------------------------------------------------|-----------------------------------------------------------------------|--------------------------------------------------------------------------------------|----------------------------------------------------------------------|
-| Llama 2 7B  | **1312.50 ms**<br><sub><sup>I: 1307.94 ms, T: 1.81 ms</sup></sub> | **793.69 ms**<br><sub><sup>I: 739.00 ms, T: 52.50 ms</sup></sub>    | **494.00 ms** 🔥               <br><sub><sup>I: 458.81 ms, T: 34.06 ms</sup></sub> | **588.19 ms**<br><sub><sup>I: 296.69 ms, T: 289.75 ms</sup></sub>  |
-| Llama 2 13B | <sub><sup>Not enough RAM</sup></sub>                                | **1497.19 ms**<br><sub><sup>I: 1465.06 ms, T: 30.88 ms</sup></sub>  | **848.19 ms** 🔥<br><sub><sup>I: 746.88 ms, T: 99.50 ms</sup></sub>                | **1114.88 ms**<br><sub><sup>I: 460.8 ms, T: 652.88 ms</sup></sub>  |
-| Llama 2 70B | <sub><sup>Not enough RAM</sup></sub>                                | <sub><sup>Not enough RAM</sup></sub>                                  | <sub><sup>Not enough RAM</sup></sub>                                                 | **4842.81 ms** 🔥<br><sub><sup>I: 2121.94 ms, T: 2719.62 ms</sup></sub> |
-
-**x86_64 CPU Cloud Server**
-
-<sub><sup>Weights = Q40, Buffer = Q80, nSamples = 16, VMs = [c3d-highcpu-30](https://github.com/b4rtaz/distributed-llama/discussions/9), tested on 0.1.0 version</sup></sub>
-
-| Model       | 1 x VM                                                              | 2 x VM                                                                | 4 x VM                                                                               |
-|-------------|---------------------------------------------------------------------|-----------------------------------------------------------------------|--------------------------------------------------------------------------------------|
-| Llama 2 7B  | **101.81 ms**<br><sub><sup>I: 101.06 ms, T: 0.19 ms</sup></sub>   | **69.69 ms**<br><sub><sup>I: 61.50 ms, T: 7.62 ms</sup></sub>       | **53.69 ms** 🔥<br><sub><sup>I: 40.25 ms, T: 12.81 ms</sup></sub>                  |
-| Llama 2 13B | **184.19 ms**<br><sub><sup>I: 182.88 ms, T: 0.69 ms</sup></sub>   | **115.38 ms**<br><sub><sup>I: 107.12 ms, T: 7.81 ms</sup></sub>     | **86.81 ms** 🔥<br><sub><sup>I: 66.25 ms, T: 19.94 ms</sup></sub>                  |
-| Llama 2 70B | **909.69 ms**<br><sub><sup>I: 907.25 ms, T: 1.75 ms</sup></sub>   | **501.38 ms**<br><sub><sup>I: 475.50 ms, T: 25.00 ms</sup></sub>    | **293.06 ms** 🔥<br><sub><sup>I: 264.00 ms, T: 28.50 ms</sup></sub>                  |
-
-### Network Transfer for Generating Token
-
-**F32 Buffer**
-
-| Model       | 2 devices      | 4 devices     | 8 devices     |
-|-------------|----------------|---------------|---------------|
-| Llama 3 8B  | **2048 kB**    | **6144 kB**   | **14336 kB**  |
-
-**Q80 Buffer**
-
-| Model       | 2 devices    | 4 devices     | 8 devices      |
-|-------------|--------------|---------------|----------------|
-| Llama 3 8B  | **544 kB**   | **1632 kB**   | **3808 kB**    |
-
-## 📟 Setup Raspberry Pi Devices
-
-1. Install `Raspberry Pi OS Lite (64 bit)` on your Raspberry Pi devices. This OS doesn't have desktop environment.
-2. Connect all devices to your switch or router.
-3. Connect to all devices via SSH.
-```
-ssh user@raspberrypi1.local
-ssh user@raspberrypi2.local
-```
-4. Install Git:
-```sh
-sudo apt install git
-```
-5. Clone this repository and compile Distributed Llama on all devices:
-```sh
-git clone https://github.com/b4rtaz/distributed-llama.git
-make dllama
-make dllama-api
-```
-6. Transfer weights and the tokenizer file to the root device.
-7. Optional: assign static IP addresses.
-```sh
-sudo ip addr add 10.0.0.1/24 dev eth0 # 1th device
-sudo ip addr add 10.0.0.2/24 dev eth0 # 2th device
-```
-8. Run worker nodes on worker devices:
-```sh
-sudo nice -n -20 ./dllama worker --port 9998 --nthreads 4
-```
-9. Run root node on the root device:
-```sh
-sudo nice -n -20 ./dllama inference --model dllama_model_meta-llama-3-8b_q40.m --tokenizer dllama_tokenizer_llama3.t --buffer-float-type q80 --prompt "Hello world" --steps 16 --nthreads 4 --workers 10.0.0.2:9998
+```cmd
+./dllama inference --model PATH_TO_YOUR_MODEL --tokenizer PATH_TO_YOUR_TOKENIZER --buffer-float-type f32 --prompt "You are a person" --steps 16 --nthreads 4 --memory-budget 3 1 --workers x.x.x.x:9998
 ```
 
-To add more worker nodes, just add more addresses to the `--workers` argument.
+For Worker Node:
 
-```
-./dllama inference ... --workers 10.0.0.2:9998 10.0.0.3:9998 10.0.0.4:9998
-```
-
-## 💻 Setup computers with MacOS, Linux, or Windows
-
-You need x86_64 AVX2 CPUs or ARM CPUs. Different devices may have different CPUs.
-
-#### MacOS or Linux
-
-The below instructions are for Debian-based distributions but you can easily adapt them to your distribution, macOS.
-
-1. Install Git and GCC:
-```sh
-sudo apt install git build-essential
-```
-2. Clone this repository and compile Distributed Llama on all computers:
-```sh
-git clone https://github.com/b4rtaz/distributed-llama.git
-make dllama
-make dllama-api
+```cmd
+./dllama worker --port 9998 --nthreads 4 --memory-budget 3 1
 ```
 
-Continue to point 3.
+### about: --memory-budget
 
-#### Windows
+--memory-budget parameter accepts multiple int type inputs, the number of inputs should be the same as the number of summary Nodes. When you have 2 Nodes in total, you have to input --memory-budget with 2 int type, etc.
 
-1. Install Git and Mingw (via [Chocolatey](https://chocolatey.org/install)):
-```powershell
-choco install mingw
-```
-2. Clone this repository and compile Distributed Llama on all computers:
-```sh
-git clone https://github.com/b4rtaz/distributed-llama.git
-make dllama
-make dllama-api
-```
+> :warning::warning::warning:
+>
+> Due to the existence of Kv shared header, there are restrictions on the division method according to parameters such as spec->dim and spec->headSize, as follows:
+>
+> 1. For TinyLlama 1.1B 3T Q40, it can be divided into 4 parts at most, and the 4 parts can be allocated arbitrarily, such as 3:1, 2:2, etc.;
+> 2. For Llama 3 8B Q40, it can be divided into 8 parts at most, and the 8 parts can be allocated arbitrarily, such as 7:1, 3:2:2:1, 5:1:1:1, etc.
+> 3. For Llama 3 70B Q40, Llama 3.1 405B Q40, etc., it should be possible to divide more, such as 16 parts, 32 parts, etc. However, due to hardware limitations, I did not try it. If you are interested, you can try more and welcome your feedback.
+>
+> :warning::warning::warning:
 
-Continue to point 3.
+### Actual effect demonstration
 
-#### Run Cluster
+![631dd69457d17baa4003d8fa5511e49e](C:\Users\yhbia\Documents\Tencent Files\2687952613\nt_qq\nt_data\Pic\2024-08\Ori\631dd69457d17baa4003d8fa5511e49e.png)
 
-3. Transfer weights and the tokenizer file to the root computer.
-4. Run worker nodes on worker computers:
-```sh
-./dllama worker --port 9998 --nthreads 4
-```
-5. Run root node on the root computer:
-```sh
-./dllama inference --model dllama_model_meta-llama-3-8b_q40.m --tokenizer dllama_tokenizer_llama3.t --buffer-float-type q80 --prompt "Hello world" --steps 16 --nthreads 4 --workers 192.168.0.1:9998
-```
+> Here I give a demonstration using Tiny Llama with a memory-budget of 3:1. I also tried using the Llama-3-8B model to perform an 8-partition and it worked.
+>
+> And of course, 12:4 will leads the same result with 3:1 :laughing:
 
-To add more worker nodes, just add more addresses to the `--workers` argument.
+## Some limitations and areas for improvement
 
-```
-./dllama inference ... --workers 192.168.0.1:9998 192.168.0.2:9998 192.168.0.3:9998
-```
+**I must admit that there are still many loopholes in my project.**
 
-## 💡 License
+1. I left many comments while reading the source code and debugging. I apologize if it brings inconvenience to your reading.
+2. **<u>*This code currently only supports Linux system, and buffer-float-type only supports f32.*</u>**
+  1. First, for Windows system, the send function of sockets.cpp, line 91 will return -1 at runtime, resulting in an error. I have not found a solution to this error. This error only occurs on Windows.
+  2. Secondly, for other buffer-float-type, different forward functions need to be modified in func.cpp. The main modifications are the number of loop layers and assert part (due to the use of more detailed division, some assert functions for dimensions appear false, and the number of loop layers needs to be modified)
 
-This project is released under the MIT license.
+I will optimize these problems in the following period of time, and everyone is welcome to optimize together.
 
-## 📖 Citation
+## Contact me
 
-```
-@misc{dllama,
-  author = {Bartłomiej Tadych},
-  title = {Distributed Llama},
-  year = {2024},
-  publisher = {GitHub},
-  journal = {GitHub repository},
-  howpublished = {\url{https://github.com/b4rtaz/distributed-llama}},
-  commit = {7eb77ca93ec0d502e28d36b6fb20039b449cbea4}
-}
-```
+**If you have any problems or new ideas or anything else, welcome to contact me at: fromthefox@icloud.com or yhbian@std.uestc.edu.cn. Thx.**
+

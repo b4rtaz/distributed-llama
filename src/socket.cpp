@@ -87,7 +87,9 @@ static inline void setReuseAddr(int socket) {
 
 static inline void writeSocket(int socket, const void* data, size_t size) {
     while (size > 0) {
+        // printf("\n size:%ld \n", size);
         int s = send(socket, (const char*)data, size, 0);
+        // printf("\n s:%d \n", s);
         if (s < 0) {
             if (isEagainError()) {
                 continue;
@@ -199,13 +201,13 @@ SocketPool::~SocketPool() {
     delete[] sockets;
 }
 
-void SocketPool::setTurbo(bool enabled) {
+void SocketPool::setTurbo(bool enabled) { // 设置SocketPool中的所有链接为非阻塞模式
     for (unsigned int i = 0; i < nSockets; i++) {
         ::setNonBlocking(sockets[i], enabled);
     }
 }
 
-void SocketPool::write(unsigned int socketIndex, const void* data, size_t size) {
+void SocketPool::write(unsigned int socketIndex, const void* data, size_t size) { // --> 使用socket发送数据
     assert(socketIndex >= 0 && socketIndex < nSockets);
     sentBytes += size;
     writeSocket(sockets[socketIndex], data, size);
@@ -231,13 +233,19 @@ void SocketPool::writeMany(unsigned int n, SocketIo* ios) {
             if (io->size > 0) {
                 isWriting = true;
                 int socket = sockets[io->socketIndex];
+                /*
+                如果发送成功:s为发送的数据长度
+                如果发送失败:s == 0 | s < 0
+                */
                 ssize_t s = send(socket, (const char*)io->data, io->size, 0);
                 if (s < 0) {
                     if (isEagainError()) {
                         continue;
                     }
+                    // printf("\n 3 \n");
                     throw WriteSocketException(SOCKET_LAST_ERRCODE, SOCKET_LAST_ERROR);
                 } else if (s == 0) {
+                    // printf("\n 4 \n");
                     throw WriteSocketException(0, "Socket closed");
                 }
                 io->size -= s;
