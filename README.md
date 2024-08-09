@@ -45,7 +45,7 @@ For Worker Node:
 
 ### Actual effect demonstration
 
-![631dd69457d17baa4003d8fa5511e49e](C:\Users\yhbia\Documents\Tencent Files\2687952613\nt_qq\nt_data\Pic\2024-08\Ori\631dd69457d17baa4003d8fa5511e49e.png)
+![distributed-llama-memorybudget-tinyllama](./distributed-llama-memorybudget-tinyllama.png)
 
 > Here I give a demonstration using Tiny Llama with a memory-budget of 3:1. I also tried using the Llama-3-8B model to perform an 8-partition and it worked.
 >
