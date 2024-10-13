@@ -34,7 +34,7 @@ void server() {
             totalTime += duration_cast<microseconds>(t2 - t0).count();
         }
 
-        double nPingPongs = 1000000.0 / (totalTime / (double)nAttempts);
+        double nPingPongs = (1.0 / (totalTime / 1000000.0)) * (double)nAttempts;
         printf("[%6d bytes] write: %5lld us, read: %5lld us, total: %5lld us, nPingPongs: %.2f\n",
             currentPackageSize, totalWriteTime, totalReadTime, totalTime, nPingPongs);
     }
