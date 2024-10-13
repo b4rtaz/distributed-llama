@@ -1,5 +1,6 @@
 #include "./socket.hpp"
 #include <chrono>
+#include <cstring>
 using namespace std::chrono;
 
 unsigned int packageSizes[] = { 128, 256, 512, 768, 1024, 1280, 1518, 2048, 4096, 8192, 16384, 32768, 65536 };
