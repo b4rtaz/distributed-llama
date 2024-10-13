@@ -7,7 +7,7 @@ using namespace std::chrono;
 unsigned int packageSizes[] = { 128, 256, 512, 768, 1024, 1280, 1518, 2048, 4096, 8192, 16384, 32768, 65536 };
 unsigned int packageSizesCount = sizeof(packageSizes) / sizeof(unsigned int);
 unsigned int maPackageSize = packageSizes[packageSizesCount - 1];
-unsigned int nAttempts = 1000;
+unsigned int nAttempts = 5000;
 int port = 7721;
 
 void server() {
@@ -34,9 +34,9 @@ void server() {
             totalTime += duration_cast<microseconds>(t2 - t0).count();
         }
 
-        double nPingPongs = 1000.0 / ((totalTime / 1000.0) / (double) nAttempts);
+        double nPingPongs = 1000000.0 / (totalTime / (double)nAttempts);
         printf("[%6d bytes] write: %5lld us, read: %5lld us, total: %5lld us, nPingPongs: %.2f\n",
-            currentPackageSize, totalReadTime, totalWriteTime, totalTime, nPingPongs);
+            currentPackageSize, totalWriteTime, totalReadTime, totalTime, nPingPongs);
     }
 }
 
@@ -50,14 +50,26 @@ void client(char* host) {
     char buffer[maPackageSize];
     pool->setTurbo(true);
 
-
     for (long i = 0; i < packageSizesCount; i++) {
         unsigned int currentPackageSize = packageSizes[i];
 
+        long long totalReadTime = 0;
+        long long totalWriteTime = 0;
+        long long totalTime = 0; // [us]
         for (long a = 0; a < nAttempts; a++) {
+            auto t0 = high_resolution_clock::now();
             pool->write(0, buffer, currentPackageSize);
+            auto t1 = high_resolution_clock::now();
             pool->read(0, buffer, currentPackageSize);
+            auto t2 = high_resolution_clock::now();
+
+            totalWriteTime += duration_cast<microseconds>(t1 - t0).count();
+            totalReadTime += duration_cast<microseconds>(t2 - t1).count();
+            totalTime += duration_cast<microseconds>(t2 - t0).count();
         }
+
+        printf("[%6d bytes] write: %5lld us, read: %5lld us, total: %5lld us\n",
+            currentPackageSize, totalWriteTime, totalReadTime, totalTime);
     }
 
     delete pool;
