@@ -44,6 +44,8 @@ funcs-test: src/funcs-test.cpp funcs utils quants
 	$(CXX) $(CXXFLAGS) src/funcs-test.cpp -o funcs-test funcs.o utils.o quants.o $(LIBS)
 quants-test: src/quants.cpp utils quants
 	$(CXX) $(CXXFLAGS) src/quants-test.cpp -o quants-test utils.o quants.o $(LIBS)
+socket-test: src/socket-test.cpp socket
+	$(CXX) $(CXXFLAGS) src/socket-test.cpp -o socket-test socket.o $(LIBS)
 tokenizer-test: src/tokenizer-test.cpp tokenizer funcs commands utils quants
 	$(CXX) $(CXXFLAGS) src/tokenizer-test.cpp -o tokenizer-test tokenizer.o funcs.o commands.o utils.o quants.o $(LIBS)
 commands-test: src/commands-test.cpp funcs commands utils quants transformer socket
