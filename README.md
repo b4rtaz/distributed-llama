@@ -69,6 +69,7 @@ Inference, Chat, API
 | `--tokenizer <path>`         | Tokenizer to model.                                              | `dllama_tokenizer_llama3.t`            |
 | `--buffer-float-type <type>` | Float precision of synchronization.                              | `q80`                                  |
 | `--workers <workers>`        | Addresses of workers (ip:port), separated by space.              | `10.0.0.1:9991 10.0.0.2:9991`          |
+| `--max-seq-len <n>`          | The maximum sequence length, it helps to reduce the RAM usage.   | `4096`                                 |
 
 Inference, Chat, Worker, API
 
