@@ -37,6 +37,11 @@ MODELS = {
         'https://huggingface.co/b4rtaz/Llama-3_1-405B-Q40-Instruct-Distributed-Llama/resolve/main/dllama_tokenizer_llama_3_1.t?download=true',
         'q40', 'q80', 'chat'
     ],
+    'llama3_2_1b_instruct_q40': [
+        ['https://huggingface.co/b4rtaz/Llama-3_2-1B-Q40-Instruct-Distributed-Llama/resolve/main/dllama_model_llama3.2-1b-instruct_q40.m?download=true'],
+        'https://huggingface.co/b4rtaz/Llama-3_2-1B-Q40-Instruct-Distributed-Llama/resolve/main/dllama_tokenizer_llama3_2.t?download=true',
+        'q40', 'q80', 'chat', '--max-seq-len 8192'
+    ],
 }
 
 def downloadFile(urls: str, path: str):
@@ -107,6 +112,8 @@ if __name__ == '__main__':
     else:
         command = './dllama inference --steps 64 --prompt "Hello world"'
     command += f' --model {modelPath} --tokenizer {tokenizerPath} --buffer-float-type {model[3]} --nthreads 4'
+    if (len(model) > 5):
+        command += f' {model[5]}'
 
     print('To run Distributed Llama you need to execute:')
     print('--- copy start ---')
