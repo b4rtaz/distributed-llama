@@ -78,7 +78,7 @@ void server() {
 
                 auto t1 = high_resolution_clock::now();
 
-                ssize_t s1 = sendto(serverSocket, (const char*)buffer, currentPackageSize, MSG_DONTWAIT, (const struct sockaddr*)&clientAddr, clientAddrLen);
+                ssize_t s1 = sendto(serverSocket, (const char*)buffer, currentPackageSize, 0, (const struct sockaddr*)&clientAddr, clientAddrLen);
                 if (s1 != currentPackageSize)
                     throw std::runtime_error("Cannot write to socket");
 
