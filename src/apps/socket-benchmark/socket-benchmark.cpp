@@ -21,7 +21,7 @@ void setNonBlocking(int socket) {
         throw std::runtime_error("Cannot set socket flags");
 }
 
-#define MTU 1280
+#define MTU 1280 - 64 * 2
 
 void readUdpSocket(int socket, char* buffer, unsigned int size, struct sockaddr_in* clientAddr, socklen_t* clientAddrLen) {
     for (unsigned i = 0; i < size; i += MTU) {
