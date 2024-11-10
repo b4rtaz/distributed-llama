@@ -8,7 +8,7 @@
 
 using namespace std::chrono;
 
-unsigned int packageSizes[] = { 128, 256, 512, 768, 1024, 1280, 1518, 2048, 4096, 8192, 16384, 32768, 65536 };
+unsigned int packageSizes[] = { 128, 256, 512, 768, 1024, 1280, 1518, 2048, 4096, 8192, 16384, 32768, 65536, 131072 };
 unsigned int packageSizesCount = sizeof(packageSizes) / sizeof(unsigned int);
 unsigned int maPackageSize = packageSizes[packageSizesCount - 1];
 unsigned int nAttempts = 5000;
@@ -21,7 +21,7 @@ void setNonBlocking(int socket) {
         throw std::runtime_error("Cannot set socket flags");
 }
 
-#define MTU 9000 - 64 * 2
+#define MTU 1280 - 64 * 2
 
 void readUdpSocket(int socket, char* buffer, unsigned int size, struct sockaddr_in* clientAddr, socklen_t* clientAddrLen) {
     for (unsigned i = 0; i < size; i += MTU) {
