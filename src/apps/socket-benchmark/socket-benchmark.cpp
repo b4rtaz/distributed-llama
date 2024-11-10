@@ -16,67 +16,69 @@ int port = 7721;
 bool testTcp = true;
 
 void setNonBlocking(int socket) {
-    //int flags = fcntl(socket, F_GETFL, 0);
-    //if (fcntl(socket, F_SETFL, flags |= O_NONBLOCK) < 0)
-    //    throw std::runtime_error("Cannot set socket flags");
+    int flags = fcntl(socket, F_GETFL, 0);
+    if (fcntl(socket, F_SETFL, flags |= O_NONBLOCK) < 0)
+        throw std::runtime_error("Cannot set socket flags");
 }
 
-#define MAX_PACKAGE_SIZE 1280
-
-char pktinfo[4096] = {0};
+#define MTU 1280
 
 void readUdpSocket(int socket, char* buffer, unsigned int size, struct sockaddr_in* clientAddr, socklen_t* clientAddrLen) {
-    struct msghdr msg;
-    struct iovec iov;
-    int received_ttl = 0;
-    char buf[CMSG_SPACE(sizeof(received_ttl))];
-    iov.iov_base = buffer;
-    iov.iov_len = size;
-    msg.msg_name = clientAddr;
-    msg.msg_namelen = *clientAddrLen;
-    msg.msg_iov = &iov;
-    msg.msg_iovlen = 1;
-	msg.msg_control = 0;
-	msg.msg_controllen = 0;
-    for (;;) {
-        ssize_t s0 = recvmsg(socket, &msg, MSG_DONTWAIT);
-        if (s0 == size) {
-            //printf("read\n");
-            return;
-        }
-        if (s0 <= 0) {
-            if (errno == EAGAIN || errno == EWOULDBLOCK)
-                continue;
-            printf("error read: %s\n", strerror(errno));
-            throw std::runtime_error("Cannot read from socket");
-        }
-    };
+    for (unsigned i = 0; i < size; i += MTU) {
+        struct msghdr msg;
+        struct iovec iov;
+        int received_ttl = 0;
+        char buf[CMSG_SPACE(sizeof(received_ttl))];
+        iov.iov_base = buffer;
+        iov.iov_len = MTU;
+        msg.msg_name = clientAddr;
+        msg.msg_namelen = *clientAddrLen;
+        msg.msg_iov = &iov;
+        msg.msg_iovlen = 1;
+        msg.msg_control = 0;
+        msg.msg_controllen = 0;
+        for (;;) {
+            ssize_t s0 = recvmsg(socket, &msg, 0);
+            if (s0 == MTU) {
+                //printf("read\n");
+                return;
+            }
+            if (s0 <= 0) {
+                if (errno == EAGAIN || errno == EWOULDBLOCK)
+                    continue;
+                printf("error read: %s\n", strerror(errno));
+                throw std::runtime_error("Cannot read from socket");
+            }
+        };
+    }
 }
 
 void writeUdpSocket(int socket, char* buffer, unsigned int size, struct sockaddr_in* clientAddr, socklen_t clientAddrLen) {
-    struct msghdr msg;
-    struct iovec iov;
-    int received_ttl = 0;
-    char buf[CMSG_SPACE(sizeof(received_ttl))];
-    iov.iov_base = buffer;
-    iov.iov_len = size;
-    msg.msg_name = clientAddr;
-    msg.msg_namelen = clientAddrLen;
-    msg.msg_iov = &iov;
-    msg.msg_iovlen = 1;
-	msg.msg_control = 0;
-	msg.msg_controllen = 0;
-    for (;;) {
-        ssize_t s0 = sendmsg(socket, &msg, 0);
-        if (s0 == size) {
-            //printf("sent\n");
-            return;
-        }
-        if (s0 <= 0) {
-            if (errno == EAGAIN || errno == EWOULDBLOCK)
-                continue;
-            printf("error write: %s\n", strerror(errno));
-            throw std::runtime_error("Cannot write to socket");
+    for (unsigned i = 0; i < size; i += MTU) {
+        struct msghdr msg;
+        struct iovec iov;
+        int received_ttl = 0;
+        char buf[CMSG_SPACE(sizeof(received_ttl))];
+        iov.iov_base = buffer;
+        iov.iov_len = MTU;
+        msg.msg_name = clientAddr;
+        msg.msg_namelen = clientAddrLen;
+        msg.msg_iov = &iov;
+        msg.msg_iovlen = 1;
+        msg.msg_control = 0;
+        msg.msg_controllen = 0;
+        for (;;) {
+            ssize_t s0 = sendmsg(socket, &msg, 0);
+            if (s0 == MTU) {
+                //printf("sent\n");
+                return;
+            }
+            if (s0 <= 0) {
+                if (errno == EAGAIN || errno == EWOULDBLOCK)
+                    continue;
+                printf("error write: %s\n", strerror(errno));
+                throw std::runtime_error("Cannot write to socket");
+            }
         }
     }
 }
