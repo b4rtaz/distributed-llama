@@ -8,7 +8,7 @@
 __pycache__
 
 *-test
-./*-benchmark
+./socket-benchmark
 main
 run*.sh
 server
