@@ -8,6 +8,7 @@
 __pycache__
 
 *-test
+./*-benchmark
 main
 run*.sh
 server

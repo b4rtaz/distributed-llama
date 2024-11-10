@@ -39,13 +39,13 @@ dllama: src/apps/dllama/dllama.cpp utils quants funcs commands socket transforme
 	$(CXX) $(CXXFLAGS) src/apps/dllama/dllama.cpp -o dllama utils.o quants.o funcs.o commands.o socket.o transformer.o tasks.o llama2-tasks.o grok1-tasks.o mixtral-tasks.o tokenizer.o app.o $(LIBS)
 dllama-api: src/apps/dllama-api/dllama-api.cpp utils quants funcs commands socket transformer tasks llama2-tasks grok1-tasks mixtral-tasks tokenizer app
 	$(CXX) $(CXXFLAGS) src/apps/dllama-api/dllama-api.cpp -o dllama-api utils.o quants.o funcs.o commands.o socket.o transformer.o tasks.o llama2-tasks.o grok1-tasks.o mixtral-tasks.o tokenizer.o app.o $(LIBS)
+socket-benchmark: src/apps/socket-benchmark/socket-benchmark.cpp socket
+	$(CXX) $(CXXFLAGS) src/apps/socket-benchmark/socket-benchmark.cpp -o socket-benchmark socket.o $(LIBS)
 
 funcs-test: src/funcs-test.cpp funcs utils quants
 	$(CXX) $(CXXFLAGS) src/funcs-test.cpp -o funcs-test funcs.o utils.o quants.o $(LIBS)
 quants-test: src/quants.cpp utils quants
 	$(CXX) $(CXXFLAGS) src/quants-test.cpp -o quants-test utils.o quants.o $(LIBS)
-socket-test: src/socket-test.cpp socket
-	$(CXX) $(CXXFLAGS) src/socket-test.cpp -o socket-test socket.o $(LIBS)
 tokenizer-test: src/tokenizer-test.cpp tokenizer funcs commands utils quants
 	$(CXX) $(CXXFLAGS) src/tokenizer-test.cpp -o tokenizer-test tokenizer.o funcs.o commands.o utils.o quants.o $(LIBS)
 commands-test: src/commands-test.cpp funcs commands utils quants transformer socket
