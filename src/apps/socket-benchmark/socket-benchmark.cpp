@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <sys/socket.h>
 #include <arpa/inet.h>
+#include <fcntl.h>
 
 using namespace std::chrono;
 
@@ -12,6 +13,40 @@ unsigned int packageSizesCount = sizeof(packageSizes) / sizeof(unsigned int);
 unsigned int maPackageSize = packageSizes[packageSizesCount - 1];
 unsigned int nAttempts = 5000;
 int port = 7721;
+
+void setNonBlocking(int socket) {
+    int flags = fcntl(socket, F_GETFL, 0);
+    if (fcntl(socket, F_SETFL, flags |= O_NONBLOCK) < 0)
+        throw std::runtime_error("Cannot set socket flags");
+}
+
+void readUdpSocket(int socket, char* buffer, unsigned int size, struct sockaddr_in* clientAddr, socklen_t* clientAddrLen) {
+    while (size > 0) {
+        ssize_t s0 = recvfrom(socket, buffer, size, MSG_WAITALL, (struct sockaddr*)clientAddr, clientAddrLen);
+        if (s0 < 0) {
+            if (errno == EAGAIN || errno == EWOULDBLOCK)
+                continue;
+            printf("error read: %s\n", strerror(errno));
+            throw std::runtime_error("Cannot read from socket");
+        }
+        size -= s0;
+        buffer += s0;
+    }
+}
+
+void writeUdpSocket(int socket, char* buffer, unsigned int size, struct sockaddr_in* clientAddr, socklen_t clientAddrLen) {
+    while (size > 0) {
+        ssize_t s0 = sendto(socket, buffer, size, 0, (const struct sockaddr*)clientAddr, clientAddrLen);
+        if (s0 < 0) {
+            if (errno == EAGAIN || errno == EWOULDBLOCK)
+                continue;
+            printf("error write: %s\n", strerror(errno));
+            throw std::runtime_error("Cannot write to socket");
+        }
+        size -= s0;
+        buffer += s0;
+    }
+}
 
 void server() {
     printf("nAttempts: %d\n", nAttempts);
@@ -50,6 +85,7 @@ void server() {
 
     {
         int serverSocket = ::socket(AF_INET, SOCK_DGRAM, 0);
+
         struct sockaddr_in serverAddr;
         struct sockaddr_in  clientAddr;
         socklen_t clientAddrLen = sizeof(clientAddr);
@@ -58,6 +94,7 @@ void server() {
         serverAddr.sin_family = AF_INET;
         serverAddr.sin_addr.s_addr = INADDR_ANY; 
         serverAddr.sin_port = htons(port); 
+        setNonBlocking(serverSocket);
 
         if (bind(serverSocket, (struct sockaddr *)&serverAddr, sizeof(serverAddr)) < 0)
             throw std::runtime_error("Cannot bind socket");
@@ -69,18 +106,17 @@ void server() {
             long long totalWriteTime = 0;
             long long totalTime = 0; // [us]
 
+            //setsockopt(serverSocket, SOL_SOCKET, SO_RCVBUF, &currentPackageSize, sizeof(currentPackageSize));
+            //setsockopt(serverSocket, SOL_SOCKET, SO_SNDBUF, &currentPackageSize, sizeof(currentPackageSize));
+
             for (long a = 0; a < nAttempts; a++) {
                 auto t0 = high_resolution_clock::now();
 
-                ssize_t s0 = recvfrom(serverSocket, (char*)buffer, currentPackageSize, MSG_WAITALL, (struct sockaddr*)&clientAddr, &clientAddrLen);
-                if (s0 != currentPackageSize)
-                    throw std::runtime_error("Cannot read from socket");
+                readUdpSocket(serverSocket, buffer, currentPackageSize, &clientAddr, &clientAddrLen);
 
                 auto t1 = high_resolution_clock::now();
 
-                ssize_t s1 = sendto(serverSocket, (const char*)buffer, currentPackageSize, 0, (const struct sockaddr*)&clientAddr, clientAddrLen);
-                if (s1 != currentPackageSize)
-                    throw std::runtime_error("Cannot write to socket");
+                writeUdpSocket(serverSocket, buffer, currentPackageSize, &clientAddr, clientAddrLen);
 
                 auto t2 = high_resolution_clock::now();
 
@@ -146,9 +182,13 @@ void client(char* host) {
         serverAddr.sin_family = AF_INET;
         serverAddr.sin_port = htons(port);
         serverAddr.sin_addr.s_addr = inet_addr(host);
+        setNonBlocking(clientSocket);
 
         for (long i = 0; i < packageSizesCount; i++) {
             unsigned int currentPackageSize = packageSizes[i];
+
+            //setsockopt(clientSocket, SOL_SOCKET, SO_RCVBUF, &currentPackageSize, sizeof(currentPackageSize));
+            //setsockopt(clientSocket, SOL_SOCKET, SO_SNDBUF, &currentPackageSize, sizeof(currentPackageSize));
 
             long long totalReadTime = 0;
             long long totalWriteTime = 0;
@@ -156,15 +196,11 @@ void client(char* host) {
             for (long a = 0; a < nAttempts; a++) {
                 auto t0 = high_resolution_clock::now();
 
-                ssize_t s0 = sendto(clientSocket, (const char *)buffer, currentPackageSize, 0, (const struct sockaddr*)&serverAddr, sizeof(serverAddr));
-                if (s0 != currentPackageSize)
-                    throw std::runtime_error("Cannot write to socket");
+                writeUdpSocket(clientSocket, buffer, currentPackageSize, &serverAddr, sizeof(serverAddr));
 
                 auto t1 = high_resolution_clock::now();
 
-                ssize_t s1 = recvfrom(clientSocket, (char*)buffer, currentPackageSize, MSG_WAITALL, (struct sockaddr*)&serverAddr, &serverAddrLen);
-                if (s1 != currentPackageSize)
-                    throw std::runtime_error("Cannot read from socket");
+                readUdpSocket(clientSocket, buffer, currentPackageSize, &serverAddr, &serverAddrLen);
 
                 auto t2 = high_resolution_clock::now();
 
