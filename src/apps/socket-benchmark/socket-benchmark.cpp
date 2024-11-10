@@ -34,8 +34,13 @@ void readUdpSocket(int socket, char* buffer, unsigned int size, struct sockaddr_
     }
 }
 
+#define MAX_PACKAGE_SIZE 1472
+
 void writeUdpSocket(int socket, char* buffer, unsigned int size, struct sockaddr_in* clientAddr, socklen_t clientAddrLen) {
     while (size > 0) {
+        unsigned int size0 = size;
+        if (size0 > MAX_PACKAGE_SIZE)
+            size0 = MAX_PACKAGE_SIZE;
         ssize_t s0 = sendto(socket, buffer, size, 0, (const struct sockaddr*)clientAddr, clientAddrLen);
         if (s0 < 0) {
             if (errno == EAGAIN || errno == EWOULDBLOCK)
