@@ -13,43 +13,71 @@ unsigned int packageSizesCount = sizeof(packageSizes) / sizeof(unsigned int);
 unsigned int maPackageSize = packageSizes[packageSizesCount - 1];
 unsigned int nAttempts = 5000;
 int port = 7721;
+bool testTcp = true;
 
 void setNonBlocking(int socket) {
-    int flags = fcntl(socket, F_GETFL, 0);
-    if (fcntl(socket, F_SETFL, flags |= O_NONBLOCK) < 0)
-        throw std::runtime_error("Cannot set socket flags");
+    //int flags = fcntl(socket, F_GETFL, 0);
+    //if (fcntl(socket, F_SETFL, flags |= O_NONBLOCK) < 0)
+    //    throw std::runtime_error("Cannot set socket flags");
 }
 
+#define MAX_PACKAGE_SIZE 1280
+
+char pktinfo[4096] = {0};
+
 void readUdpSocket(int socket, char* buffer, unsigned int size, struct sockaddr_in* clientAddr, socklen_t* clientAddrLen) {
-    while (size > 0) {
-        ssize_t s0 = recvfrom(socket, buffer, size, MSG_WAITALL, (struct sockaddr*)clientAddr, clientAddrLen);
-        if (s0 < 0) {
+    struct msghdr msg;
+    struct iovec iov;
+    int received_ttl = 0;
+    char buf[CMSG_SPACE(sizeof(received_ttl))];
+    iov.iov_base = buffer;
+    iov.iov_len = size;
+    msg.msg_name = clientAddr;
+    msg.msg_namelen = *clientAddrLen;
+    msg.msg_iov = &iov;
+    msg.msg_iovlen = 1;
+	msg.msg_control = 0;
+	msg.msg_controllen = 0;
+    for (;;) {
+        ssize_t s0 = recvmsg(socket, &msg, MSG_DONTWAIT);
+        if (s0 == size) {
+            //printf("read\n");
+            return;
+        }
+        if (s0 <= 0) {
             if (errno == EAGAIN || errno == EWOULDBLOCK)
                 continue;
             printf("error read: %s\n", strerror(errno));
             throw std::runtime_error("Cannot read from socket");
         }
-        size -= s0;
-        buffer += s0;
-    }
+    };
 }
 
-#define MAX_PACKAGE_SIZE 1472
-
 void writeUdpSocket(int socket, char* buffer, unsigned int size, struct sockaddr_in* clientAddr, socklen_t clientAddrLen) {
-    while (size > 0) {
-        unsigned int size0 = size;
-        if (size0 > MAX_PACKAGE_SIZE)
-            size0 = MAX_PACKAGE_SIZE;
-        ssize_t s0 = sendto(socket, buffer, size, 0, (const struct sockaddr*)clientAddr, clientAddrLen);
-        if (s0 < 0) {
+    struct msghdr msg;
+    struct iovec iov;
+    int received_ttl = 0;
+    char buf[CMSG_SPACE(sizeof(received_ttl))];
+    iov.iov_base = buffer;
+    iov.iov_len = size;
+    msg.msg_name = clientAddr;
+    msg.msg_namelen = clientAddrLen;
+    msg.msg_iov = &iov;
+    msg.msg_iovlen = 1;
+	msg.msg_control = 0;
+	msg.msg_controllen = 0;
+    for (;;) {
+        ssize_t s0 = sendmsg(socket, &msg, 0);
+        if (s0 == size) {
+            //printf("sent\n");
+            return;
+        }
+        if (s0 <= 0) {
             if (errno == EAGAIN || errno == EWOULDBLOCK)
                 continue;
             printf("error write: %s\n", strerror(errno));
             throw std::runtime_error("Cannot write to socket");
         }
-        size -= s0;
-        buffer += s0;
     }
 }
 
@@ -57,9 +85,9 @@ void server() {
     printf("nAttempts: %d\n", nAttempts);
     char buffer[maPackageSize];
 
-    printf("TCP test\n");
+    if (testTcp) {
+        printf("TCP test\n");
 
-    {
         SocketServer server(port);
         Socket socket = server.accept();
         for (long i = 0; i < packageSizesCount; i++) {
@@ -139,9 +167,10 @@ void server() {
 
 void client(char* host) {
     char buffer[maPackageSize];
-    printf("TCP test\n");
 
-    {
+    if (testTcp) {
+        printf("TCP test\n");
+
         char** hosts = new char*[1];
         hosts[0] = host;
         int* ports = new int[1];
