@@ -459,8 +459,8 @@ static size_t loadRootWeights(char** target, char* source, size_t bytes) {
     return bytes;
 }
 
-static size_t readSlicedMatmulWeights(MatmulSlice* slice, char* weights0, Socket* socket) {
-    socket->read(weights0, slice->sliceBytes);
+static size_t readSlicedMatmulWeights(MatmulSlice* slice, char* weights0, SocketPool* socketPool) {
+    socketPool->read(ROOT_SOCKET_INDEX, weights0, slice->sliceBytes);
     return slice->sliceBytes;
 }
 
@@ -538,10 +538,10 @@ Transformer Transformer::loadRoot(char* data, TransformerSpec* spec, Transformer
     return transformer;
 }
 
-Transformer Transformer::loadSlice(TransformerSpec* spec, TransformerConfig* config, Socket* socket) {
+Transformer Transformer::loadSlice(TransformerSpec* spec, TransformerConfig* config, SocketPool* socketPool) {
     slice_index_t sliceIndex;
-    socket->read((char*)&sliceIndex, sizeof(uint8_t));
-    socket->read((char*)spec, sizeof(TransformerSpec));
+    socketPool->read(ROOT_SOCKET_INDEX, (char*)&sliceIndex, sizeof(uint8_t));
+    socketPool->read(ROOT_SOCKET_INDEX, (char*)spec, sizeof(TransformerSpec));
 
     printf("💡 sliceIndex: %d\n", sliceIndex);
     printf("💡 nSlices: %d\n", spec->nSlices);
@@ -573,37 +573,37 @@ Transformer Transformer::loadSlice(TransformerSpec* spec, TransformerConfig* con
         size_t blockBytes = 0;
         long t0 = timeMs();
 
-        socket->read(buffer, block->q0Slice->sliceBytes);
+        socketPool->read(ROOT_SOCKET_INDEX, buffer, block->q0Slice->sliceBytes);
         blockBytes += block->q0mm->loadWeights(buffer);
 
-        socket->read(buffer, block->k0Slice->sliceBytes);
+        socketPool->read(ROOT_SOCKET_INDEX, buffer, block->k0Slice->sliceBytes);
         blockBytes += block->k0mm->loadWeights(buffer);
 
-        socket->read(buffer, block->v0Slice->sliceBytes);
+        socketPool->read(ROOT_SOCKET_INDEX, buffer, block->v0Slice->sliceBytes);
         blockBytes += block->v0mm->loadWeights(buffer);
 
-        socket->read(buffer, block->wo0Slice->sliceBytes);
+        socketPool->read(ROOT_SOCKET_INDEX, buffer, block->wo0Slice->sliceBytes);
         blockBytes += block->wo0mm->loadWeights(buffer);
 
         if (spec->nExperts > 0) {
             for (int e = 0; e < spec->nExperts; e++) {
-                socket->read(buffer, block->moeUpAndGate0Slice->sliceBytes);
+                socketPool->read(ROOT_SOCKET_INDEX, buffer, block->moeUpAndGate0Slice->sliceBytes);
                 blockBytes += block->moeUpMm[e]->loadWeights(buffer);
 
-                socket->read(buffer, block->moeUpAndGate0Slice->sliceBytes);
+                socketPool->read(ROOT_SOCKET_INDEX, buffer, block->moeUpAndGate0Slice->sliceBytes);
                 blockBytes += block->moeGateMm[e]->loadWeights(buffer);
 
-                socket->read(buffer, block->moeDown0Slice->sliceBytes);
+                socketPool->read(ROOT_SOCKET_INDEX, buffer, block->moeDown0Slice->sliceBytes);
                 blockBytes += block->moeDownMm[e]->loadWeights(buffer);
             }
         } else {
-            socket->read(buffer, block->w10Slice->sliceBytes);
+            socketPool->read(ROOT_SOCKET_INDEX, buffer, block->w10Slice->sliceBytes);
             blockBytes += block->w10mm->loadWeights(buffer);
 
-            socket->read(buffer, block->w20Slice->sliceBytes);
+            socketPool->read(ROOT_SOCKET_INDEX, buffer, block->w20Slice->sliceBytes);
             blockBytes += block->w20mm->loadWeights(buffer);
 
-            socket->read(buffer, block->w30Slice->sliceBytes);
+            socketPool->read(ROOT_SOCKET_INDEX, buffer, block->w30Slice->sliceBytes);
             blockBytes += block->w30mm->loadWeights(buffer);
         }
 

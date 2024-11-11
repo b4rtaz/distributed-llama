@@ -201,7 +201,7 @@ public:
     static TransformerSpec loadSpecFromFile(const char* path, const unsigned int nSlices, const unsigned int maxSeqLen, FloatType weightsFloatType, FloatType bufferFloatType);
     static Transformer loadRootFromFile(const char* path, TransformerSpec* spec, TransformerConfig* config, SocketPool* socketPool);
     static Transformer loadRoot(char* data, TransformerSpec* spec, TransformerConfig* config, SocketPool* socketPool);
-    static Transformer loadSlice(TransformerSpec* spec, TransformerConfig* config, Socket* socket);
+    static Transformer loadSlice(TransformerSpec* spec, TransformerConfig* config, SocketPool* socketPool);
 
 private:
     Transformer(TransformerSpec* spec, TransformerConfig* config, slice_index_t sliceIndex);

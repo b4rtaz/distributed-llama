@@ -42,7 +42,7 @@ void TransformerArch::W(TaskLoopHandler* handler, unsigned int taskType) {
 }
 
 void syncUnitBuffer(unsigned int nThreads, unsigned int threadIndex, TransformerContext* ctx, uint8_t bufferIndex) {
-    void* buffer = ctx->transformer->buffer->getUnit(bufferIndex);
+/*    void* buffer = ctx->transformer->buffer->getUnit(bufferIndex);
     size_t bufferBytes = ctx->transformer->buffer->getUnitBytes(bufferIndex);
 
     if (ctx->socketPool != NULL) {
@@ -63,11 +63,11 @@ void syncUnitBuffer(unsigned int nThreads, unsigned int threadIndex, Transformer
 
         // worker
         ctx->socket->read(buffer, bufferBytes);
-    }
+    }*/
 }
 
 void syncSliceOfSlicedBuffer(unsigned int nThreads, unsigned int threadIndex, TransformerContext* ctx, uint8_t bufferIndex) {
-    size_t bufferBytes = ctx->transformer->buffer->getSlicedBytes(bufferIndex);
+/*    size_t bufferBytes = ctx->transformer->buffer->getSlicedBytes(bufferIndex);
     if (ctx->socketPool != NULL) {
         // root
 
@@ -90,7 +90,7 @@ void syncSliceOfSlicedBuffer(unsigned int nThreads, unsigned int threadIndex, Tr
         // worker
         void* buffer = ctx->transformer->buffer->getSliced(bufferIndex, ctx->transformer->sliceIndex);
         ctx->socket->write(buffer, bufferBytes);
-    }
+    }*/
 }
 
 void quantizeUnitBuffer(unsigned int nThreads, unsigned int threadIndex, TransformerContext* ctx, uint8_t sourceBufferIndex, uint8_t targetBufferIndex) {
@@ -151,8 +151,8 @@ void sendPos(TASK_ARGS) {
     }
 }
 
-bool tryWaitForPos(Transformer* transformer, Socket* socket, unsigned int maxAttempts) {
-    return socket->tryRead(&transformer->pos, sizeof(pos_t), maxAttempts);
+bool tryWaitForPos(Transformer* transformer, SocketPool* socketPool, unsigned int maxAttempts) {
+    return socketPool->tryRead(ROOT_SOCKET_INDEX, &transformer->pos, sizeof(pos_t), maxAttempts);
 }
 
 Inference::Inference(TransformerArch* arch, unsigned int nThreads, Transformer* transformer, SocketPool* socketPool) {
@@ -160,7 +160,6 @@ Inference::Inference(TransformerArch* arch, unsigned int nThreads, Transformer* 
     this->socketPool = socketPool;
     this->arch = arch;
     context.transformer = transformer;
-    context.socket = NULL;
     context.socketPool = socketPool;
     assert(arch->inference.tasks[0].handler == sendPos);
     taskLoop = new TaskLoop(nThreads, arch->inference.nTasks, TASK_N_TYPES, arch->inference.tasks, (void*)&context);
@@ -188,12 +187,11 @@ void Inference::getStats(unsigned long* inferenceTime, unsigned long* transferTi
     *transferTime = taskLoop->executionTime[TASK_TYPE_TRANSFER];
 }
 
-Worker::Worker(TransformerArch* arch, unsigned int nThreads, Transformer* transformer, Socket* socket) {
+Worker::Worker(TransformerArch* arch, unsigned int nThreads, Transformer* transformer, SocketPool* socketPool) {
     this->transformer = transformer;
-    this->socket = socket;
+    this->socketPool = socketPool;
     context.transformer = transformer;
-    context.socket = socket;
-    context.socketPool = NULL;
+    context.socketPool = socketPool;
     taskLoop = new TaskLoop(nThreads, arch->worker.nTasks, TASK_N_TYPES, arch->worker.tasks, (void*)&context);
 }
 
@@ -208,18 +206,18 @@ void Worker::work() {
     while (true) {
         const clock_t start = clock();
 
-        while (!tryWaitForPos(transformer, socket, maxAttempts)) {
+        while (!tryWaitForPos(transformer, socketPool, maxAttempts)) {
             if (turbo) {
                 // After one second of waiting with non-blocking read, we switch to blocking mode to not burn CPU.
                 if (clock() - start > CLOCKS_PER_SEC) {
-                    socket->setTurbo(false);
+                    socketPool->setTurbo(false);
                     turbo = false;
                     printf("🚁 Socket is in blocking mode\n");
                 }
             }
         }
         if (!turbo) {
-            socket->setTurbo(true);
+            socketPool->setTurbo(true);
             turbo = true;
             printf("🚁 Socket is in non-blocking mode\n");
         }

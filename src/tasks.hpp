@@ -12,7 +12,6 @@
 
 struct TransformerContext {
     Transformer* transformer;
-    Socket* socket;
     SocketPool* socketPool;
     unsigned int currentBlockIndex;
 };
@@ -66,11 +65,11 @@ public:
 class Worker {
 private:
     Transformer* transformer;
-    Socket* socket;
+    SocketPool* socketPool;
     TransformerContext context;
     TaskLoop *taskLoop;
 public:
-    Worker(TransformerArch* arch, unsigned int nThreads, Transformer* transformer, Socket* socket);
+    Worker(TransformerArch* arch, unsigned int nThreads, Transformer* transformer, SocketPool* socketPool);
     ~Worker();
     void work();
 };
