@@ -235,10 +235,12 @@ SocketPool* SocketPool::serve(int port) {
 
     unsigned int nSockets;
     unsigned int nodeIndex;
+    size_t packetAlignment;
     int rootSocket = acceptSocket(serverSocket);
 
     readSocket(rootSocket, &nSockets, sizeof(nSockets));
     readSocket(rootSocket, &nodeIndex, sizeof(nodeIndex));
+    readSocket(rootSocket, &packetAlignment, sizeof(packetAlignment));
 
     unsigned int nNodes = nSockets - 1; // nSockets - 1 root node
     int* sockets = new int[nSockets];
@@ -279,10 +281,10 @@ SocketPool* SocketPool::serve(int port) {
 
     shutdown(serverSocket, 2);
     close(serverSocket);
-    return new SocketPool(nSockets, sockets);
+    return new SocketPool(nSockets, sockets, packetAlignment);
 }
 
-SocketPool* SocketPool::connect(unsigned int nSockets, char** hosts, int* ports) {
+SocketPool* SocketPool::connect(unsigned int nSockets, char** hosts, int* ports, size_t packetAlignment) {
     int* sockets = new int[nSockets];
     struct sockaddr_in addr;
     for (unsigned int i = 0; i < nSockets; i++) {
@@ -290,6 +292,7 @@ SocketPool* SocketPool::connect(unsigned int nSockets, char** hosts, int* ports)
         sockets[i] = socket;
         writeSocket(socket, &nSockets, sizeof(nSockets));
         writeSocket(socket, &i, sizeof(i)); // send node index
+        writeSocket(socket, &packetAlignment, sizeof(packetAlignment));
         for (unsigned int j = 0; j < nSockets; j++) {
             if (j == i)
                 continue;
@@ -299,6 +302,7 @@ SocketPool* SocketPool::connect(unsigned int nSockets, char** hosts, int* ports)
             writeSocket(socket, &ports[j], sizeof(ports[j]));
         }
     }
+
     unsigned int confirm;
     for (unsigned int i = 0; i < nSockets; i++) {
         readSocket(sockets[i], &confirm, sizeof(confirm));
@@ -307,14 +311,19 @@ SocketPool* SocketPool::connect(unsigned int nSockets, char** hosts, int* ports)
         }
         printf("⭕ socket[%d]: connected to %s:%d\n", i, hosts[i], ports[i]);
     }
-    return new SocketPool(nSockets, sockets);
+
+    return new SocketPool(nSockets, sockets, packetAlignment);
 }
 
-SocketPool::SocketPool(unsigned int nSockets, int* sockets) {
+SocketPool::SocketPool(unsigned int nSockets, int* sockets, size_t packetAlignment) {
     this->nSockets = nSockets;
     this->sockets = sockets;
     this->sentBytes.exchange(0);
     this->recvBytes.exchange(0);
+    this->packetAlignment = packetAlignment;
+    if (packetAlignment > 0)
+        this->packetAlignmentBuffer = new char[packetAlignment];
+    printf("📦 packetAlignment: %zu\n", packetAlignment);
 }
 
 SocketPool::~SocketPool() {
@@ -323,6 +332,8 @@ SocketPool::~SocketPool() {
         close(sockets[i]);
     }
     delete[] sockets;
+    if (packetAlignment > 0)
+        delete[] this->packetAlignmentBuffer;
 }
 
 void SocketPool::setTurbo(bool enabled) {
@@ -343,18 +354,30 @@ void SocketPool::read(unsigned int socketIndex, void* data, size_t size) {
     readSocket(sockets[socketIndex], data, size);
 }
 
-bool SocketPool::tryRead(unsigned int socketIndex, void* data, size_t size, unsigned long maxAttempts) {
+bool SocketPool::tryReadWithAlignment(unsigned int socketIndex, void* data, size_t size, unsigned long maxAttempts) {
+    assert(packetAlignment == 0 || packetAlignment >= size); // TODO: currently this method supports only smaller package
     assert(socketIndex >= 0 && socketIndex < nSockets);
-    recvBytes += size;
-    return tryReadSocket(sockets[socketIndex], data, size, maxAttempts);
+
+    size_t extra = calculateExtraBytesForAlignment(size);
+    void* target = extra > 0 ? packetAlignmentBuffer : data;
+    size_t targetSize = size + extra;
+
+    if (tryReadSocket(sockets[socketIndex], target, targetSize, maxAttempts)) {
+        if (extra > 0)
+            memcpy(data, target, size);
+        recvBytes += targetSize;
+        return true;
+    }
+    return false;
 }
 
-void SocketPool::writeMany(unsigned int n, SocketIo* ios) {
+void SocketPool::writeManyWithAlignment(unsigned int n, SocketIo* ios) {
     bool isWriting;
     for (unsigned int i = 0; i < n; i++) {
         SocketIo* io = &ios[i];
         assert(io->socketIndex >= 0 && io->socketIndex < nSockets);
-        sentBytes += io->size;
+        io->extra = calculateExtraBytesForAlignment(io->size);
+        sentBytes += io->size + io->extra;
     }
     do {
         isWriting = false;
@@ -374,17 +397,23 @@ void SocketPool::writeMany(unsigned int n, SocketIo* ios) {
                 }
                 io->size -= s;
                 io->data = (char*)io->data + s;
+                if (io->size == 0 && io->extra > 0) {
+                    io->size = io->extra;
+                    io->data = packetAlignmentBuffer;
+                    io->extra = 0;
+                }
             }
         }
     } while (isWriting);
 }
 
-void SocketPool::readMany(unsigned int n, SocketIo* ios) {
+void SocketPool::readManyWithAlignment(unsigned int n, SocketIo* ios) {
     bool isReading;
     for (unsigned int i = 0; i < n; i++) {
         SocketIo* io = &ios[i];
         assert(io->socketIndex >= 0 && io->socketIndex < nSockets);
-        recvBytes += io->size;
+        io->extra = calculateExtraBytesForAlignment(io->size);
+        recvBytes += io->size + io->extra;
     }
     do {
         isReading = false;
@@ -404,6 +433,11 @@ void SocketPool::readMany(unsigned int n, SocketIo* ios) {
                 }
                 io->size -= r;
                 io->data = (char*)io->data + r;
+                if (io->size == 0 && io->extra > 0) {
+                    io->size = io->extra;
+                    io->data = packetAlignmentBuffer;
+                    io->extra = 0;
+                }
             }
         }
     } while (isReading);
@@ -414,4 +448,10 @@ void SocketPool::getStats(size_t* sentBytes, size_t* recvBytes) {
     *recvBytes = this->recvBytes;
     this->sentBytes.exchange(0);
     this->recvBytes.exchange(0);
+}
+
+size_t SocketPool::calculateExtraBytesForAlignment(size_t size) {
+    if (packetAlignment == 0) return 0;
+    size_t excess = size % packetAlignment;
+    return excess == 0 ? 0 : (packetAlignment - excess);
 }

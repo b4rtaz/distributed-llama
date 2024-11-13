@@ -29,6 +29,7 @@ struct SocketIo {
     unsigned int socketIndex;
     const void* data;
     size_t size;
+    size_t extra;
 };
 
 class SocketPool {
@@ -39,20 +40,23 @@ private:
 
 public:
     static SocketPool* serve(int port);
-    static SocketPool* connect(unsigned int nSockets, char** hosts, int* ports);
+    static SocketPool* connect(unsigned int nSockets, char** hosts, int* ports, size_t packetAlignment);
 
     unsigned int nSockets;
+    size_t packetAlignment;
+    char* packetAlignmentBuffer;
 
-    SocketPool(unsigned int nSockets, int* sockets);
+    SocketPool(unsigned int nSockets, int* sockets, size_t packetAlignment);
     ~SocketPool();
 
     void setTurbo(bool enabled);
     void write(unsigned int socketIndex, const void* data, size_t size);
     void read(unsigned int socketIndex, void* data, size_t size);
-    bool tryRead(unsigned int socketIndex, void* data, size_t size, unsigned long maxAttempts);
-    void writeMany(unsigned int n, SocketIo* ios);
-    void readMany(unsigned int n, SocketIo* ios);
+    bool tryReadWithAlignment(unsigned int socketIndex, void* data, size_t size, unsigned long maxAttempts);
+    void writeManyWithAlignment(unsigned int n, SocketIo* ios);
+    void readManyWithAlignment(unsigned int n, SocketIo* ios);
     void getStats(size_t* sentBytes, size_t* recvBytes);
+    size_t calculateExtraBytesForAlignment(size_t size);
 };
 
 #endif

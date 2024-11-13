@@ -57,13 +57,17 @@ void syncUnitBuffer(unsigned int nThreads, unsigned int threadIndex, Transformer
             ios[i].data = buffer;
             ios[i].size = bufferBytes;
         }
-        ctx->socketPool->writeMany(nSocketsPerThread, ios);
+        ctx->socketPool->writeManyWithAlignment(nSocketsPerThread, ios);
     } else {
         // worker
 
         if (threadIndex != 0) return;
 
-        ctx->socketPool->read(ROOT_SOCKET_INDEX, buffer, bufferBytes);
+        SocketIo ios;
+        ios.data = buffer;
+        ios.size = bufferBytes;
+        ios.socketIndex = ROOT_SOCKET_INDEX;
+        ctx->socketPool->readManyWithAlignment(1, &ios);
     }
 }
 
@@ -88,8 +92,8 @@ void syncSliceOfSlicedBuffer(unsigned int nThreads, unsigned int threadIndex, Tr
         readIos[i].size = sliceBytes;
     }
 
-    ctx->socketPool->writeMany(nSocketsPerThread, writeIos);
-    ctx->socketPool->readMany(nSocketsPerThread, readIos);
+    ctx->socketPool->writeManyWithAlignment(nSocketsPerThread, writeIos);
+    ctx->socketPool->readManyWithAlignment(nSocketsPerThread, readIos);
 }
 
 void quantizeUnitBuffer(unsigned int nThreads, unsigned int threadIndex, TransformerContext* ctx, uint8_t sourceBufferIndex, uint8_t targetBufferIndex) {
@@ -135,23 +139,20 @@ void dequantizeSlicedBuffer(unsigned int nThreads, unsigned int threadIndex, Tra
 
 void sendPos(TASK_ARGS) {
     TASK_VARIABLES;
-
-    if (ctx->socketPool != NULL) {
-        unsigned int nSockets = ctx->socketPool->nSockets / nThreads + (ctx->socketPool->nSockets % nThreads > threadIndex ? 1 : 0);
-        if (nSockets > 0) {
-            SocketIo ios[nSockets];
-            for (int i = 0; i < nSockets; i++) {
-                ios[i].socketIndex = threadIndex + i * nThreads;
-                ios[i].data = &transformer->pos;
-                ios[i].size = sizeof(pos_t);
-            }
-            ctx->socketPool->writeMany(nSockets, ios);
+    unsigned int nSockets = ctx->socketPool->nSockets / nThreads + (ctx->socketPool->nSockets % nThreads > threadIndex ? 1 : 0);
+    if (nSockets > 0) {
+        SocketIo ios[nSockets];
+        for (int i = 0; i < nSockets; i++) {
+            ios[i].socketIndex = threadIndex + i * nThreads;
+            ios[i].data = &transformer->pos;
+            ios[i].size = sizeof(pos_t);
         }
+        ctx->socketPool->writeManyWithAlignment(nSockets, ios);
     }
 }
 
 bool tryWaitForPos(Transformer* transformer, SocketPool* socketPool, unsigned int maxAttempts) {
-    return socketPool->tryRead(ROOT_SOCKET_INDEX, &transformer->pos, sizeof(pos_t), maxAttempts);
+    return socketPool->tryReadWithAlignment(ROOT_SOCKET_INDEX, &transformer->pos, sizeof(pos_t), maxAttempts);
 }
 
 Inference::Inference(TransformerArch* arch, unsigned int nThreads, Transformer* transformer, SocketPool* socketPool) {

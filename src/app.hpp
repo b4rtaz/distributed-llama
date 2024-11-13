@@ -18,6 +18,7 @@ public:
     char* mode;
     int nThreads;
     bool useDiscForKvCache;
+    size_t packetAlignment;
 
     // inference
     char* modelPath;

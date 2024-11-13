@@ -42,6 +42,7 @@ AppArgs AppArgs::parse(int argc, char** argv, bool hasMode) {
     args.seed = (unsigned long long)time(NULL);
     args.chatTemplateType = TEMPLATE_UNKNOWN;
     args.maxSeqLen = 0;
+    args.packetAlignment = 0;
     args.useDiscForKvCache = false;
 
     int i = 1;
@@ -104,6 +105,8 @@ AppArgs AppArgs::parse(int argc, char** argv, bool hasMode) {
             args.maxSeqLen = (unsigned int)atoi(value);
         } else if (strcmp(name, "--kv-cache-storage") == 0) {
             args.useDiscForKvCache = strcmp(value, "disc") == 0;
+        } else if (strcmp(name, "--packet-alignment") == 0) {
+            args.packetAlignment = (size_t)atoi(value);
         } else {
             printf("Unknown option %s\n", name);
             exit(EXIT_FAILURE);
@@ -128,7 +131,7 @@ void App::run(AppArgs* args, void (*program)(Inference* inference, SocketPool* s
         throw std::runtime_error("Tokenizer is required");
     }
 
-    SocketPool* socketPool = SocketPool::connect(args->nWorkers, args->workerHosts, args->workerPorts);
+    SocketPool* socketPool = SocketPool::connect(args->nWorkers, args->workerHosts, args->workerPorts, args->packetAlignment);
     unsigned int nSlices = args->nWorkers + 1;
 
     TransformerSpec spec = Transformer::loadSpecFromFile(args->modelPath, nSlices, args->maxSeqLen, args->weightsFloatType, args->bufferFloatType);
