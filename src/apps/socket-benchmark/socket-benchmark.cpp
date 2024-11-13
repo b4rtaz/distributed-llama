@@ -5,7 +5,7 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <fcntl.h>
-#include <cerrno>
+#include <stdexcept>
 
 using namespace std::chrono;
 
