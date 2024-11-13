@@ -149,6 +149,19 @@ void closeMmapFile(MmapFile* file) {
 #endif
 }
 
+#if defined(__linux__)
+void pinCpu(int cpu) {
+    cpu_set_t mask;
+    CPU_ZERO(&mask);
+    CPU_SET(cpu, &mask);
+    if (pthread_setaffinity_np(pthread_self(), sizeof(mask), &mask) != 0) {
+        printf("Cannot pin thread\n");
+    }
+}
+#else
+void pinCpu(int cpu) {}
+#endif
+
 TaskLoop::TaskLoop(unsigned int nThreads, unsigned int nTasks, unsigned int nTypes, TaskLoopTask* tasks, void* userData) {
     this->nThreads = nThreads;
     this->nTasks = nTasks;
@@ -200,6 +213,7 @@ void* TaskLoop::threadHandler(void* arg) {
     TaskLoop* loop = context->loop;
     unsigned int threadIndex = context->threadIndex;
 
+    pinCpu(context->threadIndex);
     while (true) {
         const unsigned int currentTaskIndex = loop->currentTaskIndex.load();
         if (currentTaskIndex == context->nTasks) {
