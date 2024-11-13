@@ -9,7 +9,7 @@
 
 using namespace std::chrono;
 
-unsigned int packageSizes[] = { 128, 256, 512, 768, 1024, 1280, 1518, 2048, 4096, 8192, 16384, 32768, 65536, 131072 };
+unsigned int packageSizes[] = { 128, 256, 512, 768, 1024, 1280, 1518, 2048, 2560, 3072, 3584, 4096, 8192, 16384, 32768, 65536, 131072 };
 unsigned int packageSizesCount = sizeof(packageSizes) / sizeof(unsigned int);
 unsigned int maPackageSize = packageSizes[packageSizesCount - 1];
 unsigned int nAttempts = 5000;
