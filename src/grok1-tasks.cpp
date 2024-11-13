@@ -10,7 +10,7 @@
 
 void grokMulInput(TASK_ARGS) {
     TASK_VARIABLES;
-    mulScalar(transformer->x, 78.38367176906169f, transformer->spec->dim, nThreads, threadIndex);
+    //mulScalar(transformer->x, 78.38367176906169f, transformer->spec->dim, nThreads, threadIndex);
 }
 
 void grokRmfFfn(TASK_ARGS) {
@@ -37,20 +37,20 @@ void grokRmfFfnNormJoin(TASK_ARGS) {
     TASK_VARIABLES;
 
     float* xb2 = (float*)transformer->buffer->getUnit(TB_SLICED_XB2);
-    add(transformer->x, xb2, spec->dim, nThreads, threadIndex);
+    //add(transformer->x, xb2, spec->dim, nThreads, threadIndex);
 }
 
 void grokMoeRms(TASK_ARGS) {
     TASK_VARIABLES;
     if (threadIndex == 0) {
-        transformer->rms = rms(transformer->x, spec->dim);
+        //transformer->rms = rms(transformer->x, spec->dim);
     }
 }
 
 void grokMoeRmsNorm(TASK_ARGS) {
     TASK_VARIABLES;
     float* xb = (float*)transformer->buffer->getUnit(TB_UNIT_XB);
-    rmsnorm(xb, transformer->x, transformer->rms, block->rmsMoe, spec->dim, nThreads, threadIndex);
+    //rmsnorm(xb, transformer->x, transformer->rms, block->rmsMoe, spec->dim, nThreads, threadIndex);
 }
 
 void grokMoeRouter(TASK_ARGS) {
@@ -164,7 +164,7 @@ void grokMoeBlock1(TASK_ARGS) {
 
 void grokQuantizeMoeMul(TASK_ARGS) {
     TASK_VARIABLES;
-    quantizeSlicedBuffer(nThreads, threadIndex, ctx, true, TB_SLICED_HB, TB_SLICED_HB_QUANTIZED);
+    //quantizeSlicedBuffer(nThreads, threadIndex, ctx, true, TB_SLICED_HB, TB_SLICED_HB_QUANTIZED);
 }
 
 void grokSyncMoeMulA(TASK_ARGS) {
@@ -229,7 +229,7 @@ void grokMoeBlock2(TASK_ARGS) {
 
 void grokQuantizeMoeOutput(TASK_ARGS) {
     TASK_VARIABLES;
-    quantizeSlicedBuffer(nThreads, threadIndex, ctx, false, TB_SLICED_XB2, TB_SLICED_XB2_QUANTIZED);
+    //quantizeSlicedBuffer(nThreads, threadIndex, ctx, false, TB_SLICED_XB2, TB_SLICED_XB2_QUANTIZED);
 }
 
 void grokSyncMoeOutput(TASK_ARGS) {
@@ -259,12 +259,12 @@ void grokMoeRmsNormFinal(TASK_ARGS) {
 void grokMoeAdd(TASK_ARGS) {
     TASK_VARIABLES;
     float* xb2 = (float*)transformer->buffer->getUnit(TB_SLICED_XB2);
-    add(transformer->x, xb2, spec->dim, nThreads, threadIndex);
+    //add(transformer->x, xb2, spec->dim, nThreads, threadIndex);
 }
 
 void grokFinalize(TASK_ARGS) {
     TASK_VARIABLES;
-    transformer->wclsMm->forward(transformer->x, transformer->logits, nThreads, threadIndex);
+    //transformer->wclsMm->forward(transformer->x, transformer->logits, nThreads, threadIndex);
 }
 
 void grokFinalize2(TASK_ARGS) {
@@ -283,7 +283,6 @@ TransformerArch buildGrok1Arch(TransformerSpec* spec) {
         a.I(llamaRmsAtt, TASK_TYPE_INFERENCE);
         a.I(llamaRmsAttNorm, TASK_TYPE_INFERENCE);
         a.I(llamaQuantizeRmsAtt, TASK_TYPE_INFERENCE);
-        a.I(llamaSyncRmsAtt, TASK_TYPE_TRANSFER);
         a.I(llamaQkv, TASK_TYPE_INFERENCE);
         a.I(llamaRope, TASK_TYPE_INFERENCE);
         a.I(llamaMultiheadAtt, TASK_TYPE_INFERENCE);
@@ -328,7 +327,6 @@ TransformerArch buildGrok1Arch(TransformerSpec* spec) {
     // worker
 
     for (int i = 0; i < spec->nLayers; i++) {
-        a.W(llamaSyncRmsAtt, TASK_TYPE_TRANSFER);
         a.W(llamaQkv, TASK_TYPE_INFERENCE);
         a.W(llamaRope, TASK_TYPE_INFERENCE);
         a.W(llamaMultiheadAtt, TASK_TYPE_INFERENCE);

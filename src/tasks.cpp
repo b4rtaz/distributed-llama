@@ -42,55 +42,54 @@ void TransformerArch::W(TaskLoopHandler* handler, unsigned int taskType) {
 }
 
 void syncUnitBuffer(unsigned int nThreads, unsigned int threadIndex, TransformerContext* ctx, uint8_t bufferIndex) {
-/*    void* buffer = ctx->transformer->buffer->getUnit(bufferIndex);
+    void* buffer = ctx->transformer->buffer->getUnit(bufferIndex);
     size_t bufferBytes = ctx->transformer->buffer->getUnitBytes(bufferIndex);
 
-    if (ctx->socketPool != NULL) {
+    if (ctx->transformer->sliceIndex == 0) {
         // root
 
-        unsigned int nSockets = ctx->socketPool->nSockets / nThreads + (ctx->socketPool->nSockets % nThreads > threadIndex ? 1 : 0);
-        if (nSockets > 0) {
-            SocketIo ios[nSockets];
-            for (int i = 0; i < nSockets; i++) {
-                ios[i].socketIndex = threadIndex + i * nThreads;
-                ios[i].data = buffer;
-                ios[i].size = bufferBytes;
-            }
-            ctx->socketPool->writeMany(nSockets, ios);
+        unsigned int nSocketsPerThread = ctx->socketPool->nSockets / nThreads + (ctx->socketPool->nSockets % nThreads > threadIndex ? 1 : 0);
+        if (nSocketsPerThread == 0) return;
+
+        SocketIo ios[nSocketsPerThread];
+        for (int i = 0; i < nSocketsPerThread; i++) {
+            ios[i].socketIndex = threadIndex + i * nThreads;
+            ios[i].data = buffer;
+            ios[i].size = bufferBytes;
         }
-    } else if (ctx->socket != NULL) {
+        ctx->socketPool->writeMany(nSocketsPerThread, ios);
+    } else {
+        // worker
+
         if (threadIndex != 0) return;
 
-        // worker
-        ctx->socket->read(buffer, bufferBytes);
-    }*/
+        ctx->socketPool->read(ROOT_SOCKET_INDEX, buffer, bufferBytes);
+    }
 }
 
 void syncSliceOfSlicedBuffer(unsigned int nThreads, unsigned int threadIndex, TransformerContext* ctx, uint8_t bufferIndex) {
-/*    size_t bufferBytes = ctx->transformer->buffer->getSlicedBytes(bufferIndex);
-    if (ctx->socketPool != NULL) {
-        // root
+    unsigned int nSocketsPerThread = ctx->socketPool->nSockets / nThreads + (ctx->socketPool->nSockets % nThreads > threadIndex ? 1 : 0);
+    if (nSocketsPerThread == 0) return;
+    size_t sliceBytes = ctx->transformer->buffer->getSlicedBytes(bufferIndex);
 
-        unsigned int nSockets = ctx->socketPool->nSockets / nThreads + (ctx->socketPool->nSockets % nThreads > threadIndex ? 1 : 0);
-        if (nSockets > 0) {
-            SocketIo ios[nSockets];
-            for (int i = 0; i < nSockets; i++) {
-                int socketIndex = threadIndex + i * nThreads;
-                uint8_t workerSliceIndex = socketIndex + 1;
-                ios[i].socketIndex = socketIndex;
-                ios[i].data = ctx->transformer->buffer->getSliced(bufferIndex, workerSliceIndex);
-                ios[i].size = bufferBytes;
-            }
+    void* mySliceData = ctx->transformer->buffer->getSliced(bufferIndex, ctx->transformer->sliceIndex);
 
-            ctx->socketPool->readMany(nSockets, ios);
-        }
-    } else if (ctx->socket != NULL) {
-        if (threadIndex != 0) return;
+    SocketIo writeIos[nSocketsPerThread];
+    SocketIo readIos[nSocketsPerThread];
+    for (unsigned int i = 0; i < nSocketsPerThread; i++) {
+        unsigned int socketIndex = threadIndex + i * nThreads;
+        writeIos[i].socketIndex = socketIndex;
+        writeIos[i].data = mySliceData;
+        writeIos[i].size = sliceBytes;
 
-        // worker
-        void* buffer = ctx->transformer->buffer->getSliced(bufferIndex, ctx->transformer->sliceIndex);
-        ctx->socket->write(buffer, bufferBytes);
-    }*/
+        int sliceIndex = socketIndex >= ctx->transformer->sliceIndex ? socketIndex + 1 : socketIndex;
+        readIos[i].socketIndex = socketIndex;
+        readIos[i].data = ctx->transformer->buffer->getSliced(bufferIndex, sliceIndex);
+        readIos[i].size = sliceBytes;
+    }
+
+    ctx->socketPool->writeMany(nSocketsPerThread, writeIos);
+    ctx->socketPool->readMany(nSocketsPerThread, readIos);
 }
 
 void quantizeUnitBuffer(unsigned int nThreads, unsigned int threadIndex, TransformerContext* ctx, uint8_t sourceBufferIndex, uint8_t targetBufferIndex) {
@@ -105,9 +104,8 @@ void quantizeUnitBuffer(unsigned int nThreads, unsigned int threadIndex, Transfo
         threadIndex);
 }
 
-void quantizeSlicedBuffer(unsigned int nThreads, unsigned int threadIndex, TransformerContext* ctx, bool quantizeRootSlice, uint8_t sourceBufferIndex, uint8_t targetBufferIndex) {
+void quantizeSlicedBuffer(unsigned int nThreads, unsigned int threadIndex, TransformerContext* ctx, uint8_t sourceBufferIndex, uint8_t targetBufferIndex) {
     if (ctx->transformer->spec->bufferFloatType == F32) return;
-    if (ctx->transformer->sliceIndex == 0 && !quantizeRootSlice) return;
     assert(ctx->transformer->spec->bufferFloatType == Q80);
 
     quantizeQ80Row(
@@ -118,13 +116,14 @@ void quantizeSlicedBuffer(unsigned int nThreads, unsigned int threadIndex, Trans
         threadIndex);
 }
 
-void dequantizeSlicedBuffer(unsigned int nThreads, unsigned int threadIndex, TransformerContext* ctx, bool dequantizeRootSlice, uint8_t sourceBufferIndex, uint8_t targetBufferIndex) {
+void dequantizeSlicedBuffer(unsigned int nThreads, unsigned int threadIndex, TransformerContext* ctx, bool skipMySlice, uint8_t sourceBufferIndex, uint8_t targetBufferIndex) {
     if (ctx->transformer->spec->bufferFloatType == F32) return;
     assert(ctx->transformer->spec->bufferFloatType == Q80);
     assert(ctx->socketPool != NULL); // This function may be called only by root.
 
-    unsigned int sliceIndex = dequantizeRootSlice ? 0 : 1;
-    for (; sliceIndex < ctx->transformer->spec->nSlices; sliceIndex++) {
+    for (unsigned int sliceIndex = 0; sliceIndex < ctx->transformer->spec->nSlices; sliceIndex++) {
+        if (skipMySlice && sliceIndex == ctx->transformer->sliceIndex)
+            continue;
         dequantizeQ80Row(
             (BlockQ80*)ctx->transformer->buffer->getSliced(sourceBufferIndex, sliceIndex),
             (float*)ctx->transformer->buffer->getSliced(targetBufferIndex, sliceIndex),
@@ -173,7 +172,8 @@ float* Inference::infer(int token, pos_t pos) {
     transformer->pos = pos;
 
     float* contentRow = ((float*)transformer->tokenEmbeddingTable) + token * transformer->spec->dim;
-    memcpy(transformer->x, contentRow, transformer->spec->dim * sizeof(float));
+    float* x = (float*)transformer->buffer->getUnit(TB_UNIT_X);
+    memcpy(x, contentRow, transformer->spec->dim * sizeof(float));
 
     context.currentBlockIndex = 0;
 

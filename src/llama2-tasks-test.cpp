@@ -569,7 +569,7 @@ int main() {
     Transformer transformer = Transformer::loadRoot((char*)data, &spec, &config, &socketPool);
     transformer.pos = 0;
 
-    float* x = transformer.x;
+    float* x = (float*)transformer.buffer->getUnit(TB_UNIT_X);
     for (int i = 0; i < spec.dim; i++) x[i] = randomF32(&state) / 120.0;
 
     TransformerArch arch = buildLlamaArch(&spec);
@@ -578,7 +578,6 @@ int main() {
     TransformerContext context;
     context.transformer = &transformer;
     context.currentBlockIndex = 0;
-    context.socket = NULL;
     context.socketPool = &socketPool;
 
     int skipLastNTasks = 3;

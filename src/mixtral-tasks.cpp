@@ -12,7 +12,6 @@ TransformerArch buildMixtralArch(TransformerSpec* spec) {
         a.I(llamaRmsAtt, TASK_TYPE_INFERENCE);
         a.I(llamaRmsAttNorm, TASK_TYPE_INFERENCE);
         a.I(llamaQuantizeRmsAtt, TASK_TYPE_INFERENCE);
-        a.I(llamaSyncRmsAtt, TASK_TYPE_TRANSFER);
         a.I(llamaQkv, TASK_TYPE_INFERENCE);
         a.I(llamaRope, TASK_TYPE_INFERENCE);
         a.I(llamaMultiheadAtt, TASK_TYPE_INFERENCE);
@@ -52,7 +51,6 @@ TransformerArch buildMixtralArch(TransformerSpec* spec) {
     // worker
 
     for (int i = 0; i < spec->nLayers; i++) {
-        a.W(llamaSyncRmsAtt, TASK_TYPE_TRANSFER);
         a.W(llamaQkv, TASK_TYPE_INFERENCE);
         a.W(llamaRope, TASK_TYPE_INFERENCE);
         a.W(llamaMultiheadAtt, TASK_TYPE_INFERENCE);

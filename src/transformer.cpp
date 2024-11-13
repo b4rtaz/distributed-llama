@@ -152,6 +152,8 @@ TransformerBuffer::TransformerBuffer(TransformerSpec* spec) {
     buffers = new void*[TB_LENGTH];
     bufferBytes = new size_t[TB_LENGTH];
 
+    bufferBytes[TB_UNIT_X] = spec->dim * sizeof(float);
+    bufferBytes[TB_UNIT_X_QUANTIZED] = getBatchBytes(spec->bufferFloatType, spec->dim, 1);
     bufferBytes[TB_UNIT_XB] = spec->dim * sizeof(float);
     bufferBytes[TB_UNIT_XB_QUANTIZED] = getBatchBytes(spec->bufferFloatType, spec->dim, 1);
     bufferBytes[TB_SLICED_XB2] = spec->dim * sizeof(float);
@@ -242,7 +244,6 @@ Transformer::Transformer(TransformerSpec* spec, TransformerConfig* config, slice
 #endif
         wclsMm = new MatmulCommand(spec->dim, spec->vocabSize, F32, spec->weightsFloatType);
 
-        x = (float*)newBuffer(spec->dim * sizeof(float));
         logits = (float*)newBuffer(spec->vocabSize * sizeof(float));
     }
 
@@ -279,7 +280,6 @@ Transformer::~Transformer() {
 #endif
         delete wclsMm;
 
-        freeBuffer(x);
         freeBuffer(logits);
     }
 
@@ -292,21 +292,19 @@ TransformerBlock::TransformerBlock(TransformerSpec* spec, TransformerConfig* con
     this->spec = spec;
     this->config = config;
 
-    if (IS_ROOT_SLICE(sliceIndex)) {
-        rmsAttBytes = spec->dim * sizeof(float);
-        rmsFfnBytes = spec->dim * sizeof(float);
-        rmsMoeBytes = spec->dim * sizeof(float);
-        rmsFfn2Bytes = spec->dim * sizeof(float);
+    rmsAttBytes = spec->dim * sizeof(float);
+    rmsFfnBytes = spec->dim * sizeof(float);
+    rmsMoeBytes = spec->dim * sizeof(float);
+    rmsFfn2Bytes = spec->dim * sizeof(float);
 
 #if ALLOC_MEMORY
-        rmsAtt = (float*)newBuffer(rmsAttBytes);
-        rmsFfn = (float*)newBuffer(rmsFfnBytes);
-        if (spec->archType == GROK1) {
-            rmsMoe = (float*)newBuffer(rmsMoeBytes);
-            rmsFfn2 = (float*)newBuffer(rmsFfn2Bytes);
-        }
-#endif
+    rmsAtt = (float*)newBuffer(rmsAttBytes);
+    rmsFfn = (float*)newBuffer(rmsFfnBytes);
+    if (spec->archType == GROK1) {
+        rmsMoe = (float*)newBuffer(rmsMoeBytes);
+        rmsFfn2 = (float*)newBuffer(rmsFfn2Bytes);
     }
+#endif
 
     kvCacheSlice = new KvCacheSlice(spec->kvDim, spec->seqLen, spec->nSlices);
     if (config->useDiscForKvCache) {
@@ -366,13 +364,11 @@ TransformerBlock::TransformerBlock(TransformerSpec* spec, TransformerConfig* con
 
 TransformerBlock::~TransformerBlock() {
 #if ALLOC_MEMORY
-    if (IS_ROOT_SLICE(sliceIndex)) {
-        freeBuffer(rmsAtt);
-        freeBuffer(rmsFfn);
-        if (spec->archType == GROK1) {
-            freeBuffer(rmsMoe);
-            freeBuffer(rmsFfn2);
-        }
+    freeBuffer(rmsAtt);
+    freeBuffer(rmsFfn);
+    if (spec->archType == GROK1) {
+        freeBuffer(rmsMoe);
+        freeBuffer(rmsFfn2);
     }
 #endif
 
@@ -450,9 +446,20 @@ static size_t loadSlicedMatmulWeights(const uint8_t nSlices, MatmulSlice* slice,
 #endif
 }
 
-static size_t loadRootWeights(char** target, char* source, size_t bytes) {
+static size_t loadWeightsOnlyForRoot(char** target, char* source, size_t bytes) {
 #if ALLOC_MEMORY
     memcpy(*target, source, bytes);
+#else
+    *target = source;
+#endif
+    return bytes;
+}
+
+static size_t loadWeights(char** target, char* source, size_t bytes, SocketPool* socketPool) {
+#if ALLOC_MEMORY
+    memcpy(*target, source, bytes);
+    for (uint8_t s = 0; s < socketPool->nSockets; s++)
+        socketPool->write(s, source, bytes);
 #else
     *target = source;
 #endif
@@ -493,7 +500,7 @@ Transformer Transformer::loadRoot(char* data, TransformerSpec* spec, Transformer
 
     char* w = data;
 
-    w += loadRootWeights((char**)&transformer.tokenEmbeddingTable, w, transformer.tokenEmbeddingTableBytes);
+    w += loadWeightsOnlyForRoot((char**)&transformer.tokenEmbeddingTable, w, transformer.tokenEmbeddingTableBytes);
 
     for (int i = 0; i < spec->nLayers; i++) {
         TransformerBlock* block = transformer.blocks[i];
@@ -516,16 +523,16 @@ Transformer Transformer::loadRoot(char* data, TransformerSpec* spec, Transformer
             w += loadSlicedMatmulWeights(spec->nSlices, block->w30Slice, w, block->w30mm, socketPool);
         }
 
-        w += loadRootWeights((char**)&block->rmsAtt, w, block->rmsAttBytes);
-        w += loadRootWeights((char**)&block->rmsFfn, w, block->rmsFfnBytes);
+        w += loadWeights((char**)&block->rmsAtt, w, block->rmsAttBytes, socketPool);
+        w += loadWeights((char**)&block->rmsFfn, w, block->rmsFfnBytes, socketPool);
 
         if (spec->archType == GROK1) {
-            w += loadRootWeights((char**)&block->rmsMoe, w, block->rmsMoeBytes);
-            w += loadRootWeights((char**)&block->rmsFfn2, w, block->rmsFfn2Bytes);
+            w += loadWeights((char**)&block->rmsMoe, w, block->rmsMoeBytes, socketPool);
+            w += loadWeights((char**)&block->rmsFfn2, w, block->rmsFfn2Bytes, socketPool);
         }
     }
 
-    w += loadRootWeights((char**)&transformer.rmsFinal, w, transformer.rmsFinalBytes);
+    w += loadWeightsOnlyForRoot((char**)&transformer.rmsFinal, w, transformer.rmsFinalBytes);
     w += transformer.wclsMm->loadWeights(w);
 
     long missedBytes = (long)(w - data) - spec->fileSize + spec->headerSize;
@@ -605,6 +612,14 @@ Transformer Transformer::loadSlice(TransformerSpec* spec, TransformerConfig* con
 
             socketPool->read(ROOT_SOCKET_INDEX, buffer, block->w30Slice->sliceBytes);
             blockBytes += block->w30mm->loadWeights(buffer);
+        }
+
+        socketPool->read(ROOT_SOCKET_INDEX, block->rmsAtt, block->rmsAttBytes);
+        socketPool->read(ROOT_SOCKET_INDEX, block->rmsFfn, block->rmsFfnBytes);
+
+        if (spec->archType == GROK1) {
+            socketPool->read(ROOT_SOCKET_INDEX, block->rmsMoe, block->rmsMoeBytes);
+            socketPool->read(ROOT_SOCKET_INDEX, block->rmsFfn2, block->rmsFfn2Bytes);
         }
 
         float kbs = blockBytes / (float)(timeMs() - t0);

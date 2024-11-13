@@ -6,7 +6,6 @@
 void llamaRmsAtt(TASK_ARGS);
 void llamaRmsAttNorm(TASK_ARGS);
 void llamaQuantizeRmsAtt(TASK_ARGS);
-void llamaSyncRmsAtt(TASK_ARGS);
 void llamaQkv(TASK_ARGS);
 void llamaRope(TASK_ARGS);
 void llamaMultiheadAtt(TASK_ARGS);
