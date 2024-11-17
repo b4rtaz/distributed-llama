@@ -288,7 +288,7 @@ void Tokenizer::encode(char *text, int *tokens, int *nTokens, bool addBos, bool 
     // add optional EOS (=2) token, if desired
     if (addEos) tokens[(*nTokens)++] = eosId;
 
-    free(str_buffer);
+    delete[] str_buffer;
 }
 
 int sample_argmax(float* probabilities, int n) {
@@ -378,7 +378,7 @@ Sampler::Sampler(int vocab_size, float temperature, float topp, unsigned long lo
 }
 
 Sampler::~Sampler() {
-    free(probindex);
+    delete[] probindex;
 }
 
 int Sampler::sample(float* logits) {
