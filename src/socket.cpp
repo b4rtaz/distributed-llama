@@ -57,11 +57,6 @@ static inline void setNoDelay(int socket) {
     int flag = 1;
     if (setsockopt(socket, IPPROTO_TCP, TCP_NODELAY, (char*)&flag, sizeof(int)) < 0)
         throw std::runtime_error("Error setting socket to no-delay");
-
-    // TODO
-    int size = 16384;
-    setsockopt(socket, SOL_SOCKET, SO_RCVBUF, &size, sizeof(int));
-    setsockopt(socket, SOL_SOCKET, SO_SNDBUF, &size, sizeof(int));
 }
 
 static inline void setQuickAck(int socket) {
