@@ -135,7 +135,6 @@ Tokenizer::Tokenizer(char* tokenizerPath, int modelVocabSize) {
         vocab[i][len] = '\0'; // add the string terminating token
     }
     fclose(file);
-    printf("Tokenizer loaded with %d tokens\n", vocabSize); fflush(stdout);
 }
 
 Tokenizer::~Tokenizer() {

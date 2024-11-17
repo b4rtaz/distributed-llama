@@ -160,9 +160,9 @@ public:
 #define TB_SLICED_XBV_QUANTIZED 7
 #define TB_SLICED_HB 8
 #define TB_SLICED_HB_QUANTIZED 9
-#define TB_SLICED_LOGITS 11
-#define TB_UNIT_MOE_INDEXES 12
-#define TB_UNIT_MOE_WEIGHTS 13
+#define TB_SLICED_LOGITS 10
+#define TB_UNIT_MOE_INDEXES 11
+#define TB_UNIT_MOE_WEIGHTS 12
 
 class TransformerBuffer {
 public:
