@@ -236,8 +236,13 @@ void llamaRmsFinalNorm(TASK_ARGS) {
 
 void llamaFinalize(TASK_ARGS) {
     TASK_VARIABLES;
+    unsigned long t0 = timeMs();
     float* x = (float*)transformer->buffer->getUnit(TB_UNIT_X);
     transformer->wclsMm->forward(x, transformer->logits, nThreads, threadIndex);
+    unsigned long t1 = timeMs();
+    if (threadIndex == 0) {
+        printf("   F %4lu ms\n", t1 - t0);
+    }
 }
 
 TransformerArch buildLlamaArch(TransformerSpec* spec) {
