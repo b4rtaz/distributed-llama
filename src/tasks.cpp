@@ -225,5 +225,9 @@ void Worker::work() {
 
         context.currentBlockIndex = 0;
         taskLoop->run();
+
+        unsigned int inferenceTime = taskLoop->executionTime[TASK_TYPE_INFERENCE];
+        unsigned int transferTime = taskLoop->executionTime[TASK_TYPE_TRANSFER];
+        printf("🔶 I %4u ms T %4u ms\n", inferenceTime, transferTime);
     }
 }
