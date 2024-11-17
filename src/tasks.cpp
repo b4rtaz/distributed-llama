@@ -180,7 +180,7 @@ float* Inference::infer(int token, pos_t pos) {
 
     taskLoop->run();
 
-    return transformer->logits;
+    return (float*)transformer->buffer->getUnit(TB_SLICED_LOGITS);
 }
 
 void Inference::getStats(unsigned long* inferenceTime, unsigned long* transferTime) {

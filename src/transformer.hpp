@@ -147,7 +147,7 @@ public:
     ~TransformerBlock();
 };
 
-#define TB_LENGTH 12
+#define TB_LENGTH 14
 #define TB_NO_PAIRS 2
 
 #define TB_UNIT_X 0
@@ -160,8 +160,10 @@ public:
 #define TB_SLICED_XBV_QUANTIZED 7
 #define TB_SLICED_HB 8
 #define TB_SLICED_HB_QUANTIZED 9
-#define TB_UNIT_MOE_INDEXES 10
-#define TB_UNIT_MOE_WEIGHTS 11
+#define TB_SLICED_LOGITS 11
+#define TB_SLICED_LOGITS_QUANTIZED 12
+#define TB_UNIT_MOE_INDEXES 13
+#define TB_UNIT_MOE_WEIGHTS 14
 
 class TransformerBuffer {
 public:
@@ -190,10 +192,10 @@ public:
     size_t rmsFinalBytes;
     float* rmsFinal;
     MatmulCommand* wclsMm;
+    RowMatmulSlice* wclsSlice;
 
     pos_t pos;
     float rms;
-    float* logits;
     RopeSlice* ropeSlice;
     RopeCommand* rope;
 

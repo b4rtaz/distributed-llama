@@ -269,7 +269,7 @@ void grokFinalize(TASK_ARGS) {
 
 void grokFinalize2(TASK_ARGS) {
     TASK_VARIABLES;
-    mulScalar(transformer->logits, 0.5773502691896257f, spec->vocabSize, nThreads, threadIndex);
+    //mulScalar(transformer->logits, 0.5773502691896257f, spec->vocabSize, nThreads, threadIndex);
 }
 
 TransformerArch buildGrok1Arch(TransformerSpec* spec) {

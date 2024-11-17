@@ -342,16 +342,32 @@ void SocketPool::setTurbo(bool enabled) {
     }
 }
 
+#define ONE_MB 1048576
+
 void SocketPool::write(unsigned int socketIndex, const void* data, size_t size) {
     assert(socketIndex >= 0 && socketIndex < nSockets);
     sentBytes += size;
-    writeSocket(sockets[socketIndex], data, size);
+
+    char* current = (char*)data;
+    int s = sockets[socketIndex];
+    for (size_t chunk = 0; chunk < size; chunk += ONE_MB) {
+        size_t chunkSize = chunk + ONE_MB < size ? ONE_MB : size - chunk;
+        writeSocket(s, current, chunkSize);
+        current += chunkSize;
+    }
 }
 
 void SocketPool::read(unsigned int socketIndex, void* data, size_t size) {
     assert(socketIndex >= 0 && socketIndex < nSockets);
     recvBytes += size;
-    readSocket(sockets[socketIndex], data, size);
+
+    char* current = (char*)data;
+    int s = sockets[socketIndex];
+    for (size_t chunk = 0; chunk < size; chunk += ONE_MB) {
+        size_t chunkSize = chunk + ONE_MB < size ? ONE_MB : size - chunk;
+        readSocket(s, current, chunkSize);
+        current += chunkSize;
+    }
 }
 
 bool SocketPool::tryReadWithAlignment(unsigned int socketIndex, void* data, size_t size, unsigned long maxAttempts) {

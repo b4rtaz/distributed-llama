@@ -236,13 +236,14 @@ void llamaRmsFinalNorm(TASK_ARGS) {
 
 void llamaFinalize(TASK_ARGS) {
     TASK_VARIABLES;
-    unsigned long t0 = timeMs();
     float* x = (float*)transformer->buffer->getUnit(TB_UNIT_X);
-    transformer->wclsMm->forward(x, transformer->logits, nThreads, threadIndex);
-    unsigned long t1 = timeMs();
-    if (threadIndex == 0) {
-        printf("   F %4lu ms\n", t1 - t0);
-    }
+    float* logits = (float*)transformer->buffer->getSliced(TB_SLICED_LOGITS, transformer->sliceIndex);
+    transformer->wclsMm->forward(x, logits, nThreads, threadIndex);
+}
+
+void llamaSyncLogits(TASK_ARGS) {
+    TASK_VARIABLES;
+    syncSliceOfSlicedBuffer(nThreads, threadIndex, ctx, TB_SLICED_LOGITS);
 }
 
 TransformerArch buildLlamaArch(TransformerSpec* spec) {
@@ -280,6 +281,7 @@ TransformerArch buildLlamaArch(TransformerSpec* spec) {
     a.I(llamaRmsFinal, TASK_TYPE_INFERENCE);
     a.I(llamaRmsFinalNorm, TASK_TYPE_INFERENCE);
     a.I(llamaFinalize, TASK_TYPE_INFERENCE);
+    a.I(llamaSyncLogits, TASK_TYPE_TRANSFER);
 
     // worker
 
@@ -309,5 +311,10 @@ TransformerArch buildLlamaArch(TransformerSpec* spec) {
         a.W(llamaMergeFfn2, TASK_TYPE_INFERENCE);
         a.W(llamaNextBlock, TASK_TYPE_INFERENCE);
     }
+    a.W(llamaRmsFinal, TASK_TYPE_INFERENCE);
+    a.W(llamaRmsFinalNorm, TASK_TYPE_INFERENCE);
+    a.W(llamaFinalize, TASK_TYPE_INFERENCE);
+    a.W(llamaSyncLogits, TASK_TYPE_TRANSFER);
+
     return a;
 }
