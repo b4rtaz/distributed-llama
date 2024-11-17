@@ -168,7 +168,7 @@ TransformerBuffer::TransformerBuffer(TransformerSpec* spec) {
     bufferBytes[TB_SLICED_HB_QUANTIZED] = getBatchBytes(spec->bufferFloatType, nHb, 1);
 
     bufferBytes[TB_SLICED_LOGITS] = spec->vocabSize * sizeof(float);
-    bufferBytes[TB_SLICED_LOGITS_QUANTIZED] = getBatchBytes(spec->bufferFloatType, spec->vocabSize, 1);
+    buffers[TB_SLICED_LOGITS] = newBuffer(bufferBytes[TB_SLICED_LOGITS]);
 
     if (spec->nActiveExperts > 0) {
         bufferBytes[TB_UNIT_MOE_INDEXES] = spec->nActiveExperts * sizeof(uint8_t);
@@ -197,6 +197,7 @@ TransformerBuffer::~TransformerBuffer() {
         freeBuffer(buffers[TB_UNIT_MOE_INDEXES]);
         freeBuffer(buffers[TB_UNIT_MOE_WEIGHTS]);
     }
+    freeBuffer(buffers[TB_SLICED_LOGITS]);
 
     for (int i = 0; i < TB_LENGTH - TB_NO_PAIRS; i += 2) {
         if (bufferBytes[i] > 0) {

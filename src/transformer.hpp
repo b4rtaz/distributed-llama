@@ -147,8 +147,8 @@ public:
     ~TransformerBlock();
 };
 
-#define TB_LENGTH 14
-#define TB_NO_PAIRS 2
+#define TB_LENGTH 13
+#define TB_NO_PAIRS 3
 
 #define TB_UNIT_X 0
 #define TB_UNIT_X_QUANTIZED 1
@@ -161,9 +161,8 @@ public:
 #define TB_SLICED_HB 8
 #define TB_SLICED_HB_QUANTIZED 9
 #define TB_SLICED_LOGITS 11
-#define TB_SLICED_LOGITS_QUANTIZED 12
-#define TB_UNIT_MOE_INDEXES 13
-#define TB_UNIT_MOE_WEIGHTS 14
+#define TB_UNIT_MOE_INDEXES 12
+#define TB_UNIT_MOE_WEIGHTS 13
 
 class TransformerBuffer {
 public:
