@@ -105,7 +105,8 @@ float rms(const float* x, const unsigned int size) {
     ss = vaddvq_f32(fs);
 #elif defined(__AVX2__)
     assert(size % 8 == 0);
-    __m256 a, u;
+    __m256 a;
+    __m256 u = _mm256_set1_ps(0.0f);
     for (unsigned int j = 0; j < size; j += 8) {
         a = _mm256_loadu_ps(&x[j]);
         u = _mm256_fmadd_ps(a, a, u);
