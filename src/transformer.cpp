@@ -575,7 +575,6 @@ Transformer Transformer::loadSlice(TransformerSpec* spec, TransformerConfig* con
             if (block->w30Slice->sliceBytes > bufferSize) bufferSize = block->w30Slice->sliceBytes;
         }
     }
-    if (transformer.wclsSlice->sliceBytes > bufferSize) bufferSize = transformer.wclsSlice->sliceBytes;
 
     char* buffer = new char[bufferSize];
 
@@ -630,10 +629,10 @@ Transformer Transformer::loadSlice(TransformerSpec* spec, TransformerConfig* con
         printf("⏩ Received %ld kB for block %d (%.0f kB/s)\n", blockBytes / 1024, i, kbs);
     }
 
-    socketPool->read(ROOT_SOCKET_INDEX, transformer.rmsFinal, transformer.rmsFinalBytes);
-    socketPool->read(ROOT_SOCKET_INDEX, buffer, transformer.wclsSlice->sliceBytes);
-    transformer.wclsMm->loadWeights(buffer);
-
     delete[] buffer;
+
+    socketPool->read(ROOT_SOCKET_INDEX, transformer.rmsFinal, transformer.rmsFinalBytes);
+    socketPool->read(ROOT_SOCKET_INDEX, transformer.wclsMm->cpuWeights, transformer.wclsSlice->sliceBytes);
+
     return transformer;
 }
