@@ -6,6 +6,7 @@
 #include <arpa/inet.h>
 #include <fcntl.h>
 #include <stdexcept>
+#include <cassert>
 
 using namespace std::chrono;
 
