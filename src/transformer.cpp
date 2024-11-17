@@ -249,7 +249,7 @@ Transformer::Transformer(TransformerSpec* spec, TransformerConfig* config, slice
     rmsFinalBytes = spec->dim * sizeof(float);
     rmsFinal = (float*)newBuffer(rmsFinalBytes);
     wclsSlice = new RowMatmulSlice(spec->weightsFloatType, spec->nSlices, spec->dim, spec->vocabSize);
-    wclsMm = new MatmulCommand(wclsSlice->n, wclsSlice->d0, F32, spec->weightsFloatType);
+    wclsMm = new MatmulCommand(wclsSlice->n, wclsSlice->d0, spec->bufferFloatType, spec->weightsFloatType);
 
     ropeSlice = new RopeSlice(spec->dim, spec->kvDim, spec->nKvHeads, spec->nSlices, spec->seqLen, spec->headSize, spec->ropeTheta, sliceIndex);
     if (spec->ropeType == ROPE_FALCON) {

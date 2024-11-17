@@ -234,9 +234,14 @@ void llamaRmsFinalNorm(TASK_ARGS) {
     rmsnorm(x, x, transformer->rms, (float*)transformer->rmsFinal, spec->dim, nThreads, threadIndex);
 }
 
+void llamaQuantizeFinal(TASK_ARGS) {
+    TASK_VARIABLES;
+    quantizeUnitBuffer(nThreads, threadIndex, ctx, TB_UNIT_X, TB_UNIT_X_QUANTIZED); 
+}
+
 void llamaFinalize(TASK_ARGS) {
     TASK_VARIABLES;
-    float* x = (float*)transformer->buffer->getUnit(TB_UNIT_X);
+    void* x = transformer->buffer->getUnit(TB_UNIT_X_QUANTIZED);
     float* logits = (float*)transformer->buffer->getSliced(TB_SLICED_LOGITS, transformer->sliceIndex);
     transformer->wclsMm->forward(x, logits, nThreads, threadIndex);
 }
@@ -280,6 +285,7 @@ TransformerArch buildLlamaArch(TransformerSpec* spec) {
     }
     a.I(llamaRmsFinal, TASK_TYPE_INFERENCE);
     a.I(llamaRmsFinalNorm, TASK_TYPE_INFERENCE);
+    a.I(llamaQuantizeFinal, TASK_TYPE_INFERENCE);
     a.I(llamaFinalize, TASK_TYPE_INFERENCE);
     a.I(llamaSyncLogits, TASK_TYPE_TRANSFER);
 
@@ -313,6 +319,7 @@ TransformerArch buildLlamaArch(TransformerSpec* spec) {
     }
     a.W(llamaRmsFinal, TASK_TYPE_INFERENCE);
     a.W(llamaRmsFinalNorm, TASK_TYPE_INFERENCE);
+    a.I(llamaQuantizeFinal, TASK_TYPE_INFERENCE);
     a.W(llamaFinalize, TASK_TYPE_INFERENCE);
     a.W(llamaSyncLogits, TASK_TYPE_TRANSFER);
 
