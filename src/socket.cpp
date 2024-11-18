@@ -69,7 +69,7 @@ static inline void setQuickAck(int socket) {
 #endif
 }
 
-static inline void setReuseAddr(int socket) {
+void setReuseAddr(int socket) {
     int opt = 1;
     #ifdef _WIN32
     int iresult = setsockopt(socket, SOL_SOCKET, SO_REUSEADDR, (char*)&opt, sizeof(opt));
@@ -85,7 +85,7 @@ static inline void setReuseAddr(int socket) {
     #endif
 }
 
-static inline void writeSocket(int socket, const void* data, size_t size) {
+void writeSocket(int socket, const void* data, size_t size) {
     while (size > 0) {
         int s = send(socket, (const char*)data, size, 0);
         if (s < 0) {
@@ -126,7 +126,7 @@ static inline bool tryReadSocket(int socket, void* data, size_t size, unsigned l
     return true;
 }
 
-static inline void readSocket(int socket, void* data, size_t size) {
+void readSocket(int socket, void* data, size_t size) {
     if (!tryReadSocket(socket, data, size, 0)) {
         throw std::runtime_error("Error reading from socket");
     }
@@ -154,43 +154,7 @@ static inline int connectSocket(char* host, int port) {
     return sock;
 }
 
-static inline int acceptSocket(int serverSocket) {
-    struct sockaddr_in clientAddr;
-    socklen_t clientAddrSize = sizeof(clientAddr);
-    int clientSocket = ::accept(serverSocket, (struct sockaddr*)&clientAddr, &clientAddrSize);
-    if (clientSocket < 0)
-        throw std::runtime_error("Error accepting connection");
-    setNoDelay(clientSocket);
-    setQuickAck(clientSocket);
-    return clientSocket;
-}
-
-void initSockets() {
-#ifdef _WIN32
-    WSADATA wsaData;
-    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
-        throw std::runtime_error("WSAStartup failed: " + std::to_string(WSAGetLastError()));
-    }
-#endif
-}
-
-void cleanupSockets() {
-#ifdef _WIN32
-    WSACleanup();
-#endif
-}
-
-ReadSocketException::ReadSocketException(int code, const char* message) {
-    this->code = code;
-    this->message = message;
-}
-
-WriteSocketException::WriteSocketException(int code, const char* message) {
-    this->code = code;
-    this->message = message;
-}
-
-SocketPool* SocketPool::serve(int port) {
+int createServerSocket(int port) {
     const char* host = "0.0.0.0";
     struct sockaddr_in serverAddr;
 
@@ -232,6 +196,52 @@ SocketPool* SocketPool::serve(int port) {
     }
 
     printf("Listening on %s:%d...\n", host, port);
+    return serverSocket;
+}
+
+void closeServerSocket(int serverSocket) {
+    shutdown(serverSocket, 2);
+    close(serverSocket);
+}
+
+int acceptSocket(int serverSocket) {
+    struct sockaddr_in clientAddr;
+    socklen_t clientAddrSize = sizeof(clientAddr);
+    int clientSocket = ::accept(serverSocket, (struct sockaddr*)&clientAddr, &clientAddrSize);
+    if (clientSocket < 0)
+        throw std::runtime_error("Error accepting connection");
+    setNoDelay(clientSocket);
+    setQuickAck(clientSocket);
+    return clientSocket;
+}
+
+void initSockets() {
+#ifdef _WIN32
+    WSADATA wsaData;
+    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
+        throw std::runtime_error("WSAStartup failed: " + std::to_string(WSAGetLastError()));
+    }
+#endif
+}
+
+void cleanupSockets() {
+#ifdef _WIN32
+    WSACleanup();
+#endif
+}
+
+ReadSocketException::ReadSocketException(int code, const char* message) {
+    this->code = code;
+    this->message = message;
+}
+
+WriteSocketException::WriteSocketException(int code, const char* message) {
+    this->code = code;
+    this->message = message;
+}
+
+SocketPool* SocketPool::serve(int port) {
+    int serverSocket = createServerSocket(port);
 
     unsigned int nSockets;
     unsigned int nodeIndex;
@@ -321,9 +331,10 @@ SocketPool::SocketPool(unsigned int nSockets, int* sockets, size_t packetAlignme
     this->sentBytes.exchange(0);
     this->recvBytes.exchange(0);
     this->packetAlignment = packetAlignment;
-    if (packetAlignment > 0)
+    if (packetAlignment > 0) {
         this->packetAlignmentBuffer = new char[packetAlignment];
-    printf("📦 packetAlignment: %zu\n", packetAlignment);
+        printf("📦 packetAlignment: %zu\n", packetAlignment);
+    }
 }
 
 SocketPool::~SocketPool() {

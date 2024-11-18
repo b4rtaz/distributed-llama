@@ -10,6 +10,12 @@
 
 void initSockets();
 void cleanupSockets();
+int acceptSocket(int serverSocket);
+void setReuseAddr(int socket);
+void writeSocket(int socket, const void* data, size_t size);
+void readSocket(int socket, void* data, size_t size);
+int createServerSocket(int port);
+void closeServerSocket(int serverSocket);
 
 class ReadSocketException : public std::exception {
 public:
@@ -37,14 +43,14 @@ private:
     int* sockets;
     std::atomic_uint sentBytes;
     std::atomic_uint recvBytes;
+    size_t packetAlignment;
+    char* packetAlignmentBuffer;
 
 public:
     static SocketPool* serve(int port);
     static SocketPool* connect(unsigned int nSockets, char** hosts, int* ports, size_t packetAlignment);
 
     unsigned int nSockets;
-    size_t packetAlignment;
-    char* packetAlignmentBuffer;
 
     SocketPool(unsigned int nSockets, int* sockets, size_t packetAlignment);
     ~SocketPool();
@@ -56,6 +62,8 @@ public:
     void writeManyWithAlignment(unsigned int n, SocketIo* ios);
     void readManyWithAlignment(unsigned int n, SocketIo* ios);
     void getStats(size_t* sentBytes, size_t* recvBytes);
+
+private:
     size_t calculateExtraBytesForAlignment(size_t size);
 };
 
