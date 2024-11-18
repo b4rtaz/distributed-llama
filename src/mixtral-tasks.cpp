@@ -1,3 +1,6 @@
+#include <cmath>
+#include <cassert>
+#include <string.h>
 #include "funcs.hpp"
 #include "llama2-tasks.hpp"
 #include "mixtral-tasks.hpp"
