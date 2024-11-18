@@ -580,7 +580,7 @@ int main() {
     context.currentBlockIndex = 0;
     context.socketPool = &socketPool;
 
-    int skipLastNTasks = 3;
+    int skipLastNTasks = 5;
     TaskLoop loop(nThreads, arch.inference.nTasks - skipLastNTasks, TASK_N_TYPES, arch.inference.tasks, &context);
     long t0 = timeMs();
     loop.run();
