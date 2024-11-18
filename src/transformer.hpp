@@ -43,7 +43,7 @@ struct TransformerFileOldHeader {
 
 enum TransformerArchType {
     LLAMA = 0xABCD00,
-    GROK1 = 0xABCD01,
+    GROK1 = 0xABCD01, // Deprecated
     MIXTRAL = 0xABCD02
 };
 
