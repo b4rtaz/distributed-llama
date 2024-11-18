@@ -310,13 +310,8 @@ TransformerBlock::TransformerBlock(TransformerSpec* spec, TransformerConfig* con
 #endif
 
     kvCacheSlice = new KvCacheSlice(spec->kvDim, spec->seqLen, spec->nSlices);
-    if (config->useDiscForKvCache) {
-        keyCache = (float*)newMmapFileBuffer(sliceIndex, kvCacheSlice->keyCacheSize);
-        valueCache = (float*)newMmapFileBuffer(sliceIndex, kvCacheSlice->valueCacheSize);
-    } else {
-        keyCache = (float*)newBuffer(kvCacheSlice->keyCacheSize);
-        valueCache = (float*)newBuffer(kvCacheSlice->valueCacheSize);
-    }
+    keyCache = (float*)newBuffer(kvCacheSlice->keyCacheSize);
+    valueCache = (float*)newBuffer(kvCacheSlice->valueCacheSize);
 
     multiHeadAttSlice = new MultiHeadAttSlice(spec->nHeads, spec->seqLen, spec->nSlices, sliceIndex);
     att = (float*)newBuffer(multiHeadAttSlice->attSize);
@@ -376,13 +371,8 @@ TransformerBlock::~TransformerBlock() {
 #endif
 
     delete kvCacheSlice;
-    if (config->useDiscForKvCache) {
-        freeMmapFileBuffer(keyCache);
-        freeMmapFileBuffer(valueCache);
-    } else {
-        freeBuffer(keyCache);
-        freeBuffer(valueCache);
-    }
+    freeBuffer(keyCache);
+    freeBuffer(valueCache);
     delete multiHeadAttSlice;
     freeBuffer(att);
 

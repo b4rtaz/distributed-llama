@@ -43,8 +43,6 @@ AppArgs AppArgs::parse(int argc, char** argv, bool hasMode) {
     args.chatTemplateType = TEMPLATE_UNKNOWN;
     args.maxSeqLen = 0;
     args.packetAlignment = 0;
-    args.useDiscForKvCache = false;
-
     int i = 1;
     if (hasMode && argc > 1) {
         args.mode = argv[1];
@@ -103,8 +101,6 @@ AppArgs AppArgs::parse(int argc, char** argv, bool hasMode) {
             args.chatTemplateType = parseChatTemplateType(value);
         } else if (strcmp(name, "--max-seq-len") == 0) {
             args.maxSeqLen = (unsigned int)atoi(value);
-        } else if (strcmp(name, "--kv-cache-storage") == 0) {
-            args.useDiscForKvCache = strcmp(value, "disc") == 0;
         } else if (strcmp(name, "--packet-alignment") == 0) {
             args.packetAlignment = (size_t)atoi(value);
         } else {
@@ -142,7 +138,6 @@ void App::run(AppArgs* args, void (*program)(Inference* inference, SocketPool* s
     }
 
     TransformerConfig config;
-    config.useDiscForKvCache = args->useDiscForKvCache;
 
     Transformer transformer = Transformer::loadRootFromFile(args->modelPath, &spec, &config, socketPool);
     socketPool->setTurbo(true);

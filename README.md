@@ -25,7 +25,7 @@ Python 3 and C++ compiler required. The command will download the model and the 
 
 ### 🛠️ Convert Model Manually
 
-Supported architectures: Llama, Mixtral, Grok
+Supported architectures: Llama, Mixtral
 
 * [How to Convert Llama 2, Llama 3, Llama 3.1](./docs/LLAMA.md)
 * [How to Convert Hugging Face Model](./docs/HUGGINGFACE.md)

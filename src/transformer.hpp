@@ -90,7 +90,7 @@ struct TransformerSpec {
 };
 
 struct TransformerConfig {
-    bool useDiscForKvCache;
+    short __unused__;
 };
 
 class TransformerBlock {

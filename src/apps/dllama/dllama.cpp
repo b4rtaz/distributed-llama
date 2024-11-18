@@ -208,7 +208,6 @@ void worker(AppArgs* args) {
     }
 
     TransformerConfig config;
-    config.useDiscForKvCache = args->useDiscForKvCache;
 
     SocketPool* socketPool = SocketPool::serve(args->port);
     TransformerSpec spec;
