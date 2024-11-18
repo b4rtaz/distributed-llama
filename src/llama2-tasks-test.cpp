@@ -547,7 +547,6 @@ int main() {
     spec.ropeTheta = 10000.0f;
 
     TransformerConfig config;
-    config.useDiscForKvCache = false;
 
     size_t beforeBlockBytes = /* embedding */ 524288000;
     size_t blockBytes       = 809533440;
