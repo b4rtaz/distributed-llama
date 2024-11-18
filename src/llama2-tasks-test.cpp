@@ -565,7 +565,7 @@ int main() {
     int mm = (blockBytes - spec.dim * 2 * sizeof(float)) / sizeof(float);
     for (int i = 0; i < mm; i++) mmData[i] = randomF32(&state) / 120.0;
 
-    SocketPool socketPool(0, NULL);
+    SocketPool socketPool(0, NULL, 0);
     Transformer transformer = Transformer::loadRoot((char*)data, &spec, &config, &socketPool);
     transformer.pos = 0;
 
