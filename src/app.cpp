@@ -42,8 +42,7 @@ AppArgs AppArgs::parse(int argc, char** argv, bool hasMode) {
     args.seed = (unsigned long long)time(NULL);
     args.chatTemplateType = TEMPLATE_UNKNOWN;
     args.maxSeqLen = 0;
-    args.useDiscForKvCache = false;
-
+    args.packetAlignment = 0;
     int i = 1;
     if (hasMode && argc > 1) {
         args.mode = argv[1];
@@ -102,8 +101,8 @@ AppArgs AppArgs::parse(int argc, char** argv, bool hasMode) {
             args.chatTemplateType = parseChatTemplateType(value);
         } else if (strcmp(name, "--max-seq-len") == 0) {
             args.maxSeqLen = (unsigned int)atoi(value);
-        } else if (strcmp(name, "--kv-cache-storage") == 0) {
-            args.useDiscForKvCache = strcmp(value, "disc") == 0;
+        } else if (strcmp(name, "--packet-alignment") == 0) {
+            args.packetAlignment = (size_t)atoi(value);
         } else {
             printf("Unknown option %s\n", name);
             exit(EXIT_FAILURE);
@@ -114,8 +113,6 @@ AppArgs AppArgs::parse(int argc, char** argv, bool hasMode) {
 
 TransformerArch TransformerArchFactory::create(TransformerSpec* spec) {
     if (spec->archType == LLAMA) return buildLlamaArch(spec);
-    if (spec->archType == GROK1) return buildGrok1Arch(spec);
-    if (spec->archType == MIXTRAL) return buildMixtralArch(spec);
     printf("Unsupported arch type: %d\n", spec->archType);
     exit(EXIT_FAILURE);
 }
@@ -128,7 +125,7 @@ void App::run(AppArgs* args, void (*program)(Inference* inference, SocketPool* s
         throw std::runtime_error("Tokenizer is required");
     }
 
-    SocketPool* socketPool = SocketPool::connect(args->nWorkers, args->workerHosts, args->workerPorts);
+    SocketPool* socketPool = SocketPool::connect(args->nWorkers, args->workerHosts, args->workerPorts, args->packetAlignment);
     unsigned int nSlices = args->nWorkers + 1;
 
     TransformerSpec spec = Transformer::loadSpecFromFile(args->modelPath, nSlices, args->maxSeqLen, args->weightsFloatType, args->bufferFloatType);
@@ -140,7 +137,6 @@ void App::run(AppArgs* args, void (*program)(Inference* inference, SocketPool* s
     }
 
     TransformerConfig config;
-    config.useDiscForKvCache = args->useDiscForKvCache;
 
     Transformer transformer = Transformer::loadRootFromFile(args->modelPath, &spec, &config, socketPool);
     socketPool->setTurbo(true);

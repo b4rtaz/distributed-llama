@@ -82,8 +82,8 @@ private:
     unsigned int n;
     unsigned int d;
     size_t cpuSize;
-    void* cpuWeights;
 public:
+    void* cpuWeights;
     MatmulCommand(const unsigned int n, const unsigned int d, const FloatType inputFloatType, const FloatType weightsFloatType);
     ~MatmulCommand();
     size_t loadWeights(const void* source);

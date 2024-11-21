@@ -547,7 +547,6 @@ int main() {
     spec.ropeTheta = 10000.0f;
 
     TransformerConfig config;
-    config.useDiscForKvCache = false;
 
     size_t beforeBlockBytes = /* embedding */ 524288000;
     size_t blockBytes       = 809533440;
@@ -565,11 +564,11 @@ int main() {
     int mm = (blockBytes - spec.dim * 2 * sizeof(float)) / sizeof(float);
     for (int i = 0; i < mm; i++) mmData[i] = randomF32(&state) / 120.0;
 
-    SocketPool socketPool(0, NULL);
+    SocketPool socketPool(0, NULL, 0);
     Transformer transformer = Transformer::loadRoot((char*)data, &spec, &config, &socketPool);
     transformer.pos = 0;
 
-    float* x = transformer.x;
+    float* x = (float*)transformer.buffer->getUnit(TB_UNIT_X);
     for (int i = 0; i < spec.dim; i++) x[i] = randomF32(&state) / 120.0;
 
     TransformerArch arch = buildLlamaArch(&spec);
@@ -578,10 +577,9 @@ int main() {
     TransformerContext context;
     context.transformer = &transformer;
     context.currentBlockIndex = 0;
-    context.socket = NULL;
     context.socketPool = &socketPool;
 
-    int skipLastNTasks = 3;
+    int skipLastNTasks = 5;
     TaskLoop loop(nThreads, arch.inference.nTasks - skipLastNTasks, TASK_N_TYPES, arch.inference.tasks, &context);
     long t0 = timeMs();
     loop.run();

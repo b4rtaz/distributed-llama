@@ -208,16 +208,16 @@ void worker(AppArgs* args) {
     }
 
     TransformerConfig config;
-    config.useDiscForKvCache = args->useDiscForKvCache;
 
-    SocketServer server(args->port);
-    Socket socket = server.accept();
+    SocketPool* socketPool = SocketPool::serve(args->port);
     TransformerSpec spec;
-    Transformer transformer = Transformer::loadSlice(&spec, &config, &socket);
+    Transformer transformer = Transformer::loadSlice(&spec, &config, socketPool);
     TransformerArch arch = TransformerArchFactory::create(&spec);
 
-    Worker worker = Worker(&arch, args->nThreads, &transformer, &socket);
+    Worker worker = Worker(&arch, args->nThreads, &transformer, socketPool);
     worker.work();
+
+    delete socketPool;
 }
 
 int main(int argc, char *argv[]) {

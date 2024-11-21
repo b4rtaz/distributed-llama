@@ -37,10 +37,10 @@ enum class HttpMethod {
 
 class HttpRequest {
 public:
-    static HttpRequest read(Socket& socket) {
-        HttpRequest req(&socket);
+    static HttpRequest read(int serverSocket) {
+        HttpRequest req(serverSocket);
 
-        std::vector<char> httpRequest = socket.readHttpRequest();
+        std::vector<char> httpRequest = req.readHttpRequest();
         // Parse the HTTP request
         std::string data = std::string(httpRequest.begin(), httpRequest.end());
 
@@ -89,7 +89,7 @@ public:
     }
 
 private:
-    Socket* socket;
+    int serverSocket;
 public:
     std::string path;
     std::unordered_map<std::string, std::string> headers;
@@ -97,8 +97,40 @@ public:
     json parsedJson;
     HttpMethod method;
 
-    HttpRequest(Socket* socket) {
-        this->socket = socket;
+    HttpRequest(int serverSocket) {
+        this->serverSocket = serverSocket;
+    }
+
+    std::vector<char> readHttpRequest() {
+        std::vector<char> httpRequest;
+        char buffer[1024 * 1024]; // TODO: this should be refactored asap
+        ssize_t bytesRead;
+
+        // Peek into the socket buffer to check available data
+        bytesRead = recv(serverSocket, buffer, sizeof(buffer), MSG_PEEK);
+        if (bytesRead <= 0) {
+            // No data available or error occurred
+            if (bytesRead == 0) {
+                // No more data to read
+                return httpRequest;
+            } else {
+                // Error while peeking
+                throw std::runtime_error("Error while peeking into socket");
+            }
+        }
+
+        // Resize buffer according to the amount of data available
+        std::vector<char> peekBuffer(bytesRead);
+        bytesRead = recv(serverSocket, peekBuffer.data(), bytesRead, 0);
+        if (bytesRead <= 0) {
+            // Error while reading
+            throw std::runtime_error("Error while reading from socket");
+        }
+
+        // Append data to httpRequest
+        httpRequest.insert(httpRequest.end(), peekBuffer.begin(), peekBuffer.end());
+
+        return httpRequest;
     }
 
     std::string getMethod() {
@@ -111,7 +143,7 @@ public:
 
     void writeNotFound() {
         const char* data = "HTTP/1.1 404 Not Found\r\n";
-        socket->write(data, strlen(data));
+        writeSocket(serverSocket, data, strlen(data));
     }
 
     void writeJson(std::string json) {
@@ -120,7 +152,7 @@ public:
             << "Content-Type: application/json; charset=utf-8\r\n"
             << "Content-Length: " << json.length() << "\r\n\r\n" << json;
         std::string data = buffer.str();
-        socket->write(data.c_str(), data.size());
+        writeSocket(serverSocket, data.c_str(), data.size());
     }
 
     void writeStreamStartChunk() {
@@ -130,19 +162,19 @@ public:
             << "Connection: close\r\n"
             << "Transfer-Encoding: chunked\r\n\r\n";
         std::string data = buffer.str();
-        socket->write(data.c_str(), data.size());
+        writeSocket(serverSocket, data.c_str(), data.size());
     }
 
     void writeStreamChunk(const std::string data) {
         std::ostringstream buffer;
         buffer << std::hex << data.size() << "\r\n" << data << "\r\n";
         std::string d = buffer.str();
-        socket->write(d.c_str(), d.size());
+        writeSocket(serverSocket, d.c_str(), d.size());
     }
 
     void writeStreamEndChunk() {
         const char* endChunk = "0000\r\n\r\n";
-        socket->write(endChunk, strlen(endChunk));
+        writeSocket(serverSocket, endChunk, strlen(endChunk));
     }
 };
 
@@ -260,9 +292,6 @@ public:
         std::vector<ChatMessage> deltaPrompt = params.messages;
         naiveCache.resolveDeltaPrompt(deltaPrompt, startPos);
 
-        printf("🔸");
-        fflush(stdout);
-
         size_t nInputItems = deltaPrompt.size();
         ChatItem inputItems[nInputItems];
         for (size_t i = 0; i < nInputItems; i++) {
@@ -271,6 +300,8 @@ public:
         }
 
         std::string inputPrompt = chatTemplate->generate(nInputItems, inputItems, true);
+        printf("🔹%s🔸", inputPrompt.c_str());
+
         int promptLength = inputPrompt.size();
         int nPromptTokens;
         int promptTokens[promptLength + 3];
@@ -393,7 +424,7 @@ void handleModelsRequest(HttpRequest& request) {
 }
 
 void server(Inference* inference, SocketPool* socketPool, Tokenizer *tokenizer, Sampler *sampler, AppArgs* args, TransformerSpec* spec) {
-    SocketServer* server = new SocketServer(args->port);
+    int serverSocket = createServerSocket(args->port);
 
     TokenizerChatStops stops(tokenizer);
     ChatTemplate chatTemplate(args->chatTemplateType, tokenizer->chatTemplate, stops.stops[0]);
@@ -417,8 +448,8 @@ void server(Inference* inference, SocketPool* socketPool, Tokenizer *tokenizer, 
 
     while (true) {
         try {
-            Socket client = server->accept();
-            HttpRequest request = HttpRequest::read(client);
+            int clientSocket = acceptSocket(serverSocket);
+            HttpRequest request = HttpRequest::read(clientSocket);
             printf("🔷 %s %s\n", request.getMethod().c_str(), request.path.c_str());
             Router::resolve(request, routes);
         } catch (ReadSocketException& ex) {
@@ -428,7 +459,7 @@ void server(Inference* inference, SocketPool* socketPool, Tokenizer *tokenizer, 
         }
     }
 
-    delete server;
+    closeServerSocket(serverSocket);
 }
 
 int main(int argc, char *argv[]) {

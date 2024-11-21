@@ -43,7 +43,7 @@ struct TransformerFileOldHeader {
 
 enum TransformerArchType {
     LLAMA = 0xABCD00,
-    GROK1 = 0xABCD01,
+    GROK1 = 0xABCD01, // Deprecated
     MIXTRAL = 0xABCD02
 };
 
@@ -90,7 +90,7 @@ struct TransformerSpec {
 };
 
 struct TransformerConfig {
-    bool useDiscForKvCache;
+    short __unused__;
 };
 
 class TransformerBlock {
@@ -147,19 +147,22 @@ public:
     ~TransformerBlock();
 };
 
-#define TB_LENGTH 10
-#define TB_NO_PAIRS 2
+#define TB_LENGTH 13
+#define TB_NO_PAIRS 3
 
-#define TB_UNIT_XB 0
-#define TB_UNIT_XB_QUANTIZED 1
-#define TB_SLICED_XB2 2
-#define TB_SLICED_XB2_QUANTIZED 3
-#define TB_SLICED_XBV 4
-#define TB_SLICED_XBV_QUANTIZED 5
-#define TB_SLICED_HB 6
-#define TB_SLICED_HB_QUANTIZED 7
-#define TB_UNIT_MOE_INDEXES 8
-#define TB_UNIT_MOE_WEIGHTS 9
+#define TB_UNIT_X 0
+#define TB_UNIT_X_QUANTIZED 1
+#define TB_UNIT_XB 2
+#define TB_UNIT_XB_QUANTIZED 3
+#define TB_SLICED_XB2 4
+#define TB_SLICED_XB2_QUANTIZED 5
+#define TB_SLICED_XBV 6
+#define TB_SLICED_XBV_QUANTIZED 7
+#define TB_SLICED_HB 8
+#define TB_SLICED_HB_QUANTIZED 9
+#define TB_SLICED_LOGITS 10
+#define TB_UNIT_MOE_INDEXES 11
+#define TB_UNIT_MOE_WEIGHTS 12
 
 class TransformerBuffer {
 public:
@@ -188,11 +191,10 @@ public:
     size_t rmsFinalBytes;
     float* rmsFinal;
     MatmulCommand* wclsMm;
+    RowMatmulSlice* wclsSlice;
 
     pos_t pos;
     float rms;
-    float* x;
-    float* logits;
     RopeSlice* ropeSlice;
     RopeCommand* rope;
 
@@ -201,7 +203,7 @@ public:
     static TransformerSpec loadSpecFromFile(const char* path, const unsigned int nSlices, const unsigned int maxSeqLen, FloatType weightsFloatType, FloatType bufferFloatType);
     static Transformer loadRootFromFile(const char* path, TransformerSpec* spec, TransformerConfig* config, SocketPool* socketPool);
     static Transformer loadRoot(char* data, TransformerSpec* spec, TransformerConfig* config, SocketPool* socketPool);
-    static Transformer loadSlice(TransformerSpec* spec, TransformerConfig* config, Socket* socket);
+    static Transformer loadSlice(TransformerSpec* spec, TransformerConfig* config, SocketPool* socketPool);
 
 private:
     Transformer(TransformerSpec* spec, TransformerConfig* config, slice_index_t sliceIndex);

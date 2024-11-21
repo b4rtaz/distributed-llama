@@ -5,6 +5,8 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <fcntl.h>
+#include <stdexcept>
+#include <cassert>
 
 using namespace std::chrono;
 
@@ -14,14 +16,6 @@ unsigned int maPackageSize = packageSizes[packageSizesCount - 1];
 unsigned int nAttempts = 5000;
 int port = 7721;
 bool testTcp = true;
-
-void setNonBlocking(int socket) {
-    //int flags = fcntl(socket, F_GETFL, 0);
-    //if (fcntl(socket, F_SETFL, flags |= O_NONBLOCK) < 0)
-    //    throw std::runtime_error("Cannot set socket flags");
-}
-
-#define MAX_PACKAGE_SIZE 1280
 
 char pktinfo[4096] = {0};
 
@@ -88,8 +82,9 @@ void server() {
     if (testTcp) {
         printf("TCP test\n");
 
-        SocketServer server(port);
-        Socket socket = server.accept();
+        SocketPool* pool = SocketPool::serve(port);
+        assert(pool->nSockets == 1);
+
         for (long i = 0; i < packageSizesCount; i++) {
             unsigned int currentPackageSize = packageSizes[i];
 
@@ -98,9 +93,9 @@ void server() {
             long long totalTime = 0; // [us]
             for (long a = 0; a < nAttempts; a++) {
                 auto t0 = high_resolution_clock::now();
-                socket.read(buffer, currentPackageSize);
+                pool->read(0, buffer, currentPackageSize);
                 auto t1 = high_resolution_clock::now();
-                socket.write(buffer, currentPackageSize);
+                pool->write(0, buffer, currentPackageSize);
                 auto t2 = high_resolution_clock::now();
 
                 totalReadTime += duration_cast<microseconds>(t1 - t0).count();
@@ -127,7 +122,6 @@ void server() {
         serverAddr.sin_family = AF_INET;
         serverAddr.sin_addr.s_addr = INADDR_ANY; 
         serverAddr.sin_port = htons(port); 
-        setNonBlocking(serverSocket);
 
         if (bind(serverSocket, (struct sockaddr *)&serverAddr, sizeof(serverAddr)) < 0)
             throw std::runtime_error("Cannot bind socket");
@@ -176,7 +170,7 @@ void client(char* host) {
         int* ports = new int[1];
         ports[0] = port;
 
-        SocketPool* pool = SocketPool::connect(1, hosts, ports);
+        SocketPool* pool = SocketPool::connect(1, hosts, ports, 0);
         pool->setTurbo(true);
 
         for (long i = 0; i < packageSizesCount; i++) {
@@ -216,7 +210,6 @@ void client(char* host) {
         serverAddr.sin_family = AF_INET;
         serverAddr.sin_port = htons(port);
         serverAddr.sin_addr.s_addr = inet_addr(host);
-        setNonBlocking(clientSocket);
 
         for (long i = 0; i < packageSizesCount; i++) {
             unsigned int currentPackageSize = packageSizes[i];

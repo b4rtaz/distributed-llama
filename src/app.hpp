@@ -9,7 +9,6 @@
 #include "transformer.hpp"
 #include "tasks.hpp"
 #include "llama2-tasks.hpp"
-#include "grok1-tasks.hpp"
 #include "mixtral-tasks.hpp"
 #include "tokenizer.hpp"
 
@@ -17,7 +16,7 @@ class AppArgs {
 public:
     char* mode;
     int nThreads;
-    bool useDiscForKvCache;
+    size_t packetAlignment;
 
     // inference
     char* modelPath;

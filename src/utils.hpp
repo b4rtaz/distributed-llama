@@ -23,9 +23,6 @@
 void* newBuffer(size_t size);
 void freeBuffer(void* buffer);
 
-void* newMmapFileBuffer(unsigned int appInstanceId, size_t size);
-void freeMmapFileBuffer(void* addr);
-
 unsigned long timeMs();
 unsigned int randomU32(unsigned long long *state);
 float randomF32(unsigned long long *state);
@@ -44,6 +41,7 @@ struct MmapFile {
 
 void openMmapFile(MmapFile* file, const char* path, size_t size);
 void closeMmapFile(MmapFile* file);
+void pinCpu(int cpuIndex);
 
 typedef void (TaskLoopHandler)(unsigned int nThreads, unsigned int threadIndex, void* userData);
 typedef struct {
