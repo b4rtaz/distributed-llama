@@ -121,7 +121,7 @@ void grokQuantizeMoeMul(TASK_ARGS) {
 
 void grokSyncMoeMulA(TASK_ARGS) {
     TASK_VARIABLES;
-    syncSliceOfSlicedBuffer(nThreads, threadIndex, ctx, TB_SLICED_HB_QUANTIZED);
+    syncSliceOfSlicedBuffer(nThreads, threadIndex, false, ctx, TB_SLICED_HB_QUANTIZED);
 }
 
 void grokSyncMoeMulRearrange(TASK_ARGS) {
@@ -155,7 +155,7 @@ void grokSyncMoeMulB(TASK_ARGS) {
 
 void grokSyncMoeOutput(TASK_ARGS) {
     TASK_VARIABLES;
-    syncSliceOfSlicedBuffer(nThreads, threadIndex, ctx, TB_SLICED_XB2_QUANTIZED);
+    syncSliceOfSlicedBuffer(nThreads, threadIndex, false, ctx, TB_SLICED_XB2_QUANTIZED);
 }
 
 void grokDequantizeMoeOutput(TASK_ARGS) {

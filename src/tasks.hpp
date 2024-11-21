@@ -42,7 +42,7 @@ public:
     TransformerSpec* spec = transformer->spec; // printf("%s:%d\n", __FUNCTION__, ctx->currentBlockIndex); fflush(stdout);
 
 void syncUnitBuffer(unsigned int nThreads, unsigned int threadIndex, TransformerContext* ctx, uint8_t bufferIndex);
-void syncSliceOfSlicedBuffer(unsigned int nThreads, unsigned int threadIndex, TransformerContext* ctx, uint8_t bufferIndex);
+void syncSliceOfSlicedBuffer(unsigned int nThreads, unsigned int threadIndex, bool onlyFromWorkerToRoot, TransformerContext* ctx, uint8_t bufferIndex);
 void quantizeUnitBuffer(unsigned int nThreads, unsigned int threadIndex, TransformerContext* ctx, uint8_t sourceBufferIndex, uint8_t targetBufferIndex);
 void quantizeSlicedBuffer(unsigned int nThreads, unsigned int threadIndex, TransformerContext* ctx, uint8_t sourceBufferIndex, uint8_t targetBufferIndex);
 void dequantizeSlicedBuffer(unsigned int nThreads, unsigned int threadIndex, TransformerContext* ctx, bool skipMySlice, uint8_t sourceBufferIndex, uint8_t targetBufferIndex);

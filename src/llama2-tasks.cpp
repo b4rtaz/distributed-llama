@@ -116,7 +116,7 @@ void llamaQuantizeAtt(TASK_ARGS) {
 
 void llamaSyncAtt(TASK_ARGS) {
     TASK_VARIABLES;
-    syncSliceOfSlicedBuffer(nThreads, threadIndex, ctx, TB_SLICED_XBV_QUANTIZED);
+    syncSliceOfSlicedBuffer(nThreads, threadIndex, false, ctx, TB_SLICED_XBV_QUANTIZED);
 }
 
 void llamaDequantizeAtt(TASK_ARGS) {
@@ -195,7 +195,7 @@ void llamaQuantizeFfn2(TASK_ARGS) {
 
 void llamaSyncFfn2(TASK_ARGS) {
     TASK_VARIABLES;
-    syncSliceOfSlicedBuffer(nThreads, threadIndex, ctx, TB_SLICED_XBV_QUANTIZED);
+    syncSliceOfSlicedBuffer(nThreads, threadIndex, false, ctx, TB_SLICED_XBV_QUANTIZED);
 }
 
 void llamaDequantizeFfn2(TASK_ARGS) {
@@ -248,7 +248,7 @@ void llamaFinalize(TASK_ARGS) {
 
 void llamaSyncLogits(TASK_ARGS) {
     TASK_VARIABLES;
-    syncSliceOfSlicedBuffer(nThreads, threadIndex, ctx, TB_SLICED_LOGITS);
+    syncSliceOfSlicedBuffer(nThreads, threadIndex, true, ctx, TB_SLICED_LOGITS);
 }
 
 TransformerArch buildLlamaArch(TransformerSpec* spec) {

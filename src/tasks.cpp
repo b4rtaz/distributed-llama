@@ -71,29 +71,36 @@ void syncUnitBuffer(unsigned int nThreads, unsigned int threadIndex, Transformer
     }
 }
 
-void syncSliceOfSlicedBuffer(unsigned int nThreads, unsigned int threadIndex, TransformerContext* ctx, uint8_t bufferIndex) {
+void syncSliceOfSlicedBuffer(unsigned int nThreads, unsigned int threadIndex, bool onlyFromWorkerToRoot, TransformerContext* ctx, uint8_t bufferIndex) {
     unsigned int nSocketsPerThread = ctx->socketPool->nSockets / nThreads + (ctx->socketPool->nSockets % nThreads > threadIndex ? 1 : 0);
     if (nSocketsPerThread == 0) return;
+
     size_t sliceBytes = ctx->transformer->buffer->getSlicedBytes(bufferIndex);
 
-    void* mySliceData = ctx->transformer->buffer->getSliced(bufferIndex, ctx->transformer->sliceIndex);
+    if (!onlyFromWorkerToRoot || ctx->transformer->sliceIndex != 0) {
+        void* mySliceData = ctx->transformer->buffer->getSliced(bufferIndex, ctx->transformer->sliceIndex);
 
-    SocketIo writeIos[nSocketsPerThread];
-    SocketIo readIos[nSocketsPerThread];
-    for (unsigned int i = 0; i < nSocketsPerThread; i++) {
-        unsigned int socketIndex = threadIndex + i * nThreads;
-        writeIos[i].socketIndex = socketIndex;
-        writeIos[i].data = mySliceData;
-        writeIos[i].size = sliceBytes;
-
-        int sliceIndex = socketIndex >= ctx->transformer->sliceIndex ? socketIndex + 1 : socketIndex;
-        readIos[i].socketIndex = socketIndex;
-        readIos[i].data = ctx->transformer->buffer->getSliced(bufferIndex, sliceIndex);
-        readIos[i].size = sliceBytes;
+        SocketIo writeIos[nSocketsPerThread];
+        for (unsigned int i = 0; i < nSocketsPerThread; i++) {
+            unsigned int socketIndex = threadIndex + i * nThreads;
+            writeIos[i].socketIndex = socketIndex;
+            writeIos[i].data = mySliceData;
+            writeIos[i].size = sliceBytes;
+        }
+        ctx->socketPool->writeManyWithAlignment(nSocketsPerThread, writeIos);
     }
 
-    ctx->socketPool->writeManyWithAlignment(nSocketsPerThread, writeIos);
-    ctx->socketPool->readManyWithAlignment(nSocketsPerThread, readIos);
+    if (!onlyFromWorkerToRoot || ctx->transformer->sliceIndex == 0) {
+        SocketIo readIos[nSocketsPerThread];
+        for (unsigned int i = 0; i < nSocketsPerThread; i++) {
+            unsigned int socketIndex = threadIndex + i * nThreads;
+            int sliceIndex = socketIndex >= ctx->transformer->sliceIndex ? socketIndex + 1 : socketIndex;
+            readIos[i].socketIndex = socketIndex;
+            readIos[i].data = ctx->transformer->buffer->getSliced(bufferIndex, sliceIndex);
+            readIos[i].size = sliceBytes;
+        }
+        ctx->socketPool->readManyWithAlignment(nSocketsPerThread, readIos);
+    }
 }
 
 void quantizeUnitBuffer(unsigned int nThreads, unsigned int threadIndex, TransformerContext* ctx, uint8_t sourceBufferIndex, uint8_t targetBufferIndex) {
