@@ -196,6 +196,9 @@ int createServerSocket(int port) {
     }
 
     printf("Listening on %s:%d...\n", host, port);
+
+    setNoDelay(serverSocket);
+    setQuickAck(serverSocket);
     return serverSocket;
 }
 
@@ -247,20 +250,20 @@ SocketPool* SocketPool::serve(int port) {
     unsigned int nodeIndex;
     size_t packetAlignment;
     int rootSocket = acceptSocket(serverSocket);
+    printf("The root node has connected\n");
 
     readSocket(rootSocket, &nSockets, sizeof(nSockets));
+    unsigned int nNodes = nSockets - 1; // nSockets - 1 root node
+    printf("⭕ nNodes: %d\n", nNodes);
     readSocket(rootSocket, &nodeIndex, sizeof(nodeIndex));
+    printf("⭕ nodeIndex: %d\n", nodeIndex);
     readSocket(rootSocket, &packetAlignment, sizeof(packetAlignment));
 
-    unsigned int nNodes = nSockets - 1; // nSockets - 1 root node
     int* sockets = new int[nSockets];
     sockets[0] = rootSocket;
     char** hosts = new char*[nNodes];
     int* ports = new int[nNodes];
-
-    printf("The root node has connected\n");
-    printf("⭕ nodeIndex: %d\n", nodeIndex);
-    printf("⭕ socket[0]: root node\n");
+    printf("⭕ socket[0]: accepted root node\n");
 
     size_t hostLen;
     for (unsigned int i = 0; i < nNodes; i++) {
@@ -270,19 +273,26 @@ SocketPool* SocketPool::serve(int port) {
         readSocket(rootSocket, &ports[i], sizeof(ports[i]));
     }
 
+    unsigned int confirmPacket = 0x555;
+    writeSocket(rootSocket, &confirmPacket, sizeof(confirmPacket));
+
+    // We need to wait here until the root node sends a "root is ready" packet
+    unsigned int rootIsReadyPacket;
+    readSocket(rootSocket, &rootIsReadyPacket, sizeof(rootIsReadyPacket));
+    assert(rootIsReadyPacket == 0x444);
+
     for (unsigned int i = 0; i < nNodes; i++) {
         unsigned int socketIndex = i + 1;
         if (i >= nodeIndex) {
-            printf("⭕ socket[%d]: connected to %s:%d\n", socketIndex, hosts[i], ports[i]);
+            printf("⭕ socket[%d]: connecting to %s:%d worker\n", socketIndex, hosts[i], ports[i]);
             sockets[socketIndex] = connectSocket(hosts[i], ports[i]);
+            printf("⭕ socket[%d]: connected\n", socketIndex);
         } else {
-            printf("⭕ socket[%d]: accepted from %s:%d\n", socketIndex, hosts[i], ports[i]);
+            printf("⭕ socket[%d]: wait for %s:%d worker\n", socketIndex, hosts[i], ports[i]);
             sockets[socketIndex] = acceptSocket(serverSocket);
+            printf("⭕ socket[%d]: accepted\n", socketIndex);
         }
     }
-
-    unsigned int confirm = 0x555;
-    writeSocket(rootSocket, &confirm, sizeof(confirm));
 
     for (unsigned int i = 0; i < nNodes; i++)
         delete[] hosts[i];
@@ -297,7 +307,9 @@ SocketPool* SocketPool::serve(int port) {
 SocketPool* SocketPool::connect(unsigned int nSockets, char** hosts, int* ports, size_t packetAlignment) {
     int* sockets = new int[nSockets];
     struct sockaddr_in addr;
+    unsigned int confirmPacket;
     for (unsigned int i = 0; i < nSockets; i++) {
+        printf("⭕ socket[%d]: connecting to %s:%d worker\n", i, hosts[i], ports[i]);
         int socket = connectSocket(hosts[i], ports[i]);
         sockets[i] = socket;
         writeSocket(socket, &nSockets, sizeof(nSockets));
@@ -311,17 +323,14 @@ SocketPool* SocketPool::connect(unsigned int nSockets, char** hosts, int* ports,
             writeSocket(socket, hosts[j], hostLen);
             writeSocket(socket, &ports[j], sizeof(ports[j]));
         }
+        readSocket(sockets[i], &confirmPacket, sizeof(confirmPacket));
+        assert(confirmPacket == 0x555);
+        printf("⭕ socket[%d]: connected\n", i);
     }
-
-    unsigned int confirm;
+    unsigned int rootIsReadyPacket = 0x444;
     for (unsigned int i = 0; i < nSockets; i++) {
-        readSocket(sockets[i], &confirm, sizeof(confirm));
-        if (confirm != 0x555) {
-            throw std::runtime_error("Cannot create network");
-        }
-        printf("⭕ socket[%d]: connected to %s:%d\n", i, hosts[i], ports[i]);
+        writeSocket(sockets[i], &rootIsReadyPacket, sizeof(rootIsReadyPacket));
     }
-
     return new SocketPool(nSockets, sockets, packetAlignment);
 }
 

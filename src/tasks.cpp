@@ -72,12 +72,14 @@ void syncUnitBuffer(unsigned int nThreads, unsigned int threadIndex, Transformer
 }
 
 void syncSliceOfSlicedBuffer(unsigned int nThreads, unsigned int threadIndex, bool onlyFromWorkerToRoot, TransformerContext* ctx, uint8_t bufferIndex) {
-    unsigned int nSocketsPerThread = ctx->socketPool->nSockets / nThreads + (ctx->socketPool->nSockets % nThreads > threadIndex ? 1 : 0);
+    bool isWorker = ctx->transformer->sliceIndex != 0;
+    unsigned int nSockets = onlyFromWorkerToRoot && isWorker ? 1 : ctx->socketPool->nSockets;
+    unsigned int nSocketsPerThread = nSockets / nThreads + (nSockets % nThreads > threadIndex ? 1 : 0);
     if (nSocketsPerThread == 0) return;
 
     size_t sliceBytes = ctx->transformer->buffer->getSlicedBytes(bufferIndex);
 
-    if (!onlyFromWorkerToRoot || ctx->transformer->sliceIndex != 0) {
+    if (!onlyFromWorkerToRoot || isWorker) {
         void* mySliceData = ctx->transformer->buffer->getSliced(bufferIndex, ctx->transformer->sliceIndex);
 
         SocketIo writeIos[nSocketsPerThread];
@@ -90,7 +92,7 @@ void syncSliceOfSlicedBuffer(unsigned int nThreads, unsigned int threadIndex, bo
         ctx->socketPool->writeManyWithAlignment(nSocketsPerThread, writeIos);
     }
 
-    if (!onlyFromWorkerToRoot || ctx->transformer->sliceIndex == 0) {
+    if (!onlyFromWorkerToRoot || !isWorker) {
         SocketIo readIos[nSocketsPerThread];
         for (unsigned int i = 0; i < nSocketsPerThread; i++) {
             unsigned int socketIndex = threadIndex + i * nThreads;

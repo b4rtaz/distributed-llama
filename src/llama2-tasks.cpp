@@ -319,7 +319,7 @@ TransformerArch buildLlamaArch(TransformerSpec* spec) {
     }
     a.W(llamaRmsFinal, TASK_TYPE_INFERENCE);
     a.W(llamaRmsFinalNorm, TASK_TYPE_INFERENCE);
-    a.I(llamaQuantizeFinal, TASK_TYPE_INFERENCE);
+    a.W(llamaQuantizeFinal, TASK_TYPE_INFERENCE);
     a.W(llamaFinalize, TASK_TYPE_INFERENCE);
     a.W(llamaSyncLogits, TASK_TYPE_TRANSFER);
 
