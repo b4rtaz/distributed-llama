@@ -41,7 +41,6 @@ struct MmapFile {
 
 void openMmapFile(MmapFile* file, const char* path, size_t size);
 void closeMmapFile(MmapFile* file);
-void pinCpu(int cpuIndex);
 
 typedef void (TaskLoopHandler)(unsigned int nThreads, unsigned int threadIndex, void* userData);
 typedef struct {
