@@ -5,6 +5,7 @@
 #include "common/pthread.h"
 #include "funcs.hpp"
 #include "utils.hpp"
+#include "app.hpp"
 
 #if defined(__ARM_NEON)
     #include <arm_neon.h>
@@ -461,8 +462,9 @@ void matmul(const FloatType weightsFloatType, const FloatType inputFloatType, fl
         }
     }
 
-    printf("Unsupported float types: %d/%d\n", weightsFloatType, inputFloatType);
-    exit(EXIT_FAILURE);
+    std::string errMsg = "Unsupported float types: '" +
+        std::to_string(weightsFloatType) + "/" + std::to_string(inputFloatType) + "'";
+    throw BadArgumentException(errMsg);
 }
 
 float dotProduct(const float* a, const float* b, const unsigned int size) {

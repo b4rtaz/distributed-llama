@@ -2,7 +2,9 @@
 #include <cstdint>
 #include <cmath>
 #include <cassert>
+#include <string>
 #include "quants.hpp"
+#include "app.hpp"
 
 #if defined(__ARM_NEON)
     #include <arm_neon.h>
@@ -21,8 +23,8 @@ int getNumbersPerBatch(FloatType type) {
         case FUNK:
             break;
     }
-    fprintf(stderr, "Unsupported float type %d\n", type);
-    exit(EXIT_FAILURE);
+    std::string errMsg = "Unsupported float type '" + std::to_string(type) + "'";
+    throw BadArgumentException(errMsg);
 }
 
 long getBatchBytes(FloatType type, int n, int d) {
@@ -46,8 +48,8 @@ long getBatchBytes(FloatType type, int n, int d) {
         case FUNK:
             break;
     }
-    fprintf(stderr, "Unsupported float type %d\n", type);
-    exit(EXIT_FAILURE);
+    std::string errMsg = "Unsupported float type '" + std::to_string(type) + "'";
+    throw BadArgumentException(errMsg);
 }
 
 float F16ToF32[65536];
