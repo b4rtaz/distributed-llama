@@ -11,12 +11,15 @@
 #include "llama2-tasks.hpp"
 #include "mixtral-tasks.hpp"
 #include "tokenizer.hpp"
+#include <stdexcept>
+#include <string>
 
 class AppArgs {
 public:
     char* mode;
     int nThreads;
     size_t packetAlignment;
+    bool help;
 
     // inference
     char* modelPath;
@@ -49,6 +52,11 @@ public:
 class App {
 public:
     static void run(AppArgs* args, void (*program)(Inference* inference, SocketPool* socketPool, Tokenizer* tokenizer, Sampler* sampler, AppArgs* args, TransformerSpec* spec));
+};
+
+class BadArgumentException : public std::runtime_error {
+public:
+    explicit BadArgumentException(const std::string& message) : std::runtime_error(message) {}
 };
 
 #endif

@@ -616,7 +616,7 @@ Transformer Transformer::loadSlice(TransformerSpec* spec, TransformerConfig* con
         }
 
         float kbs = blockBytes / (float)(timeMs() - t0);
-        printf("⏩ Received %ld kB for block %d (%.0f kB/s)\n", blockBytes / 1024, i, kbs);
+        printf("⏩ Received %zu kB for block %d (%.0f kB/s)\n", blockBytes / 1024, i, kbs);
     }
 
     delete[] buffer;

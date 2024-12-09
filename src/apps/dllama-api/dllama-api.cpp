@@ -462,12 +462,49 @@ void server(Inference* inference, SocketPool* socketPool, Tokenizer *tokenizer, 
     closeServerSocket(serverSocket);
 }
 
+#ifdef _WIN32
+    #define EXECUTABLE_NAME "dllama-api.exe"
+#else
+    #define EXECUTABLE_NAME "dllama-api"
+#endif
+
+void usage() {
+    fprintf(stderr, "Usage: %s {--model <path>} {--tokenizer <path>} [--port <p>]\n", EXECUTABLE_NAME);
+    fprintf(stderr, "        [--buffer-float-type {f32|f16|q40|q80}]\n");
+    fprintf(stderr, "        [--weights-float-type {f32|f16|q40|q80}]\n");
+    fprintf(stderr, "        [--max-seq-len <max>]\n");
+    fprintf(stderr, "        [--nthreads <n>]\n");
+    fprintf(stderr, "        [--workers <ip:port> ...]\n");
+    fprintf(stderr, "        [--packet-alignment <pa>]\n");
+    fprintf(stderr, "        [--temperature <temp>]\n");
+    fprintf(stderr, "        [--topp <t>]\n");
+    fprintf(stderr, "        [--seed <s>]\n");
+    fprintf(stderr, "Example:\n");
+    fprintf(stderr, "  sudo nice -n -20 ./dllama-api --port 9990 --nthreads 4 \\\n");
+    fprintf(stderr, "    --model dllama_model_llama3_2_3b_instruct_q40.m \\\n");
+    fprintf(stderr, "    --tokenizer dllama_tokenizer_llama3_2_3b_instruct_q40.t \\\n");
+    fprintf(stderr, "    --buffer-float-type q80 --max-seq-len 8192 \\\n");
+    fprintf(stderr, "    --workers 10.0.0.2:9998 10.0.0.3:9998 10.0.0.4:9998\n");
+    fflush(stderr);
+}
+
 int main(int argc, char *argv[]) {
     initQuants();
     initSockets();
 
-    AppArgs args = AppArgs::parse(argc, argv, false);
-    App::run(&args, server);
+    try {
+        AppArgs args = AppArgs::parse(argc, argv, false);
+        if (args.help) {
+            usage();
+            return EXIT_SUCCESS;
+        }
+        App::run(&args, server);
+    } catch (const BadArgumentException& e) {
+        fprintf(stderr, "%s\n\n", e.what());
+        usage();
+        cleanupSockets();
+        return EXIT_FAILURE;
+    }
 
     cleanupSockets();
     return EXIT_SUCCESS;

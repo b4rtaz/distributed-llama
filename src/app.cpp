@@ -12,8 +12,8 @@ FloatType parseFloatType(char* val) {
     if (strcmp(val, "f16") == 0) return F16;
     if (strcmp(val, "q40") == 0) return Q40;
     if (strcmp(val, "q80") == 0) return Q80;
-    printf("Invalid float type %s\n", val);
-    exit(EXIT_FAILURE);
+    std::string errMsg = "Invalid float type '" + std::string(val) + "'";
+    throw BadArgumentException(errMsg);
 }
 
 ChatTemplateType parseChatTemplateType(char* val) {
@@ -21,12 +21,13 @@ ChatTemplateType parseChatTemplateType(char* val) {
     if (strcmp(val, "llama3") == 0) return TEMPLATE_LLAMA3;
     if (strcmp(val, "zephyr") == 0) return TEMPLATE_ZEPHYR;
     if (strcmp(val, "chatml") == 0) return TEMPLATE_CHATML;
-    throw std::runtime_error("Invalid chat template type");
-
+    std::string errMsg = "Invalid chat template type '" + std::string(val) + "'";
+    throw BadArgumentException(errMsg);
 }
 
 AppArgs AppArgs::parse(int argc, char** argv, bool hasMode) {
     AppArgs args;
+    args.help = false;
     args.mode = NULL;
     args.nThreads = 4;
     args.modelPath = NULL;
@@ -47,6 +48,15 @@ AppArgs AppArgs::parse(int argc, char** argv, bool hasMode) {
     if (hasMode && argc > 1) {
         args.mode = argv[1];
         i++;
+    }
+    // First see if any of the args are asking for help/usage and fail fast
+    for (int x = 0; x < argc; x++) {
+        if ((strcmp(argv[x], "--usage") == 0) ||
+            (strcmp(argv[x], "--help") == 0) ||
+            (strcmp(argv[x], "-h") == 0)) {
+            args.help = true;
+            return args;
+        }
     }
     for (; i + 1 < argc; i += 2) {
         char* name = argv[i];
@@ -74,8 +84,8 @@ AppArgs AppArgs::parse(int argc, char** argv, bool hasMode) {
                 char* v = argv[i + 1 + s];
                 char* sep = strstr(v, ":");
                 if (sep == NULL) {
-                    printf("Invalid address %s\n", v);
-                    exit(EXIT_FAILURE);
+                    std::string errMsg = "Invalid worker address '" + std::string(v) + "'";
+                    throw BadArgumentException(errMsg);
                 }
                 int hostLen = sep - v;
                 args.workerHosts[s] = new char[hostLen + 1];
@@ -104,8 +114,8 @@ AppArgs AppArgs::parse(int argc, char** argv, bool hasMode) {
         } else if (strcmp(name, "--packet-alignment") == 0) {
             args.packetAlignment = (size_t)atoi(value);
         } else {
-            printf("Unknown option %s\n", name);
-            exit(EXIT_FAILURE);
+            std::string errMsg = "Unknown option '" + std::string(name) + "'";
+            throw BadArgumentException(errMsg);
         }
     }
     return args;
@@ -119,10 +129,10 @@ TransformerArch TransformerArchFactory::create(TransformerSpec* spec) {
 
 void App::run(AppArgs* args, void (*program)(Inference* inference, SocketPool* socketPool, Tokenizer* tokenizer, Sampler* sampler, AppArgs* args, TransformerSpec* spec)) {
     if (args->modelPath == NULL) {
-        throw std::runtime_error("Model is required");
+        throw BadArgumentException("Model is required");
     }
     if (args->tokenizerPath == NULL) {
-        throw std::runtime_error("Tokenizer is required");
+        throw BadArgumentException("Tokenizer is required");
     }
 
     SocketPool* socketPool = SocketPool::connect(args->nWorkers, args->workerHosts, args->workerPorts, args->packetAlignment);

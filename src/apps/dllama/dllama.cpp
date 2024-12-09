@@ -6,6 +6,7 @@
 #include <stdexcept>
 #include <sstream>
 #include <string>
+#include <unordered_map>
 
 #include "../../utils.hpp"
 #include "../../socket.hpp"
@@ -16,7 +17,7 @@
 
 void generate(Inference* inference, SocketPool* socketPool, Tokenizer *tokenizer, Sampler *sampler, AppArgs* args, TransformerSpec* spec) {
     if (args->prompt == NULL)
-        throw std::runtime_error("Prompt is required");
+        throw BadArgumentException("Prompt is required");
 
     // encode the (string) prompt into tokens sequence
     int numPromptTokens = 0;
@@ -220,35 +221,167 @@ void worker(AppArgs* args) {
     delete socketPool;
 }
 
+#ifdef _WIN32
+    #define EXECUTABLE_NAME "dllama.exe"
+#else
+    #define EXECUTABLE_NAME "dllama"
+#endif
+
+bool isValidMode(const char *mode) {
+    if (mode == NULL) {
+        return false;
+    } else {
+        return (strcmp(mode, "generate") == 0) ||
+               (strcmp(mode, "inference") == 0) ||
+               (strcmp(mode, "chat") == 0) ||
+               (strcmp(mode, "worker") == 0);
+    }
+}
+
+std::unordered_map<std::string, std::string> examples = {
+{"generate", ""},
+{"inference", R"(  sudo nice -n -20 ./dllama inference \
+    --prompt "Super briefly describe the 80s - ten words."\
+    --steps 32 --seed 12345 \
+    --model dllama_model_llama3_2_3b_instruct_q40.m \
+    --tokenizer dllama_tokenizer_llama3_2_3b_instruct_q40.t \
+    --buffer-float-type q80 --nthreads 4 --max-seq-len 8192 \
+    --workers 10.0.0.2:9998 10.0.0.3:9998 10.0.0.4:9998
+)"},
+{"chat", R"(  sudo nice -n -20 ./dllama chat \
+    --model dllama_model_llama3_2_3b_instruct_q40.m \
+    --tokenizer dllama_tokenizer_llama3_2_3b_instruct_q40.t \
+    --buffer-float-type q80 --nthreads 4 --max-seq-len 8192 \
+    --workers 10.0.0.2:9998 10.0.0.3:9998 10.0.0.4:9998
+)"},
+{"worker", R"(  sudo nice -n -20 ./dllama worker --port 9998 --nthreads 4
+)"}};
+
+std::string inference_and_generate_usage_string =
+    R"( {inference|generate} {--model <path>} {--tokenizer <path>}
+        {--prompt <p>}
+        [--steps <s>]
+        [--buffer-float-type {f32|f16|q40|q80}]
+        [--weights-float-type {f32|f16|q40|q80}]
+        [--max-seq-len <max>]
+        [--nthreads <n>]
+        [--workers <ip:port> ...]
+        [--packet-alignment <pa>]
+        [--temperature <temp>]
+        [--topp <t>]
+        [--seed <s>]
+)";
+
+std::unordered_map<std::string, std::string> usageText = {
+{"generate", inference_and_generate_usage_string},
+{"inference", inference_and_generate_usage_string},
+{"chat", R"( chat {--model <path>} {--tokenizer <path>}
+        [--buffer-float-type {f32|f16|q40|q80}]
+        [--weights-float-type {f32|f16|q40|q80}]
+        [--max-seq-len <max>]
+        [--nthreads <n>]
+        [--workers <ip:port> ...]
+        [--packet-alignment <pa>]
+        [--temperature <temp>]
+        [--topp <t>]
+        [--seed <s>]
+        [--chat-template {llama2|llama3|zephyr|chatml}]
+)"},
+{"worker", R"( worker [--nthreads <n>] [--port <p>]
+)"}};
+
+#define MULTIPLE_USAGES_PREFIX "       "
+#define SOLO_USAGE_PREFIX "Usage: "
+
+void usage(const char *mode, bool solo=true) {
+    if (!isValidMode(mode)) {
+        fprintf(stderr, "Usage: %s {inference | generate | chat | worker} {ARGS}\n", EXECUTABLE_NAME);
+        usage("inference", false);
+        usage("chat", false);
+        usage("worker", false);
+        fprintf(stderr, "Examples:\n");
+        fprintf(stderr, "%s", examples["worker"].c_str());
+        fprintf(stderr, "%s", examples["chat"].c_str());
+        fprintf(stderr, "%s", examples["inference"].c_str());
+    } else {
+        fprintf(stderr, "%s%s%s",
+                solo ? SOLO_USAGE_PREFIX : MULTIPLE_USAGES_PREFIX,
+                EXECUTABLE_NAME,
+                usageText[mode].c_str());
+        if (solo && (!examples[mode].empty())) {
+            fprintf(stderr, "Example:\n");
+            fprintf(stderr, "%s", examples[mode].c_str());
+        }
+    }
+    fflush(stderr);
+}
+
+void usage() {
+    usage(NULL);
+}
+
 int main(int argc, char *argv[]) {
     initQuants();
     initSockets();
 
-    AppArgs args = AppArgs::parse(argc, argv, true);
     bool success = false;
 
-    if (args.mode != NULL) {
-        if (strcmp(args.mode, "inference") == 0) {
-            args.benchmark = true;
-            App::run(&args, generate);
-            success = true;
-        } else if (strcmp(args.mode, "generate") == 0) {
-            args.benchmark = false;
-            App::run(&args, generate);
-            success = true;
-        } else if (strcmp(args.mode, "chat") == 0) {
-            App::run(&args, chat);
-            success = true;
-        } else if (strcmp(args.mode, "worker") == 0) {
-            worker(&args);
-            success = true;
+    try {
+        AppArgs args = AppArgs::parse(argc, argv, true);
+        if (args.help) {
+            if ((args.mode == NULL) ||
+                (strcmp(args.mode, "--usage") == 0) ||
+                (strcmp(args.mode, "--help") == 0) ||
+                (strcmp(args.mode, "-h") == 0)) {
+                usage();
+            } else if (isValidMode(args.mode)) {
+                usage(args.mode);
+            } else {
+                usage();
+                return EXIT_FAILURE;
+            }
+            return EXIT_SUCCESS;
         }
+
+        if (args.mode != NULL) {
+            if (strcmp(args.mode, "inference") == 0) {
+                if (args.prompt == NULL) {
+                    throw BadArgumentException("Prompt is required");
+                }
+                args.benchmark = true;
+                App::run(&args, generate);
+                success = true;
+            } else if (strcmp(args.mode, "generate") == 0) {
+                if (args.prompt == NULL) {
+                    throw BadArgumentException("Prompt is required");
+                }
+                args.benchmark = false;
+                App::run(&args, generate);
+                success = true;
+            } else if (strcmp(args.mode, "chat") == 0) {
+                App::run(&args, chat);
+                success = true;
+            } else if (strcmp(args.mode, "worker") == 0) {
+                worker(&args);
+                success = true;
+            }
+        }
+    } catch (const BadArgumentException& e) {
+        fprintf(stderr, "%s\n\n", e.what());
+        if ((argc > 1) && isValidMode(argv[1])) {
+            usage(argv[1]);
+        } else {
+            usage();
+        }
+        cleanupSockets();
+        return EXIT_FAILURE;
     }
 
     cleanupSockets();
 
     if (success)
         return EXIT_SUCCESS;
-    fprintf(stderr, "Invalid usage\n");
+    fprintf(stderr, "Invalid usage\n\n");
+    usage();
     return EXIT_FAILURE;
 }

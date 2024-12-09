@@ -1,21 +1,28 @@
 CXX = g++
-CXXFLAGS = -std=c++11 -Werror -O3 -march=native -mtune=native
+CXXFLAGS = -std=c++11 -Werror -O3 -march=native -mtune=native -Wformat -Werror=format-security
 
 # Conditional settings for Windows
 ifeq ($(OS),Windows_NT)
     LIBS = -lws2_32 # or -lpthreadGC2 if needed
+    DELETECMD = del /f
 else
     LIBS = -lpthread
+    DELETECMD = rm -fv
 endif
 
+.PHONY: all apps clean tests
+
+apps: dllama dllama-api socket-benchmark
+tests: funcs-test quants-test tokenizer-test commands-test llama2-tasks-test
+all: apps tests
+clean:
+	$(DELETECMD) *.o dllama dllama-* socket-benchmark mmap-buffer-* *-test *.exe
 utils: src/utils.cpp
 	$(CXX) $(CXXFLAGS) -c src/utils.cpp -o utils.o
 quants: src/quants.cpp
 	$(CXX) $(CXXFLAGS) -c src/quants.cpp -o quants.o
 funcs: src/funcs.cpp
 	$(CXX) $(CXXFLAGS) -c src/funcs.cpp -o funcs.o
-funcs-test: src/funcs-test.cpp funcs
-	$(CXX) $(CXXFLAGS) src/funcs-test.cpp -o funcs-test funcs.o
 commands: src/commands.cpp
 	$(CXX) $(CXXFLAGS) -c src/commands.cpp -o commands.o
 socket: src/socket.cpp
