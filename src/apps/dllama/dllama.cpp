@@ -300,9 +300,9 @@ void usage(const char *mode, bool solo=true) {
         usage("chat", false);
         usage("worker", false);
         fprintf(stderr, "Examples:\n");
-        fprintf(stderr, examples["worker"].c_str());
-        fprintf(stderr, examples["chat"].c_str());
-        fprintf(stderr, examples["inference"].c_str());
+        fprintf(stderr, "%s", examples["worker"].c_str());
+        fprintf(stderr, "%s", examples["chat"].c_str());
+        fprintf(stderr, "%s", examples["inference"].c_str());
     } else {
         fprintf(stderr, "%s%s%s",
                 solo ? SOLO_USAGE_PREFIX : MULTIPLE_USAGES_PREFIX,
@@ -310,7 +310,7 @@ void usage(const char *mode, bool solo=true) {
                 usageText[mode].c_str());
         if (solo && (!examples[mode].empty())) {
             fprintf(stderr, "Example:\n");
-            fprintf(stderr, examples[mode].c_str());
+            fprintf(stderr, "%s", examples[mode].c_str());
         }
     }
     fflush(stderr);

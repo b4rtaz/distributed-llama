@@ -1,5 +1,5 @@
 CXX = g++
-CXXFLAGS = -std=c++11 -Werror -O3 -march=native -mtune=native
+CXXFLAGS = -std=c++11 -Werror -O3 -march=native -mtune=native -Wformat -Werror=format-security
 
 # Conditional settings for Windows
 ifeq ($(OS),Windows_NT)
