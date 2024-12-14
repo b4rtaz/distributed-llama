@@ -159,7 +159,8 @@ public:
 
             int* inputTokens = new int[inputPrompt.size() + 3];
             int nInputTokens;
-            tokenizer->encode((char*)inputPrompt.c_str(), inputTokens, &nInputTokens, true, false);
+            bool addBos = pos == 0;
+            tokenizer->encode((char*)inputPrompt.c_str(), inputTokens, &nInputTokens, addBos, false);
 
             pos_t userPromptEndPos = (pos_t)std::min<unsigned int>(spec->seqLen, pos + nInputTokens - 1);
             for (pos_t i = 0; pos < userPromptEndPos; pos++, i++) {
@@ -169,7 +170,7 @@ public:
 
             printf("\n🤖 Assistant\n");
 
-            for (; pos < spec->seqLen; pos++) {
+            for (; pos < spec->seqLen; ) {
                 int prevToken = token;
                 float* logits = inference->infer(token, pos);
                 token = sampler->sample(logits);
@@ -184,10 +185,11 @@ public:
                     }
                     eosDetector->clear();
                 }
+                pos++;
                 if (eosType == EOS) break;
             }
 
-            inputPrompt.clear();
+            deltaItems.clear();
         } while (pos < spec->seqLen);
 
         printf("(end of context)\n");
