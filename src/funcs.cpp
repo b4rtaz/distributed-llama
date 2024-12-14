@@ -87,7 +87,7 @@ void softmax(float* x, const unsigned int size) {
         x[i] = expf(x[i] - maxVal);
         sum += x[i];
     }
-    // normalize
+    if (sum == 0.0) sum = 0.000001;
     for (unsigned int i = 0; i < size; i++) {
         x[i] /= sum;
     }
