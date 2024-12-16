@@ -106,8 +106,11 @@ Tokenizer::Tokenizer(char* tokenizerPath, int modelVocabSize) {
         throw std::runtime_error("Invalid tokenizer file");
     }
 
-    if (maxTokenLength < 1 || vocabSize != modelVocabSize) {
-        throw std::runtime_error("Tokenizer file is invalid or incompatible with model");
+    if (maxTokenLength < 1) {
+        throw std::runtime_error("Cannot read maxTokenLength from tokenizer file");
+    }
+    if (vocabSize != modelVocabSize) {
+        printf("🚨 WARN: vocabSize mismatch, tokenizer=%d model=%d\n", vocabSize, modelVocabSize);
     }
 
     if (bosId >= 0) printf("📄 bosId: %d\n", bosId);
@@ -486,8 +489,9 @@ std::string ChatTemplate::generate(unsigned int nMessages, ChatItem* items, bool
         if (appendGenerationPrompt)
             buffer << "<|start_header_id|>assistant<|end_header_id|>\n\n";
     } else if (type == TEMPLATE_CHATML) {
-        for (unsigned int i = 0; i < nMessages; i++)
+        for (unsigned int i = 0; i < nMessages; i++) {
             buffer << "<|im_start|>" << items[i].role << "\n" << items[i].message << "<|im_end|>\n";
+        }
         if (appendGenerationPrompt)
             buffer << "<|im_start|>assistant\n";
     } else if (type == TEMPLATE_ZEPHYR) {
@@ -496,6 +500,7 @@ std::string ChatTemplate::generate(unsigned int nMessages, ChatItem* items, bool
         if (appendGenerationPrompt)
             buffer << "<|assistant|>\n";
     }
+    // printf("\n-----\n%s\n-----\n", buffer.str().c_str());
     return buffer.str();
 }
 

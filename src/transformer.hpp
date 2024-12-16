@@ -27,6 +27,7 @@ enum TransformerHeaderKey {
     ROPE_SCALING_HIGH_FREQ_FACTORY = 16,
     ROPE_SCALING_ORIG_MAX_SEQ_LEN = 17,
     ROPE_TYPE = 18,
+    RMS_NORM_EPSILON = 19,
 };
 
 struct TransformerFileOldHeader {
@@ -44,7 +45,8 @@ struct TransformerFileOldHeader {
 enum TransformerArchType {
     LLAMA = 0xABCD00,
     GROK1 = 0xABCD01, // Deprecated
-    MIXTRAL = 0xABCD02
+    MIXTRAL = 0xABCD02,
+    QWEN2 = 0xABCD03,
 };
 
 enum TransformerHiddenAct {
@@ -77,6 +79,8 @@ struct TransformerSpec {
     TransformerHiddenAct hiddenAct;
     int kvDim;
     int vocabSize;
+    float rmsNormEpsilon;
+    bool qkvBias;
     float ropeTheta;
     TransformerRopeType ropeType;
     float ropeScalingFactor;
@@ -116,6 +120,9 @@ public:
     RowMatmulSlice* k0Slice;
     RowMatmulSlice* v0Slice;
     ColMatmulSlice* wo0Slice;
+    float* q0Bias;
+    float* k0Bias;
+    float* v0Bias;
 
     MatmulCommand *w10mm;
     MatmulCommand *w20mm;

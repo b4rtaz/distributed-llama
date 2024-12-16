@@ -127,6 +127,7 @@ def writeHeader(file, params):
         'rope_scaling_high_freq_factory': 16,
         'rope_scaling_orig_max_seq_len': 17,
         'rope_type': 18,
+        'rms_norm_epsilon': 19,
     }
     header = struct.pack('i', 0xA00ABCD)
 

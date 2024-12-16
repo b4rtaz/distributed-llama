@@ -167,7 +167,7 @@ void grokMoeRmsFinal(TASK_ARGS) {
     TASK_VARIABLES;
     if (threadIndex == 0) {
         float* xb2 = (float*)transformer->buffer->getUnit(TB_SLICED_XB2);
-        transformer->rms = rms(xb2, spec->dim);
+        transformer->rms = rms(xb2, spec->dim, spec->rmsNormEpsilon);
     }
 }
 

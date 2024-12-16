@@ -93,7 +93,7 @@ void softmax(float* x, const unsigned int size) {
     }
 }
 
-float rms(const float* x, const unsigned int size) {
+float rms(const float* x, const unsigned int size, const float epsilon) {
     float ss;
 #if defined(__ARM_NEON)
     assert(size % 4 == 0);
@@ -120,8 +120,9 @@ float rms(const float* x, const unsigned int size) {
     }
 #endif
     ss /= size;
-    ss += 1e-5f;
+    ss += epsilon;
     ss = 1.0f / sqrtf(ss);
+    assert(!isnan(ss));
     return ss;
 }
 

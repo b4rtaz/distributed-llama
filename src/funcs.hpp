@@ -4,7 +4,7 @@
 #include "quants.hpp"
 
 void softmax(float* x, const unsigned int size);
-float rms(const float* x, const unsigned int size);
+float rms(const float* x, const unsigned int size, const float epsilon);
 void rmsnorm(float* o, const float* x, const float ms, const float* weight, const unsigned int size, const unsigned int nThreads, const unsigned int threadIndex);
 void matmul(const FloatType weightsFloatType, const FloatType inputFloatType, float* output, const void* input, const void* weights, const unsigned int n, const unsigned int d, const unsigned int nThreads, const unsigned int threadIndex);
 float dotProduct(const float* a, const float* b, const unsigned int size);

@@ -16,7 +16,7 @@ void llamaRmsAtt(TASK_ARGS) {
     TASK_VARIABLES;
     if (threadIndex == 0) {
         float* x = (float*)transformer->buffer->getUnit(TB_UNIT_X);
-        transformer->rms = rms(x, spec->dim);
+        transformer->rms = rms(x, spec->dim, spec->rmsNormEpsilon);
     }
 }
 
@@ -44,6 +44,16 @@ void llamaQkv(TASK_ARGS) {
     block->q0mm->forward(xbq, block->qo0, nThreads, threadIndex);
     block->k0mm->forward(xbq, k0, nThreads, threadIndex);
     block->v0mm->forward(xbq, v0, nThreads, threadIndex);
+}
+
+void llamaQkvBias(TASK_ARGS) {
+    TASK_VARIABLES;
+    float *k0 = &block->keyCache[transformer->pos * block->kvCacheSlice->kvDim0];
+    float* v0 = &block->valueCache[transformer->pos * block->kvCacheSlice->kvDim0];
+
+    add(block->qo0, block->q0Bias, block->q0Slice->d0, nThreads, threadIndex);
+    add(k0, block->k0Bias, block->k0Slice->d0, nThreads, threadIndex);
+    add(v0, block->v0Bias, block->v0Slice->d0, nThreads, threadIndex);
 }
 
 void llamaRope(TASK_ARGS) {
@@ -138,7 +148,7 @@ void llamaRmfFfn(TASK_ARGS) {
     TASK_VARIABLES;
     if (threadIndex == 0) {
         float* x = (float*)transformer->buffer->getUnit(TB_UNIT_X);
-        transformer->rms = rms(x, spec->dim);
+        transformer->rms = rms(x, spec->dim, spec->rmsNormEpsilon);
     }
 }
 
@@ -224,7 +234,7 @@ void llamaRmsFinal(TASK_ARGS) {
     TASK_VARIABLES;
     if (threadIndex == 0) {
         float* x = (float*)transformer->buffer->getUnit(TB_UNIT_X);
-        transformer->rms = rms(x, spec->dim);
+        transformer->rms = rms(x, spec->dim, spec->rmsNormEpsilon);
     }
 }
 
@@ -263,6 +273,8 @@ TransformerArch buildLlamaArch(TransformerSpec* spec) {
         a.I(llamaRmsAttNorm, TASK_TYPE_INFERENCE);
         a.I(llamaQuantizeRmsAtt, TASK_TYPE_INFERENCE);
         a.I(llamaQkv, TASK_TYPE_INFERENCE);
+        if (spec->qkvBias)
+            a.I(llamaQkvBias, TASK_TYPE_INFERENCE);
         a.I(llamaRope, TASK_TYPE_INFERENCE);
         a.I(llamaMultiheadAtt, TASK_TYPE_INFERENCE);
         a.I(llamaQuantizeMultiheadAtt, TASK_TYPE_INFERENCE);
@@ -297,6 +309,8 @@ TransformerArch buildLlamaArch(TransformerSpec* spec) {
         a.W(llamaRmsAttNorm, TASK_TYPE_INFERENCE);
         a.W(llamaQuantizeRmsAtt, TASK_TYPE_INFERENCE);
         a.W(llamaQkv, TASK_TYPE_INFERENCE);
+        if (spec->qkvBias)
+            a.W(llamaQkvBias, TASK_TYPE_INFERENCE);
         a.W(llamaRope, TASK_TYPE_INFERENCE);
         a.W(llamaMultiheadAtt, TASK_TYPE_INFERENCE);
         a.W(llamaQuantizeMultiheadAtt, TASK_TYPE_INFERENCE);

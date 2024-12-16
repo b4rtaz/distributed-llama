@@ -8,6 +8,7 @@ from safetensors import safe_open
 class ArchType:
     LLAMA = 0xABCD00
     MIXTRAL = 0xABCD02
+    QWEN2 = 0xABCD03
 
 def permute(tensor, nHeads: int, nKvHeads: int):
     if nHeads != nKvHeads:
@@ -50,6 +51,7 @@ class Processor:
         return permute(tensor, self.config['n_heads'], self.config['n_kv_heads'])
 
     def __preparePlan(self):
+        archType = self.config['arch_type']
         wt = self.config['weights_float_type']
         p = self.plan
         p.append([FloatType.F32,
@@ -63,6 +65,13 @@ class Processor:
                 f'model.layers.{l}.self_attn.v_proj.weight'])
             p.append([wt,
                 f'model.layers.{l}.self_attn.o_proj.weight'])
+            if (archType == ArchType.QWEN2):
+                p.append([FloatType.F32, self.__permuteQ,
+                    f'model.layers.{l}.self_attn.q_proj.bias'])
+                p.append([FloatType.F32, self.__permuteK,
+                    f'model.layers.{l}.self_attn.k_proj.bias'])
+                p.append([FloatType.F32,
+                    f'model.layers.{l}.self_attn.v_proj.bias'])
 
             if (self.config['n_experts'] > 0):
                 for e in range(self.config['n_experts']):
@@ -86,8 +95,10 @@ class Processor:
                 f'model.layers.{l}.post_attention_layernorm.weight'])
         p.append([FloatType.F32,
             'model.norm.weight'])
-        p.append([wt,
-            'lm_head.weight'])
+        if (archType == ArchType.QWEN2):
+            p.append([wt, 'model.embed_tokens.weight'])
+        else:
+            p.append([wt, 'lm_head.weight'])
 
     def write(self, outputFile: str):
         self.__preparePlan()
@@ -129,6 +140,7 @@ def parseArchType(type: str):
         'llama': ArchType.LLAMA,
         'mistral': ArchType.LLAMA,
         'mixtral': ArchType.MIXTRAL,
+        'qwen2': ArchType.QWEN2,
     }.get(type)
     if (archType is None):
         raise Exception(f'Unsupported arch type: {type}')
@@ -142,6 +154,13 @@ def parseHiddenAct(act: str):
     if (hiddenAct is None):
         raise Exception(f'Unsupported hidden act: {act}')
     return hiddenAct
+
+def parseRmsNormEpsilon(epsilon: float):
+    if (epsilon == 1e-5):
+        return 5
+    if (epsilon == 1e-6):
+        return 6
+    raise Exception(f'Unsupported rms norm epsilon: {epsilon}')
 
 def parseRopeType(rt: str):
     ropeType = {
@@ -182,6 +201,10 @@ def loadConfig(folderPath: str, weightsFloatType: int):
     nActiveExperts = config.get('num_active_local_experts') or config.get('num_experts_per_tok')
     result['n_experts'] = int(nExperts) if nExperts is not None else 0
     result['n_active_experts'] = int(nActiveExperts) if nActiveExperts is not None else 0
+
+    rmsNormEps = config.get('rms_norm_eps')
+    if (rmsNormEps is not None):
+        result['rms_norm_epsilon'] = parseRmsNormEpsilon(rmsNormEps)
 
     ropeTheta = config.get('rope_theta')
     if (ropeTheta is not None):

@@ -12,7 +12,7 @@ class TokensResolver:
     def __init__(self, dirPath, tokenizerConfig):
         self.dirPath = dirPath
         self.tokenizerConfig = tokenizerConfig
-        self.bosId = None
+        self.bosId = -1
         self.eosId = None
         self.tokens = []
         self.scores = []
@@ -57,7 +57,7 @@ class TokensResolver:
 
     def resolve(self):
         cls = self.tokenizerConfig['tokenizer_class']
-        if (cls == 'PreTrainedTokenizerFast'):
+        if (cls == 'PreTrainedTokenizerFast' or cls == 'Qwen2Tokenizer'):
             return self.resolvePreTrainedTokenizerFast()
         if (cls == 'LlamaTokenizer'):
             return self.resolveLlamaTokenizer()
@@ -82,7 +82,13 @@ if __name__ == '__main__':
     resolver = TokensResolver(dirPath, tokenizerConfig)
     resolver.resolve()
 
-    print(f'bosId: {resolver.bosId} ({resolver.tokens[resolver.bosId]})')
+    if (resolver.bosId < 0):
+        modelConfig = openJson(os.path.join(dirPath, 'config.json'))
+        if ('bos_token_id' in modelConfig):
+            resolver.bosId = modelConfig['bos_token_id']
+
+    if (resolver.bosId >= 0):
+        print(f'bosId: {resolver.bosId} ({resolver.tokens[resolver.bosId]})')
     print(f'eosId: {resolver.eosId} ({resolver.tokens[resolver.eosId]})')
 
     chatTemplate = None

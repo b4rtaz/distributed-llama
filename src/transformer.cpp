@@ -15,6 +15,8 @@ TransformerSpec Transformer::loadSpecFromFile(const char* path, const unsigned i
     spec.hiddenAct = SILU;
     spec.ropeType = ROPE_UNKNOWN;
     spec.ropeTheta = 10000.0f;
+    spec.rmsNormEpsilon = 1e-5f;
+    spec.qkvBias = false;
 
     FILE* fd = fopen(path, "rb");
     if (fd == NULL) {
@@ -74,6 +76,7 @@ TransformerSpec Transformer::loadSpecFromFile(const char* path, const unsigned i
             else if (key == ROPE_SCALING_HIGH_FREQ_FACTORY) spec.ropeScalingHighFreqFactory = (float)value;
             else if (key == ROPE_SCALING_ORIG_MAX_SEQ_LEN) spec.ropeScalingOrigMaxSeqLen = value;
             else if (key == ROPE_TYPE) spec.ropeType = (TransformerRopeType)value;
+            else if (key == RMS_NORM_EPSILON) spec.rmsNormEpsilon = powf(10, -value);
             else {
                 throw std::runtime_error("Unsupported header key");
             }
@@ -86,7 +89,7 @@ TransformerSpec Transformer::loadSpecFromFile(const char* path, const unsigned i
         throw std::runtime_error("Not specified weights float type");
 
     if (spec.ropeType == ROPE_UNKNOWN) {
-        if (spec.archType == LLAMA) {
+        if (spec.archType == LLAMA || spec.archType == QWEN2) {
             spec.ropeType = ROPE_LLAMA;
         } else if (spec.archType == GROK1 || spec.archType == MIXTRAL) {
             spec.ropeType = ROPE_FALCON;
@@ -111,6 +114,9 @@ TransformerSpec Transformer::loadSpecFromFile(const char* path, const unsigned i
     }
     if (spec.archType == LLAMA) {
         printf("💡 arch: llama\n");
+    } else if (spec.archType == QWEN2) {
+        printf("💡 arch: qwen2\n");
+        spec.qkvBias = true;
     } else if (spec.archType == GROK1) {
         printf("💡 arch: grok1\n");
     } else if (spec.archType == MIXTRAL) {
@@ -140,6 +146,7 @@ TransformerSpec Transformer::loadSpecFromFile(const char* path, const unsigned i
     }
     printf("💡 seqLen: %d\n", spec.seqLen);
     printf("💡 nSlices: %d\n", spec.nSlices);
+    printf("💡 rmsNormEpsilon: %.0e\n", spec.rmsNormEpsilon);
     printf("💡 ropeTheta: %.1f\n", spec.ropeTheta);
 
     spec.fileSize = (size_t)seekToEnd(fd);
@@ -325,6 +332,11 @@ TransformerBlock::TransformerBlock(TransformerSpec* spec, TransformerConfig* con
     k0mm = new MatmulCommand(k0Slice->n, k0Slice->d0, spec->bufferFloatType, spec->weightsFloatType);
     v0mm = new MatmulCommand(v0Slice->n, v0Slice->d0, spec->bufferFloatType, spec->weightsFloatType);
     wo0mm = new MatmulCommand(wo0Slice->n0, wo0Slice->d, spec->bufferFloatType, spec->weightsFloatType);
+    if (spec->qkvBias) {
+        q0Bias = (float*)newBuffer(q0Slice->d0 * sizeof(float));
+        k0Bias = (float*)newBuffer(k0Slice->d0 * sizeof(float));
+        v0Bias = (float*)newBuffer(v0Slice->d0 * sizeof(float));
+    }
 
     qo0 = (float*)newBuffer(q0Slice->d0 * sizeof(float));
 
@@ -387,6 +399,11 @@ TransformerBlock::~TransformerBlock() {
     delete k0mm;
     delete v0mm;
     delete wo0mm;
+    if (spec->qkvBias) {
+        freeBuffer(q0Bias);
+        freeBuffer(k0Bias);
+        freeBuffer(v0Bias);
+    }
 
     if (spec->nExperts > 0) {
         delete moeUpAndGate0Slice;
@@ -437,6 +454,25 @@ static size_t loadSlicedMatmulWeights(const uint8_t nSlices, MatmulSlice* slice,
 #else
     return mm->loadWeights(source);
 #endif
+}
+
+static size_t loadSlicedAddWeights(const uint8_t nSlices, RowMatmulSlice* slice, char* source, float** w, SocketPool* socketPool) {
+    size_t sliceSize = slice->d0 * sizeof(float);
+    size_t loadedBytes = 0;
+#if ALLOC_MEMORY
+    for (uint8_t s = 0; s < nSlices; s++) {
+        if (s == 0) {
+            memcpy(*w, source, sliceSize);
+        } else {
+            unsigned int socketIndex = s - 1;
+            socketPool->read(socketIndex, source + sliceSize * s, sliceSize);
+        }
+        loadedBytes += sliceSize;
+    }
+#else
+    *w = source;
+#endif
+    return loadedBytes;
 }
 
 static size_t loadWeightsOnlyForRoot(char** target, char* source, size_t bytes) {
@@ -501,6 +537,11 @@ Transformer Transformer::loadRoot(char* data, TransformerSpec* spec, Transformer
         w += loadSlicedMatmulWeights(spec->nSlices, block->k0Slice, w, block->k0mm, socketPool);
         w += loadSlicedMatmulWeights(spec->nSlices, block->v0Slice, w, block->v0mm, socketPool);
         w += loadSlicedMatmulWeights(spec->nSlices, block->wo0Slice, w, block->wo0mm, socketPool);
+        if (spec->qkvBias) {
+            w += loadSlicedAddWeights(spec->nSlices, block->q0Slice, w, &block->q0Bias, socketPool);
+            w += loadSlicedAddWeights(spec->nSlices, block->k0Slice, w, &block->k0Bias, socketPool);
+            w += loadSlicedAddWeights(spec->nSlices, block->v0Slice, w, &block->v0Bias, socketPool);
+        }
 
         if (spec->nExperts > 0) {
             w += block->moeRouterMm->loadWeights(w);
