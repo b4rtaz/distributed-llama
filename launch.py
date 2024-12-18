@@ -142,7 +142,7 @@ if __name__ == '__main__':
     print(f'🌻 Created {runFilePath} script to easy run')
 
     if (not runAfterDownload):
-        runAfterDownload = input('❓ Do you want to run Distributed Llama? ("Y" if yes): ').lower() == 'Y'
+        runAfterDownload = input('❓ Do you want to run Distributed Llama? ("Y" if yes): ').upper() == 'Y'
     if (runAfterDownload):
         if (not os.path.isfile('dllama')):
             os.system('make dllama')
