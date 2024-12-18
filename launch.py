@@ -47,6 +47,11 @@ MODELS = {
         'https://huggingface.co/b4rtaz/Llama-3_2-3B-Q40-Instruct-Distributed-Llama/resolve/main/dllama_tokenizer_llama3_2.t?download=true',
         'q40', 'q80', 'chat', '--max-seq-len 8192'
     ],
+    'llama3_3_70b_instruct_q40': [
+        list(map(lambda suffix : f'https://huggingface.co/b4rtaz/Llama-3_3-70B-Q40-Instruct-Distributed-Llama/resolve/main/dllama_model_llama-3.3-70b_q40{suffix}?download=true', parts(11))),
+        'https://huggingface.co/b4rtaz/Llama-3_3-70B-Q40-Instruct-Distributed-Llama/resolve/main/dllama_tokenizer_llama-3.3-70b.t?download=true',
+        'q40', 'q80', 'chat', '--max-seq-len 8192'
+    ],
 }
 
 def downloadFile(urls: str, path: str):
