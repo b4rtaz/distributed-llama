@@ -6,8 +6,10 @@
 
 Tensor parallelism is all you need. Run LLMs on weak devices or make powerful devices even more powerful by distributing the workload and dividing the RAM usage. This project proves that it's possible split the workload of LLMs across multiple devices and achieve a significant speedup. Distributed Llama allows you to run huge LLMs in-house. The project uses TCP sockets to synchronize the state. You can easily configure your AI cluster by using a home router.
 
-> [!TIP]
-> Check out the new article: [🌳 How to Run Llama 3.1 405B on Home Devices? Build AI Cluster!](https://medium.com/@b4rtaz/how-to-run-llama-3-405b-on-home-devices-build-ai-cluster-ad0d5ad3473b)
+**News**
+- 9 Jan 2025 - [🍎 Llama 3.3 70B on 4 x Mac Mini M4 Pro 24GB RAM](https://github.com/b4rtaz/distributed-llama/discussions/147)
+- 28 Jul 2024 - [🌳 How to Run Llama 3.1 405B on Home Devices? Build AI Cluster!](https://medium.com/@b4rtaz/how-to-run-llama-3-405b-on-home-devices-build-ai-cluster-ad0d5ad3473b)
+
 
 ### 🔥 Setup Root Node by Single Command
 
