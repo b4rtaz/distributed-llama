@@ -63,15 +63,27 @@
 #endif
 
 void softmax(float* x, const unsigned int size) {
+    if (size == 0)
+        return;
     float maxVal;
 #if defined(__ARM_NEON)
-    float32x4_t fs;
-    float32x4_t fmaxv = vld1q_f32(&x[0]);
-    for (unsigned int i = 4; i < size; i += 4) {
-        fs = vld1q_f32(&x[i]);
-        fmaxv = vmaxq_f32(fmaxv, fs);
+    unsigned int j;
+    if (size >= 4) {
+        float32x4_t fs;
+        float32x4_t fmaxv = vld1q_f32(&x[0]);
+        j = size - (size % 4);
+        for (unsigned int i = 4; i < j; i += 4) {
+            fs = vld1q_f32(&x[i]);
+            fmaxv = vmaxq_f32(fmaxv, fs);
+        }
+        maxVal = vmaxvq_f32(fmaxv);
+    } else {
+        maxVal = x[0];
+        j = 1;
     }
-    maxVal = vmaxvq_f32(fmaxv);
+    for (unsigned int i = j; i < size; i++) {
+        maxVal = fmaxf(maxVal, x[i]);
+    }
 #else
     // find max value (for numerical stability)
     maxVal = x[0];
