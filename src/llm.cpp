@@ -32,7 +32,7 @@ LlmHeader loadLlmHeader(const char *path, const NnSize maxSeqLen, NnFloatType sy
     header.ropeTheta = 10000.0f;
     header.normEpsilon = 1e-5f;
 
-    std::unique_ptr<FILE, decltype(&fclose)> fdPtr(fopen(path, "rb"), &fclose);
+    std::unique_ptr<FILE, int(*)(FILE *)> fdPtr(fopen(path, "rb"), fclose);
     FILE *fd = fdPtr.get();
     if (fd == NULL)
         throw std::runtime_error("Cannot open model file");
@@ -428,7 +428,7 @@ void releaseLlmNet(LlmNet *net) {
 void loadLlmNetWeight(const char *path, LlmNet *net, NnRootWeightLoader *loader) {
     MmapFile file;
     openMmapFile(&file, path, net->header->fileSize);
-    std::unique_ptr<MmapFile, decltype(&closeMmapFile)> fdPtr(&file, &closeMmapFile);
+    std::unique_ptr<MmapFile, void(*)(MmapFile *)> fdPtr(&file, closeMmapFile);
 
     NnByte *data = (NnByte *)file.data;
     NnByte *b = &data[net->header->headerSize];
