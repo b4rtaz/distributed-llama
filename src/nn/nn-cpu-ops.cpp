@@ -44,6 +44,11 @@
 #endif
 
 static float convertF16toF32(const uint16_t value) {
+#if defined(__ARM_NEON)
+    __fp16 fp;
+    std::memcpy(&fp, &value, sizeof(fp));
+    return (float)fp;
+#else
     union Fl32 {
         uint32_t u;
         float f;
@@ -57,6 +62,7 @@ static float convertF16toF32(const uint16_t value) {
         result.u |= 255U << 23;
     result.u |= (value & 0x8000U) << 16;
     return result.f;
+#endif
 }
 
 static uint16_t convertF32ToF16(const float x) {
