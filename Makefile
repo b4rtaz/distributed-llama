@@ -1,5 +1,5 @@
 CXX = g++
-CXXFLAGS = -std=c++11 -Werror -march=native -mtune=native -Wformat -Wvla-extension -Werror=format-security
+CXXFLAGS = -std=c++11 -Werror -march=native -mtune=native -Wformat -Werror=format-security
 
 ifeq ($(shell uname -m),aarch64)
 	CXXFLAGS += -mfp16-format=ieee
@@ -9,6 +9,9 @@ ifdef DEBUG
 	CXXFLAGS += -g
 else
 	CXXFLAGS += -O3
+endif
+ifdef WVLA
+	CXXFLAGS += -Wvla-extension
 endif
 
 ifeq ($(OS),Windows_NT)
