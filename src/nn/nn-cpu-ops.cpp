@@ -1,6 +1,7 @@
 #include "nn-cpu-ops.hpp"
 #include <cmath>
 #include <cassert>
+#include <cstring>
 #if defined(__ARM_NEON)
     #include <arm_neon.h>
 #elif defined(__AVX2__)
@@ -27,6 +28,16 @@
     const NnSize rangeRest = rangeLen % nThreads; \
     const NnSize varStart = threadIndex * rangeSlice + (threadIndex < rangeRest ? threadIndex : rangeRest); \
     const NnSize varEnd = varStart + rangeSlice + (threadIndex < rangeRest ? 1 : 0);
+
+#if defined(__AVX2__)
+    static inline float hsum_float_8(const __m256 x) {
+        __m128 res = _mm256_extractf128_ps(x, 1);
+        res = _mm_add_ps(res, _mm256_castps256_ps128(x));
+        res = _mm_add_ps(res, _mm_movehl_ps(res, res));
+        res = _mm_add_ss(res, _mm_movehdup_ps(res));
+        return _mm_cvtss_f32(res);
+    }
+#endif
 
 static float convertF16toF32(const uint16_t value) {
     union Fl32 {
@@ -1246,58 +1257,52 @@ static void castForward_Q80_F32(NnSize nThreads, NnSize threadIndex, NnSize batc
 
 // device
 
-NnCpuOpForwardInit cpuOpForwardInit[N_OP_CODES][N_OP_QUANTS] = {
-};
-
-NnCpuOpForward cpuOpForward[N_OP_CODES][N_OP_QUANTS] = {
-    [OP_MERGE_ADD] = {
-        [F32_F32_F32] = mergeAddForward_F32_F32,
-        [Q80_Q80_F32] = mergeAddForward_Q80_F32,
-    },
-    [OP_EMBEDDING] = {
-        [F32_F32_F32] = embeddingForward_F32_F32_F32,
-        [F32_F32_Q80] = embeddingForward_F32_F32_Q80,
-    },
-    [OP_RMS] = {
-        [F32_F32_F32] = rmsForward_F32_F32,
-    },
-    [OP_RMS_NORM] = {
-        [F32_F32_F32] = rmsNormForward_F32_F32_F32,
-        [Q80_F32_F32] = rmsNormForward_Q80_F32_F32,
-    },
-    [OP_MATMUL] = {
-        [F32_F32_F32] = matmulForward_F32_F32_F32,
-        [F32_Q40_F32] = matmulForward_F32_Q40_F32,
-        [Q80_Q40_F32] = matmulForward_Q80_Q40_F32,
-        [F32_Q40_Q80] = matmulForward_F32_Q40_Q80,
-    },
-    [OP_ROPE_LLAMA_3_1] = {
-        [F32_F32_F32] = ropeLlama31Forward_F32_F32
-    },
-    [OP_MULTIHEAD_ATT] = {
-        [F32_F32_F32] = multiHeadAttForward_F32_F32,
-    },
-    [OP_GELU] = {
-        [F32_F32_F32] = geluForward_F32_F32_F32,
-    },
-    [OP_SILU] = {
-        [F32_F32_F32] = siluForward_F32_F32,
-    },
-    [OP_MUL] = {
-        [F32_F32_F32] = mulForward_F32_F32,
-        [Q80_Q80_F32] = mulForward_Q80_F32,
-    },
-    [OP_CAST] = {
-        [F32_F32_F32] = castForward_F32_F32,
-        [F32_F32_Q80] = castForward_F32_Q80,
-        [Q80_Q80_F32] = castForward_Q80_F32,
-    }
-};
-
 NnCpuOpForwardInit getCpuOpForwardInit(NnOpCode code, NnOpQuantType quantType) {
-    return cpuOpForwardInit[code][quantType];
+    return nullptr;
 }
 
 NnCpuOpForward getCpuOpForward(NnOpCode code, NnOpQuantType quantType) {
-    return cpuOpForward[code][quantType];
+    if (code == OP_MERGE_ADD) {
+        if (quantType == F32_F32_F32) return mergeAddForward_F32_F32;
+        if (quantType == Q80_Q80_F32) return mergeAddForward_Q80_F32;
+    }
+    if (code == OP_EMBEDDING) {
+        if (quantType == F32_F32_F32) return embeddingForward_F32_F32_F32;
+        if (quantType == F32_F32_Q80) return embeddingForward_F32_F32_Q80;
+    }
+    if (code == OP_RMS) {
+        if (quantType == F32_F32_F32) return rmsForward_F32_F32;
+    }
+    if (code == OP_RMS_NORM) {
+        if (quantType == F32_F32_F32) return rmsNormForward_F32_F32_F32;
+        if (quantType == Q80_F32_F32) return rmsNormForward_Q80_F32_F32;
+    }
+    if (code == OP_MATMUL) {
+        if (quantType == F32_F32_F32) return matmulForward_F32_F32_F32;
+        if (quantType == F32_Q40_F32) return matmulForward_F32_Q40_F32;
+        if (quantType == Q80_Q40_F32) return matmulForward_Q80_Q40_F32;
+        if (quantType == F32_Q40_Q80) return matmulForward_F32_Q40_Q80;
+    }
+    if (code == OP_ROPE_LLAMA_3_1) {
+        if (quantType == F32_F32_F32) return ropeLlama31Forward_F32_F32;
+    }
+    if (code == OP_MULTIHEAD_ATT) {
+        if (quantType == F32_F32_F32) return multiHeadAttForward_F32_F32;
+    }
+    if (code == OP_GELU) {
+        if (quantType == F32_F32_F32) return geluForward_F32_F32_F32;
+    }
+    if (code == OP_SILU) {
+        if (quantType == F32_F32_F32) return siluForward_F32_F32;
+    }
+    if (code == OP_MUL) {
+        if (quantType == F32_F32_F32) return mulForward_F32_F32;
+        if (quantType == Q80_Q80_F32) return mulForward_Q80_F32;
+    }
+    if (code == OP_CAST) {
+        if (quantType == F32_F32_F32) return castForward_F32_F32;
+        if (quantType == F32_F32_Q80) return castForward_F32_Q80;
+        if (quantType == Q80_Q80_F32) return castForward_Q80_F32;
+    }
+    return nullptr;
 }

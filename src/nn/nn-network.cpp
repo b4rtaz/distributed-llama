@@ -1,5 +1,7 @@
 #include "nn-network.hpp"
 #include <cassert>
+#include <cstring>
+#include <vector>
 #include <fcntl.h>
 
 #ifdef _WIN32

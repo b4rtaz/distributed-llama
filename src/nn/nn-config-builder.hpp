@@ -3,6 +3,7 @@
 
 #include "nn-core.hpp"
 #include <cassert>
+#include <cstring>
 
 static char *cloneString(const char *str) {
     NnSize len = std::strlen(str);

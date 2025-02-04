@@ -1,6 +1,7 @@
 #ifndef NN_CPU_H
 #define NN_CPU_H
 
+#include <vector>
 #include "nn-executor.hpp"
 #include "nn-cpu-ops.hpp"
 

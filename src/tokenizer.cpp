@@ -1,4 +1,5 @@
 #include <cstdio>
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <cstdint>
@@ -8,6 +9,7 @@
 #include <cassert>
 #include <stdexcept>
 #include <sstream>
+#include <vector>
 #include "tokenizer.hpp"
 
 static void softmax(float* x, const unsigned int size) {
