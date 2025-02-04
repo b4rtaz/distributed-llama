@@ -1,6 +1,7 @@
 #include "nn-core.hpp"
 #include "nn-config-builder.hpp"
 #include "nn-cpu.hpp"
+#include <cstdio>
 
 #define DIM 32
 #define N_BATCHES 2
