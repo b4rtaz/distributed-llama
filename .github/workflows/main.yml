@@ -3,9 +3,11 @@ on:
   pull_request:
     branches:
       - main
+      - feat/nn
   push:
     branches:
       - main
+      - feat/nn
 jobs:
   build-linux:
     name: Linux
