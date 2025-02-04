@@ -1,7 +1,7 @@
 #include "nn-core.hpp"
 #include <cassert>
 #include <cstring>
-#include <exception>
+#include <stdexcept>
 
 // utility functions
 

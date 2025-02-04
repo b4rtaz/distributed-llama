@@ -1,6 +1,7 @@
 #include "nn-network.hpp"
 #include <cassert>
 #include <cstring>
+#include <stdexcept>
 #include <vector>
 #include <fcntl.h>
 

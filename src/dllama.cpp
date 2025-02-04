@@ -5,6 +5,7 @@
 #include "llm.hpp"
 #include "tokenizer.hpp"
 #include "app.hpp"
+#include <stdexcept>
 #include <chrono>
 
 class Timer {

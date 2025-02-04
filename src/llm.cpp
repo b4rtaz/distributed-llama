@@ -4,6 +4,7 @@
 #include "nn/nn-network.hpp"
 #include "mmap.hpp"
 #include "llm.hpp"
+#include <stdexcept>
 
 static const char *hiddenActToString(LlmHiddenAct act) {
     if (act == HIDDEN_ACT_GELU) return "Gelu";

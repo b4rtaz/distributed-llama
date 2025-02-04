@@ -1,6 +1,7 @@
 #include <cassert>
 #include <chrono>
 #include <cstring>
+#include <stdexcept>
 #include "nn-executor.hpp"
 
 #define DEBUG_BENCHMARK false

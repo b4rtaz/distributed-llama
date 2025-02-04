@@ -2,6 +2,7 @@
 #include "nn-cpu-ops.hpp"
 #include <cassert>
 #include <cstring>
+#include <stdexcept>
 #include <thread>
 #ifdef _WIN32
 #include <windows.h>

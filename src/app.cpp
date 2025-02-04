@@ -1,6 +1,7 @@
 #include "app.hpp"
 #include <cassert>
 #include <cstring>
+#include <stdexcept>
 
 NnFloatType parseFloatType(char *val) {
     if (std::strcmp(val, "f32") == 0) return F_32;
