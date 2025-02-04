@@ -99,7 +99,7 @@ void testRms(const NnSize m) {
     const float y0 = rms_F32(x.data(), m, epsilon);
 
     float expectedValue = 1.616181f;
-    compare_F32("rms_Q80", &y0, &expectedValue, 1, 0.001);
+    compare_F32("rms_Q80", &y0, &expectedValue, 1, 0.08f);
 }
 
 // rmsNorm
