@@ -8,9 +8,39 @@
 #include <cassert>
 #include <stdexcept>
 #include <sstream>
-#include "funcs.hpp"
-#include "utils.hpp"
 #include "tokenizer.hpp"
+
+static void softmax(float* x, const unsigned int size) {
+    float maxVal;
+    maxVal = x[0];
+    for (unsigned int i = 1; i < size; i++) {
+        if (x[i] > maxVal) {
+            maxVal = x[i];
+        }
+    }
+    float sum = 0.0f;
+    for (unsigned int i = 0; i < size; i++) {
+        x[i] = expf(x[i] - maxVal);
+        sum += x[i];
+    }
+    if (sum == 0.0) sum = 0.000001;
+    for (unsigned int i = 0; i < size; i++) {
+        x[i] /= sum;
+    }
+}
+
+unsigned int randomU32(unsigned long long *state) {
+    // xorshift rng: https://en.wikipedia.org/wiki/Xorshift#xorshift.2A
+    *state ^= *state >> 12;
+    *state ^= *state << 25;
+    *state ^= *state >> 27;
+    return (*state * 0x2545F4914F6CDD1Dull) >> 32;
+}
+
+float randomF32(unsigned long long *state) {
+    // random float32 in <0,1)
+    return (randomU32(state) >> 8) / 16777216.0f;
+}
 
 int compare_tokens(const void *a, const void *b) {
     return strcmp(((TokenIndex*)a)->str, ((TokenIndex*)b)->str);
@@ -36,7 +66,7 @@ void safePrintf(char *piece) {
     }
 }
 
-Tokenizer::Tokenizer(char* tokenizerPath, int modelVocabSize) {
+Tokenizer::Tokenizer(const char* tokenizerPath, int modelVocabSize) {
     eosId = -1;
     bosId = -1;
     chatEosId = -1;
@@ -60,13 +90,12 @@ Tokenizer::Tokenizer(char* tokenizerPath, int modelVocabSize) {
         bosId = header.bosId;
         eosId = header.eosId;
     } else if (magic == 0x567124) {
-        TransformerHeaderKey key;
         int headerSize;
         if (fread(&headerSize, sizeof(int), 1, file) != 1)
             throw std::runtime_error("Cannot read tokenizer header size");
         int nKv = (headerSize - 2 * sizeof(int)) / sizeof(int);
-        int buffer[nKv];
-        if (fread(&buffer, nKv * sizeof(int), 1, file) != 1) {
+        std::vector<int> buffer(nKv);
+        if (fread(&buffer[0], nKv * sizeof(int), 1, file) != 1) {
             throw std::runtime_error("Cannot read header values");
         }
         int version = -1;
@@ -110,9 +139,9 @@ Tokenizer::Tokenizer(char* tokenizerPath, int modelVocabSize) {
         throw std::runtime_error("Tokenizer file is invalid or incompatible with model");
     }
 
-    if (bosId >= 0) printf("📄 bosId: %d\n", bosId);
-    if (eosId >= 0) printf("📄 eosId: %d\n", eosId);
-    if (chatEosId >= 0) printf("📄 chatEosId: %d\n", chatEosId);
+    if (bosId >= 0) printf("📄 %16s: %d\n", "BosId", bosId);
+    if (eosId >= 0) printf("📄 %16s: %d\n", "EosId", eosId);
+    if (chatEosId >= 0) printf("📄 %16s: %d\n", "ChatEosId", chatEosId);
 
     // malloc space to hold the scores and the strings
     vocab = (char**)malloc(vocabSize * sizeof(char*));

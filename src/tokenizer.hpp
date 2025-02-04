@@ -3,7 +3,6 @@
 
 #include <cstdio>
 #include <string>
-#include "tasks.hpp"
 
 bool isSafePiece(char *piece);
 void safePrintf(char *piece);
@@ -49,7 +48,7 @@ public:
     char* chatTemplate;
     char* chatStop;
 
-    Tokenizer(char* tokenizer_path, int vocab_size);
+    Tokenizer(const char* tokenizer_path, int vocab_size);
     ~Tokenizer();
     void encode(char *text, int *tokens, int *nTokens, bool addBos, bool addEos);
     char* decode(int prev_token, int token);
