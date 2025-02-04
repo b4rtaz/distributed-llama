@@ -19,7 +19,7 @@
 static NnByte *allocAlignedBuffer(size_t size) {
     NnByte *buffer;
 #ifdef _WIN32
-    buffer = _aligned_malloc(size, BUFFER_ALIGNMENT);
+    buffer = (NnByte *)_aligned_malloc(size, BUFFER_ALIGNMENT);
     if (buffer == NULL)
         throw std::runtime_error("_aligned_malloc failed");
 #else

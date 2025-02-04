@@ -1,10 +1,3 @@
-#include "nn-network.hpp"
-#include <cassert>
-#include <cstring>
-#include <stdexcept>
-#include <vector>
-#include <fcntl.h>
-
 #ifdef _WIN32
 #include <winsock2.h>
 #include <ws2tcpip.h> // For inet_addr and other functions
@@ -17,6 +10,12 @@ typedef SSIZE_T ssize_t;
 #include <arpa/inet.h>
 #include <unistd.h>
 #endif
+#include "nn-network.hpp"
+#include <cassert>
+#include <cstring>
+#include <stdexcept>
+#include <vector>
+#include <fcntl.h>
 
 #define SOCKET_LAST_ERRCODE errno
 #define SOCKET_LAST_ERROR strerror(errno)
