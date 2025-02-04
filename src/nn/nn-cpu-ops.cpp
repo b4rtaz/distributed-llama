@@ -437,7 +437,6 @@ static void matmul_F32_Q40_F32(float *output, const float *x, const NnBlockQ40 *
 
 static void matmul_Q80_Q40_F32(float *output, const NnBlockQ80 *x, const NnBlockQ40 *w, const NnSize n, const NnSize d, const NnSize nThreads, const NnSize threadIndex) {
     SPLIT_THREADS(start, end, d, nThreads, threadIndex);
-    const NnBlockQ80* input = x;
     assert(n % Q40_BLOCK_SIZE == 0);
     const unsigned int nBlocks = n / Q40_BLOCK_SIZE;
 
@@ -450,8 +449,8 @@ static void matmul_Q80_Q40_F32(float *output, const NnBlockQ80 *x, const NnBlock
         for (unsigned int j = 0; j < nBlocks; j += 2) {
             const NnBlockQ40 *x0 = &w[d * nBlocks + j];
             const NnBlockQ40 *x1 = &w[d * nBlocks + j + 1];
-            const NnBlockQ80 *y0 = &input[j];
-            const NnBlockQ80 *y1 = &input[j + 1];
+            const NnBlockQ80 *y0 = &x[j];
+            const NnBlockQ80 *y1 = &x[j + 1];
 
             const uint8x16_t m4b = vdupq_n_u8(0x0F);
             const int8x16_t  s8b = vdupq_n_s8(0x8);
@@ -506,7 +505,22 @@ static void matmul_Q80_Q40_F32(float *output, const NnBlockQ80 *x, const NnBlock
         output[d] = vaddvq_f32(sumv0) + vaddvq_f32(sumv1);
     }
 #else
-    assert(false); // TOOD
+    for (NnSize i = start; i < end; i++) {
+        float sum = 0.0;
+        for (NnSize j = 0; j < nBlocks; j++) {
+            const NnBlockQ40 *wb = &w[i * nBlocks + j];
+            const NnBlockQ80 *xb = &x[j];
+            const float s = convertF16toF32(wb->d) * convertF16toF32(xb->d);
+            for (NnSize k = 0; k < Q40_BLOCK_SIZE / 2; k++) {
+                const int w0 = (wb->qs[k] & 0x0F) - 8;
+                const int w1 = (wb->qs[k] >> 4) - 8;
+                const int i1 = xb->qs[k];
+                const int i2 = xb->qs[k + Q40_BLOCK_SIZE / 2];
+                sum += (w0 * i1 + w1 * i2) * s;
+            }
+        }
+        output[i] = sum;
+    }
 #endif
 }
 
