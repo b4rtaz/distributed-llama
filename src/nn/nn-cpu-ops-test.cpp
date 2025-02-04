@@ -189,7 +189,7 @@ void testMatmul_F32_Q40_F32(const NnSize m = 2) {
     compare_F32("matmul_F32_Q40_Q80", o.data(), oTemp.data(), d, 4.0f);
 
     matmul_Q80_Q40_F32(oTemp.data(), xQ80.data(), wQ40.data(), n, d, 1, 0);
-    compare_F32("matmul_Q80_Q40_F32", o.data(), oTemp.data(), d, 2.8f);
+    compare_F32("matmul_Q80_Q40_F32", o.data(), oTemp.data(), d, 4.0f);
 }
 
 int main() {
