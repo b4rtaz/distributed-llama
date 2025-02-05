@@ -127,6 +127,10 @@ NnPointerConfig slicedPointerConfig(NnPointerType type, NnSize index) {
     return { type, index, SLICE_NODE_PART, PNTR_BATCH_DEFAULT, 0 /* not used*/ };
 }
 
+bool hasPointerContinuousMemory(NnPointerConfig *config) {
+    return config->batchType == PNTR_BATCH_DEFAULT && config->sliceType == SLICE_NONE;
+}
+
 void releaseNetConfig(NnNetConfig *netConfig) {
     for (NnSize pipeIndex = 0; pipeIndex < netConfig->nPipes; pipeIndex++) {
         delete[] netConfig->pipes[pipeIndex].name;

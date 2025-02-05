@@ -123,14 +123,20 @@ NnDeviceSegment *NnCpuDevice::createSegment(NnSize segmentIndex) {
         opContext->buffers = buffers;
         opContext->bufferConfigs = nodeConfig->buffers;
         opContext->bufferFlags = bufferFlags;
+
         opContext->input = &inputs[opIndex * netConfig->nBatches];
-        opContext->output = &outputs[opIndex * netConfig->nBatches];
         opContext->inputSize = inputSizes[opIndex];
+        opContext->hasInputContinuousMemory = hasPointerContinuousMemory(&opConfig->input);
+
+        opContext->output = &outputs[opIndex * netConfig->nBatches];
         opContext->outputSize = outputSizes[opIndex];
+        opContext->hasOutputContinuousMemory = hasPointerContinuousMemory(&opConfig->output);
+
         if (opContext->weightSize.nBytes > 0)
             opContext->weight = allocAlignedBuffer(opContext->weightSize.nBytes);
         else
             opContext->weight = nullptr;
+
         if (opInit != nullptr)
             opInit(opContext);
         opForward[opIndex] = opForwardLocal[opIndex];

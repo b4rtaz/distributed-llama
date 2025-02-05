@@ -274,6 +274,7 @@ NnSize2D size2D(NnFloatType floatType, NnSize y, NnSize x);
 NnPointerConfig pointerConfig(NnPointerType type, NnSize index);
 NnPointerConfig pointerConfigWithPipedBatch(NnPointerType type, NnSize index, NnSize pipeIndex);
 NnPointerConfig slicedPointerConfig(NnPointerType type, NnSize index);
+bool hasPointerContinuousMemory(NnPointerConfig *config);
 
 void releaseNetConfig(NnNetConfig *netConfig);
 void releaseNodeConfig(NnNodeConfig *nodeConfig);

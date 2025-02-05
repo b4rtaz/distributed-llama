@@ -17,13 +17,18 @@ typedef struct {
     NnBufferConfig *bufferConfigs;
     NnByte **pipes;
     NnPipeConfig *pipeConfigs;
+    void *opConfig;
+
     NnByte **input;
     NnSize2D inputSize;
+    bool hasInputContinuousMemory;
+
     NnByte **output;
     NnSize2D outputSize;
+    bool hasOutputContinuousMemory;
+
     NnByte *weight;
     NnSize2D weightSize;
-    void *opConfig;
 } NnCpuOpContext;
 
 typedef void (*NnCpuOpForwardInit)(NnCpuOpContext *context);

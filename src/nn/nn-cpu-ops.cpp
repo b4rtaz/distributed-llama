@@ -1030,12 +1030,14 @@ static void rmsNormForward_Q80_F32_F32(NnSize nThreads, NnSize threadIndex, NnSi
     }
 }
 
-static void matmulForward_F32_F32_F32(NnSize nThreads, NnSize threadIndex, NnSize batchSize, NnCpuOpContext *context) {
+static void initMatmulForward(NnCpuOpContext *context) {
     ASSERT_EQ(context->inputSize.y, context->nBatches);
     ASSERT_EQ(context->outputSize.y, context->nBatches);
     ASSERT_EQ(context->inputSize.x, context->weightSize.y);
     ASSERT_EQ(context->outputSize.x, context->weightSize.x);
+}
 
+static void matmulForward_F32_F32_F32(NnSize nThreads, NnSize threadIndex, NnSize batchSize, NnCpuOpContext *context) {
     const float *weight = (float *)context->weight;
     for (NnSize batchIndex = 0; batchIndex < batchSize; batchIndex++) {
         float *input = (float *)context->input[batchIndex];
@@ -1233,15 +1235,14 @@ static void mulForward_Q80_F32(NnSize nThreads, NnSize threadIndex, NnSize batch
     }
 }
 
-static void castForward_F32_F32(NnSize nThreads, NnSize threadIndex, NnSize batchSize, NnCpuOpContext *context) {
-    ASSERT_EQ(context->inputSize.floatType, F_32);
-    ASSERT_EQ(context->outputSize.floatType, F_32);
+static void castForward_UNK(NnSize nThreads, NnSize threadIndex, NnSize batchSize, NnCpuOpContext *context) {
+    const NnSize rowBytes = context->outputSize.nBytes / context->outputSize.y;
 
     for (NnSize batchIndex = 0; batchIndex < batchSize; batchIndex++) {
         copy(
             context->output[batchIndex],
             context->input[batchIndex],
-            context->outputSize.x * sizeof(float),
+            rowBytes,
             nThreads,
             threadIndex);
     }
@@ -1282,6 +1283,8 @@ static void castForward_Q80_F32(NnSize nThreads, NnSize threadIndex, NnSize batc
 // device
 
 NnCpuOpForwardInit getCpuOpForwardInit(NnOpCode code, NnOpQuantType quantType) {
+    if (code == OP_MATMUL)
+        return initMatmulForward;
     return nullptr;
 }
 
@@ -1324,8 +1327,9 @@ NnCpuOpForward getCpuOpForward(NnOpCode code, NnOpQuantType quantType) {
         if (quantType == Q80_Q80_F32) return mulForward_Q80_F32;
     }
     if (code == OP_CAST) {
-        if (quantType == F32_F32_F32) return castForward_F32_F32;
+        if (quantType == F32_F32_F32) return castForward_UNK;
         if (quantType == F32_F32_Q80) return castForward_F32_Q80;
+        if (quantType == Q80_Q80_Q80) return castForward_UNK;
         if (quantType == Q80_Q80_F32) return castForward_Q80_F32;
     }
     return nullptr;
