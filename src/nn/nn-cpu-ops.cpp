@@ -1127,16 +1127,16 @@ static void geluForward_F32_F32_F32(NnSize nThreads, NnSize threadIndex, NnSize 
 
 static float ropeLlama31Scale(float freq, const NnRopeLlama31OpConfig *config) {
     float waveLen = 2.0f * M_PI * freq;
-    float lowFreqWavelen = config->ropeScalingOrigMaxSeqLen / config->ropeScalingLowFreqFactor;
     float highFreqWavelen = config->ropeScalingOrigMaxSeqLen / config->ropeScalingHighFreqFactory;
     if (waveLen < highFreqWavelen) {
         return freq;
-    } else if (waveLen > lowFreqWavelen) {
-        return freq / config->ropeScalingFactor;
-    } else {
-        float smooth = (config->ropeScalingOrigMaxSeqLen / waveLen - config->ropeScalingLowFreqFactor) / (config->ropeScalingHighFreqFactory - config->ropeScalingLowFreqFactor);
-        return (1 - smooth) * freq / config->ropeScalingFactor + smooth * freq;
     }
+    float lowFreqWavelen = config->ropeScalingOrigMaxSeqLen / config->ropeScalingLowFreqFactor;
+    if (waveLen > lowFreqWavelen) {
+        return freq / config->ropeScalingFactor;
+    }
+    float smooth = (config->ropeScalingOrigMaxSeqLen / waveLen - config->ropeScalingLowFreqFactor) / (config->ropeScalingHighFreqFactory - config->ropeScalingLowFreqFactor);
+    return (1 - smooth) * freq / config->ropeScalingFactor + smooth * freq;
 }
 
 static void ropeLlama31Forward_F32_F32(NnSize nThreads, NnSize threadIndex, NnSize batchSize, NnCpuOpContext *context) {
