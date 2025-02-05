@@ -1035,6 +1035,12 @@ static void initMatmulForward(NnCpuOpContext *context) {
     ASSERT_EQ(context->outputSize.y, context->nBatches);
     ASSERT_EQ(context->inputSize.x, context->weightSize.y);
     ASSERT_EQ(context->outputSize.x, context->weightSize.x);
+
+    if (!context->hasInputContinuousMemory)
+        printf("🚧 Op %s does not have contiguous memory for input\n", context->name);
+    if (!context->hasOutputContinuousMemory)
+        printf("🚧 Op %s does not have contiguous memory for output\n", context->name);
+
 }
 
 static void matmulForward_F32_F32_F32(NnSize nThreads, NnSize threadIndex, NnSize batchSize, NnCpuOpContext *context) {
@@ -1235,6 +1241,11 @@ static void mulForward_Q80_F32(NnSize nThreads, NnSize threadIndex, NnSize batch
     }
 }
 
+static void initCastForward(NnCpuOpContext *context) {
+    ASSERT_EQ(context->inputSize.x, context->outputSize.x);
+    ASSERT_EQ(context->inputSize.y, context->outputSize.y);
+}
+
 static void castForward_UNK(NnSize nThreads, NnSize threadIndex, NnSize batchSize, NnCpuOpContext *context) {
     const NnSize rowBytes = context->outputSize.nBytes / context->outputSize.y;
 
@@ -1285,6 +1296,8 @@ static void castForward_Q80_F32(NnSize nThreads, NnSize threadIndex, NnSize batc
 NnCpuOpForwardInit getCpuOpForwardInit(NnOpCode code, NnOpQuantType quantType) {
     if (code == OP_MATMUL)
         return initMatmulForward;
+    if (code == OP_CAST)
+        return initCastForward;
     return nullptr;
 }
 

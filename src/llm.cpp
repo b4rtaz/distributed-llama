@@ -142,40 +142,37 @@ LlmNet buildLlmNet(LlmHeader *h, NnSize nNodes, NnSize nBatches) {
     n.tokenPipeIndex = netBuilder.addPipe("TOK", size2D(F_32, nBatches, 1));
     n.xPipeIndex = netBuilder.addPipe("X", size2D(F_32, nBatches, h->dim));
     n.logitsPipeIndex = netBuilder.addPipe("LG", size2D(F_32, nBatches, h->vocabSize));
-    NnSize dPipeIndex = netBuilder.addPipe("D", size2D(F_32, nBatches, h->dim * nNodes));
-    NnSize dqPipeIndex = h->syncType == F_32
-        ? dPipeIndex
-        : netBuilder.addPipe("DQ", size2D(h->syncType, nBatches, h->dim * nNodes));
+    const NnSize zqPipeIndex = netBuilder.addPipe("ZQ", size2D(h->syncType, nBatches, h->dim * nNodes));
 
     n.header = h;
     n.netConfig = netBuilder.build();
     n.nodeConfigs = new NnNodeConfig[nNodes];
 
-    std::vector<NnSize> kBufferIndex(h->nLayers);
-    std::vector<NnSize> vBufferIndex(h->nLayers);
-
     for (NnSize nodeIndex = 0; nodeIndex < nNodes; nodeIndex++) {
         NnRopeSlice ropeSlice = sliceRope(h->dim, h->kvDim, h->nKvHeads, nNodes, h->seqLen, h->headSize, h->ropeTheta, nodeIndex);
         NnNodeConfigBuilder nodeBuilder(nodeIndex);
 
-        NnSize xBufferIndex = nodeBuilder.addBuffer("x", size2D(F_32, nBatches, h->dim));
-        NnSize yBufferIndex = nodeBuilder.addBuffer("y", size2D(F_32, nBatches, h->dim));
-        NnSize yqBufferIndex = h->syncType == F_32
+        const NnSize xBufferIndex = nodeBuilder.addBuffer("x", size2D(F_32, nBatches, h->dim));
+        
+        const NnSize yBufferIndex = nodeBuilder.addBuffer("y", size2D(F_32, nBatches, h->dim));
+        const NnSize yqBufferIndex = h->syncType == F_32
             ? yBufferIndex
             : nodeBuilder.addBuffer("yq", size2D(h->syncType, nBatches, h->dim));
-        NnSize qBufferIndex = nodeBuilder.addBuffer("q", size2D(F_32, nBatches, n.qSlice.d0));
-        NnSize dBufferIndex = nodeBuilder.addBuffer("d", size2D(F_32, nBatches, n.w1Slice.d0));
-        NnSize dqBufferIndex = h->syncType == F_32
+        const NnSize yqSliceIndex = nodeBuilder.addBuffer("yqSlice", size2D(h->syncType, nBatches, h->dim / nNodes));
+
+        const NnSize qBufferIndex = nodeBuilder.addBuffer("q", size2D(F_32, nBatches, n.qSlice.d0));
+        const NnSize kTempBufferIndex = nodeBuilder.addBuffer("kTemp", size2D(F_32, nBatches, n.kSlice.d0));
+        const NnSize vTempBufferIndex = nodeBuilder.addBuffer("vTemp", size2D(F_32, nBatches, n.vSlice.d0));
+
+        const NnSize dBufferIndex = nodeBuilder.addBuffer("d", size2D(F_32, nBatches, n.w1Slice.d0));
+        const NnSize dqBufferIndex = h->syncType == F_32
             ? dBufferIndex
             : nodeBuilder.addBuffer("d", size2D(h->syncType, nBatches, n.w1Slice.d0));
-        NnSize lBufferIndex = nodeBuilder.addBuffer("l", size2D(F_32, nBatches, n.w3Slice.d0));
-        NnSize rmsBufferIndex = nodeBuilder.addBuffer("rms", size2D(F_32, nBatches, 1));
-        NnSize ropeCacheBufferIndex = nodeBuilder.addBuffer("ropeCache", ropeSlice.cacheSize);
-        NnSize attBufferIndex = nodeBuilder.addBuffer("att", multiHeadAttSlice.attSize);
-        for (NnSize layerIndex = 0; layerIndex < h->nLayers; layerIndex++) {
-            kBufferIndex[layerIndex] = nodeBuilder.addBuffer("k", kvCacheSlice.keySize);
-            vBufferIndex[layerIndex] = nodeBuilder.addBuffer("v", kvCacheSlice.valueSize);
-        }
+        const NnSize lBufferIndex = nodeBuilder.addBuffer("l", size2D(F_32, nBatches, n.w3Slice.d0));
+        const NnSize rmsBufferIndex = nodeBuilder.addBuffer("rms", size2D(F_32, nBatches, 1));
+        const NnSize ropeCacheBufferIndex = nodeBuilder.addBuffer("ropeCache", ropeSlice.cacheSize);
+        const NnSize attBufferIndex = nodeBuilder.addBuffer("att", multiHeadAttSlice.attSize);
+        const NnSize logitsSliceBufferIndex = nodeBuilder.addBuffer("lg", size2D(F_32, nBatches, h->vocabSize / nNodes));
 
         NnSegmentConfigBuilder start;
         if (nodeIndex == 0) {
@@ -191,6 +188,9 @@ LlmNet buildLlmNet(LlmHeader *h, NnSize nNodes, NnSize nBatches) {
         nodeBuilder.addSegment(start.build());
 
         for (NnSize layerIndex = 0; layerIndex < h->nLayers; layerIndex++) {
+            const NnSize kBufferIndex = nodeBuilder.addBuffer("k", kvCacheSlice.keySize);
+            const NnSize vBufferIndex = nodeBuilder.addBuffer("v", kvCacheSlice.valueSize);
+
             NnSegmentConfigBuilder att;
             NnSegmentConfigBuilder ff;
 
@@ -205,7 +205,7 @@ LlmNet buildLlmNet(LlmHeader *h, NnSize nNodes, NnSize nBatches) {
             } else {
                 att.addOp(
                     OP_MERGE_ADD, "block_merge_add", layerIndex,
-                    pointerConfig(PNTR_PIPE, dqPipeIndex),
+                    pointerConfig(PNTR_PIPE, zqPipeIndex),
                     pointerConfig(PNTR_BUFFER, xBufferIndex),
                     size0(),
                     NnMergeAddOpCodeConfig{});
@@ -223,7 +223,7 @@ LlmNet buildLlmNet(LlmHeader *h, NnSize nNodes, NnSize nBatches) {
                 pointerConfig(PNTR_BUFFER, yBufferIndex),
                 n.rmsNormSize,
                 NnRmsNormOpConfig{rmsBufferIndex});
-            if (yqBufferIndex != yBufferIndex) {
+            if (yBufferIndex != yqBufferIndex) {
                 att.addOp(
                     OP_CAST, "block_cast_y", layerIndex,
                     pointerConfig(PNTR_BUFFER, yBufferIndex),
@@ -240,15 +240,16 @@ LlmNet buildLlmNet(LlmHeader *h, NnSize nNodes, NnSize nBatches) {
             att.addOp(
                 OP_MATMUL, "block_matmul_k", layerIndex,
                 pointerConfig(PNTR_BUFFER, yqBufferIndex),
-                pointerConfigWithPipedBatch(PNTR_BUFFER, kBufferIndex[layerIndex], n.positionPipeIndex),
+                pointerConfig(PNTR_BUFFER, kTempBufferIndex),
                 size2D(h->weightType, n.kSlice.n, n.kSlice.d0),
                 NnMatmulOpConfig{});
             att.addOp(
                 OP_MATMUL, "block_matmul_v", layerIndex,
                 pointerConfig(PNTR_BUFFER, yqBufferIndex),
-                pointerConfigWithPipedBatch(PNTR_BUFFER, vBufferIndex[layerIndex], n.positionPipeIndex),
+                pointerConfig(PNTR_BUFFER, vTempBufferIndex),
                 size2D(h->weightType, n.vSlice.n, n.vSlice.d0),
                 NnMatmulOpConfig{});
+
             att.addOp(
                 OP_ROPE_LLAMA_3_1, "block_rope_q", layerIndex,
                 pointerConfig(PNTR_BUFFER, qBufferIndex),
@@ -259,12 +260,24 @@ LlmNet buildLlmNet(LlmHeader *h, NnSize nNodes, NnSize nBatches) {
                     ropeSlice});
             att.addOp(
                 OP_ROPE_LLAMA_3_1, "block_rope_k", layerIndex,
-                pointerConfigWithPipedBatch(PNTR_BUFFER, kBufferIndex[layerIndex], n.positionPipeIndex),
-                pointerConfigWithPipedBatch(PNTR_BUFFER, kBufferIndex[layerIndex], n.positionPipeIndex),
+                pointerConfig(PNTR_BUFFER, kTempBufferIndex),
+                pointerConfig(PNTR_BUFFER, kTempBufferIndex),
                 size0(),
                 NnRopeLlama31OpConfig{false, n.positionPipeIndex, ropeCacheBufferIndex, 
                     h->ropeScalingFactor, h->ropeScalingLowFreqFactor, h->ropeScalingHighFreqFactory, h->ropeScalingOrigMaxSeqLen,
                     ropeSlice});
+            att.addOp(
+                OP_CAST, "block_cast_k", layerIndex,
+                pointerConfig(PNTR_BUFFER, kTempBufferIndex),
+                pointerConfigWithPipedBatch(PNTR_BUFFER, kBufferIndex, n.positionPipeIndex),
+                size0(),
+                NnCastOpCodeConfig{});
+            att.addOp(
+                OP_CAST, "block_cast_v", layerIndex,
+                pointerConfig(PNTR_BUFFER, vTempBufferIndex),
+                pointerConfigWithPipedBatch(PNTR_BUFFER, vBufferIndex, n.positionPipeIndex),
+                size0(),
+                NnCastOpCodeConfig{});
             att.addOp(
                 OP_MULTIHEAD_ATT, "block_multihead_att", layerIndex,
                 slicedPointerConfig(PNTR_BUFFER, yBufferIndex),
@@ -272,36 +285,32 @@ LlmNet buildLlmNet(LlmHeader *h, NnSize nNodes, NnSize nBatches) {
                 size0(),
                 NnMultiHeadAttOpConfig{
                     h->nKvHeads, h->headSize, h->seqLen,
-                    n.positionPipeIndex, qBufferIndex, kBufferIndex[layerIndex], vBufferIndex[layerIndex], attBufferIndex,
+                    n.positionPipeIndex, qBufferIndex, kBufferIndex, vBufferIndex, attBufferIndex,
                     n.qSlice, kvCacheSlice, multiHeadAttSlice});
-            if (yBufferIndex != yqBufferIndex) {
-                att.addOp(
-                    OP_CAST, "block_cast_y2", layerIndex,
-                    pointerConfig(PNTR_BUFFER, yBufferIndex),
-                    pointerConfig(PNTR_BUFFER, yqBufferIndex),
-                    size0(),
-                    NnCastOpCodeConfig{});
-            }
+            att.addOp(
+                OP_CAST, "block_cast_y2", layerIndex,
+                slicedPointerConfig(PNTR_BUFFER, yBufferIndex),
+                pointerConfig(PNTR_BUFFER, yqSliceIndex),
+                size0(),
+                NnCastOpCodeConfig{});
             att.addOp(
                 OP_MATMUL, "block_matmul_wo", layerIndex,
-                slicedPointerConfig(PNTR_BUFFER, yqBufferIndex),
-                slicedPointerConfig(PNTR_PIPE, dPipeIndex),
+                pointerConfig(PNTR_BUFFER, yqSliceIndex),
+                pointerConfig(PNTR_BUFFER, yBufferIndex),
                 size2D(h->weightType, n.woSlice.n0, n.woSlice.d),
                 NnMatmulOpConfig{});
-            if (dPipeIndex != dqPipeIndex) {
-                att.addOp(
-                    OP_CAST, "block_cast_d", layerIndex,
-                    slicedPointerConfig(PNTR_PIPE, dPipeIndex),
-                    slicedPointerConfig(PNTR_PIPE, dqPipeIndex),
-                    size0(),
-                    NnCastOpCodeConfig{});
-            }
-            att.addSync(dqPipeIndex, SYNC_NODE_SLICES);
+            att.addOp(
+                OP_CAST, "block_cast_d", layerIndex,
+                pointerConfig(PNTR_BUFFER, yBufferIndex),
+                slicedPointerConfig(PNTR_PIPE, zqPipeIndex),
+                size0(),
+                NnCastOpCodeConfig{});
+            att.addSync(zqPipeIndex, SYNC_NODE_SLICES);
 
             // ff
             ff.addOp(
                 OP_MERGE_ADD, "block_merge_add2", layerIndex,
-                pointerConfig(PNTR_PIPE, dqPipeIndex),
+                pointerConfig(PNTR_PIPE, zqPipeIndex),
                 pointerConfig(PNTR_BUFFER, xBufferIndex),
                 size0(),
                 NnMergeAddOpCodeConfig{});
@@ -360,18 +369,16 @@ LlmNet buildLlmNet(LlmHeader *h, NnSize nNodes, NnSize nBatches) {
             ff.addOp(
                 OP_MATMUL, "block_matmul_w2", layerIndex,
                 pointerConfig(PNTR_BUFFER, dqBufferIndex),
-                slicedPointerConfig(PNTR_PIPE, dPipeIndex),
+                pointerConfig(PNTR_BUFFER, yBufferIndex),
                 size2D(h->weightType, n.w2Slice.n0, n.w2Slice.d),
                 NnMatmulOpConfig{});
-            if (dPipeIndex != dqPipeIndex) {
-                ff.addOp(
-                    OP_CAST, "block_cast_d3", layerIndex,
-                    slicedPointerConfig(PNTR_PIPE, dPipeIndex),
-                    slicedPointerConfig(PNTR_PIPE, dqPipeIndex),
-                    size0(),
-                    NnCastOpCodeConfig{});
-            }
-            ff.addSync(dqPipeIndex, SYNC_NODE_SLICES);
+            ff.addOp(
+                OP_CAST, "block_cast_d3", layerIndex,
+                pointerConfig(PNTR_BUFFER, yBufferIndex),
+                slicedPointerConfig(PNTR_PIPE, zqPipeIndex),
+                size0(),
+                NnCastOpCodeConfig{});
+            ff.addSync(zqPipeIndex, SYNC_NODE_SLICES);
 
             nodeBuilder.addSegment(att.build());
             nodeBuilder.addSegment(ff.build());
@@ -380,7 +387,7 @@ LlmNet buildLlmNet(LlmHeader *h, NnSize nNodes, NnSize nBatches) {
         NnSegmentConfigBuilder end;
         end.addOp(
             OP_MERGE_ADD, "final_merge_add", 0,
-            pointerConfig(PNTR_PIPE, dqPipeIndex),
+            pointerConfig(PNTR_PIPE, zqPipeIndex),
             pointerConfig(PNTR_BUFFER, xBufferIndex),
             size0(),
             NnMergeAddOpCodeConfig{});
@@ -407,9 +414,15 @@ LlmNet buildLlmNet(LlmHeader *h, NnSize nNodes, NnSize nBatches) {
         end.addOp(
             OP_MATMUL, "final_matmul_logits", 0,
             pointerConfig(PNTR_BUFFER, yqBufferIndex),
-            slicedPointerConfig(PNTR_PIPE, n.logitsPipeIndex),
+            pointerConfig(PNTR_BUFFER, logitsSliceBufferIndex),
             size2D(h->weightType, n.wclsSlice.n, n.wclsSlice.d0),
             NnMatmulOpConfig{});
+        end.addOp(
+            OP_CAST, "final_cast_logits", 0,
+            pointerConfig(PNTR_BUFFER, logitsSliceBufferIndex),
+            slicedPointerConfig(PNTR_PIPE, n.logitsPipeIndex),
+            size0(),
+            NnCastOpCodeConfig{});
         end.addSync(n.logitsPipeIndex, SYNC_NODE_SLICES_EXCEPT_ROOT);
 
         nodeBuilder.addSegment(end.build());
