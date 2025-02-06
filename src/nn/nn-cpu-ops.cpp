@@ -11,6 +11,8 @@
 #elif defined(__AVX2__)
     #include <immintrin.h>
 #endif
+#include "nn-fp16.hpp"
+#include "llamafile/sgemm.hpp"
 
 #define DEBUG_OP_INPUT_OUTPUT false
 
@@ -42,65 +44,6 @@
         return _mm_cvtss_f32(res);
     }
 #endif
-
-static float convertF16toF32(const uint16_t value) {
-#if defined(__ARM_NEON)
-    __fp16 fp;
-    std::memcpy(&fp, &value, sizeof(fp));
-    return (float)fp;
-#else
-    union Fl32 {
-        uint32_t u;
-        float f;
-    };
-    const Fl32 magic = { (254U - 15U) << 23 };
-    const Fl32 infNan = { (127U + 16U) << 23 };
-    Fl32 result;
-    result.u = (value & 0x7FFFU) << 13;
-    result.f *= magic.f;
-    if (result.f >= infNan.f)
-        result.u |= 255U << 23;
-    result.u |= (value & 0x8000U) << 16;
-    return result.f;
-#endif
-}
-
-static uint16_t convertF32ToF16(const float x) {
-#if defined(__ARM_NEON)
-    __fp16 h = x;
-    return *(uint16_t *)&h;
-#else
-    int i = *(int *)&x;
-    int s = (i >> 16) & 0x00008000;
-    int e = ((i >> 23) & 0x000000ff) - (127 - 15);
-    int m = i & 0x007fffff;
-    if (e <= 0) {
-        if (e < -10) {
-            return s;
-        }
-        m = m | 0x00800000;
-        int t = 14 - e;
-        int a = (1 << (t - 1)) - 1;
-        int b = (m >> t) & 1;
-        m = (m + a + b) >> t;
-        return s | m;
-    }
-    if (e == 0xff - (127 - 15)) {
-        if (m == 0) {
-            return s | 0x7c00;
-        }
-        m >>= 13;
-        return s | 0x7c00 | m | (m == 0);
-    }
-    m = m + 0x00000fff + ((m >> 13) & 1);
-    if (m & 0x00800000) {
-        m =  0;
-        e += 1;
-    }
-    assert(e <= 30);
-    return s | (e << 10) | (m >> 13);
-#endif
-}
 
 static void quantizeF32toQ80(const float *input, NnBlockQ80 *output, const NnSize k, const NnSize nThreads, const NnSize threadIndex) {
     assert(k % Q80_BLOCK_SIZE == 0);
@@ -1043,7 +986,28 @@ static void initMatmulForward(NnCpuOpContext *context) {
 
 }
 
+static bool matmulForward_llamafile(NnSize nThreads, NnSize threadIndex, NnSize batchSize, NnCpuOpContext *context) {
+    if (batchSize == 1 || !context->hasInputContinuousMemory || !context->hasOutputContinuousMemory)
+        return false;
+
+    const NnSize n = context->weightSize.y / getBlockSize(context->inputSize.floatType);
+    const NnSize d = context->weightSize.x;
+    return llamafile_sgemm(
+        d, batchSize, n,
+        context->weight, n,
+        context->input[0], n,
+        context->output[0], d,
+        threadIndex, nThreads, 0,
+        context->weightSize.floatType,
+        context->inputSize.floatType,
+        F_32
+    );
+}
+
 static void matmulForward_F32_F32_F32(NnSize nThreads, NnSize threadIndex, NnSize batchSize, NnCpuOpContext *context) {
+    if (matmulForward_llamafile(nThreads, threadIndex, batchSize, context))
+        return;
+
     const float *weight = (float *)context->weight;
     for (NnSize batchIndex = 0; batchIndex < batchSize; batchIndex++) {
         float *input = (float *)context->input[batchIndex];
@@ -1079,6 +1043,9 @@ static void matmulForward_F32_Q40_F32(NnSize nThreads, NnSize threadIndex, NnSiz
 }
 
 static void matmulForward_Q80_Q40_F32(NnSize nThreads, NnSize threadIndex, NnSize batchSize, NnCpuOpContext *context) {
+    if (matmulForward_llamafile(nThreads, threadIndex, batchSize, context))
+        return;
+
     const NnBlockQ40 *weight = (NnBlockQ40 *)context->weight;
     for (NnSize batchIndex = 0; batchIndex < batchSize; batchIndex++) {
         NnBlockQ80 *input = (NnBlockQ80 *)context->input[batchIndex];

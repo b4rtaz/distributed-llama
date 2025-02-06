@@ -21,7 +21,7 @@ void compare_F32(const char *name, const float *a, const float *b, const NnSize 
             exit(1);
         }
     }
-    printf("✅ %18s passed (%.3f %.3f %.3f %.3f...)\n", name, a[0], a[1], a[2], a[3]);
+    printf("✅ %24s passed (%.3f %.3f %.3f %.3f...)\n", name, a[0], a[1], a[2], a[3]);
 }
 
 // tests
@@ -192,6 +192,55 @@ void testMatmul_F32_Q40_F32(const NnSize m = 2) {
     compare_F32("matmul_Q80_Q40_F32", o.data(), oTemp.data(), d, 4.0f);
 }
 
+void testLlamafileSgemm() {
+    const NnSize batchSize = 8;
+    const NnSize n = 256;
+    const NnSize d = 128;
+
+    std::vector<float> x(n * batchSize);
+    std::vector<NnBlockQ80> xQ((n * batchSize) / Q80_BLOCK_SIZE);
+    std::vector<float> w(n * d);
+    std::vector<NnBlockQ40> wQ((n * d) / Q40_BLOCK_SIZE);
+    std::vector<float> o(d * batchSize);
+    std::vector<float> oTemp(d * batchSize);
+
+    rand(x.data(), n * batchSize, 12345);
+    rand(w.data(), n * d, 23456);
+
+    quantizeF32toQ80(x.data(), xQ.data(), n * batchSize, 1, 0);
+    quantizeF32toQ40(w.data(), wQ.data(), n * d, 1, 0);
+
+    // f32
+
+    for (NnSize i = 0; i < batchSize; i++) {
+        matmul_F32_F32_F32(o.data() + i * d, x.data() + i * n, w.data(), n, d, 1, 0);
+    }
+
+    assert(llamafile_sgemm(
+        d, batchSize, n,
+        w.data(), n,
+        x.data(), n,
+        oTemp.data(), d,
+        0, 1, 0,
+        F_32, F_32, F_32
+    ));
+
+    compare_F32("llamafileSgemm_F32", o.data(), oTemp.data(), d * batchSize, 0.01f);
+
+    // q40ᵀ * q80
+
+    assert(llamafile_sgemm(
+        d, batchSize, n / Q80_BLOCK_SIZE,
+        wQ.data(), n / Q80_BLOCK_SIZE,
+        xQ.data(), n / Q80_BLOCK_SIZE,
+        oTemp.data(), d,
+        0, 1, 0,
+        F_Q40, F_Q80, F_32
+    ));
+
+    compare_F32("llamafileSgemm_Q80_Q40", o.data(), oTemp.data(), d * batchSize, 1.5f);
+}
+
 int main() {
     testSplitThreads();
     testQuantization(32);
@@ -208,5 +257,6 @@ int main() {
     testMatmul_F32_Q40_F32(32);
     testMatmul_F32_Q40_F32(2);
     testMatmul_F32_Q40_F32(1);
+    testLlamafileSgemm();
     return 0;
 }

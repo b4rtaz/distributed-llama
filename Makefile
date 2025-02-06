@@ -32,14 +32,16 @@ nn-executor: src/nn/nn-executor.cpp
 	$(CXX) $(CXXFLAGS) -c src/nn/nn-executor.cpp -o nn-executor.o
 nn-network: src/nn/nn-network.cpp
 	$(CXX) $(CXXFLAGS) -c src/nn/nn-network.cpp -o nn-network.o
+llamafile-sgemm: src/nn/llamafile/sgemm.cpp
+	$(CXX) $(CXXFLAGS) -c src/nn/llamafile/sgemm.cpp -o llamafile-sgemm.o
 nn-cpu-ops: src/nn/nn-cpu-ops.cpp
 	$(CXX) $(CXXFLAGS) -c src/nn/nn-cpu-ops.cpp -o nn-cpu-ops.o
 nn-cpu: src/nn/nn-cpu.cpp
 	$(CXX) $(CXXFLAGS) -c src/nn/nn-cpu.cpp -o nn-cpu.o
 nn-cpu-test: src/nn/nn-cpu-test.cpp nn-core nn-executor nn-cpu-ops nn-cpu
 	$(CXX) $(CXXFLAGS) src/nn/nn-cpu-test.cpp -o nn-cpu-test nn-core.o nn-executor.o nn-cpu-ops.o nn-cpu.o $(LIBS)
-nn-cpu-ops-test: src/nn/nn-cpu-ops-test.cpp nn-core
-	$(CXX) $(CXXFLAGS) src/nn/nn-cpu-ops-test.cpp -o nn-cpu-ops-test nn-core.o $(LIBS)
+nn-cpu-ops-test: src/nn/nn-cpu-ops-test.cpp nn-core llamafile-sgemm
+	$(CXX) $(CXXFLAGS) src/nn/nn-cpu-ops-test.cpp -o nn-cpu-ops-test nn-core.o llamafile-sgemm.o $(LIBS)
 
 tokenizer: src/tokenizer.cpp
 	$(CXX) $(CXXFLAGS) -c src/tokenizer.cpp -o tokenizer.o
@@ -48,5 +50,5 @@ llm: src/llm.cpp
 app: src/app.cpp
 	$(CXX) $(CXXFLAGS) -c src/app.cpp -o app.o
 
-dllama: src/dllama.cpp nn-core nn-executor nn-network nn-cpu-ops nn-cpu tokenizer llm app
-	$(CXX) $(CXXFLAGS) src/dllama.cpp -o dllama nn-core.o nn-executor.o nn-network.o nn-cpu-ops.o nn-cpu.o tokenizer.o llm.o app.o $(LIBS)
+dllama: src/dllama.cpp nn-core nn-executor nn-network llamafile-sgemm nn-cpu-ops nn-cpu tokenizer llm app
+	$(CXX) $(CXXFLAGS) src/dllama.cpp -o dllama nn-core.o nn-executor.o nn-network.o llamafile-sgemm.o nn-cpu-ops.o nn-cpu.o tokenizer.o llm.o app.o $(LIBS)

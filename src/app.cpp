@@ -23,7 +23,7 @@ AppCliArgs AppCliArgs::parse(int argc, char* *argv, bool requireMode) {
     AppCliArgs args;
     args.help = false;
     args.mode = nullptr;
-    args.nBatches = 4;
+    args.nBatches = 8;
     args.nThreads = 1;
     args.modelPath = nullptr;
     args.tokenizerPath = nullptr;
