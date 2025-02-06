@@ -1,6 +1,7 @@
 #ifndef NN_FP16_H
 #define NN_FP16_H
 
+#include <cassert>
 #include <cstring>
 #if defined(__ARM_NEON)
     #include <arm_neon.h>
