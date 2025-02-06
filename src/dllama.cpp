@@ -6,20 +6,6 @@
 #include "tokenizer.hpp"
 #include "app.hpp"
 #include <stdexcept>
-#include <chrono>
-
-class Timer {
-private:
-    std::chrono::time_point<std::chrono::high_resolution_clock> startTime;
-public:
-    Timer() {
-        startTime = std::chrono::high_resolution_clock::now();
-    }
-    NnSize elapsed() {
-        auto endTime = std::chrono::high_resolution_clock::now();
-        return (NnSize)std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
-    }
-};
 
 static void inference(AppInferenceContext *context) {
     if (context->args->prompt == nullptr)

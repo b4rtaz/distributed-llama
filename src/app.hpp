@@ -1,6 +1,7 @@
 #ifndef APP_HPP
 #define APP_HPP
 
+#include <chrono>
 #include "nn/nn-core.hpp"
 #include "nn/nn-cpu.hpp"
 #include "tokenizer.hpp"
@@ -35,6 +36,16 @@ public:
     static AppCliArgs parse(int argc, char **argv, bool hasMode);
     ~AppCliArgs();
 };
+
+
+class Timer {
+private:
+    std::chrono::time_point<std::chrono::high_resolution_clock> startTime;
+public:
+    Timer();
+    NnSize elapsed();
+};
+
 
 typedef struct {
     NnSize position;

@@ -3,7 +3,7 @@
 #include <cstring>
 #include <stdexcept>
 
-NnFloatType parseFloatType(char *val) {
+static NnFloatType parseFloatType(char *val) {
     if (std::strcmp(val, "f32") == 0) return F_32;
     if (std::strcmp(val, "f16") == 0) return F_16;
     if (std::strcmp(val, "q40") == 0) return F_Q40;
@@ -11,7 +11,7 @@ NnFloatType parseFloatType(char *val) {
     throw std::runtime_error("Invalid float type: " + std::string(val));
 }
 
-ChatTemplateType parseChatTemplateType(char *val) {
+static ChatTemplateType parseChatTemplateType(char *val) {
     if (std::strcmp(val, "llama2") == 0) return TEMPLATE_LLAMA2;
     if (std::strcmp(val, "llama3") == 0) return TEMPLATE_LLAMA3;
     if (std::strcmp(val, "zephyr") == 0) return TEMPLATE_ZEPHYR;
@@ -118,6 +118,15 @@ AppCliArgs::~AppCliArgs() {
     }
     if (workerPorts != nullptr)
         delete[] workerPorts;
+}
+
+Timer::Timer() {
+    startTime = std::chrono::high_resolution_clock::now();
+}
+
+NnSize Timer::elapsed() {
+    auto endTime = std::chrono::high_resolution_clock::now();
+    return (NnSize)std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
 }
 
 RootLlmInference::RootLlmInference(LlmNet *net, NnDevice *device, NnNetExecution *execution, NnExecutor *executor, NnNetwork *network) {
