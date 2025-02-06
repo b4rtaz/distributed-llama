@@ -38,8 +38,8 @@ nn-cpu-ops: src/nn/nn-cpu-ops.cpp
 	$(CXX) $(CXXFLAGS) -c src/nn/nn-cpu-ops.cpp -o nn-cpu-ops.o
 nn-cpu: src/nn/nn-cpu.cpp
 	$(CXX) $(CXXFLAGS) -c src/nn/nn-cpu.cpp -o nn-cpu.o
-nn-cpu-test: src/nn/nn-cpu-test.cpp nn-core nn-executor nn-cpu-ops nn-cpu
-	$(CXX) $(CXXFLAGS) src/nn/nn-cpu-test.cpp -o nn-cpu-test nn-core.o nn-executor.o nn-cpu-ops.o nn-cpu.o $(LIBS)
+nn-cpu-test: src/nn/nn-cpu-test.cpp nn-core nn-executor llamafile-sgemm nn-cpu-ops nn-cpu
+	$(CXX) $(CXXFLAGS) src/nn/nn-cpu-test.cpp -o nn-cpu-test nn-core.o nn-executor.o llamafile-sgemm.o nn-cpu-ops.o nn-cpu.o $(LIBS)
 nn-cpu-ops-test: src/nn/nn-cpu-ops-test.cpp nn-core llamafile-sgemm
 	$(CXX) $(CXXFLAGS) src/nn/nn-cpu-ops-test.cpp -o nn-cpu-ops-test nn-core.o llamafile-sgemm.o $(LIBS)
 
