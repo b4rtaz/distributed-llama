@@ -36,7 +36,7 @@ float convertF16toF32Impl(const NnFp16 value);
 NnFp16 convertF32ToF16Impl(const float x);
 
 inline float convertF16toF32(const NnFp16 value) {
-#if defined(__ARM_NEON)
+#if defined(__ARM_NEON) && defined(__ARM_FP16_FORMAT_IEEE)
     __fp16 fp;
     std::memcpy(&fp, &value, sizeof(fp));
     return (float)fp;

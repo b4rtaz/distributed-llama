@@ -30,13 +30,48 @@
 #endif
 
 #if defined(__AVX2__)
-    static inline float hsum_float_8(const __m256 x) {
-        __m128 res = _mm256_extractf128_ps(x, 1);
-        res = _mm_add_ps(res, _mm256_castps256_ps128(x));
-        res = _mm_add_ps(res, _mm_movehl_ps(res, res));
-        res = _mm_add_ss(res, _mm_movehdup_ps(res));
-        return _mm_cvtss_f32(res);
-    }
+static inline float hsum_float_8(const __m256 x) {
+    __m128 res = _mm256_extractf128_ps(x, 1);
+    res = _mm_add_ps(res, _mm256_castps256_ps128(x));
+    res = _mm_add_ps(res, _mm_movehl_ps(res, res));
+    res = _mm_add_ss(res, _mm_movehdup_ps(res));
+    return _mm_cvtss_f32(res);
+}
+#endif
+
+#if defined(__ARM_NEON)
+static inline float32x4_t exp_F32_neon(float32x4_t x) {
+    const float32x4_t ln2 = vdupq_n_f32(0.69314718056f);
+    const float32x4_t inv_ln2 = vdupq_n_f32(1.44269504089f);
+    const float32x4_t c1 = vdupq_n_f32(1.0f);
+    const float32x4_t c2 = vdupq_n_f32(0.5f);
+    const float32x4_t c3 = vdupq_n_f32(0.1666666667f);
+    const float32x4_t c4 = vdupq_n_f32(0.04166666667f);
+    const float32x4_t c5 = vdupq_n_f32(0.008333333333f);
+
+    x = vminq_f32(x, vdupq_n_f32(88.0f));
+    x = vmaxq_f32(x, vdupq_n_f32(-88.0f));
+
+    float32x4_t kf = vaddq_f32(vmulq_f32(x, inv_ln2), vdupq_n_f32(0.5f));
+    int32x4_t k = vcvtq_s32_f32(kf);
+    kf = vcvtq_f32_s32(k);
+
+    float32x4_t f = vmlsq_f32(x, kf, ln2);
+    float32x4_t f2 = vmulq_f32(f, f);
+    float32x4_t f3 = vmulq_f32(f2, f);
+    float32x4_t f4 = vmulq_f32(f3, f);
+    float32x4_t f5 = vmulq_f32(f4, f);
+    float32x4_t p = c1;
+    p = vaddq_f32(p, f);
+    p = vaddq_f32(p, vmulq_f32(c2, f2));
+    p = vaddq_f32(p, vmulq_f32(c3, f3));
+    p = vaddq_f32(p, vmulq_f32(c4, f4));
+    p = vaddq_f32(p, vmulq_f32(c5, f5));
+
+    int32x4_t pow2k = vshlq_n_s32(vaddq_s32(k, vdupq_n_s32(127)), 23);
+    float32x4_t two_k = vreinterpretq_f32_s32(pow2k);
+    return vmulq_f32(p, two_k);
+}
 #endif
 
 static float rms_F32(const float *x, const unsigned int size, const float epsilon) {
@@ -469,7 +504,24 @@ static void geluF32(float *output, const unsigned int n, const NnSize nThreads, 
 
 static void siluF32(float *output, const unsigned int n, const NnSize nThreads, const NnSize threadIndex) {
     SPLIT_THREADS(start, end, n, nThreads, threadIndex);
-    for (unsigned int i = start; i < end; i++) {
+    unsigned int i = start;
+#if defined(__ARM_NEON)
+    const unsigned int end4 = end - ((end - start) % 4);
+
+    for (; i < end4; i += 4) {
+        float32x4_t x = vld1q_f32(output + i);
+        float32x4_t neg_x = vnegq_f32(x);
+        float32x4_t exp_negx = exp_F32_neon(neg_x);
+        float32x4_t denominator = vaddq_f32(exp_negx, vdupq_n_f32(1.0f));
+
+        float32x4_t recip = vrecpeq_f32(denominator);
+        recip = vmulq_f32(recip, vsubq_f32(vdupq_n_f32(2.0f), vmulq_f32(denominator, recip)));
+
+        float32x4_t result = vmulq_f32(x, recip);
+        vst1q_f32(output + i, result);
+    }
+#endif
+    for (; i < end; i++) {
         float x = output[i];
         output[i] = x / (1.0f + expf(-x));
     }
