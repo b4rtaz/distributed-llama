@@ -53,85 +53,73 @@ NnFp16 convertF32ToF16Impl(const float x) {
     return s | (e << 10) | (m >> 13);
 }
 
-void quantizeF32toQ80(const float *input, NnBlockQ80 *output, const NnSize k, const NnSize nThreads, const NnSize threadIndex) {
-    assert(k % Q80_BLOCK_SIZE == 0);
-
-    const int nBlocks = k / Q80_BLOCK_SIZE;
-    const int blocksPerThread = nBlocks / nThreads;
-    const int sk = blocksPerThread * Q80_BLOCK_SIZE;
-    const int currentThreadBlocks = blocksPerThread + (threadIndex == nThreads - 1 ? nBlocks % nThreads : 0);
-
-    const float *x = &input[sk * threadIndex];
-    NnBlockQ80 *y = &output[blocksPerThread * threadIndex];
+void quantizeF32toQ80(const float *input, NnBlockQ80 *output, const NnSize n, const NnSize nThreads, const NnSize threadIndex) {
+    assert(n % Q80_BLOCK_SIZE == 0);
+    const NnSize nBlocks = n / Q80_BLOCK_SIZE;
+    SPLIT_THREADS(start, end, nBlocks, nThreads, threadIndex);
 
 #if defined(__ARM_NEON)
-    float dBuf[4];
+    for (NnSize i = start; i < end; i++) {
+        const float *x = &input[i * Q80_BLOCK_SIZE];
+        NnBlockQ80 *y = &output[i];
 
-    for (int i = 0; i < currentThreadBlocks; i++) {
-        float32x4_t srcv [8];
-        float32x4_t asrcv[8];
-        float32x4_t amaxv[8];
-
-        for (int j = 0; j < 8; j++) srcv[j] = vld1q_f32(x + i * 32 + 4 * j);
-        for (int j = 0; j < 8; j++) asrcv[j] = vabsq_f32(srcv[j]);
-
-        for (int j = 0; j < 4; j++) amaxv[2 * j] = vmaxq_f32(asrcv[2 * j], asrcv[2 * j + 1]);
-        for (int j = 0; j < 2; j++) amaxv[4 * j] = vmaxq_f32(amaxv[4 * j], amaxv[4 * j + 2]);
-        for (int j = 0; j < 1; j++) amaxv[8 * j] = vmaxq_f32(amaxv[8 * j], amaxv[8 * j + 4]);
-
-        const float amax = vmaxvq_f32(amaxv[0]);
-
-        const float d = amax / ((1 << 7) - 1);
-        const float id = d ? 1.0f / d : 0.0f;
-
-        int dbi = i % 4;
-        dBuf[dbi] = d;
-        if (dbi == 3) {
-            float32x4_t dBuf32 = vld1q_f32(dBuf);
-            int16x4_t dBuf16 = (int16x4_t)vcvt_f16_f32(dBuf32);
-
-            y[i - 3].d = dBuf16[0];
-            y[i - 2].d = dBuf16[1];
-            y[i - 1].d = dBuf16[2];
-            y[i - 0].d = dBuf16[3];
+        float32x4_t amax_vec = vdupq_n_f32(0.0f);
+        NnSize j = 0;
+        
+        for (; j + 3 < Q80_BLOCK_SIZE; j += 4) {
+            const float32x4_t vec = vld1q_f32(x + j);
+            const float32x4_t abs_vec = vabsq_f32(vec);
+            amax_vec = vmaxq_f32(amax_vec, abs_vec);
         }
 
-        for (int j = 0; j < 8; j++) {
-            const float32x4_t v  = vmulq_n_f32(srcv[j], id);
-            const int32x4_t   vi = vcvtnq_s32_f32(v);
-
-            y[i].qs[4*j + 0] = vgetq_lane_s32(vi, 0);
-            y[i].qs[4*j + 1] = vgetq_lane_s32(vi, 1);
-            y[i].qs[4*j + 2] = vgetq_lane_s32(vi, 2);
-            y[i].qs[4*j + 3] = vgetq_lane_s32(vi, 3);
+        float amax = vmaxvq_f32(amax_vec);
+        for (; j < Q80_BLOCK_SIZE; j++) {
+            const float v = fabsf(x[j]);
+            amax = amax > v ? amax : v;
         }
-    }
 
-    int rest = currentThreadBlocks % 4;
-    if (rest != 0) {
-        float32x4_t dBuf32 = vld1q_f32(dBuf);
-        int16x4_t dBuf16 = (int16x4_t)vcvt_f16_f32(dBuf32);
-        for (int i = 0; i < rest; i++) {
-            y[currentThreadBlocks - rest + i].d = dBuf16[i];
+        const float d = amax / 127.0f;
+        const float id = d != 0.0f ? 1.0f / d : 0.0f;
+        
+        y->d = convertF32ToF16(d);
+
+        const float32x4_t vid_vec = vdupq_n_f32(id);
+        j = 0;
+        
+        for (; j + 3 < Q80_BLOCK_SIZE; j += 4) {
+            float32x4_t vec = vld1q_f32(x + j);
+            vec = vmulq_f32(vec, vid_vec);
+
+            const uint32x4_t sign_mask = vcgeq_f32(vec, vdupq_n_f32(0.0f));
+            const float32x4_t half = vbslq_f32(sign_mask, vdupq_n_f32(0.5f), vdupq_n_f32(-0.5f));
+            vec = vaddq_f32(vec, half);
+            
+            const int32x4_t vec_i32 = vcvtq_s32_f32(vec);
+            const int16x4_t vec_i16 = vqmovn_s32(vec_i32);
+            const int8x8_t vec_i8 = vqmovn_s16(vcombine_s16(vec_i16, vec_i16));
+
+            vst1_lane_s32((int32_t *)(y->qs + j), vreinterpret_s32_s8(vec_i8), 0);
         }
+
+        for (; j < Q80_BLOCK_SIZE; j++)
+            y->qs[j] = roundf(x[j] * id);
     }
 #else
-    for (int i = 0; i < currentThreadBlocks; i++) {
-        float amax = 0.0f;
+    for (NnSize i = start; i < end; i++) {
+        const float *x = &input[i * Q80_BLOCK_SIZE];
+        NnBlockQ80 *y = &output[i];
 
-        for (int j = 0; j < Q80_BLOCK_SIZE; j++) {
-            const float v = fabsf(x[i * Q80_BLOCK_SIZE + j]);
+        float amax = 0.0f;
+        for (NnSize j = 0; j < Q80_BLOCK_SIZE; j++) {
+            const float v = fabsf(x[j]);
             amax = amax > v ? amax : v;
         }
 
         const float d = amax / ((1 << 7) - 1);
         const float id = d ? 1.0f / d : 0.0f;
-
-        y[i].d = convertF32ToF16(d);
-
-        for (int j = 0; j < Q80_BLOCK_SIZE; ++j) {
-            const float x0 = x[i * Q80_BLOCK_SIZE + j] * id;
-            y[i].qs[j] = roundf(x0);
+        y->d = convertF32ToF16(d);
+        for (NnSize j = 0; j < Q80_BLOCK_SIZE; ++j) {
+            y->qs[j] = roundf(x[j] * id);
         }
     }
 #endif
