@@ -626,13 +626,41 @@ static void mul_F32(float *output, const float *x, const NnSize n, const NnSize 
     SPLIT_THREADS(start, end, nBlocks, nThreads, threadIndex);
 
 #if defined(__ARM_NEON)
-    for (NnSize i = start; i < end; i++) {
-        const float *xi = &x[i * 4];
-        float *oi = &output[i * 4];
+    assert(n % 16 == 0);
+    const float *xi = x + start * 4;
+    float *oi = output + start * 4;
+    NnSize blocksRemaining = end - start;
+
+    while (blocksRemaining >= 4) {
+        float32x4_t x0 = vld1q_f32(xi);
+        float32x4_t o0 = vld1q_f32(oi);
+        o0 = vmulq_f32(o0, x0);
+        vst1q_f32(oi, o0);
+        xi += 4; oi += 4;
+
+        x0 = vld1q_f32(xi);
+        o0 = vld1q_f32(oi);
+        vst1q_f32(oi, vmulq_f32(o0, x0));
+        xi += 4; oi += 4;
+
+        x0 = vld1q_f32(xi);
+        o0 = vld1q_f32(oi);
+        vst1q_f32(oi, vmulq_f32(o0, x0));
+        xi += 4; oi += 4;
+
+        x0 = vld1q_f32(xi);
+        o0 = vld1q_f32(oi);
+        vst1q_f32(oi, vmulq_f32(o0, x0));
+        xi += 4; oi += 4;
+
+        blocksRemaining -= 4;
+    }
+
+    while (blocksRemaining-- > 0) {
         float32x4_t x_vec = vld1q_f32(xi);
         float32x4_t o_vec = vld1q_f32(oi);
-        o_vec = vmulq_f32(o_vec, x_vec);
-        vst1q_f32(oi, o_vec);
+        vst1q_f32(oi, vmulq_f32(o_vec, x_vec));
+        xi += 4; oi += 4;
     }
 #else
     for (NnSize i = start; i < end; i++) {

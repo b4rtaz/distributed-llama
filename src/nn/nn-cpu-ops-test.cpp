@@ -66,7 +66,7 @@ void testSplitThreads() {
         assert(b0End == 4);
     }
 
-    printf("✅ splitThreads\n");
+    printf("✅ %24s passed\n", "splitThreads");
 }
 
 // quantization
@@ -237,6 +237,7 @@ void testLlamafileSgemm() {
 }
 
 int main() {
+    printCpuInstructionSet();
     testSplitThreads();
     testQuantization(32);
     testQuantization(2);
