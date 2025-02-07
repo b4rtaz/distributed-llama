@@ -141,11 +141,11 @@ inline void executeStep(NnExecutorStep *step, NnSize nThreads, NnExecutorThread 
 
     #if DEBUG_BENCHMARK
     auto endTime = std::chrono::high_resolution_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(endTime - startTime).count();
+    NnSize duration = (NnSize)std::chrono::duration_cast<std::chrono::microseconds>(endTime - startTime).count();
     if (step->type == STEP_EXECUTE_OP)
-        printf("🕒 [OP %16s %2d] %6lld μs\n", opCodeToString(step->opConfig->code), step->opConfig->index, duration);
+        printf("🕒 [OP %16s %2d] %u μs\n", opCodeToString(step->opConfig->code), step->opConfig->index, duration);
     else if (step->type == STEP_SYNC_NODES)
-        printf("🕒 [SYNC %17d] %6lld μs\n", step->arg0, duration);
+        printf("🕒 [SYNC %17d] %u μs\n", step->arg0, duration);
     #endif
 }
 
