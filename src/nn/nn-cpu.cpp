@@ -43,6 +43,9 @@ NnCpuDevice::NnCpuDevice(NnNetConfig *netConfig, NnNodeConfig *nodeConfig, NnNet
     this->netConfig = netConfig;
     this->nodeConfig = nodeConfig;
     this->netExecution = netExecution;
+
+    printCpuInstructionSet();
+
     buffers = new NnByte *[nodeConfig->nBuffers];
     for (NnSize bufferIndex = 0; bufferIndex < nodeConfig->nBuffers; bufferIndex++) {
         NnBufferConfig *config = &nodeConfig->buffers[bufferIndex];

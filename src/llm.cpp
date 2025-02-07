@@ -96,24 +96,26 @@ LlmHeader loadLlmHeader(const char *path, const NnSize maxSeqLen, NnFloatType sy
     header.headSize = header.dim / header.nHeads;
     header.kvDim = (header.dim  *header.nKvHeads) / header.nHeads;
     header.syncType = syncType;
-
-    printf("💡 %16s: %s\n", "Arch", archTypeToString(header.archType));
-    printf("💡 %16s: %s\n", "HiddenAct", hiddenActToString(header.hiddenAct));
-    printf("💡 %16s: %s\n", "RopeType", ropeTypeToString(header.ropeType));
-    printf("💡 %16s: %u\n", "Dim", header.dim);
-    printf("💡 %16s: %u\n", "HiddenDim", header.hiddenDim);
-    printf("💡 %16s: %u\n", "VocabSize", header.vocabSize);
-    printf("💡 %16s: %u\n", "nLayers", header.nLayers);
-    printf("💡 %16s: %u\n", "nHeads", header.nHeads);
-    printf("💡 %16s: %u\n", "nKvHeads", header.nKvHeads);
-    if (header.seqLen != header.origSeqLen) {
-        printf("💡 %16s: %u\n", "OrigSeqLen", header.origSeqLen);
-    }
-    printf("💡 %16s: %u\n", "SeqLen", header.seqLen);
-    printf("💡 %16s: %f\n", "RopeTheta", header.ropeTheta);
-
     header.fileSize = (size_t)seekToEnd(fd);
     return header;
+}
+
+void printLlmHeader(LlmHeader *header) {
+    printf("💡 %16s: %s\n", "Arch", archTypeToString(header->archType));
+    printf("💡 %16s: %s\n", "HiddenAct", hiddenActToString(header->hiddenAct));
+    printf("💡 %16s: %s\n", "RopeType", ropeTypeToString(header->ropeType));
+    printf("💡 %16s: %u\n", "Dim", header->dim);
+    printf("💡 %16s: %u\n", "HiddenDim", header->hiddenDim);
+    printf("💡 %16s: %u\n", "VocabSize", header->vocabSize);
+    printf("💡 %16s: %u\n", "nLayers", header->nLayers);
+    printf("💡 %16s: %u\n", "nHeads", header->nHeads);
+    printf("💡 %16s: %u\n", "nKvHeads", header->nKvHeads);
+    if (header->seqLen != header->origSeqLen) {
+        printf("💡 %16s: %u\n", "OrigSeqLen", header->origSeqLen);
+    }
+    printf("💡 %16s: %u\n", "SeqLen", header->seqLen);
+    printf("💡 %16s: %f\n", "NormEpsilon", header->normEpsilon);
+    printf("💡 %16s: %.0f\n", "RopeTheta", header->ropeTheta);
 }
 
 LlmNet buildLlmNet(LlmHeader *h, NnSize nNodes, NnSize nBatches) {

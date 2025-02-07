@@ -1186,6 +1186,23 @@ static void castForward_Q80_F32(NnSize nThreads, NnSize threadIndex, NnSize batc
 
 // device
 
+void printCpuInstructionSet() {
+    printf("🧠 %16s:", "CPU");
+#if defined(__ARM_NEON)
+    printf(" neon");
+#if defined(__ARM_FEATURE_DOTPROD)
+    printf(" dotprod");
+#endif
+#if defined(__ARM_FP16_FORMAT_IEEE)
+    printf(" fp16");
+#endif
+#endif
+#if defined(__AVX2__)
+    printf(" avx2");
+#endif
+    printf("\n");
+}
+
 NnCpuOpForwardInit getCpuOpForwardInit(NnOpCode code, NnOpQuantType quantType) {
     if (code == OP_MATMUL)
         return initMatmulForward;

@@ -94,7 +94,8 @@ typedef struct {
 } LlmNet;
 
 LlmHeader loadLlmHeader(const char* path, const unsigned int maxSeqLen, NnFloatType syncType);
-LlmNet buildLlmNet(LlmHeader *l, NnSize nNodes, NnSize nBatches);
+void printLlmHeader(LlmHeader *header);
+LlmNet buildLlmNet(LlmHeader *h, NnSize nNodes, NnSize nBatches);
 void releaseLlmNet(LlmNet *net);
 void loadLlmNetWeight(const char* path, LlmNet *net, NnRootWeightLoader *loader);
 

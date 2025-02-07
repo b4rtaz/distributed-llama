@@ -34,6 +34,7 @@ typedef struct {
 typedef void (*NnCpuOpForwardInit)(NnCpuOpContext *context);
 typedef void (*NnCpuOpForward)(NnSize nThreads, NnSize threadIndex, NnSize batchSize, NnCpuOpContext *context);
 
+void printCpuInstructionSet();
 NnCpuOpForwardInit getCpuOpForwardInit(NnOpCode code, NnOpQuantType quantType);
 NnCpuOpForward getCpuOpForward(NnOpCode code, NnOpQuantType quantType);
 

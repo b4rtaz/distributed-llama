@@ -199,6 +199,7 @@ void runInferenceApp(AppCliArgs *args, void (*handler)(AppInferenceContext *cont
         throw std::runtime_error("This version does not support more nodes than the number of KV heads in the model");
     if (header.weightType == F_Q40 && header.syncType != F_Q80)
         throw std::runtime_error("This version supports only Q40 weights with Q80 sync type");
+    printLlmHeader(&header);
 
     Tokenizer tokenizer(args->tokenizerPath, header.vocabSize);
     Sampler sampler(header.vocabSize, args->temperature, args->topp, args->seed);
