@@ -802,7 +802,7 @@ static void embeddingForward_F32_F32_F32(NnSize nThreads, NnSize threadIndex, Nn
 
     for (NnSize batchIndex = 0; batchIndex < batchSize; batchIndex++) {
         NnSize token = (NnSize)*((float *)context->input[batchIndex]);
-        copy(
+        copy_UNK(
             context->output[batchIndex],
             &context->weight[token * dimSize],
             dimSize,

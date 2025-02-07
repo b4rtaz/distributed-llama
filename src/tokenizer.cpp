@@ -12,14 +12,40 @@
 #include <vector>
 #include "tokenizer.hpp"
 
-static void softmax(float* x, const unsigned int size) {
+#if defined(__ARM_NEON)
+    #include <arm_neon.h>
+#endif
+
+static void softmax(float *x, const unsigned int size) {
+    if (size == 0)
+        return;
     float maxVal;
+#if defined(__ARM_NEON)
+    unsigned int j;
+    if (size >= 4) {
+        float32x4_t fs;
+        float32x4_t fmaxv = vld1q_f32(&x[0]);
+        j = size - (size % 4);
+        for (unsigned int i = 4; i < j; i += 4) {
+            fs = vld1q_f32(&x[i]);
+            fmaxv = vmaxq_f32(fmaxv, fs);
+        }
+        maxVal = vmaxvq_f32(fmaxv);
+    } else {
+        maxVal = x[0];
+        j = 1;
+    }
+    for (unsigned int i = j; i < size; i++) {
+        maxVal = fmaxf(maxVal, x[i]);
+    }
+#else
     maxVal = x[0];
     for (unsigned int i = 1; i < size; i++) {
         if (x[i] > maxVal) {
             maxVal = x[i];
         }
     }
+#endif
     float sum = 0.0f;
     for (unsigned int i = 0; i < size; i++) {
         x[i] = expf(x[i] - maxVal);
