@@ -4,34 +4,10 @@
 #include <list>
 #include <memory>
 #include <cstdint>
-
-// quants
-
-#define Q40_BLOCK_SIZE 32
-#define Q80_BLOCK_SIZE 32
-
-typedef struct {
-    std::uint16_t d;
-    std::uint8_t qs[Q40_BLOCK_SIZE / 2];
-} NnBlockQ40;
-
-typedef struct {
-    std::uint16_t d;
-    std::int8_t qs[Q80_BLOCK_SIZE];
-} NnBlockQ80;
+#include "nn-quants.hpp"
 
 // primitives
 
-typedef unsigned int NnSize;
-typedef char NnByte;
-
-enum NnFloatType {
-    F_UNK = -1,
-    F_32 = 0,
-    F_16 = 1,
-    F_Q40 = 2,
-    F_Q80 = 3,
-};
 typedef struct {
     NnFloatType floatType;
     NnSize y;
@@ -261,7 +237,6 @@ typedef struct {
 
 // utility functions
 
-const char *floatTypeToString(NnFloatType type);
 const char *opCodeToString(NnOpCode code);
 const char *opQuantTypeToString(NnOpQuantType type);
 

@@ -5,15 +5,6 @@
 
 // utility functions
 
-const char *floatTypeToString(NnFloatType type) {
-    if (type == F_UNK) return "F_UNK";
-    if (type == F_32) return "F_32";
-    if (type == F_16) return "F_16";
-    if (type == F_Q40) return "F_Q40";
-    if (type == F_Q80) return "F_Q80";
-    throw std::invalid_argument("Unknown float type");
-}
-
 NnSize getBytes(NnFloatType floatType, NnSize n) {
     if (floatType == F_32)
         return n * sizeof(float);

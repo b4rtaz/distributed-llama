@@ -46,15 +46,14 @@
 #pragma GCC diagnostic ignored "-Wpedantic"
 #pragma GCC diagnostic ignored "-Wignored-attributes"
 
-#include "sgemm.hpp"
-#include "../nn-core.hpp"
-#include "../nn-fp16.hpp"
 #include <cassert>
 #if defined(__ARM_NEON)
     #include <arm_neon.h>
 #elif defined(__AVX2__)
     #include <immintrin.h>
 #endif
+#include "sgemm.hpp"
+#include "../nn-quants.hpp"
 
 #ifdef _MSC_VER
 #define NOINLINE __declspec(noinline)
