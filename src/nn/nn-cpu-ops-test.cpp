@@ -172,7 +172,6 @@ void testMatmul_F32_Q40_F32(const NnSize m = 2) {
     std::vector<float> o(d);
     std::vector<float> oTemp(d);
     std::vector<NnBlockQ80> xQ80(n / Q80_BLOCK_SIZE);
-    std::vector<NnBlockQ80> oQ80(d / Q80_BLOCK_SIZE);
     std::vector<NnBlockQ40> wQ40((n * d) / Q40_BLOCK_SIZE);
 
     rand(x.data(), n, m);
@@ -183,10 +182,6 @@ void testMatmul_F32_Q40_F32(const NnSize m = 2) {
     matmul_F32_F32_F32(o.data(), x.data(), w.data(), n, d, 1, 0);
     matmul_F32_Q40_F32(oTemp.data(), x.data(), wQ40.data(), n, d, 1, 0);
     compare_F32("matmul_F32_Q40_F32", o.data(), oTemp.data(), d, 4.0f);
-
-    matmul_F32_Q40_Q80(oQ80.data(), x.data(), wQ40.data(), n, d, 1, 0);
-    dequantizeQ80toF32(oQ80.data(), oTemp.data(), d, 1, 0);
-    compare_F32("matmul_F32_Q40_Q80", o.data(), oTemp.data(), d, 4.0f);
 
     matmul_Q80_Q40_F32(oTemp.data(), xQ80.data(), wQ40.data(), n, d, 1, 0);
     compare_F32("matmul_Q80_Q40_F32", o.data(), oTemp.data(), d, 4.0f);

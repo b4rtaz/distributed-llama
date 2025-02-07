@@ -262,105 +262,128 @@ static void matmul_Q80_Q40_F32(float *output, const NnBlockQ80 *x, const NnBlock
     const unsigned int nBlocks = n / Q40_BLOCK_SIZE;
 
 #if defined(__ARM_NEON)
-    float32x4_t sumv0;
-    float32x4_t sumv1;
-    for (unsigned int d = start; d < end; d++) {
-        sumv0 = vmovq_n_f32(0);
-        sumv1 = vmovq_n_f32(0);
-        unsigned int j;
-        for (j = 0; j + 1 < nBlocks; j += 2) {
-            const NnBlockQ40 *x0 = &w[d * nBlocks + j];
-            const NnBlockQ40 *x1 = &w[d * nBlocks + j + 1];
-            const NnBlockQ80 *y0 = &x[j];
-            const NnBlockQ80 *y1 = &x[j + 1];
+    const uint8x16_t m4b = vdupq_n_u8(0x0F);
+    const int8x16_t s8b = vdupq_n_s8(0x8);
 
-            const uint8x16_t m4b = vdupq_n_u8(0x0F);
-            const int8x16_t  s8b = vdupq_n_s8(0x8);
+    for (unsigned int di = start; di < end; di++) {
+        float32x4_t sumv0 = vmovq_n_f32(0.0f);
+        float32x4_t sumv1 = vmovq_n_f32(0.0f);
+        float32x4_t sumv2 = vmovq_n_f32(0.0f);
+        float32x4_t sumv3 = vmovq_n_f32(0.0f);
 
-            const uint8x16_t v0_0 = vld1q_u8(x0->qs);
-            const uint8x16_t v0_1 = vld1q_u8(x1->qs);
-
-            // 4-bit -> 8-bit
-            const int8x16_t v0_0l = vreinterpretq_s8_u8(vandq_u8  (v0_0, m4b));
-            const int8x16_t v0_0h = vreinterpretq_s8_u8(vshrq_n_u8(v0_0, 4));
-            const int8x16_t v0_1l = vreinterpretq_s8_u8(vandq_u8  (v0_1, m4b));
-            const int8x16_t v0_1h = vreinterpretq_s8_u8(vshrq_n_u8(v0_1, 4));
-
-            // sub 8
-            const int8x16_t v0_0ls = vsubq_s8(v0_0l, s8b);
-            const int8x16_t v0_0hs = vsubq_s8(v0_0h, s8b);
-            const int8x16_t v0_1ls = vsubq_s8(v0_1l, s8b);
-            const int8x16_t v0_1hs = vsubq_s8(v0_1h, s8b);
-
-            // load y
-            const int8x16_t v1_0l = vld1q_s8(y0->qs);
-            const int8x16_t v1_0h = vld1q_s8(y0->qs + 16);
-            const int8x16_t v1_1l = vld1q_s8(y1->qs);
-            const int8x16_t v1_1h = vld1q_s8(y1->qs + 16);
-
+        unsigned int j = 0;
+        
 #if defined(__ARM_FEATURE_DOTPROD)
-            const int32x4_t p_0 = vdotq_s32(vdotq_s32(vdupq_n_s32(0), v0_0ls, v1_0l), v0_0hs, v1_0h);
-            const int32x4_t p_1 = vdotq_s32(vdotq_s32(vdupq_n_s32(0), v0_1ls, v1_1l), v0_1hs, v1_1h);
+        for (; j + 3 < nBlocks; j += 4) {
+            __builtin_prefetch(&w[di * nBlocks + j + 4]);
+            __builtin_prefetch(&x[j + 4]);
 
-            sumv0 = vmlaq_n_f32(sumv0, vcvtq_f32_s32(p_0), convertF16toF32(x0->d) * convertF16toF32(y0->d));
-            sumv1 = vmlaq_n_f32(sumv1, vcvtq_f32_s32(p_1), convertF16toF32(x1->d) * convertF16toF32(y1->d));
+            const NnBlockQ40 *w0 = &w[di * nBlocks + j];
+            const NnBlockQ40 *w1 = &w[di * nBlocks + j + 1];
+            const NnBlockQ40 *w2 = &w[di * nBlocks + j + 2];
+            const NnBlockQ40 *w3 = &w[di * nBlocks + j + 3];
+
+            const NnBlockQ80 *x0 = &x[j];
+            const NnBlockQ80 *x1 = &x[j + 1];
+            const NnBlockQ80 *x2 = &x[j + 2];
+            const NnBlockQ80 *x3 = &x[j + 3];
+
+            int8x16_t w0l = vsubq_s8(vreinterpretq_s8_u8(vandq_u8(vld1q_u8(w0->qs), m4b)), s8b);
+            int8x16_t w0h = vsubq_s8(vreinterpretq_s8_u8(vshrq_n_u8(vld1q_u8(w0->qs), 4)), s8b);
+            int8x16_t w1l = vsubq_s8(vreinterpretq_s8_u8(vandq_u8(vld1q_u8(w1->qs), m4b)), s8b);
+            int8x16_t w1h = vsubq_s8(vreinterpretq_s8_u8(vshrq_n_u8(vld1q_u8(w1->qs), 4)), s8b);
+            int8x16_t w2l = vsubq_s8(vreinterpretq_s8_u8(vandq_u8(vld1q_u8(w2->qs), m4b)), s8b);
+            int8x16_t w2h = vsubq_s8(vreinterpretq_s8_u8(vshrq_n_u8(vld1q_u8(w2->qs), 4)), s8b);
+            int8x16_t w3l = vsubq_s8(vreinterpretq_s8_u8(vandq_u8(vld1q_u8(w3->qs), m4b)), s8b);
+            int8x16_t w3h = vsubq_s8(vreinterpretq_s8_u8(vshrq_n_u8(vld1q_u8(w3->qs), 4)), s8b);
+
+            const int8x16_t x0l = vld1q_s8(x0->qs);
+            const int8x16_t x0h = vld1q_s8(x0->qs + 16);
+            const int8x16_t x1l = vld1q_s8(x1->qs);
+            const int8x16_t x1h = vld1q_s8(x1->qs + 16);
+            const int8x16_t x2l = vld1q_s8(x2->qs);
+            const int8x16_t x2h = vld1q_s8(x2->qs + 16);
+            const int8x16_t x3l = vld1q_s8(x3->qs);
+            const int8x16_t x3h = vld1q_s8(x3->qs + 16);
+
+            const int32x4_t p0 = vdotq_s32(vdotq_s32(vdupq_n_s32(0), w0l, x0l), w0h, x0h);
+            const int32x4_t p1 = vdotq_s32(vdotq_s32(vdupq_n_s32(0), w1l, x1l), w1h, x1h);
+            const int32x4_t p2 = vdotq_s32(vdotq_s32(vdupq_n_s32(0), w2l, x2l), w2h, x2h);
+            const int32x4_t p3 = vdotq_s32(vdotq_s32(vdupq_n_s32(0), w3l, x3l), w3h, x3h);
+
+            sumv0 = vmlaq_n_f32(sumv0, vcvtq_f32_s32(p0), convertF16toF32(w0->d) * convertF16toF32(x0->d));
+            sumv1 = vmlaq_n_f32(sumv1, vcvtq_f32_s32(p1), convertF16toF32(w1->d) * convertF16toF32(x1->d));
+            sumv2 = vmlaq_n_f32(sumv2, vcvtq_f32_s32(p2), convertF16toF32(w2->d) * convertF16toF32(x2->d));
+            sumv3 = vmlaq_n_f32(sumv3, vcvtq_f32_s32(p3), convertF16toF32(w3->d) * convertF16toF32(x3->d));
+        }
 #else
-            const int16x8_t pl0l = vmull_s8(vget_low_s8 (v0_0ls), vget_low_s8 (v1_0l));
-            const int16x8_t pl0h = vmull_s8(vget_high_s8(v0_0ls), vget_high_s8(v1_0l));
-            const int16x8_t ph0l = vmull_s8(vget_low_s8 (v0_0hs), vget_low_s8 (v1_0h));
-            const int16x8_t ph0h = vmull_s8(vget_high_s8(v0_0hs), vget_high_s8(v1_0h));
+        for (; j + 1 < nBlocks; j += 2) {
+            const NnBlockQ40 *w0 = &w[di * nBlocks + j];
+            const NnBlockQ40 *w1 = &w[di * nBlocks + j + 1];
+            const NnBlockQ80 *x0 = &x[j];
+            const NnBlockQ80 *x1 = &x[j + 1];
 
-            const int16x8_t pl1l = vmull_s8(vget_low_s8 (v0_1ls), vget_low_s8 (v1_1l));
-            const int16x8_t pl1h = vmull_s8(vget_high_s8(v0_1ls), vget_high_s8(v1_1l));
-            const int16x8_t ph1l = vmull_s8(vget_low_s8 (v0_1hs), vget_low_s8 (v1_1h));
-            const int16x8_t ph1h = vmull_s8(vget_high_s8(v0_1hs), vget_high_s8(v1_1h));
+            const uint8x16_t w0qs = vld1q_u8(w0->qs);
+            const uint8x16_t w1qs = vld1q_u8(w1->qs);
+            
+            int8x16_t w0l = vsubq_s8(vreinterpretq_s8_u8(vandq_u8(w0qs, m4b)), s8b);
+            int8x16_t w0h = vsubq_s8(vreinterpretq_s8_u8(vshrq_n_u8(w0qs, 4)), s8b);
+            int8x16_t w1l = vsubq_s8(vreinterpretq_s8_u8(vandq_u8(w1qs, m4b)), s8b);
+            int8x16_t w1h = vsubq_s8(vreinterpretq_s8_u8(vshrq_n_u8(w1qs, 4)), s8b);
+
+            const int8x16_t x0l = vld1q_s8(x0->qs);
+            const int8x16_t x0h = vld1q_s8(x0->qs + 16);
+            const int8x16_t x1l = vld1q_s8(x1->qs);
+            const int8x16_t x1h = vld1q_s8(x1->qs + 16);
+
+            const int16x8_t pl0l = vmull_s8(vget_low_s8(w0l), vget_low_s8(x0l));
+            const int16x8_t pl0h = vmull_s8(vget_high_s8(w0l), vget_high_s8(x0l));
+            const int16x8_t ph0l = vmull_s8(vget_low_s8(w0h), vget_low_s8(x0h));
+            const int16x8_t ph0h = vmull_s8(vget_high_s8(w0h), vget_high_s8(x0h));
+            
+            const int16x8_t pl1l = vmull_s8(vget_low_s8(w1l), vget_low_s8(x1l));
+            const int16x8_t pl1h = vmull_s8(vget_high_s8(w1l), vget_high_s8(x1l));
+            const int16x8_t ph1l = vmull_s8(vget_low_s8(w1h), vget_low_s8(x1h));
+            const int16x8_t ph1h = vmull_s8(vget_high_s8(w1h), vget_high_s8(x1h));
 
             const int32x4_t pl0 = vaddq_s32(vpaddlq_s16(pl0l), vpaddlq_s16(pl0h));
             const int32x4_t ph0 = vaddq_s32(vpaddlq_s16(ph0l), vpaddlq_s16(ph0h));
             const int32x4_t pl1 = vaddq_s32(vpaddlq_s16(pl1l), vpaddlq_s16(pl1h));
             const int32x4_t ph1 = vaddq_s32(vpaddlq_s16(ph1l), vpaddlq_s16(ph1h));
 
-            sumv0 = vmlaq_n_f32(sumv0, vcvtq_f32_s32(vaddq_s32(pl0, ph0)), convertF16toF32(x0->d) * convertF16toF32(y0->d));
-            sumv1 = vmlaq_n_f32(sumv1, vcvtq_f32_s32(vaddq_s32(pl1, ph1)), convertF16toF32(x1->d) * convertF16toF32(y1->d));
-#endif
+            sumv0 = vmlaq_n_f32(sumv0, vcvtq_f32_s32(vaddq_s32(pl0, ph0)), convertF16toF32(w0->d) * convertF16toF32(x0->d));
+            sumv1 = vmlaq_n_f32(sumv1, vcvtq_f32_s32(vaddq_s32(pl1, ph1)), convertF16toF32(w1->d) * convertF16toF32(x1->d));
         }
-        if (j < nBlocks) {
-            const NnBlockQ40 *x0 = &w[d * nBlocks + j];
-            const NnBlockQ80 *y0 = &x[j];
+#endif
 
-            const uint8x16_t m4b = vdupq_n_u8(0x0F);
-            const int8x16_t s8b = vdupq_n_s8(0x8);
+        for (; j < nBlocks; j++) {
+            const NnBlockQ40 *wb = &w[di * nBlocks + j];
+            const NnBlockQ80 *xb = &x[j];
 
-            const uint8x16_t v0_0 = vld1q_u8(x0->qs);
+            const uint8x16_t wqs = vld1q_u8(wb->qs);
+            const int8x16_t wl = vsubq_s8(vreinterpretq_s8_u8(vandq_u8(wqs, m4b)), s8b);
+            const int8x16_t wh = vsubq_s8(vreinterpretq_s8_u8(vshrq_n_u8(wqs, 4)), s8b);
 
-            // 4-bit -> 8-bit
-            const int8x16_t v0_0l = vreinterpretq_s8_u8(vandq_u8(v0_0, m4b));
-            const int8x16_t v0_0h = vreinterpretq_s8_u8(vshrq_n_u8(v0_0, 4));
-
-            // sub 8
-            const int8x16_t v0_0ls = vsubq_s8(v0_0l, s8b);
-            const int8x16_t v0_0hs = vsubq_s8(v0_0h, s8b);
-
-            // load y
-            const int8x16_t v1_0l = vld1q_s8(y0->qs);
-            const int8x16_t v1_0h = vld1q_s8(y0->qs + 16);
+            const int8x16_t xl = vld1q_s8(xb->qs);
+            const int8x16_t xh = vld1q_s8(xb->qs + 16);
 
 #if defined(__ARM_FEATURE_DOTPROD)
-            const int32x4_t p_0 = vdotq_s32(vdotq_s32(vdupq_n_s32(0), v0_0ls, v1_0l), v0_0hs, v1_0h);
-            sumv0 = vmlaq_n_f32(sumv0, vcvtq_f32_s32(p_0), convertF16toF32(x0->d) * convertF16toF32(y0->d));
+            const int32x4_t p = vdotq_s32(vdotq_s32(vdupq_n_s32(0), wl, xl), wh, xh);
 #else
-            const int16x8_t pl0l = vmull_s8(vget_low_s8(v0_0ls), vget_low_s8(v1_0l));
-            const int16x8_t pl0h = vmull_s8(vget_high_s8(v0_0ls), vget_high_s8(v1_0l));
-            const int16x8_t ph0l = vmull_s8(vget_low_s8(v0_0hs), vget_low_s8(v1_0h));
-            const int16x8_t ph0h = vmull_s8(vget_high_s8(v0_0hs), vget_high_s8(v1_0h));
-
-            const int32x4_t pl0 = vaddq_s32(vpaddlq_s16(pl0l), vpaddlq_s16(pl0h));
-            const int32x4_t ph0 = vaddq_s32(vpaddlq_s16(ph0l), vpaddlq_s16(ph0h));
-
-            sumv0 = vmlaq_n_f32(sumv0, vcvtq_f32_s32(vaddq_s32(pl0, ph0)), convertF16toF32(x0->d) * convertF16toF32(y0->d));
+            const int16x8_t pll = vmull_s8(vget_low_s8(wl), vget_low_s8(xl));
+            const int16x8_t plh = vmull_s8(vget_high_s8(wl), vget_high_s8(xl));
+            const int16x8_t phl = vmull_s8(vget_low_s8(wh), vget_low_s8(xh));
+            const int16x8_t phh = vmull_s8(vget_high_s8(wh), vget_high_s8(xh));
+            
+            const int32x4_t pl = vaddq_s32(vpaddlq_s16(pll), vpaddlq_s16(plh));
+            const int32x4_t ph = vaddq_s32(vpaddlq_s16(phl), vpaddlq_s16(phh));
+            const int32x4_t p = vaddq_s32(pl, ph);
 #endif
+            const float s = convertF16toF32(wb->d) * convertF16toF32(xb->d);
+            sumv0 = vmlaq_n_f32(sumv0, vcvtq_f32_s32(p), s);
         }
-        output[d] = vaddvq_f32(sumv0) + vaddvq_f32(sumv1);
+
+        output[di] = vaddvq_f32(sumv0) + vaddvq_f32(sumv1) + vaddvq_f32(sumv2) + vaddvq_f32(sumv3);
     }
 #else
     for (NnSize i = start; i < end; i++) {
@@ -378,115 +401,6 @@ static void matmul_Q80_Q40_F32(float *output, const NnBlockQ80 *x, const NnBlock
             }
         }
         output[i] = sum;
-    }
-#endif
-}
-
-static void matmul_F32_Q40_Q80(NnBlockQ80 *output, const float *x, const NnBlockQ40 *w, const NnSize n, const NnSize d, const NnSize nThreads, const NnSize threadIndex) {
-    assert(n % Q40_BLOCK_SIZE == 0);
-    assert(d % Q80_BLOCK_SIZE == 0);
-    const NnSize nBlocks = n / Q40_BLOCK_SIZE;
-    const NnSize dBlocks = d / Q80_BLOCK_SIZE;
-    SPLIT_THREADS(start, end, dBlocks, nThreads, threadIndex);
-
-    float temp[Q80_BLOCK_SIZE] __attribute__((aligned(16)));
-#if defined(__ARM_NEON)
-    for (NnSize i = start; i < end; i++) {
-        NnBlockQ80 *o = &output[i];
-        float32x4_t v_amax = vdupq_n_f32(0.0f);
-
-        for (NnSize j = 0; j < Q80_BLOCK_SIZE; j++) {
-            float sum = 0.0f;
-            for (NnSize k = 0; k < nBlocks; k++) {
-                const NnBlockQ40 *b = &w[(i * Q80_BLOCK_SIZE + j) * nBlocks + k];
-                const float scale = convertF16toF32(b->d);
-                float sum_v = 0.0f;
-
-                for (NnSize l_start = 0; l_start < Q40_BLOCK_SIZE / 2; l_start += 8) {
-                    uint8x8_t qs = vld1_u8(b->qs + l_start);
-
-                    int8x8_t w0 = vsub_s8(vreinterpret_s8_u8(vand_u8(qs, vdup_n_u8(0x0F))), vdup_n_s8(8));
-                    int8x8_t w1 = vsub_s8(vreinterpret_s8_u8(vshr_n_u8(qs, 4)), vdup_n_s8(8));
-
-                    int16x8_t w0_16 = vmovl_s8(w0);
-                    float32x4_t w0_l = vcvtq_f32_s32(vmovl_s16(vget_low_s16(w0_16)));
-                    float32x4_t w0_h = vcvtq_f32_s32(vmovl_s16(vget_high_s16(w0_16)));
-
-                    int16x8_t w1_16 = vmovl_s8(w1);
-                    float32x4_t w1_l = vcvtq_f32_s32(vmovl_s16(vget_low_s16(w1_16)));
-                    float32x4_t w1_h = vcvtq_f32_s32(vmovl_s16(vget_high_s16(w1_16)));
-
-                    const float* x_base = x + k * Q40_BLOCK_SIZE + l_start;
-                    float32x4_t x0 = vld1q_f32(x_base);
-                    float32x4_t x1 = vld1q_f32(x_base + 4);
-                    float32x4_t x0w = vld1q_f32(x_base + 16);
-                    float32x4_t x1w = vld1q_f32(x_base + 20);
-
-                    float32x4_t p0 = vmulq_f32(w0_l, x0);
-                    p0 = vmlaq_f32(p0, w1_l, x0w);
-                    float32x4_t p1 = vmulq_f32(w0_h, x1);
-                    p1 = vmlaq_f32(p1, w1_h, x1w);
-
-                    sum_v += vaddvq_f32(p0) + vaddvq_f32(p1);
-                }
-                sum += sum_v * scale;
-            }
-            temp[j] = sum;
-        }
-
-        for (int j = 0; j < Q80_BLOCK_SIZE; j += 4) {
-            float32x4_t vec = vabsq_f32(vld1q_f32(temp + j));
-            v_amax = vmaxq_f32(v_amax, vec);
-        }
-        float amax = vmaxvq_f32(v_amax);
-
-        const float oD = amax / 127.0f;
-        const float id = oD != 0.0f ? 1.0f / oD : 0.0f;
-        o->d = convertF32ToF16(oD);
-        
-        const float32x4_t vid = vdupq_n_f32(id);
-        for (int j = 0; j < Q80_BLOCK_SIZE; j += 8) {
-            float32x4_t v0 = vmulq_f32(vld1q_f32(temp + j), vid);
-            float32x4_t v1 = vmulq_f32(vld1q_f32(temp + j + 4), vid);
-            
-            int32x4_t i0 = vcvtnq_s32_f32(v0);
-            int32x4_t i1 = vcvtnq_s32_f32(v1);
-            
-            int16x4_t s0 = vqmovn_s32(i0);
-            int16x4_t s1 = vqmovn_s32(i1);
-            int8x8_t res = vqmovn_s16(vcombine_s16(s0, s1));
-            
-            vst1_s8(o->qs + j, res);
-        }
-    }
-#else
-    for (NnSize i = start; i < end; i++) {
-        NnBlockQ80 *o = &output[i];
-        float amax = 0.0f;
-
-        for (NnSize j = 0; j < Q80_BLOCK_SIZE; j++) {
-            float sum = 0.0f;
-            for (NnSize k = 0; k < nBlocks; k++) {
-                const NnBlockQ40 *b = &w[(i * Q80_BLOCK_SIZE + j) * nBlocks + k];
-                float v = 0.0f;
-                for (NnSize l = 0; l < Q40_BLOCK_SIZE / 2; l++) {
-                    const int w0 = (b->qs[l] & 0x0F) - 8;
-                    const int w1 = (b->qs[l] >> 4) - 8;
-                    v += w0 * x[k * Q40_BLOCK_SIZE + l];
-                    v += w1 * x[k * Q40_BLOCK_SIZE + l + Q40_BLOCK_SIZE / 2];
-                }
-                sum += v * convertF16toF32(b->d);
-            }
-            const float sumAbs = fabsf(sum);
-            amax = amax > sumAbs ? amax : sumAbs;
-            temp[j] = sum;
-        }
-
-        const float oD = amax / ((1 << 7) - 1);
-        const float id = oD ? 1.0f / oD : 0.0f;
-        o->d = convertF32ToF16(oD);
-        for (int j = 0; j < Q80_BLOCK_SIZE; j++)
-            o->qs[j] = roundf(temp[j] * id);
     }
 #endif
 }
@@ -987,23 +901,6 @@ static void matmulForward_Q80_Q40_F32(NnSize nThreads, NnSize threadIndex, NnSiz
     }
 }
 
-static void matmulForward_F32_Q40_Q80(NnSize nThreads, NnSize threadIndex, NnSize batchSize, NnCpuOpContext *context) {
-    const NnBlockQ40 *weight = (NnBlockQ40 *)context->weight;
-    for (NnSize batchIndex = 0; batchIndex < batchSize; batchIndex++) {
-        float *input = (float *)context->input[batchIndex];
-        NnBlockQ80 *output = (NnBlockQ80 *)context->output[batchIndex];
-        DEBUG_VECTOR(context, "input", input);
-        matmul_F32_Q40_Q80(
-            output,
-            input,
-            weight,
-            context->weightSize.y,
-            context->weightSize.x,
-            nThreads,
-            threadIndex);
-    }
-}
-
 static void siluForward_F32_F32(NnSize nThreads, NnSize threadIndex, NnSize batchSize, NnCpuOpContext *context) {
     ASSERT_EQ(context->weightSize.nBytes, 0);
     ASSERT_EQ(context->inputSize.x, context->outputSize.x);
@@ -1048,17 +945,17 @@ static void initRopeLlama31Forward(NnCpuOpContext *context) {
     }
 }
 
-static inline float ropeLlama31Scale(float freq, const NnRopeLlama31OpConfig *config) {
-    float waveLen = 2.0f * M_PI * freq;
-    float highFreqWavelen = config->ropeScalingOrigMaxSeqLen / config->ropeScalingHighFreqFactory;
+static inline float ropeLlama31Scale(const float freq, const NnRopeLlama31OpConfig *config) {
+    const float waveLen = 2.0f * M_PI * freq;
+    const float highFreqWavelen = config->ropeScalingOrigMaxSeqLen / config->ropeScalingHighFreqFactory;
     if (waveLen < highFreqWavelen) {
         return freq;
     }
-    float lowFreqWavelen = config->ropeScalingOrigMaxSeqLen / config->ropeScalingLowFreqFactor;
+    const float lowFreqWavelen = config->ropeScalingOrigMaxSeqLen / config->ropeScalingLowFreqFactor;
     if (waveLen > lowFreqWavelen) {
         return freq / config->ropeScalingFactor;
     }
-    float smooth = (config->ropeScalingOrigMaxSeqLen / waveLen - config->ropeScalingLowFreqFactor) / (config->ropeScalingHighFreqFactory - config->ropeScalingLowFreqFactor);
+    const float smooth = (config->ropeScalingOrigMaxSeqLen / waveLen - config->ropeScalingLowFreqFactor) / (config->ropeScalingHighFreqFactory - config->ropeScalingLowFreqFactor);
     return (1 - smooth) * freq / config->ropeScalingFactor + smooth * freq;
 }
 
@@ -1252,7 +1149,6 @@ NnCpuOpForward getCpuOpForward(NnOpCode code, NnOpQuantType quantType) {
         if (quantType == F32_F32_F32) return matmulForward_F32_F32_F32;
         if (quantType == F32_Q40_F32) return matmulForward_F32_Q40_F32;
         if (quantType == Q80_Q40_F32) return matmulForward_Q80_Q40_F32;
-        if (quantType == F32_Q40_Q80) return matmulForward_F32_Q40_Q80;
     }
     if (code == OP_ROPE_LLAMA_3_1) {
         if (quantType == F32_F32_F32) return ropeLlama31Forward_F32_F32;
