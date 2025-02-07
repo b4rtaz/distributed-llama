@@ -30,7 +30,7 @@
 #endif
 
 #if defined(__AVX2__)
-static inline float hsum_float_8(const __m256 x) {
+static inline float hsum_F8(const __m256 x) {
     __m128 res = _mm256_extractf128_ps(x, 1);
     res = _mm_add_ps(res, _mm256_castps256_ps128(x));
     res = _mm_add_ps(res, _mm_movehl_ps(res, res));
@@ -93,7 +93,7 @@ static float rms_F32(const float *x, const unsigned int size, const float epsilo
         a = _mm256_loadu_ps(&x[j]);
         u = _mm256_fmadd_ps(a, a, u);
     }
-    ss = hsum_float_8(u);
+    ss = hsum_F8(u);
 #else
     ss = 0;
     for (unsigned int j = 0; j < size; j++) {
@@ -169,7 +169,7 @@ static void matmul_F32_F32_F32(float *output, const float *x, const float *w, co
             b0 = _mm256_loadu_ps(&w[i * n + j]);
             u = _mm256_fmadd_ps(a0, b0, u);
         }
-        output[i] = hsum_float_8(u);
+        output[i] = hsum_F8(u);
     }
 #else
     for (i = start; i < end; i++) {
@@ -494,7 +494,7 @@ static void matmul_F32_Q40_Q80(NnBlockQ80 *output, const float *x, const NnBlock
 #define SQRT_2_OVER_PI 0.79788456080286535587989211986876f
 #define GELU_COEF_A 0.044715f
 
-static void geluF32(float *output, const unsigned int n, const NnSize nThreads, const NnSize threadIndex) {
+static void gelu_F32(float *output, const unsigned int n, const NnSize nThreads, const NnSize threadIndex) {
     SPLIT_THREADS(start, end, n, nThreads, threadIndex);
     for (unsigned int i = start; i < end; i++) {
         float x = output[i];
@@ -502,7 +502,7 @@ static void geluF32(float *output, const unsigned int n, const NnSize nThreads, 
     }
 }
 
-static void siluF32(float *output, const unsigned int n, const NnSize nThreads, const NnSize threadIndex) {
+static void silu_F32(float *output, const unsigned int n, const NnSize nThreads, const NnSize threadIndex) {
     SPLIT_THREADS(start, end, n, nThreads, threadIndex);
     unsigned int i = start;
 #if defined(__ARM_NEON)
@@ -599,7 +599,7 @@ static void add_Q80_F32(float *y, const NnBlockQ80 *x, const NnSize n, const NnS
 #endif
 }
 
-static void softmaxF32(float *x, const unsigned int size) {
+static void softmax_F32(float *x, const unsigned int size) {
     if (size == 0)
         return;
     float maxVal;
@@ -642,7 +642,7 @@ static void softmaxF32(float *x, const unsigned int size) {
     }
 }
 
-static float dotProductF32(const float *a, const float *b, const unsigned int size) {
+static float dotProduct_F32(const float *a, const float *b, const unsigned int size) {
     #if defined(__ARM_NEON)
         assert(size % 4 == 0);
         float32x4_t fa;
@@ -663,7 +663,7 @@ static float dotProductF32(const float *a, const float *b, const unsigned int si
             b0 = _mm256_loadu_ps(&b[i]);
             u = _mm256_fmadd_ps(a0, b0, u);
         }
-        return hsum_float_8(u);
+        return hsum_F8(u);
     #else
         float sum = 0.0f;
         for (unsigned int i = 0; i < size; i++) {
@@ -673,7 +673,7 @@ static float dotProductF32(const float *a, const float *b, const unsigned int si
     #endif
 }
 
-static void multiheadAtt(
+static void multiheadAtt_F32(
     float *x, float *q, float *att, float *keyCache, float *valueCache,
     const unsigned pos, const unsigned int nHeads, const unsigned int nHeads0, const unsigned int nKvHeads, const unsigned int kvDim0, const unsigned int headSize, const unsigned int seqLen,
     const NnSize nThreads, const NnSize threadIndex) 
@@ -688,11 +688,11 @@ static void multiheadAtt(
 
         for (unsigned int t = 0; t <= pos; t++) {
             float *k = keyCache + t * kvDim0 + (h0 / kvMul) * headSize;
-            float score = dotProductF32(hQ, k, headSize) / headSizeRoot;
+            float score = dotProduct_F32(hQ, k, headSize) / headSizeRoot;
             hAtt[t] = score;
         }
 
-        softmaxF32(hAtt, pos + 1);
+        softmax_F32(hAtt, pos + 1);
 
         float *hX = x + h0 * headSize;
         std::memset(hX, 0, headSize * sizeof(float));
@@ -745,7 +745,7 @@ static void mul_Q80_F32(float *output, const NnBlockQ80 *x, const NnSize n, cons
     }
 }
 
-static void copy(NnByte *output, const NnByte *x, NnSize size, const NnSize nThreads, const NnSize threadIndex) {
+static void copy_UNK(NnByte *output, const NnByte *x, NnSize size, const NnSize nThreads, const NnSize threadIndex) {
     SPLIT_THREADS(start, end, size, nThreads, threadIndex);
     NnSize s = end - start;
     if (s != 0)
@@ -1011,7 +1011,7 @@ static void siluForward_F32_F32(NnSize nThreads, NnSize threadIndex, NnSize batc
 
     for (NnSize batchIndex = 0; batchIndex < batchSize; batchIndex++) {
         float *output = (float *)context->output[batchIndex];
-        siluF32(output, context->outputSize.x, nThreads, threadIndex);
+        silu_F32(output, context->outputSize.x, nThreads, threadIndex);
     }
 }
 
@@ -1022,7 +1022,7 @@ static void geluForward_F32_F32_F32(NnSize nThreads, NnSize threadIndex, NnSize 
 
     for (NnSize batchIndex = 0; batchIndex < batchSize; batchIndex++) {
         float *output = (float *)context->output[batchIndex];
-        geluF32(output, context->outputSize.x, nThreads, threadIndex);
+        gelu_F32(output, context->outputSize.x, nThreads, threadIndex);
     }
 }
 
@@ -1098,7 +1098,7 @@ static void multiHeadAttForward_F32_F32(NnSize nThreads, NnSize threadIndex, NnS
         DEBUG_VECTOR(context, "input", i);
         DEBUG_VECTOR(context, "q", q);
 
-        multiheadAtt(i, q, att, keyCache, valueCache, pos,
+        multiheadAtt_F32(i, q, att, keyCache, valueCache, pos,
             config->multiHeadAttSlice.nHeads, config->multiHeadAttSlice.nHeads0,
             config->nKvHeads, config->kvCacheSlice.kvDim0, config->headSize, config->seqLen, nThreads, threadIndex);
     }
@@ -1143,7 +1143,7 @@ static void castForward_UNK(NnSize nThreads, NnSize threadIndex, NnSize batchSiz
     const NnSize rowBytes = context->outputSize.nBytes / context->outputSize.y;
 
     for (NnSize batchIndex = 0; batchIndex < batchSize; batchIndex++) {
-        copy(
+        copy_UNK(
             context->output[batchIndex],
             context->input[batchIndex],
             rowBytes,
