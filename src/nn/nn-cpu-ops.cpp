@@ -1026,7 +1026,29 @@ static void geluForward_F32_F32_F32(NnSize nThreads, NnSize threadIndex, NnSize 
     }
 }
 
-static float ropeLlama31Scale(float freq, const NnRopeLlama31OpConfig *config) {
+static void initRopeLlama31Forward(NnCpuOpContext *context) {
+    const NnRopeLlama31OpConfig *config = (NnRopeLlama31OpConfig *)context->opConfig;
+    if (context->bufferFlags[config->ropeCacheBufferIndex] == 1)
+        return;
+    context->bufferFlags[config->ropeCacheBufferIndex] = 1;
+
+    const NnRopeSlice *slice = &config->slice;
+    float *cache = (float *)context->buffers[config->ropeCacheBufferIndex];
+
+    for (NnSize pos = 0; pos < slice->seqLen; pos++) {
+        for (NnSize i = slice->kvDimStart; i < slice->qDimEnd; i += 2) {
+            const NnSize headDim = i % slice->headSize;
+            const float freq = 1.0f / powf(slice->ropeTheta, headDim / (float)slice->headSize);
+            const float val = pos * freq;
+            const float fcr = cosf(val);
+            const float fci = sinf(val);
+            cache[pos * slice->sliceDim + (i - slice->kvDimStart)] = fcr;
+            cache[pos * slice->sliceDim + (i - slice->kvDimStart) + 1] = fci;
+        }
+    }
+}
+
+static inline float ropeLlama31Scale(float freq, const NnRopeLlama31OpConfig *config) {
     float waveLen = 2.0f * M_PI * freq;
     float highFreqWavelen = config->ropeScalingOrigMaxSeqLen / config->ropeScalingHighFreqFactory;
     if (waveLen < highFreqWavelen) {
@@ -1044,27 +1066,24 @@ static void ropeLlama31Forward_F32_F32(NnSize nThreads, NnSize threadIndex, NnSi
     const NnRopeLlama31OpConfig *config = (NnRopeLlama31OpConfig *)context->opConfig;
     const NnRopeSlice *slice = &config->slice;
     const float *positions = (float *)context->pipes[config->positionPipeIndex];
+    const float *cache = (float *)context->buffers[config->ropeCacheBufferIndex];
 
-    const unsigned int dim0Half = (config->isQ ? slice->qDim0 : slice->kvDim0) / 2;
-    const unsigned int shift = config->isQ ? slice->qShift : 0;
+    const NnSize dim0Half = (config->isQ ? slice->qDim0 : slice->kvDim0) / 2;
+    const NnSize shift = config->isQ ? slice->qShift : 0;
     SPLIT_THREADS(s, e, dim0Half, nThreads, threadIndex);
-    const unsigned int iStart = s * 2;
-    const unsigned int iEnd = e * 2;
+    const NnSize iStart = s * 2;
+    const NnSize iEnd = e * 2;
 
     for (NnSize batchIndex = 0; batchIndex < batchSize; batchIndex++) {
         float *x = (float *)context->input[batchIndex];
-        NnSize pos = (NnSize)positions[batchIndex];
+        const NnSize pos = (NnSize)positions[batchIndex];
+        const float *c = &cache[pos * slice->sliceDim + shift];
 
-        for (unsigned int i = iStart; i < iEnd; i += 2) {
-            const unsigned int headDim = i % slice->headSize;
-            const float freq = 1.0f / powf(slice->ropeTheta, headDim / (float)slice->headSize);
-            const float val = pos * freq;
-            const float fcr = cosf(val);
-            const float fci = sinf(val);
-    
-            float v0 = x[i];
-            float v1 = x[i + 1];
-    
+        for (NnSize i = iStart; i < iEnd; i += 2) {
+            const float fcr = c[i];
+            const float fci = c[i + 1];
+            const float v0 = x[i];
+            const float v1 = x[i + 1];
             x[i] = ropeLlama31Scale(v0 * fcr - v1 * fci, config);
             x[i + 1] = ropeLlama31Scale(v0 * fci + v1 * fcr, config);
         }
@@ -1204,6 +1223,8 @@ void printCpuInstructionSet() {
 }
 
 NnCpuOpForwardInit getCpuOpForwardInit(NnOpCode code, NnOpQuantType quantType) {
+    if (code == OP_ROPE_LLAMA_3_1)
+        return initRopeLlama31Forward;
     if (code == OP_MATMUL)
         return initMatmulForward;
     if (code == OP_CAST)

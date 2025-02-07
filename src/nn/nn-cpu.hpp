@@ -18,6 +18,7 @@ public:
     NnNodeConfig *nodeConfig;
     NnNetExecution *netExecution;
     NnByte **buffers;
+    NnByte *bufferFlags;
     std::vector<NnCpuDynamicPointer> dynamicPointers;
     NnCpuDevice(NnNetConfig *netConfig, NnNodeConfig *nodeConfig, NnNetExecution *netExecution);
     ~NnCpuDevice();

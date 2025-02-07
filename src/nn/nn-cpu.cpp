@@ -52,12 +52,16 @@ NnCpuDevice::NnCpuDevice(NnNetConfig *netConfig, NnNodeConfig *nodeConfig, NnNet
         NnByte *buffer = allocAlignedBuffer(config->size.nBytes);
         buffers[bufferIndex] = buffer;
     }
+
+    bufferFlags = new NnByte[nodeConfig->nBuffers];
+    std::memset(bufferFlags, 0, nodeConfig->nBuffers * sizeof(NnByte));
 }
 
 NnCpuDevice::~NnCpuDevice() {
     for (NnSize bufferIndex = 0; bufferIndex < nodeConfig->nBuffers; bufferIndex++)
         releaseAlignedBuffer(buffers[bufferIndex]);
     delete[] buffers;
+    delete[] bufferFlags;
 }
 
 NnSize NnCpuDevice::maxNThreads() {
@@ -110,9 +114,6 @@ NnDeviceSegment *NnCpuDevice::createSegment(NnSize segmentIndex) {
     NnCpuOpForward *opForward = new NnCpuOpForward[segmentConfig->nOps];
     NnCpuOpContext *opContexts = new NnCpuOpContext[segmentConfig->nOps];
 
-    NnByte *bufferFlags = new NnByte[nodeConfig->nBuffers];
-    std::memset(bufferFlags, 0, nodeConfig->nBuffers * sizeof(NnByte));
-
     for (NnSize opIndex = 0; opIndex < segmentConfig->nOps; opIndex++) {
         NnOpConfig *opConfig = &segmentConfig->ops[opIndex];
         NnCpuOpContext *opContext = &opContexts[opIndex];
@@ -148,8 +149,6 @@ NnDeviceSegment *NnCpuDevice::createSegment(NnSize segmentIndex) {
 }
 
 NnCpuDeviceSegment::~NnCpuDeviceSegment() {
-    delete[] opContexts[0].bufferFlags;
-
     for (NnSize opIndex = 0; opIndex < nOps; opIndex++) {
         NnCpuOpContext *context = &opContexts[opIndex];
         if (opIndex == 0) {
