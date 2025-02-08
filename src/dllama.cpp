@@ -25,7 +25,11 @@ static void inference(AppInferenceContext *context) {
         throw std::runtime_error("The number of input tokens is greater than the number of steps");
 
     Timer evalTimer;
+    size_t sentBytes;
+    size_t recvBytes;
+    printf("%s\n", context->args->prompt);
     for (;;) {
+        Timer batchTimer;
         long remainingTokens = nInputTokens - 1 - (long)pos;
         if (remainingTokens <= 0)
             break;
@@ -42,10 +46,16 @@ static void inference(AppInferenceContext *context) {
 
         pos += batchSize;
         token = inputTokens[pos + 1];
+
+        context->network->getStats(&sentBytes, &recvBytes);
+        printf("🔷️ E%5u ms S%6zu kB R%6zu kB (%d tokens)\n",
+            batchTimer.elapsed(),
+            sentBytes / 1024,
+            recvBytes / 1024,
+            batchSize);
     }
     NnSize evalTime = evalTimer.elapsed();
 
-    printf("🔷️ E %4u ms %s\n", evalTime, context->args->prompt);
     fflush(stdout);
 
     context->inference->setBatchSize(1);
@@ -63,7 +73,13 @@ static void inference(AppInferenceContext *context) {
         char* piece = context->tokenizer->decode(prevToken, token);
 
         if (isSafePiece(piece)) {
-            printf("🔶 P %4u ms %s\n", tokenTimer.elapsed(), piece);
+            context->network->getStats(&sentBytes, &recvBytes);
+        
+            printf("🔶 P%5u ms S%6zu kB R%6zu kB %s\n",
+                tokenTimer.elapsed(),
+                sentBytes / 1024,
+                recvBytes / 1024,
+                piece);
             fflush(stdout);
         }
     }
@@ -73,14 +89,14 @@ static void inference(AppInferenceContext *context) {
     NnSize nPredTokens = pos - nEvalTokens;
     printf("\n");
     printf("Evaluation\n");
-    printf("|   nBatches: %d\n", context->args->nBatches);
-    printf("|    nTokens: %d\n", nEvalTokens);
-    printf("|   tokens/s: %3.2f (%3.2f ms / 1 token)\n",
+    printf("   nBatches: %d\n", context->args->nBatches);
+    printf("    nTokens: %d\n", nEvalTokens);
+    printf("   tokens/s: %3.2f (%3.2f ms/tok)\n",
         nEvalTokens / (evalTime / 1000.0),
         evalTime / ((float) nEvalTokens));
     printf("Prediction\n");
-    printf("|    nTokens: %d\n", nPredTokens);
-    printf("|   tokens/s: %3.2f (%3.2f ms / 1 token)\n",
+    printf("    nTokens: %d\n", nPredTokens);
+    printf("   tokens/s: %3.2f (%3.2f ms/tok)\n",
         nPredTokens / (predTime / 1000.0),
         predTime / ((float) nPredTokens));
 }

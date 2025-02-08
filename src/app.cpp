@@ -180,7 +180,7 @@ bool WorkerLlmInference::tryReadControlPacket() {
     if (!network->tryReadWithMaxAttempts(ROOT_SOCKET_INDEX, &controlPacket, sizeof(LlmControlPacket), 1000))
         return false;
     if (controlPacket.batchSize == 0) {
-        printf("🛑 finish signal\n");
+        printf("🛑 Stop signal\n");
         isFinished = true;
         return true;
     }
@@ -199,13 +199,14 @@ void runInferenceApp(AppCliArgs *args, void (*handler)(AppInferenceContext *cont
         throw std::runtime_error("This version does not support more nodes than the number of KV heads in the model");
     if (header.weightType == F_Q40 && header.syncType != F_Q80)
         throw std::runtime_error("This version supports only Q40 weights with Q80 sync type");
-    printLlmHeader(&header);
 
     Tokenizer tokenizer(args->tokenizerPath, header.vocabSize);
     Sampler sampler(header.vocabSize, args->temperature, args->topp, args->seed);
     LlmNet net = buildLlmNet(&header, nNodes, args->nBatches);
-
     NnNodeConfig *rootNodeConfig = &net.nodeConfigs[0];
+    printLlmHeader(&header);
+    printNodeRequiredMemory(&net.netConfig, rootNodeConfig);
+
     NnNetExecution execution(args->nThreads, &net.netConfig);
 
     std::unique_ptr<NnNodeSynchronizer> synchronizer(nullptr);
@@ -231,12 +232,15 @@ void runInferenceApp(AppCliArgs *args, void (*handler)(AppInferenceContext *cont
 
     RootLlmInference inference(&net, &cpu, &execution, &executor, network);
 
+    network->resetStats();
+
     AppInferenceContext context;
     context.args = args;
     context.header = &header;
     context.inference = &inference;
     context.sampler = &sampler;
     context.tokenizer = &tokenizer;
+    context.network = network;
 
     handler(&context);
 
@@ -252,6 +256,7 @@ void runWorkerApp(AppCliArgs *args) {
         NnWorkerConfigReader configReader(network);
         NnNetConfig netConfig = configReader.readNet();
         NnNodeConfig nodeConfig = configReader.readNode();
+        printNodeRequiredMemory(&netConfig, &nodeConfig);
 
         NnNetExecution execution(args->nThreads, &netConfig);
 

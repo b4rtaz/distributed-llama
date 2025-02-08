@@ -254,6 +254,8 @@ bool hasPointerContinuousMemory(NnPointerConfig *config);
 void releaseNetConfig(NnNetConfig *netConfig);
 void releaseNodeConfig(NnNodeConfig *nodeConfig);
 
+void printNodeRequiredMemory(NnNetConfig *netConfig, NnNodeConfig *nodeConfig);
+
 // slicers
 
 NnKvCacheSlice sliceKvCache(NnSize kvDim, NnSize seqLen, NnSize nNodes);

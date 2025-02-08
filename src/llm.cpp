@@ -101,21 +101,21 @@ LlmHeader loadLlmHeader(const char *path, const NnSize maxSeqLen, NnFloatType sy
 }
 
 void printLlmHeader(LlmHeader *header) {
-    printf("💡 %16s: %s\n", "Arch", archTypeToString(header->archType));
-    printf("💡 %16s: %s\n", "HiddenAct", hiddenActToString(header->hiddenAct));
-    printf("💡 %16s: %s\n", "RopeType", ropeTypeToString(header->ropeType));
-    printf("💡 %16s: %u\n", "Dim", header->dim);
-    printf("💡 %16s: %u\n", "HiddenDim", header->hiddenDim);
-    printf("💡 %16s: %u\n", "VocabSize", header->vocabSize);
-    printf("💡 %16s: %u\n", "nLayers", header->nLayers);
-    printf("💡 %16s: %u\n", "nHeads", header->nHeads);
-    printf("💡 %16s: %u\n", "nKvHeads", header->nKvHeads);
+    printf("💡 Arch: %s\n", archTypeToString(header->archType));
+    printf("💡 HiddenAct: %s\n", hiddenActToString(header->hiddenAct));
+    printf("💡 RopeType: %s\n", ropeTypeToString(header->ropeType));
+    printf("💡 Dim: %u\n", header->dim);
+    printf("💡 HiddenDim: %u\n", header->hiddenDim);
+    printf("💡 VocabSize: %u\n", header->vocabSize);
+    printf("💡 nLayers: %u\n", header->nLayers);
+    printf("💡 nHeads: %u\n", header->nHeads);
+    printf("💡 nKvHeads: %u\n", header->nKvHeads);
     if (header->seqLen != header->origSeqLen) {
-        printf("💡 %16s: %u\n", "OrigSeqLen", header->origSeqLen);
+        printf("💡 OrigSeqLen: %u\n", header->origSeqLen);
     }
-    printf("💡 %16s: %u\n", "SeqLen", header->seqLen);
-    printf("💡 %16s: %f\n", "NormEpsilon", header->normEpsilon);
-    printf("💡 %16s: %.0f\n", "RopeTheta", header->ropeTheta);
+    printf("💡 SeqLen: %u\n", header->seqLen);
+    printf("💡 NormEpsilon: %f\n", header->normEpsilon);
+    printf("💡 RopeTheta: %.0f\n", header->ropeTheta);
 }
 
 LlmNet buildLlmNet(LlmHeader *h, NnSize nNodes, NnSize nBatches) {

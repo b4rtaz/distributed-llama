@@ -91,6 +91,7 @@ typedef struct {
     RootLlmInference *inference;
     Tokenizer *tokenizer;
     Sampler *sampler;
+    NnNetwork *network;
 } AppInferenceContext;
 
 void runInferenceApp(AppCliArgs *args, void (*handler)(AppInferenceContext *context));

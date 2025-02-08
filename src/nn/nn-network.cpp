@@ -257,19 +257,19 @@ std::unique_ptr<NnNetwork> NnNetwork::serve(int port) {
     NnSize nSockets;
     NnSize nodeIndex;
     int rootSocket = acceptSocket(serverSocket);
-    printf("The root node has connected\n");
+    printf("⭕ The root node has connected\n");
 
     readSocket(rootSocket, &nSockets, sizeof(nSockets));
     NnSize nNodes = nSockets - 1; // nSockets - 1 root node
     printf("⭕ nNodes: %d\n", nNodes);
     readSocket(rootSocket, &nodeIndex, sizeof(nodeIndex));
-    printf("⭕ nodeIndex: %d\n", nodeIndex);
+    printf("⭕ NodeIndex: %d\n", nodeIndex);
 
     int *sockets = new int[nSockets];
     sockets[0] = rootSocket;
     char* *hosts = new char*[nNodes];
     int *ports = new int[nNodes];
-    printf("⭕ socket[0]: accepted root node\n");
+    printf("⭕ Socket[0]: accepted root node\n");
 
     size_t hostLen;
     for (NnSize i = 0; i < nNodes; i++) {
@@ -287,13 +287,13 @@ std::unique_ptr<NnNetwork> NnNetwork::serve(int port) {
     for (NnSize i = 0; i < nNodes; i++) {
         NnSize socketIndex = i + 1;
         if (i >= nodeIndex) {
-            printf("⭕ socket[%d]: connecting to %s:%d worker\n", socketIndex, hosts[i], ports[i]);
+            printf("⭕ Socket[%d]: connecting to %s:%d worker\n", socketIndex, hosts[i], ports[i]);
             sockets[socketIndex] = connectSocket(hosts[i], ports[i]);
-            printf("⭕ socket[%d]: connected\n", socketIndex);
+            printf("⭕ Socket[%d]: connected\n", socketIndex);
         } else {
-            printf("⭕ socket[%d]: wait for %s:%d worker\n", socketIndex, hosts[i], ports[i]);
+            printf("⭕ Socket[%d]: wait for %s:%d worker\n", socketIndex, hosts[i], ports[i]);
             sockets[socketIndex] = acceptSocket(serverSocket);
-            printf("⭕ socket[%d]: accepted\n", socketIndex);
+            printf("⭕ Socket[%d]: accepted\n", socketIndex);
         }
     }
 
@@ -304,7 +304,7 @@ std::unique_ptr<NnNetwork> NnNetwork::serve(int port) {
 
     shutdown(serverSocket, 2);
     close(serverSocket);
-    printf("⭕ network is initialized\n");
+    printf("⭕ Network is initialized\n");
     return std::unique_ptr<NnNetwork>(new NnNetwork(nSockets, sockets));
 }
 
@@ -315,7 +315,7 @@ std::unique_ptr<NnNetwork> NnNetwork::connect(NnSize nSockets, char **hosts, NnS
     struct sockaddr_in addr;
     NnSize confirmPacket;
     for (NnSize i = 0; i < nSockets; i++) {
-        printf("⭕ socket[%d]: connecting to %s:%d worker\n", i, hosts[i], ports[i]);
+        printf("⭕ Socket[%d]: connecting to %s:%d worker\n", i, hosts[i], ports[i]);
         int socket = connectSocket(hosts[i], ports[i]);
         sockets[i] = socket;
         writeSocket(socket, &nSockets, sizeof(nSockets));
@@ -329,12 +329,12 @@ std::unique_ptr<NnNetwork> NnNetwork::connect(NnSize nSockets, char **hosts, NnS
             writeSocket(socket, &ports[j], sizeof(ports[j]));
         }
         readAckPacket(socket);
-        printf("⭕ socket[%d]: connected\n", i);
+        printf("⭕ Socket[%d]: connected\n", i);
     }
     for (NnSize i = 0; i < nSockets; i++) {
         writeAckPacket(sockets[i]);
     }
-    printf("⭕ network is initialized\n");
+    printf("⭕ Network is initialized\n");
     return std::unique_ptr<NnNetwork>(new NnNetwork(nSockets, sockets));
 }
 
@@ -351,7 +351,7 @@ NnNetwork::~NnNetwork() {
         close(sockets[i]);
     }
     delete[] sockets;
-    printf("⭕ network is closed\n");
+    printf("⭕ Network is closed\n");
 }
 
 void NnNetwork::setTurbo(bool enabled) {
@@ -483,6 +483,10 @@ void NnNetwork::readMany(NnSize n, NnSocketIo *ios) {
 void NnNetwork::getStats(size_t *sentBytes, size_t *recvBytes) {
     *sentBytes = this->sentBytes;
     *recvBytes = this->recvBytes;
+    this->resetStats();
+}
+
+void NnNetwork::resetStats() {
     this->sentBytes.exchange(0);
     this->recvBytes.exchange(0);
 }
@@ -858,7 +862,7 @@ void NnWorkerWeightReader::read() {
         allocate(nBytes);
         network->read(0, temp, nBytes);
         executor->loadWeight(opName, opIndex, nBytes, temp);
-        printf("💿 loaded %20s %3d, %12d kB\n", opName, opIndex, nBytes / 1024);
+        printf("💿 Loaded %22s %3d, %12d kB\n", opName, opIndex, nBytes / 1024);
         delete[] opName;
     }
 }

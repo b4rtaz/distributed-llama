@@ -1166,7 +1166,7 @@ static void castForward_Q80_F32(NnSize nThreads, NnSize threadIndex, NnSize batc
 // device
 
 void printCpuInstructionSet() {
-    printf("🧠 %16s:", "CPU");
+    printf("🧠 CPU:");
 #if defined(__ARM_NEON)
     printf(" neon");
 #if defined(__ARM_FEATURE_DOTPROD)

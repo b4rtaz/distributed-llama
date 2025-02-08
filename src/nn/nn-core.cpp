@@ -149,6 +149,22 @@ void releaseNodeConfig(NnNodeConfig *nodeConfig) {
     delete[] nodeConfig->segments;
 }
 
+void printNodeRequiredMemory(NnNetConfig *netConfig, NnNodeConfig *nodeConfig) {
+    unsigned long total = 0;
+    for (NnSize pipeIndex = 0; pipeIndex < netConfig->nPipes; pipeIndex++)
+        total += netConfig->pipes[pipeIndex].size.nBytes;
+    for (NnSize bufferIndex = 0; bufferIndex < nodeConfig->nBuffers; bufferIndex++)
+        total += nodeConfig->buffers[bufferIndex].size.nBytes;
+    for (NnSize segmentIndex = 0; segmentIndex < nodeConfig->nSegments; segmentIndex++) {
+        NnSegmentConfig *segment = &nodeConfig->segments[segmentIndex];
+        for (NnSize opIndex = 0; opIndex < segment->nOps; opIndex++) {
+            total += segment->ops[opIndex].weightSize.nBytes;
+            total += segment->ops[opIndex].configSize;
+        }
+    }
+    printf("📀 RequiredMemory: %lu kB\n", total / 1024);
+}
+
 // slicers
 
 NnKvCacheSlice sliceKvCache(NnSize kvDim, NnSize seqLen, NnSize nNodes) {

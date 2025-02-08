@@ -167,9 +167,9 @@ Tokenizer::Tokenizer(const char* tokenizerPath, int modelVocabSize) {
         throw std::runtime_error("Tokenizer file is invalid or incompatible with model");
     }
 
-    if (bosId >= 0) printf("📄 %16s: %d\n", "BosId", bosId);
-    if (eosId >= 0) printf("📄 %16s: %d\n", "EosId", eosId);
-    if (chatEosId >= 0) printf("📄 %16s: %d\n", "ChatEosId", chatEosId);
+    if (bosId >= 0) printf("📄 BosId: %d\n", bosId);
+    if (eosId >= 0) printf("📄 EosId: %d\n", eosId);
+    if (chatEosId >= 0) printf("📄 ChatEosId: %d\n", chatEosId);
 
     // malloc space to hold the scores and the strings
     vocab = (char**)malloc(vocabSize * sizeof(char*));

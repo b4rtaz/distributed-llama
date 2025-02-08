@@ -50,6 +50,7 @@ public:
     void writeAll(void *data, size_t size);
     void readMany(NnSize n, NnSocketIo *ios);
     void getStats(size_t *sentBytes, size_t *recvBytes);
+    void resetStats();
 };
 
 class NnNetworkNodeSynchronizer : public NnNodeSynchronizer {
