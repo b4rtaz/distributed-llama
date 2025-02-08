@@ -513,17 +513,18 @@ static void add_Q80_F32(float *y, const NnBlockQ80 *x, const NnSize n, const NnS
 #endif
 }
 
-static void softmax_F32(float *x, const unsigned int size) {
+static void softmax_F32(float *x, const NnSize size) {
     if (size == 0)
         return;
-    float maxVal;
+
 #if defined(__ARM_NEON)
-    unsigned int j;
+    NnSize j;
+    float maxVal;
     if (size >= 4) {
         float32x4_t fs;
         float32x4_t fmaxv = vld1q_f32(&x[0]);
         j = size - (size % 4);
-        for (unsigned int i = 4; i < j; i += 4) {
+        for (NnSize i = 4; i < j; i += 4) {
             fs = vld1q_f32(&x[i]);
             fmaxv = vmaxq_f32(fmaxv, fs);
         }
@@ -532,28 +533,58 @@ static void softmax_F32(float *x, const unsigned int size) {
         maxVal = x[0];
         j = 1;
     }
-    for (unsigned int i = j; i < size; i++) {
-        maxVal = fmaxf(maxVal, x[i]);
+    for (; j < size; j++)
+        maxVal = fmaxf(maxVal, x[j]);
+
+    const float32x4_t maxVal_vec = vdupq_n_f32(maxVal);
+    float32x4_t sumv = vdupq_n_f32(0.0f);
+    NnSize i = 0;
+    for (; i + 4 <= size; i += 4) {
+        float32x4_t val = vld1q_f32(x + i);
+        val = vsubq_f32(val, maxVal_vec);
+        val = exp_F32_neon(val);
+        vst1q_f32(x + i, val);
+        sumv = vaddq_f32(sumv, val);
     }
-#else
-    // find max value (for numerical stability)
-    maxVal = x[0];
-    for (unsigned int i = 1; i < size; i++) {
-        if (x[i] > maxVal) {
-            maxVal = x[i];
-        }
-    }
-#endif
-    // exp and sum
-    float sum = 0.0f;
-    for (unsigned int i = 0; i < size; i++) {
+
+    float32x2_t sum_lo = vadd_f32(vget_low_f32(sumv), vget_high_f32(sumv));
+    float sum = vget_lane_f32(sum_lo, 0) + vget_lane_f32(sum_lo, 1);
+
+    for (; i < size; i++) {
         x[i] = expf(x[i] - maxVal);
         sum += x[i];
     }
-    if (sum == 0.0) sum = 0.000001;
-    for (unsigned int i = 0; i < size; i++) {
-        x[i] /= sum;
+
+    if (sum == 0.0f)
+        sum = 0.000001f;
+
+    const float inv_sum = 1.0f / sum;
+    const float32x4_t inv_sum_vec = vdupq_n_f32(inv_sum);
+
+    i = 0;
+    for (; i + 4 <= size; i += 4) {
+        float32x4_t val = vld1q_f32(x + i);
+        val = vmulq_f32(val, inv_sum_vec);
+        vst1q_f32(x + i, val);
     }
+    for (; i < size; ++i)
+        x[i] /= sum;
+#else
+    float maxVal = x[0];
+    for (NnSize i = 1; i < size; i++) {
+        if (x[i] > maxVal)
+            maxVal = x[i];
+    }
+    float sum = 0.0f;
+    for (NnSize i = 0; i < size; i++) {
+        x[i] = expf(x[i] - maxVal);
+        sum += x[i];
+    }
+    if (sum == 0.0)
+        sum = 0.000001;
+    for (NnSize i = 0; i < size; i++)
+        x[i] /= sum;
+#endif
 }
 
 static float dotProduct_F32(const float *a, const float *b, const unsigned int size) {
@@ -588,33 +619,34 @@ static float dotProduct_F32(const float *a, const float *b, const unsigned int s
 }
 
 static void multiheadAtt_F32(
-    float *x, float *q, float *att, float *keyCache, float *valueCache,
+    float *x, const float *q, float *att, float *keyCache, float *valueCache,
     const unsigned pos, const unsigned int nHeads, const unsigned int nHeads0, const unsigned int nKvHeads, const unsigned int kvDim0, const unsigned int headSize, const unsigned int seqLen,
     const NnSize nThreads, const NnSize threadIndex) 
 {
     SPLIT_THREADS(h0Start, h0End, nHeads0, nThreads, threadIndex);
-    unsigned int kvMul = nHeads / nKvHeads;
-    float headSizeRoot = sqrtf(headSize);
+    const unsigned int kvMul = nHeads / nKvHeads;
+    const float headSizeRoot = sqrtf(headSize);
 
     for (unsigned int h0 = h0Start; h0 < h0End; h0++) {
-        float *hQ = q + h0 * headSize;
+        const float *hQ = q + h0 * headSize;
         float *hAtt = att + h0 * seqLen;
 
         for (unsigned int t = 0; t <= pos; t++) {
-            float *k = keyCache + t * kvDim0 + (h0 / kvMul) * headSize;
-            float score = dotProduct_F32(hQ, k, headSize) / headSizeRoot;
+            const float *k = keyCache + t * kvDim0 + (h0 / kvMul) * headSize;
+            const float score = dotProduct_F32(hQ, k, headSize) / headSizeRoot;
             hAtt[t] = score;
         }
 
         softmax_F32(hAtt, pos + 1);
 
-        float *hX = x + h0 * headSize;
-        std::memset(hX, 0, headSize * sizeof(float));
+        float *y = x + h0 * headSize;
+        std::memset(y, 0, headSize * sizeof(float));
+
         for (unsigned int t = 0; t <= pos; t++) {
             float *hV = valueCache + t * kvDim0 + (h0 / kvMul) * headSize;
             float a = hAtt[t];
             for (int i = 0; i < headSize; i++) {
-                hX[i] += a * hV[i];
+                y[i] += a * hV[i];
             }
         }
     }
