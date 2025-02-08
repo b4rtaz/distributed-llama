@@ -620,33 +620,36 @@ static float dotProduct_F32(const float *a, const float *b, const unsigned int s
 
 static void multiheadAtt_F32(
     float *x, const float *q, float *att, float *keyCache, float *valueCache,
-    const unsigned pos, const unsigned int nHeads, const unsigned int nHeads0, const unsigned int nKvHeads, const unsigned int kvDim0, const unsigned int headSize, const unsigned int seqLen,
+    const unsigned pos, const NnSize nHeads, const NnSize nHeads0, const NnSize nKvHeads, const NnSize kvDim0, const NnSize headSize, const NnSize seqLen,
     const NnSize nThreads, const NnSize threadIndex) 
 {
     SPLIT_THREADS(h0Start, h0End, nHeads0, nThreads, threadIndex);
-    const unsigned int kvMul = nHeads / nKvHeads;
+    const NnSize kvMul = nHeads / nKvHeads;
     const float headSizeRoot = sqrtf(headSize);
 
-    for (unsigned int h0 = h0Start; h0 < h0End; h0++) {
-        const float *hQ = q + h0 * headSize;
-        float *hAtt = att + h0 * seqLen;
+    for (NnSize h0 = h0Start; h0 < h0End; h0++) {
+        const float *hQ = &q[h0 * headSize];
+        const NnSize headIndex = h0 / kvMul;
+        const float *hKc = &keyCache[headIndex * headSize];
+        const float *hVc = &valueCache[headIndex * headSize];
+        float *hAtt = &att[h0 * seqLen];
 
-        for (unsigned int t = 0; t <= pos; t++) {
-            const float *k = keyCache + t * kvDim0 + (h0 / kvMul) * headSize;
-            const float score = dotProduct_F32(hQ, k, headSize) / headSizeRoot;
+        for (NnSize t = 0; t <= pos; t++) {
+            const float *posK = &hKc[t * kvDim0];
+            const float score = dotProduct_F32(hQ, posK, headSize) / headSizeRoot;
             hAtt[t] = score;
         }
 
         softmax_F32(hAtt, pos + 1);
 
-        float *y = x + h0 * headSize;
-        std::memset(y, 0, headSize * sizeof(float));
+        float *hX = &x[h0 * headSize];
+        std::memset(hX, 0, headSize * sizeof(float));
 
-        for (unsigned int t = 0; t <= pos; t++) {
-            float *hV = valueCache + t * kvDim0 + (h0 / kvMul) * headSize;
-            float a = hAtt[t];
+        for (NnSize t = 0; t <= pos; t++) {
+            const float *posV = &hVc[t * kvDim0];
+            const float posA = hAtt[t];
             for (int i = 0; i < headSize; i++) {
-                y[i] += a * hV[i];
+                hX[i] += posA * posV[i];
             }
         }
     }
