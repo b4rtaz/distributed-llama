@@ -58,6 +58,7 @@ public:
 private:
     float *tokenPipe;
     float *positionPipe;
+    LlmHeader *header;
     NnDevice *device;
     NnNetExecution *execution;
     NnExecutor *executor;

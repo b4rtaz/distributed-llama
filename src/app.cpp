@@ -130,6 +130,7 @@ NnSize Timer::elapsed() {
 }
 
 RootLlmInference::RootLlmInference(LlmNet *net, NnDevice *device, NnNetExecution *execution, NnExecutor *executor, NnNetwork *network) {
+    this->header = net->header;
     this->tokenPipe = (float *)execution->pipes[net->tokenPipeIndex];
     this->positionPipe = (float *)execution->pipes[net->positionPipeIndex];
     this->logitsPipe = (float *)execution->pipes[net->logitsPipeIndex];
@@ -145,6 +146,9 @@ void RootLlmInference::setBatchSize(NnSize batchSize) {
 }
 
 void RootLlmInference::setPosition(NnSize position) {
+    assert(position >= 0);
+    assert(position + execution->batchSize - 1 < header->seqLen);
+
     controlPacket.position = position;
     for (NnSize i = 0; i < execution->batchSize; i++)
         positionPipe[i] = (float)(position + i);
