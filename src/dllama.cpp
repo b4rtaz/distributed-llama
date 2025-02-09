@@ -25,8 +25,8 @@ static void inference(AppInferenceContext *context) {
         throw std::runtime_error("The number of input tokens is greater than the number of steps");
 
     Timer evalTimer;
-    size_t sentBytes;
-    size_t recvBytes;
+    size_t sentBytes = 0;
+    size_t recvBytes = 0;
     printf("%s\n", context->args->prompt);
     for (;;) {
         Timer batchTimer;
@@ -47,7 +47,8 @@ static void inference(AppInferenceContext *context) {
         pos += batchSize;
         token = inputTokens[pos + 1];
 
-        context->network->getStats(&sentBytes, &recvBytes);
+        if (context->network != nullptr)
+            context->network->getStats(&sentBytes, &recvBytes);
         printf("🔷️ E%5u ms S%6zu kB R%6zu kB (%d tokens)\n",
             batchTimer.elapsed(),
             sentBytes / 1024,
@@ -73,7 +74,8 @@ static void inference(AppInferenceContext *context) {
         char* piece = context->tokenizer->decode(prevToken, token);
 
         if (isSafePiece(piece)) {
-            context->network->getStats(&sentBytes, &recvBytes);
+            if (context->network != nullptr)
+                context->network->getStats(&sentBytes, &recvBytes);
         
             printf("🔶 P%5u ms S%6zu kB R%6zu kB %s\n",
                 tokenTimer.elapsed(),
