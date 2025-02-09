@@ -32,13 +32,6 @@ enum LlmHiddenAct {
     HIDDEN_ACT_SILU,
 };
 
-enum LlmRopeType {
-    ROPE_UNKNOWN = -1,
-    ROPE_LLAMA = 0,
-    ROPE_FALCON = 1,
-    ROPE_LLAMA3_1 = 2,
-};
-
 enum LlmArchType {
     LLAMA = 0xABCD00,
 };
@@ -62,7 +55,7 @@ typedef struct {
     NnSize kvDim;
     NnSize vocabSize;
     float ropeTheta;
-    LlmRopeType ropeType;
+    NnRopeType ropeType;
     float ropeScalingFactor;
     float ropeScalingLowFreqFactor;
     float ropeScalingHighFreqFactory;

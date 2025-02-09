@@ -72,7 +72,7 @@ const char *opCodeToString(NnOpCode code) {
     if (code == OP_RMS) return "RMS";
     if (code == OP_RMS_NORM) return "RMS_NORM";
     if (code == OP_MATMUL) return "MATMUL";
-    if (code == OP_ROPE_LLAMA_3_1) return "ROPE_LLAMA_3_1";
+    if (code == OP_ROPE_LLAMA) return "ROPE_LLAMA";
     if (code == OP_MULTIHEAD_ATT) return "MULTIHEAD_ATT";
     if (code == OP_GELU) return "GELU";
     if (code == OP_SILU) return "SILU";

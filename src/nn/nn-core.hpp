@@ -73,7 +73,7 @@ enum NnOpCode {
     OP_RMS,
     OP_RMS_NORM,
     OP_MATMUL,
-    OP_ROPE_LLAMA_3_1,
+    OP_ROPE_LLAMA,
     OP_MULTIHEAD_ATT,
     OP_GELU,
     OP_SILU,
@@ -115,6 +115,12 @@ enum NnSyncType {
     SYNC_WITH_ROOT, // whole pipe to all nodes
     SYNC_NODE_SLICES, // my slice of pipe to all nodes
     SYNC_NODE_SLICES_EXCEPT_ROOT, // only workers send slices to root, root does not send
+};
+
+enum NnRopeType {
+    ROPE_LLAMA = 0,
+    ROPE_FALCON = 1,
+    ROPE_LLAMA3_1 = 2,
 };
 
 // base configs
@@ -203,7 +209,7 @@ typedef struct {
     float ropeScalingHighFreqFactory;
     NnSize ropeScalingOrigMaxSeqLen;
     NnRopeSlice slice;
-} NnRopeLlama31OpConfig;
+} NnRopeLlamaOpConfig;
 
 typedef struct {
     NnSize nKvHeads;
