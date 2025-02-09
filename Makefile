@@ -50,7 +50,7 @@ llm.o: src/llm.cpp
 	$(CXX) $(CXXFLAGS) -c $^ -o $@
 app.o: src/app.cpp
 	$(CXX) $(CXXFLAGS) -c $^ -o $@
-dllama: src/dllama-api.cpp nn-quants.o nn-core.o nn-executor.o nn-network.o llamafile-sgemm.o nn-cpu-ops.o nn-cpu.o tokenizer.o llm.o app.o
+dllama: src/dllama.cpp nn-quants.o nn-core.o nn-executor.o nn-network.o llamafile-sgemm.o nn-cpu-ops.o nn-cpu.o tokenizer.o llm.o app.o
 	$(CXX) $(CXXFLAGS) $^ -o $@ $(LIBS)
 dllama-api: src/dllama-api.cpp nn-quants.o nn-core.o nn-executor.o nn-network.o llamafile-sgemm.o nn-cpu-ops.o nn-cpu.o tokenizer.o llm.o app.o
 	$(CXX) $(CXXFLAGS) $^ -o $@ $(LIBS)
