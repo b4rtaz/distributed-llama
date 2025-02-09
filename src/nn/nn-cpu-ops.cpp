@@ -123,7 +123,7 @@ static void rmsNorm_F32(float *output, const float *x, const float invRms, const
     }
 #else
     for (unsigned int i = start; i < end; i++) {
-        output[i] = w[i] * (rms * x[i]);
+        output[i] = w[i] * (invRms * x[i]);
     }
 #endif
 }
