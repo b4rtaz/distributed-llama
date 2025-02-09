@@ -65,7 +65,7 @@ static inline void setQuickAck(int socket) {
 #endif
 }
 
-static void setReuseAddr(int socket) {
+void setReuseAddr(int socket) {
     int opt = 1;
     #ifdef _WIN32
     int iresult = setsockopt(socket, SOL_SOCKET, SO_REUSEADDR, (char*)&opt, sizeof(opt));
@@ -81,7 +81,7 @@ static void setReuseAddr(int socket) {
     #endif
 }
 
-static void writeSocket(int socket, const void *data, size_t size) {
+void writeSocket(int socket, const void *data, size_t size) {
     while (size > 0) {
         ssize_t s = send(socket, (const char*)data, size, 0);
         if (s < 0) {
@@ -122,7 +122,7 @@ static inline bool tryReadSocket(int socket, void *data, size_t size, unsigned l
     return true;
 }
 
-static void readSocket(int socket, void *data, size_t size) {
+void readSocket(int socket, void *data, size_t size) {
     if (!tryReadSocket(socket, data, size, 0)) {
         throw std::runtime_error("Error reading from socket");
     }
@@ -162,7 +162,7 @@ static inline int connectSocket(char *host, int port) {
     return sock;
 }
 
-static int createServerSocket(int port) {
+int createServerSocket(int port) {
     const char *host = "0.0.0.0";
     struct sockaddr_in serverAddr;
 
@@ -210,12 +210,12 @@ static int createServerSocket(int port) {
     return serverSocket;
 }
 
-static void closeServerSocket(int serverSocket) {
+void closeServerSocket(int serverSocket) {
     shutdown(serverSocket, 2);
     close(serverSocket);
 }
 
-static int acceptSocket(int serverSocket) {
+int acceptSocket(int serverSocket) {
     struct sockaddr_in clientAddr;
     socklen_t clientAddrSize = sizeof(clientAddr);
     int clientSocket = ::accept(serverSocket, (struct sockaddr*)&clientAddr, &clientAddrSize);
@@ -226,7 +226,7 @@ static int acceptSocket(int serverSocket) {
     return clientSocket;
 }
 
-static void initSockets() {
+void initSockets() {
 #ifdef _WIN32
     WSADATA wsaData;
     if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
@@ -235,7 +235,7 @@ static void initSockets() {
 #endif
 }
 
-static void cleanupSockets() {
+void cleanupSockets() {
 #ifdef _WIN32
     WSACleanup();
 #endif

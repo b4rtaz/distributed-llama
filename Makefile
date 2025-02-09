@@ -1,5 +1,5 @@
 CXX = g++
-CXXFLAGS = -std=c++11 -Werror -march=native -mtune=native -Wformat -Werror=format-security
+CXXFLAGS = -std=c++11 -Werror -Wformat -Werror=format-security
 
 ifdef DEBUG
 	CXXFLAGS += -g
@@ -52,3 +52,5 @@ app: src/app.cpp
 	$(CXX) $(CXXFLAGS) -c src/app.cpp -o app.o
 dllama: src/dllama.cpp nn-quants nn-core nn-executor nn-network llamafile-sgemm nn-cpu-ops nn-cpu tokenizer llm app
 	$(CXX) $(CXXFLAGS) src/dllama.cpp -o dllama nn-quants.o nn-core.o nn-executor.o nn-network.o llamafile-sgemm.o nn-cpu-ops.o nn-cpu.o tokenizer.o llm.o app.o $(LIBS)
+dllama-api: src/dllama-api.cpp nn-quants nn-core nn-executor nn-network llamafile-sgemm nn-cpu-ops nn-cpu tokenizer llm app
+	$(CXX) $(CXXFLAGS) src/dllama-api.cpp -o dllama-api nn-quants.o nn-core.o nn-executor.o nn-network.o llamafile-sgemm.o nn-cpu-ops.o nn-cpu.o tokenizer.o llm.o app.o $(LIBS)
