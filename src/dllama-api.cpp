@@ -368,10 +368,29 @@ public:
         std::string buffer;
         size_t nStops = params.stop.size();
 
+        NnSize pos = 0;
+        int token;
+        for (;;) {
+            Timer batchTimer;
+            long remainingTokens = nPromptTokens - 1 - (long)pos;
+            if (remainingTokens <= 0)
+                break;
+            NnSize batchSize = remainingTokens < args->nBatches
+                ? remainingTokens
+                : args->nBatches;
+
+            inference->setBatchSize(batchSize);
+            inference->setPosition(pos);
+            for (NnSize i = 0; i < batchSize; i++)
+                inference->setToken(i, promptTokens[pos + i]);
+
+            inference->forward();
+
+            pos += batchSize;
+            token = promptTokens[pos + 1];
+        }
         inference->setBatchSize(1);
 
-        int token = promptTokens[0];
-        pos_t pos = startPos;
         for (; pos < maxPos; pos++) {
             if (pos < promptEndPos - 1) {
                 token = promptTokens[pos - startPos + 1];
