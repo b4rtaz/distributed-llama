@@ -12,7 +12,7 @@ static const char *hiddenActToString(LlmHiddenAct act) {
     throw std::runtime_error("Unsupported hidden act");
 }
 
-static const char *ropeTypeToString(LlmRopeType type) {
+static const char *ropeTypeToString(NnRopeType type) {
     if (type == ROPE_LLAMA) return "Llama";
     if (type == ROPE_LLAMA3_1) return "Llama3.1";
     throw std::runtime_error("Unsupported rope type");
@@ -28,8 +28,9 @@ LlmHeader loadLlmHeader(const char *path, const NnSize maxSeqLen, NnFloatType sy
     std::memset(&header, 0, sizeof(LlmHeader));
     header.weightType = F_UNK;
     header.hiddenAct = HIDDEN_ACT_SILU;
-    header.ropeType = ROPE_UNKNOWN;
+    header.ropeType = ROPE_LLAMA;
     header.ropeTheta = 10000.0f;
+    header.ropeScalingFactor = 1.0f;
     header.normEpsilon = 1e-5f;
 
     std::unique_ptr<FILE, int(*)(FILE *)> fdPtr(fopen(path, "rb"), fclose);
@@ -78,16 +79,12 @@ LlmHeader loadLlmHeader(const char *path, const NnSize maxSeqLen, NnFloatType sy
         else if (key == ROPE_SCALING_LOW_FREQ_FACTOR) header.ropeScalingLowFreqFactor = (float)value;
         else if (key == ROPE_SCALING_HIGH_FREQ_FACTORY) header.ropeScalingHighFreqFactory = (float)value;
         else if (key == ROPE_SCALING_ORIG_MAX_SEQ_LEN) header.ropeScalingOrigMaxSeqLen = value;
-        else if (key == ROPE_TYPE) header.ropeType = (LlmRopeType)value;
+        else if (key == ROPE_TYPE) header.ropeType = (NnRopeType)value;
         else throw std::runtime_error("Unsupported header key");
     }
 
     if (header.weightType == F_UNK)
         throw std::runtime_error("Model does not specify weight type");
-    if (header.ropeType == ROPE_UNKNOWN)
-        throw std::runtime_error("Model does not specify rope type");
-    if (header.ropeType != ROPE_LLAMA3_1)
-        throw std::runtime_error("This version only supports llama3.1 rope type");
 
     header.origSeqLen = header.seqLen;
     if (maxSeqLen > 0 && header.seqLen > maxSeqLen)
@@ -103,7 +100,6 @@ LlmHeader loadLlmHeader(const char *path, const NnSize maxSeqLen, NnFloatType sy
 void printLlmHeader(LlmHeader *header) {
     printf("💡 Arch: %s\n", archTypeToString(header->archType));
     printf("💡 HiddenAct: %s\n", hiddenActToString(header->hiddenAct));
-    printf("💡 RopeType: %s\n", ropeTypeToString(header->ropeType));
     printf("💡 Dim: %u\n", header->dim);
     printf("💡 HiddenDim: %u\n", header->hiddenDim);
     printf("💡 VocabSize: %u\n", header->vocabSize);
@@ -115,12 +111,17 @@ void printLlmHeader(LlmHeader *header) {
     }
     printf("💡 SeqLen: %u\n", header->seqLen);
     printf("💡 NormEpsilon: %f\n", header->normEpsilon);
+    printf("💡 RopeType: %s\n", ropeTypeToString(header->ropeType));
     printf("💡 RopeTheta: %.0f\n", header->ropeTheta);
+    if (header->ropeType == ROPE_LLAMA3_1) {
+        printf("💡 RopeScaling: %.1f, %.1f, %.1f\n",
+            header->ropeScalingFactor,
+            header->ropeScalingLowFreqFactor,
+            header->ropeScalingHighFreqFactory);
+    }
 }
 
 LlmNet buildLlmNet(LlmHeader *h, NnSize nNodes, NnSize nBatches) {
-    assert(h->ropeType == ROPE_LLAMA3_1);
-
     LlmNet n;
     n.tokenEmbeddingSize = size2D(F_32, h->vocabSize, h->dim);
     n.rmsNormSize = size1D(F_32, h->dim);
@@ -253,19 +254,19 @@ LlmNet buildLlmNet(LlmHeader *h, NnSize nNodes, NnSize nBatches) {
                 NnMatmulOpConfig{});
 
             att.addOp(
-                OP_ROPE_LLAMA_3_1, "block_rope_q", layerIndex,
+                OP_ROPE_LLAMA, "block_rope_q", layerIndex,
                 pointerConfig(PNTR_BUFFER, qBufferIndex),
                 pointerConfig(PNTR_BUFFER, qBufferIndex),
                 size0(),
-                NnRopeLlama31OpConfig{true, n.positionPipeIndex, ropeCacheBufferIndex, 
+                NnRopeLlamaOpConfig{true, n.positionPipeIndex, ropeCacheBufferIndex, 
                     h->ropeScalingFactor, h->ropeScalingLowFreqFactor, h->ropeScalingHighFreqFactory, h->ropeScalingOrigMaxSeqLen,
                     ropeSlice});
             att.addOp(
-                OP_ROPE_LLAMA_3_1, "block_rope_k", layerIndex,
+                OP_ROPE_LLAMA, "block_rope_k", layerIndex,
                 pointerConfig(PNTR_BUFFER, kTempBufferIndex),
                 pointerConfig(PNTR_BUFFER, kTempBufferIndex),
                 size0(),
-                NnRopeLlama31OpConfig{false, n.positionPipeIndex, ropeCacheBufferIndex, 
+                NnRopeLlamaOpConfig{false, n.positionPipeIndex, ropeCacheBufferIndex, 
                     h->ropeScalingFactor, h->ropeScalingLowFreqFactor, h->ropeScalingHighFreqFactory, h->ropeScalingOrigMaxSeqLen,
                     ropeSlice});
             att.addOp(
@@ -469,4 +470,5 @@ void loadLlmNetWeight(const char *path, LlmNet *net, NnRootWeightLoader *loader)
 
     unsigned long missingBytes = (b - data) - net->header->fileSize;
     assert(missingBytes == 0);
+    printf("💿 Loaded\n");
 }

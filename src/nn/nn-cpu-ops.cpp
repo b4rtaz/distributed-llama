@@ -770,11 +770,13 @@ static void mergeAddForward_Q80_F32(NnSize nThreads, NnSize threadIndex, NnSize 
     }
 }
 
-static void embeddingForward_F32_F32_F32(NnSize nThreads, NnSize threadIndex, NnSize batchSize, NnCpuOpContext *context) {
+static void initEmbeddingForward(NnCpuOpContext *context) {
     ASSERT_EQ(context->inputSize.x, 1);
     ASSERT_EQ(context->inputSize.y, context->nBatches);
     ASSERT_EQ(context->weightSize.x, context->outputSize.x);
+}
 
+static void embeddingForward_F32_F32_F32(NnSize nThreads, NnSize threadIndex, NnSize batchSize, NnCpuOpContext *context) {
     NnSize dimSize = getBytes(F_32, context->outputSize.x);
 
     for (NnSize batchIndex = 0; batchIndex < batchSize; batchIndex++) {
@@ -823,10 +825,9 @@ static void rmsForward_F32_F32(NnSize nThreads, NnSize threadIndex, NnSize batch
     }
 }
 
-static void rmsNormForward_F32_F32_F32(NnSize nThreads, NnSize threadIndex, NnSize batchSize, NnCpuOpContext *context) {
+static void initRmsNormForward_ANY_F32_F32(NnCpuOpContext *context) {
     NnRmsNormOpConfig *config = (NnRmsNormOpConfig *)context->opConfig;
-
-    ASSERT_EQ(context->inputSize.floatType, F_32);
+    NnBufferConfig *rmsBufferConfig = &context->bufferConfigs[config->rmsBufferIndex];
     ASSERT_EQ(context->inputSize.y, context->nBatches);
     ASSERT_EQ(context->inputSize.x, context->outputSize.x);
     ASSERT_EQ(context->outputSize.floatType, F_32);
@@ -834,11 +835,15 @@ static void rmsNormForward_F32_F32_F32(NnSize nThreads, NnSize threadIndex, NnSi
     ASSERT_EQ(context->weightSize.floatType, F_32);
     ASSERT_EQ(context->weightSize.y, 1);
     ASSERT_EQ(context->weightSize.x, context->inputSize.x);
-    NnBufferConfig *rmsBufferConfig = &context->bufferConfigs[config->rmsBufferIndex];
     ASSERT_EQ(rmsBufferConfig->size.floatType, F_32);
     ASSERT_EQ(rmsBufferConfig->size.x, 1);
     ASSERT_EQ(rmsBufferConfig->size.y, context->nBatches);
+}
 
+static void rmsNormForward_F32_F32_F32(NnSize nThreads, NnSize threadIndex, NnSize batchSize, NnCpuOpContext *context) {
+    ASSERT_EQ(context->inputSize.floatType, F_32);
+
+    NnRmsNormOpConfig *config = (NnRmsNormOpConfig *)context->opConfig;
     const float *weight = (float *)context->weight;
     const float *rms = (float *)context->buffers[config->rmsBufferIndex];
 
@@ -857,6 +862,8 @@ static void rmsNormForward_F32_F32_F32(NnSize nThreads, NnSize threadIndex, NnSi
 }
 
 static void rmsNormForward_Q80_F32_F32(NnSize nThreads, NnSize threadIndex, NnSize batchSize, NnCpuOpContext *context) {
+    ASSERT_EQ(context->inputSize.floatType, F_Q80);
+
     NnRmsNormOpConfig *config = (NnRmsNormOpConfig *)context->opConfig;
     const float *weight = (float *)context->weight;
     const float *rms = (float *)context->buffers[config->rmsBufferIndex];
@@ -987,7 +994,7 @@ static void geluForward_F32_F32_F32(NnSize nThreads, NnSize threadIndex, NnSize 
 }
 
 static void initRopeLlama31Forward(NnCpuOpContext *context) {
-    const NnRopeLlama31OpConfig *config = (NnRopeLlama31OpConfig *)context->opConfig;
+    const NnRopeLlamaOpConfig *config = (NnRopeLlamaOpConfig *)context->opConfig;
     if (context->bufferFlags[config->ropeCacheBufferIndex] == 1)
         return;
     context->bufferFlags[config->ropeCacheBufferIndex] = 1;
@@ -1008,7 +1015,7 @@ static void initRopeLlama31Forward(NnCpuOpContext *context) {
     }
 }
 
-static inline float ropeLlama31Scale(const float freq, const NnRopeLlama31OpConfig *config) {
+static inline float ropeLlama31Scale(const float freq, const NnRopeLlamaOpConfig *config) {
     const float waveLen = 2.0f * M_PI * freq;
     const float highFreqWavelen = config->ropeScalingOrigMaxSeqLen / config->ropeScalingHighFreqFactory;
     if (waveLen < highFreqWavelen) {
@@ -1022,30 +1029,39 @@ static inline float ropeLlama31Scale(const float freq, const NnRopeLlama31OpConf
     return (1 - smooth) * freq / config->ropeScalingFactor + smooth * freq;
 }
 
-static void ropeLlama31Forward_F32_F32(NnSize nThreads, NnSize threadIndex, NnSize batchSize, NnCpuOpContext *context) {
-    const NnRopeLlama31OpConfig *config = (NnRopeLlama31OpConfig *)context->opConfig;
+static void ropeLlamaForward_F32_F32(NnSize nThreads, NnSize threadIndex, NnSize batchSize, NnCpuOpContext *context) {
+    const NnRopeLlamaOpConfig *config = (NnRopeLlamaOpConfig *)context->opConfig;
     const NnRopeSlice *slice = &config->slice;
-    const float *positions = (float *)context->pipes[config->positionPipeIndex];
-    const float *cache = (float *)context->buffers[config->ropeCacheBufferIndex];
 
     const NnSize dim0Half = (config->isQ ? slice->qDim0 : slice->kvDim0) / 2;
     const NnSize shift = config->isQ ? slice->qShift : 0;
     SPLIT_THREADS(s, e, dim0Half, nThreads, threadIndex);
     const NnSize iStart = s * 2;
     const NnSize iEnd = e * 2;
+    const bool applyScale = config->ropeScalingFactor != 1.0f;
+
+    const float *cache = (float *)context->buffers[config->ropeCacheBufferIndex + shift];
+    const float *positions = (float *)context->pipes[config->positionPipeIndex];
 
     for (NnSize batchIndex = 0; batchIndex < batchSize; batchIndex++) {
         float *x = (float *)context->input[batchIndex];
         const NnSize pos = (NnSize)positions[batchIndex];
-        const float *c = &cache[pos * slice->sliceDim + shift];
+        const float *posCache = &cache[pos * slice->sliceDim];
 
         for (NnSize i = iStart; i < iEnd; i += 2) {
-            const float fcr = c[i];
-            const float fci = c[i + 1];
+            const float fcr = posCache[i];
+            const float fci = posCache[i + 1];
             const float v0 = x[i];
             const float v1 = x[i + 1];
-            x[i] = ropeLlama31Scale(v0 * fcr - v1 * fci, config);
-            x[i + 1] = ropeLlama31Scale(v0 * fci + v1 * fcr, config);
+
+            float x0 = v0 * fcr - v1 * fci;
+            float x1 = v0 * fci + v1 * fcr;
+            if (applyScale) {
+                x0 = ropeLlama31Scale(x0, config);
+                x1 = ropeLlama31Scale(x1, config);
+            }
+            x[i] = x0;
+            x[i + 1] = x1;
         }
     }
 }
@@ -1118,7 +1134,7 @@ static void initCastForward(NnCpuOpContext *context) {
     ASSERT_EQ(context->inputSize.y, context->outputSize.y);
 }
 
-static void castForward_UNK(NnSize nThreads, NnSize threadIndex, NnSize batchSize, NnCpuOpContext *context) {
+static void castForward_ANY(NnSize nThreads, NnSize threadIndex, NnSize batchSize, NnCpuOpContext *context) {
     const NnSize rowBytes = context->outputSize.nBytes / context->outputSize.y;
 
     for (NnSize batchIndex = 0; batchIndex < batchSize; batchIndex++) {
@@ -1183,7 +1199,11 @@ void printCpuInstructionSet() {
 }
 
 NnCpuOpForwardInit getCpuOpForwardInit(NnOpCode code, NnOpQuantType quantType) {
-    if (code == OP_ROPE_LLAMA_3_1)
+    if (code == OP_EMBEDDING)
+        return initEmbeddingForward;
+    if (code == OP_RMS_NORM)
+        return initRmsNormForward_ANY_F32_F32;
+    if (code == OP_ROPE_LLAMA)
         return initRopeLlama31Forward;
     if (code == OP_MATMUL)
         return initMatmulForward;
@@ -1213,8 +1233,8 @@ NnCpuOpForward getCpuOpForward(NnOpCode code, NnOpQuantType quantType) {
         if (quantType == F32_Q40_F32) return matmulForward_F32_Q40_F32;
         if (quantType == Q80_Q40_F32) return matmulForward_Q80_Q40_F32;
     }
-    if (code == OP_ROPE_LLAMA_3_1) {
-        if (quantType == F32_F32_F32) return ropeLlama31Forward_F32_F32;
+    if (code == OP_ROPE_LLAMA) {
+        if (quantType == F32_F32_F32) return ropeLlamaForward_F32_F32;
     }
     if (code == OP_MULTIHEAD_ATT) {
         if (quantType == F32_F32_F32) return multiHeadAttForward_F32_F32;
@@ -1230,9 +1250,9 @@ NnCpuOpForward getCpuOpForward(NnOpCode code, NnOpQuantType quantType) {
         if (quantType == Q80_Q80_F32) return mulForward_Q80_F32;
     }
     if (code == OP_CAST) {
-        if (quantType == F32_F32_F32) return castForward_UNK;
+        if (quantType == F32_F32_F32) return castForward_ANY;
         if (quantType == F32_F32_Q80) return castForward_F32_Q80;
-        if (quantType == Q80_Q80_Q80) return castForward_UNK;
+        if (quantType == Q80_Q80_Q80) return castForward_ANY;
         if (quantType == Q80_Q80_F32) return castForward_Q80_F32;
     }
     return nullptr;
