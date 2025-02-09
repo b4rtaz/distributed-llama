@@ -90,16 +90,18 @@ void testQuantization(const NnSize m) {
 }
 
 // rms
-void testRms(const NnSize m) {
+void testInvRms() {
     const float epsilon = 0.00001;
 
-    std::vector<float> x(m);
-    rand(x.data(), m, m);
+    std::vector<float> x(4);
+    x[0] = 0.2f;
+    x[1] = 0.5f;
+    x[2] = 0.7f;
+    x[3] = 0.1f;
 
-    const float y0 = rms_F32(x.data(), m, epsilon);
-
-    float expectedValue = 1.616181f;
-    compare_F32("rms_Q80", &y0, &expectedValue, 1, 0.08f);
+    const float y0 = invRms_F32(x.data(), 4, epsilon);
+    float ev0 = 1.0f / 0.4444f;
+    compare_F32("rms_F32", &y0, &ev0, 1, 0.001f);
 }
 
 // rmsNorm
@@ -113,7 +115,7 @@ void testRmsNorm(const NnSize m) {
     rand(x.data(), m, m);
     rand(w.data(), m, m * m);
     quantizeF32toQ80(x.data(), xQ80.data(), m, 1, 0);
-    const float rms = rms_F32(x.data(), m, 1e-5f);
+    const float rms = invRms_F32(x.data(), m, 1e-5f);
 
     rmsNorm_F32(y.data(), x.data(), rms, w.data(), m, 1, 0);
     rmsNorm_Q80_F32_F32(yTemp.data(), xQ80.data(), rms, w.data(), m, 1, 0);
@@ -242,7 +244,7 @@ int main() {
     testQuantization(32);
     testQuantization(2);
     testQuantization(1);
-    testRms(128);
+    testInvRms();
     testRmsNorm(128);
     testMul(32);
     testMul(2);

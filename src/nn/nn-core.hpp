@@ -70,7 +70,7 @@ typedef struct {
 enum NnOpCode {
     OP_MERGE_ADD,
     OP_EMBEDDING,
-    OP_RMS,
+    OP_INV_RMS,
     OP_RMS_NORM,
     OP_MATMUL,
     OP_ROPE_LLAMA,
@@ -190,7 +190,7 @@ typedef struct {
 
 typedef struct {
     float epsilon;
-} NnRmsOpConfig;
+} NnInvRmsOpConfig;
 
 typedef struct {
     NnSize rmsBufferIndex;

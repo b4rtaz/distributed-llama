@@ -12,21 +12,21 @@ void buildConfig(NnNetConfig *netConfig, NnNodeConfig *nodeConfig) {
     NnSize xPipeIndex = netBuilder.addPipe("X", size2D(F_32, N_BATCHES, DIM));
 
     NnNodeConfigBuilder nodeBuilder(0);
-    NnSize rmsBufferIndex = nodeBuilder.addBuffer("rms", size2D(F_32, N_BATCHES, 1));
+    NnSize invRmsBufferIndex = nodeBuilder.addBuffer("inv_rms", size2D(F_32, N_BATCHES, 1));
     NnSegmentConfigBuilder segmentBuilder;
     segmentBuilder.addSync(xPipeIndex, SYNC_NODE_SLICES_EXCEPT_ROOT);
 
-    segmentBuilder.addOp(OP_RMS, "rms", 0,
+    segmentBuilder.addOp(OP_INV_RMS, "inv_rms", 0,
         pointerConfig(PNTR_PIPE, xPipeIndex),
-        pointerConfig(PNTR_BUFFER, rmsBufferIndex),
+        pointerConfig(PNTR_BUFFER, invRmsBufferIndex),
         size0(),
-        NnRmsOpConfig{1e-5f});
+        NnInvRmsOpConfig{1e-5f});
 
-    segmentBuilder.addOp(OP_RMS_NORM, "rmsNorm", 0,
+    segmentBuilder.addOp(OP_RMS_NORM, "rms_norm", 0,
         pointerConfig(PNTR_PIPE, xPipeIndex),
         pointerConfig(PNTR_PIPE, xPipeIndex),
         size1D(F_32, DIM),
-        NnRmsNormOpConfig{rmsBufferIndex});
+        NnRmsNormOpConfig{invRmsBufferIndex});
 
     nodeBuilder.addSegment(segmentBuilder.build());
 
@@ -66,7 +66,7 @@ int main() {
     NnFakeNodeSynchronizer synchronizer;
     float *rms = (float *)device.buffers[0];
     NnExecutor executor(&netConfig, &nodeConfig, &device, &execution, &synchronizer);
-    executor.loadWeight("rmsNorm", 0, sizeof(rmsNormWeight), (NnByte *)rmsNormWeight);
+    executor.loadWeight("rms_norm", 0, sizeof(rmsNormWeight), (NnByte *)rmsNormWeight);
 
     execution.setBatchSize(2);
     executor.forward();

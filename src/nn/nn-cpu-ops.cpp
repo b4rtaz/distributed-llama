@@ -74,7 +74,7 @@ static inline float32x4_t exp_F32_neon(float32x4_t x) {
 }
 #endif
 
-static float rms_F32(const float *x, const unsigned int size, const float epsilon) {
+static float invRms_F32(const float *x, const unsigned int size, const float epsilon) {
     float ss;
 #if defined(__ARM_NEON)
     assert(size % 4 == 0);
@@ -106,14 +106,14 @@ static float rms_F32(const float *x, const unsigned int size, const float epsilo
     return ss;
 }
 
-static void rmsNorm_F32(float *output, const float *x, const float rms, const float *w, const NnSize size, const NnSize nThreads, const NnSize threadIndex) {
+static void rmsNorm_F32(float *output, const float *x, const float invRms, const float *w, const NnSize size, const NnSize nThreads, const NnSize threadIndex) {
     SPLIT_THREADS(start, end, size, nThreads, threadIndex);
 #if defined(__ARM_NEON)
     assert(size % 4 == 0);
     assert((start - end) % 4 == 0);
     float32x4_t fw;
     float32x4_t fx;
-    float32x4_t fss = vmovq_n_f32(rms);
+    float32x4_t fss = vmovq_n_f32(invRms);
     for (unsigned int i = start; i < end; i += 4) {
         fw = vld1q_f32(&w[i]);
         fx = vld1q_f32(&x[i]);
@@ -804,18 +804,18 @@ static void embeddingForward_F32_F32_Q80(NnSize nThreads, NnSize threadIndex, Nn
     }
 }
 
-static void rmsForward_F32_F32(NnSize nThreads, NnSize threadIndex, NnSize batchSize, NnCpuOpContext *context) {
+static void invRmsForward_F32_F32(NnSize nThreads, NnSize threadIndex, NnSize batchSize, NnCpuOpContext *context) {
     if (threadIndex == 0) {
         ASSERT_EQ(context->inputSize.y, context->nBatches);
         ASSERT_EQ(context->outputSize.x, 1);
         ASSERT_EQ(context->outputSize.y, context->nBatches);
 
-        const NnRmsOpConfig *config = (NnRmsOpConfig *)context->opConfig;
+        const NnInvRmsOpConfig *config = (NnInvRmsOpConfig *)context->opConfig;
         for (NnSize batchIndex = 0; batchIndex < batchSize; batchIndex++) {
             float *input = (float *)context->input[batchIndex];
             float *output = (float *)context->output[batchIndex];
             DEBUG_VECTOR(context, "input", input);
-            float rms = rms_F32(
+            float rms = invRms_F32(
                 input,
                 context->inputSize.x,
                 config->epsilon);
@@ -1221,8 +1221,8 @@ NnCpuOpForward getCpuOpForward(NnOpCode code, NnOpQuantType quantType) {
         if (quantType == F32_F32_F32) return embeddingForward_F32_F32_F32;
         if (quantType == F32_F32_Q80) return embeddingForward_F32_F32_Q80;
     }
-    if (code == OP_RMS) {
-        if (quantType == F32_F32_F32) return rmsForward_F32_F32;
+    if (code == OP_INV_RMS) {
+        if (quantType == F32_F32_F32) return invRmsForward_F32_F32;
     }
     if (code == OP_RMS_NORM) {
         if (quantType == F32_F32_F32) return rmsNormForward_F32_F32_F32;

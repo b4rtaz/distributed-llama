@@ -69,7 +69,7 @@ NnOpQuantType getOpQuantType(NnFloatType input, NnFloatType weight, NnFloatType 
 const char *opCodeToString(NnOpCode code) {
     if (code == OP_MERGE_ADD) return "MERGE_ADD";
     if (code == OP_EMBEDDING) return "EMBEDDING";
-    if (code == OP_RMS) return "RMS";
+    if (code == OP_INV_RMS) return "INV_RMS";
     if (code == OP_RMS_NORM) return "RMS_NORM";
     if (code == OP_MATMUL) return "MATMUL";
     if (code == OP_ROPE_LLAMA) return "ROPE_LLAMA";

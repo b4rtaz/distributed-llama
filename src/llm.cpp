@@ -161,19 +161,19 @@ LlmNet buildLlmNet(LlmHeader *h, NnSize nNodes, NnSize nBatches) {
         const NnSize yqBufferIndex = h->syncType == F_32
             ? yBufferIndex
             : nodeBuilder.addBuffer("yq", size2D(h->syncType, nBatches, h->dim));
-        const NnSize yqSliceIndex = nodeBuilder.addBuffer("yqSlice", size2D(h->syncType, nBatches, h->dim / nNodes));
+        const NnSize yqSliceIndex = nodeBuilder.addBuffer("yq_slice", size2D(h->syncType, nBatches, h->dim / nNodes));
 
         const NnSize qBufferIndex = nodeBuilder.addBuffer("q", size2D(F_32, nBatches, n.qSlice.d0));
-        const NnSize kTempBufferIndex = nodeBuilder.addBuffer("kTemp", size2D(F_32, nBatches, n.kSlice.d0));
-        const NnSize vTempBufferIndex = nodeBuilder.addBuffer("vTemp", size2D(F_32, nBatches, n.vSlice.d0));
+        const NnSize kTempBufferIndex = nodeBuilder.addBuffer("k_temp", size2D(F_32, nBatches, n.kSlice.d0));
+        const NnSize vTempBufferIndex = nodeBuilder.addBuffer("v_temp", size2D(F_32, nBatches, n.vSlice.d0));
 
         const NnSize dBufferIndex = nodeBuilder.addBuffer("d", size2D(F_32, nBatches, n.w1Slice.d0));
         const NnSize dqBufferIndex = h->syncType == F_32
             ? dBufferIndex
             : nodeBuilder.addBuffer("d", size2D(h->syncType, nBatches, n.w1Slice.d0));
         const NnSize lBufferIndex = nodeBuilder.addBuffer("l", size2D(F_32, nBatches, n.w3Slice.d0));
-        const NnSize rmsBufferIndex = nodeBuilder.addBuffer("rms", size2D(F_32, nBatches, 1));
-        const NnSize ropeCacheBufferIndex = nodeBuilder.addBuffer("ropeCache", ropeSlice.cacheSize);
+        const NnSize invRmsBufferIndex = nodeBuilder.addBuffer("inv_rms", size2D(F_32, nBatches, 1));
+        const NnSize ropeCacheBufferIndex = nodeBuilder.addBuffer("rope_cache", ropeSlice.cacheSize);
         const NnSize attBufferIndex = nodeBuilder.addBuffer("att", multiHeadAttSlice.attSize);
         const NnSize logitsSliceBufferIndex = nodeBuilder.addBuffer("lg", size2D(F_32, nBatches, h->vocabSize / nNodes));
 
@@ -215,17 +215,17 @@ LlmNet buildLlmNet(LlmHeader *h, NnSize nNodes, NnSize nBatches) {
             }
 
             att.addOp(
-                OP_RMS, "block_rms_0", layerIndex,
+                OP_INV_RMS, "block_inv_rms_0", layerIndex,
                 pointerConfig(PNTR_BUFFER, xBufferIndex),
-                pointerConfig(PNTR_BUFFER, rmsBufferIndex),
+                pointerConfig(PNTR_BUFFER, invRmsBufferIndex),
                 size0(),
-                NnRmsOpConfig{h->normEpsilon});
+                NnInvRmsOpConfig{h->normEpsilon});
             att.addOp(
                 OP_RMS_NORM, "block_rms_norm_0", layerIndex,
                 pointerConfig(PNTR_BUFFER, xBufferIndex),
                 pointerConfig(PNTR_BUFFER, yBufferIndex),
                 n.rmsNormSize,
-                NnRmsNormOpConfig{rmsBufferIndex});
+                NnRmsNormOpConfig{invRmsBufferIndex});
             if (yBufferIndex != yqBufferIndex) {
                 att.addOp(
                     OP_CAST, "block_cast_y", layerIndex,
@@ -318,17 +318,17 @@ LlmNet buildLlmNet(LlmHeader *h, NnSize nNodes, NnSize nBatches) {
                 size0(),
                 NnMergeAddOpCodeConfig{});
             ff.addOp(
-                OP_RMS, "block_rms_1", layerIndex,
+                OP_INV_RMS, "block_inv_rms_1", layerIndex,
                 pointerConfig(PNTR_BUFFER, xBufferIndex),
-                pointerConfig(PNTR_BUFFER, rmsBufferIndex),
+                pointerConfig(PNTR_BUFFER, invRmsBufferIndex),
                 size0(),
-                NnRmsOpConfig{h->normEpsilon});
+                NnInvRmsOpConfig{h->normEpsilon});
             ff.addOp(
                 OP_RMS_NORM, "block_rms_norm_1", layerIndex,
                 pointerConfig(PNTR_BUFFER, xBufferIndex),
                 pointerConfig(PNTR_BUFFER, yBufferIndex),
                 n.rmsNormSize,
-                NnRmsNormOpConfig{rmsBufferIndex});
+                NnRmsNormOpConfig{invRmsBufferIndex});
             if (yBufferIndex != yqBufferIndex) {
                 ff.addOp(
                     OP_CAST, "block_cast_y3", layerIndex,
@@ -395,17 +395,17 @@ LlmNet buildLlmNet(LlmHeader *h, NnSize nNodes, NnSize nBatches) {
             size0(),
             NnMergeAddOpCodeConfig{});
         end.addOp(
-            OP_RMS, "final_rms", 0,
+            OP_INV_RMS, "final_inv_rms", 0,
             pointerConfig(PNTR_BUFFER, xBufferIndex),
-            pointerConfig(PNTR_BUFFER, rmsBufferIndex),
+            pointerConfig(PNTR_BUFFER, invRmsBufferIndex),
             size0(),
-            NnRmsOpConfig{h->normEpsilon});
+            NnInvRmsOpConfig{h->normEpsilon});
         end.addOp(
             OP_RMS_NORM, "final_rms_norm", 0,
             pointerConfig(PNTR_BUFFER, xBufferIndex),
             pointerConfig(PNTR_BUFFER, yBufferIndex),
             n.rmsNormSize,
-            NnRmsNormOpConfig{rmsBufferIndex});
+            NnRmsNormOpConfig{invRmsBufferIndex});
         if (yBufferIndex != yqBufferIndex) {
             end.addOp(
                 OP_CAST, "final_cast_y", 0,
