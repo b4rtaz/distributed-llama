@@ -564,9 +564,8 @@ int main(int argc, char *argv[]) {
             return EXIT_SUCCESS;
         }
         runInferenceApp(&args, server);
-    } catch (const BadArgumentException& e) {
-        fprintf(stderr, "%s\n\n", e.what());
-        usage();
+    } catch (std::exception &e) {
+        printf("🚨 Critical error: %s\n", e.what());
         cleanupSockets();
         return EXIT_FAILURE;
     }
