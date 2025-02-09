@@ -338,28 +338,33 @@ public:
         naiveCache.resolveDeltaPrompt(deltaPrompt, startPos);
 
         size_t nInputItems = deltaPrompt.size();
-        ChatItem * const inputItems = (ChatItem*)malloc(sizeof(ChatItem) * nInputItems);
+        std::unique_ptr<ChatItem[]> inputItemsPtr(new ChatItem[nInputItems]);
+        ChatItem *inputItems = inputItemsPtr.get();
         for (size_t i = 0; i < nInputItems; i++) {
             inputItems[i].role = deltaPrompt[i].role;
             inputItems[i].message = deltaPrompt[i].content;
         }
 
         std::string inputPrompt = chatTemplate->generate(nInputItems, inputItems, true);
-        free(inputItems);
         printf("🔹%s🔸", inputPrompt.c_str());
 
-        int promptLength = inputPrompt.size();
+        size_t promptLength = inputPrompt.size();
         int nPromptTokens;
-        int * const promptTokens = (int*)malloc(sizeof(int) * (promptLength + 3));
+        std::unique_ptr<int[]> promptTokensPtr(new int[promptLength + 2]);
+        int *promptTokens = promptTokensPtr.get();
         tokenizer->encode((char*)inputPrompt.c_str(), promptTokens, &nPromptTokens, true, true);
-        int promptEndPos = startPos + nPromptTokens;
+
+        pos_t promptEndPos = startPos + nPromptTokens - 1;
+        if (promptEndPos > header->seqLen)
+            promptEndPos = header->seqLen;
+
+        pos_t maxPredPos = params.max_tokens > 0 ? (promptEndPos + params.max_tokens) : header->seqLen;
+        if (maxPredPos > header->seqLen)
+            maxPredPos = header->seqLen;
 
         for (size_t j = 0; j < deltaPrompt.size(); j++) {
             naiveCache.push(NaiveCacheItem(promptEndPos, deltaPrompt[j]));
         }
-
-        pos_t maxPos = params.max_tokens > 0 ? (promptEndPos + params.max_tokens) : header->seqLen;
-        if (maxPos > header->seqLen) maxPos = header->seqLen;
 
         if (params.stream) {
             request.writeStreamStartChunk();
@@ -369,12 +374,12 @@ public:
         size_t nStops = params.stop.size();
 
         NnSize pos = startPos;
-        NnSize promptPos = 0;
         int token;
-        for (;;) {
-            long remainingTokens = nPromptTokens - 1 - (long)promptPos;
+        for (NnSize i = 0; ;) {
+            long remainingTokens = promptEndPos - pos;
             if (remainingTokens <= 0)
                 break;
+
             NnSize batchSize = remainingTokens < args->nBatches
                 ? remainingTokens
                 : args->nBatches;
@@ -382,26 +387,28 @@ public:
             inference->setBatchSize(batchSize);
             inference->setPosition(pos);
             for (NnSize i = 0; i < batchSize; i++)
-                inference->setToken(i, promptTokens[promptPos + i]);
+                inference->setToken(i, promptTokens[i]);
 
             inference->forward();
 
+            i += batchSize;
             pos += batchSize;
-            promptPos += batchSize;
-            token = promptTokens[promptPos + 1];
+            token = promptTokens[i + 1];
         }
+
         inference->setBatchSize(1);
 
-        for (; pos < maxPos; pos++) {
+        for (; pos < maxPredPos; pos++) {
             int prevToken = token;
+
             inference->setPosition(pos);
             inference->setToken(0, token);
             inference->forward();
+
             token = sampler->sample(inference->logitsPipe);
 
             char* piece = tokenizer->decode(prevToken, token);
             bool isSafe = isSafePiece(piece);
-
             EosDetectorType eosType = eosDetector->append(token, isSafe ? piece : "");
 
             if (isSafePiece(piece)) {
@@ -421,7 +428,6 @@ public:
             }
             if (eosType == EOS) break;
         }
-        free(promptTokens);
 
         ChatMessage chatMessage("assistant", buffer);
         if (pos == header->seqLen) {
