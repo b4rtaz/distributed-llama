@@ -93,14 +93,18 @@ void testQuantization(const NnSize m) {
 void testInvRms() {
     const float epsilon = 0.00001;
 
-    std::vector<float> x(4);
-    x[0] = 0.2f;
-    x[1] = 0.5f;
-    x[2] = 0.7f;
-    x[3] = 0.1f;
+    std::vector<float> x(8);
+    x[0] = 0.1f;
+    x[1] = 0.3f;
+    x[2] = 0.2f;
+    x[3] = 0.4f;
+    x[4] = 0.6f;
+    x[5] = 0.5f;
+    x[6] = 0.0f;
+    x[7] = 0.8f;
 
-    const float y0 = invRms_F32(x.data(), 4, epsilon);
-    float ev0 = 1.0f / 0.4444f;
+    const float y0 = invRms_F32(x.data(), 8, epsilon);
+    float ev0 = 1.0f / 0.4402f;
     compare_F32("rms_F32", &y0, &ev0, 1, 0.001f);
 }
 

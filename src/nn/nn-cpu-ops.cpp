@@ -75,9 +75,9 @@ static inline float32x4_t exp_F32_neon(float32x4_t x) {
 #endif
 
 static float invRms_F32(const float *x, const unsigned int size, const float epsilon) {
+    assert(size % 8 == 0);
     float ss;
 #if defined(__ARM_NEON)
-    assert(size % 4 == 0);
     float32x4_t fsq;
     float32x4_t fs = vmovq_n_f32(0);
     for (unsigned int j = 0; j < size; j += 4) {
@@ -86,7 +86,6 @@ static float invRms_F32(const float *x, const unsigned int size, const float eps
     }
     ss = vaddvq_f32(fs);
 #elif defined(__AVX2__)
-    assert(size % 8 == 0);
     __m256 a;
     __m256 u = _mm256_set1_ps(0.0f);
     for (unsigned int j = 0; j < size; j += 8) {
