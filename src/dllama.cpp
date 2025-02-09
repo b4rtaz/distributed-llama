@@ -21,8 +21,10 @@ static void inference(AppInferenceContext *context) {
     int nInputTokens;
     context->tokenizer->encode(context->args->prompt, inputTokens, &nInputTokens, true, false);
 
+    if (nInputTokens > context->header->seqLen)
+        throw std::runtime_error("The number of prompt tokens is greater than the sequence length");
     if (nInputTokens > context->args->steps)
-        throw std::runtime_error("The number of input tokens is greater than the number of steps");
+        throw std::runtime_error("The number of prompt tokens is greater than the number of steps");
 
     Timer evalTimer;
     size_t sentBytes = 0;
@@ -62,7 +64,8 @@ static void inference(AppInferenceContext *context) {
     context->inference->setBatchSize(1);
 
     Timer predTimer;
-    for (; pos <= context->args->steps; pos++) {
+    const NnSize maxPos = std::min(context->header->seqLen, context->args->steps);
+    for (; pos < maxPos; pos++) {
         Timer tokenTimer;
         unsigned int prevToken = token;
         context->inference->setPosition(pos);
