@@ -204,6 +204,9 @@ static void chat(AppInferenceContext *context) {
 }
 
 int main(int argc, char **argv) {
+    initSockets();
+
+    int returnCode = EXIT_SUCCESS;
     try {
         AppCliArgs args = AppCliArgs::parse(argc, argv, true);
         if (std::strcmp(args.mode, "inference") == 0)
@@ -216,7 +219,9 @@ int main(int argc, char **argv) {
             throw std::runtime_error("Unsupported mode");
     } catch (std::exception &e) {
         printf("🚨 Critical error: %s\n", e.what());
-        return 1;
+        returnCode = EXIT_FAILURE;
     }
-    return 0;
+
+    cleanupSockets();
+    return returnCode;
 }

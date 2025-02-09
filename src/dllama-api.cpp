@@ -557,19 +557,19 @@ void usage() {
 int main(int argc, char *argv[]) {
     initSockets();
 
+    int returnCode = EXIT_SUCCESS;
     try {
         AppCliArgs args = AppCliArgs::parse(argc, argv, false);
         if (args.help) {
             usage();
-            return EXIT_SUCCESS;
+        } else {
+            runInferenceApp(&args, server);
         }
-        runInferenceApp(&args, server);
     } catch (std::exception &e) {
         printf("🚨 Critical error: %s\n", e.what());
-        cleanupSockets();
-        return EXIT_FAILURE;
+        returnCode = EXIT_FAILURE;
     }
 
     cleanupSockets();
-    return EXIT_SUCCESS;
+    return returnCode;
 }

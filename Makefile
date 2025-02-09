@@ -43,7 +43,7 @@ nn-cpu.o: src/nn/nn-cpu.cpp
 	$(CXX) $(CXXFLAGS) -c $^ -o $@
 nn-cpu-test: src/nn/nn-cpu-test.cpp nn-quants.o nn-core.o nn-executor.o llamafile-sgemm.o nn-cpu-ops.o nn-cpu.o
 	$(CXX) $(CXXFLAGS) $^ -o $@ $(LIBS)
-nn-cpu-ops-test: src/nn/nn-cpu-ops-test.cpp nn-quants.o nn-core.o nn-executor.o llamafile-sgemm.o nn-cpu-ops.o nn-cpu.o
+nn-cpu-ops-test: src/nn/nn-cpu-ops-test.cpp nn-quants.o nn-core.o nn-executor.o llamafile-sgemm.o nn-cpu.o
 	$(CXX) $(CXXFLAGS) $^ -o $@ $(LIBS)
 
 # llm
