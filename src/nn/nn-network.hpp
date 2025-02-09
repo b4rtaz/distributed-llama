@@ -5,6 +5,15 @@
 
 #define ROOT_SOCKET_INDEX 0
 
+void initSockets();
+void cleanupSockets();
+int acceptSocket(int serverSocket);
+void setReuseAddr(int socket);
+void writeSocket(int socket, const void* data, size_t size);
+void readSocket(int socket, void* data, size_t size);
+int createServerSocket(int port);
+void closeServerSocket(int serverSocket);
+
 class NnReadNetworkException : public std::exception {
 public:
     int code;

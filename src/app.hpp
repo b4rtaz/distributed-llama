@@ -97,4 +97,9 @@ typedef struct {
 void runInferenceApp(AppCliArgs *args, void (*handler)(AppInferenceContext *context));
 void runWorkerApp(AppCliArgs *args);
 
+class BadArgumentException : public std::runtime_error {
+public:
+    explicit BadArgumentException(const std::string& message) : std::runtime_error(message) {}
+};
+
 #endif

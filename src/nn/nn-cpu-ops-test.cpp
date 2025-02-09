@@ -6,7 +6,7 @@
 void rand(float *o, const NnSize n, const NnSize seed) {
     srand(seed + 123456);
     for (NnSize i = 0; i < n; i++) {
-        float v = (float)rand() / RAND_MAX;
+        float v = (float)(rand() / RAND_MAX);
         o[i] = v * 2.0f - 1.0f;
     }
 }
