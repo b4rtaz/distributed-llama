@@ -204,7 +204,7 @@ void runInferenceApp(AppCliArgs *args, void (*handler)(AppInferenceContext *cont
     if (header.weightType == F_Q40 && header.syncType != F_Q80)
         throw std::runtime_error("This version supports only Q40 weights with Q80 sync type");
 
-    Tokenizer tokenizer(args->tokenizerPath, header.vocabSize);
+    Tokenizer tokenizer(args->tokenizerPath);
     Sampler sampler(header.vocabSize, args->temperature, args->topp, args->seed);
     LlmNet net = buildLlmNet(&header, nNodes, args->nBatches);
     NnNodeConfig *rootNodeConfig = &net.nodeConfigs[0];

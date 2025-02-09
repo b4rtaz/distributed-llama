@@ -351,7 +351,7 @@ public:
         int promptLength = inputPrompt.size();
         int nPromptTokens;
         int * const promptTokens = (int*)malloc(sizeof(int) * (promptLength + 3));
-        tokenizer->encode((char*)inputPrompt.c_str(), promptTokens, &nPromptTokens, true, false);
+        tokenizer->encode((char*)inputPrompt.c_str(), promptTokens, &nPromptTokens, true, true);
         int promptEndPos = startPos + nPromptTokens;
 
         for (size_t j = 0; j < deltaPrompt.size(); j++) {

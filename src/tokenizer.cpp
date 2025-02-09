@@ -70,7 +70,7 @@ float randomF32(unsigned long long *state) {
     return (randomU32(state) >> 8) / 16777216.0f;
 }
 
-int compare_tokens(const void *a, const void *b) {
+int compareTokens(const void *a, const void *b) {
     return strcmp(((TokenIndex*)a)->str, ((TokenIndex*)b)->str);
 }
 
@@ -94,12 +94,13 @@ void safePrintf(char *piece) {
     }
 }
 
-Tokenizer::Tokenizer(const char* tokenizerPath, int modelVocabSize) {
+Tokenizer::Tokenizer(const char* tokenizerPath) {
     eosId = -1;
     bosId = -1;
     chatEosId = -1;
-    chatTemplate = NULL;
-    chatStop = NULL;
+    chatTemplate = nullptr;
+    chatStop = nullptr;
+    maxTokenLength = 0;
 
     // read in the file
     FILE *file = fopen(tokenizerPath, "rb");
@@ -163,34 +164,57 @@ Tokenizer::Tokenizer(const char* tokenizerPath, int modelVocabSize) {
         throw std::runtime_error("Invalid tokenizer file");
     }
 
-    if (maxTokenLength < 1 || vocabSize != modelVocabSize) {
-        throw std::runtime_error("Tokenizer file is invalid or incompatible with model");
-    }
-
-    if (bosId >= 0) printf("📄 BosId: %d\n", bosId);
-    if (eosId >= 0) printf("📄 EosId: %d\n", eosId);
-    if (chatEosId >= 0) printf("📄 ChatEosId: %d\n", chatEosId);
+    if (maxTokenLength < 1)
+        throw std::runtime_error("Invalid tokenizer max token length");
 
     // malloc space to hold the scores and the strings
-    vocab = (char**)malloc(vocabSize * sizeof(char*));
-    vocabScores = (float*)malloc(vocabSize * sizeof(float));
-    sortedVocab = NULL; // initialized lazily
+    vocab = new char*[vocabSize];
+    vocabLength = new unsigned int[vocabSize];
+    vocabScores = new float[vocabSize];
     for (int i = 0; i < 256; i++) {
         bytePieces[i * 2] = (unsigned char)i;
         bytePieces[i * 2 + 1] = '\0';
     }
 
-    int len;
+    int length;
     for (int i = 0; i < vocabSize; i++) {
         if (fread(vocabScores + i, sizeof(float), 1, file) != 1)
             throw std::runtime_error("Cannot read size from tokenizer file");
-        if (fread(&len, sizeof(int), 1, file) != 1)
+        if (fread(&length, sizeof(int), 1, file) != 1)
             throw std::runtime_error("Cannot read length from tokenizer file");
-        vocab[i] = (char *)malloc(len + 1);
-        if (fread(vocab[i], len, 1, file) != 1)
+        vocab[i] = new char[length + 1];
+        if (fread(vocab[i], length, 1, file) != 1)
             throw std::runtime_error("Cannot read word from tokenizer file");
-        vocab[i][len] = '\0'; // add the string terminating token
+        vocab[i][length] = '\0'; // add the string terminating token
+        vocabLength[i] = length;
     }
+
+    // TODO: this is very unstable assumption that bosId splits regular and special vocab
+    regularVocabSize = bosId;
+    specialVocabSize = vocabSize - regularVocabSize;
+
+    regularVocab = new TokenIndex[regularVocabSize];
+    for (int i = 0; i < regularVocabSize; i++) {
+        regularVocab[i].str = vocab[i];
+        regularVocab[i].id = i;
+    }
+    qsort(regularVocab, regularVocabSize, sizeof(TokenIndex), compareTokens);
+
+    specialVocab = new TokenIndex[specialVocabSize];
+    for (int i = 0; i < specialVocabSize; i++) {
+        specialVocab[i].str = vocab[i + regularVocabSize];
+        specialVocab[i].id = i + regularVocabSize;
+    }
+
+    strBufferSize = maxTokenLength * 2 + 1 + 2;
+    strBuffer = new char[strBufferSize];
+
+    if (bosId >= 0) printf("📄 BosId: %d (%s)\n", bosId, vocab[bosId]);
+    if (eosId >= 0) printf("📄 EosId: %d (%s)\n", eosId, vocab[eosId]);
+    if (chatEosId >= 0) printf("📄 ChatEosId: %d (%s)\n", chatEosId, vocab[eosId]);
+    printf("📄 RegularVocabSize: %d\n", regularVocabSize);
+    printf("📄 SpecialVocabSize: %d\n", specialVocabSize);
+
     fclose(file);
 }
 
@@ -198,10 +222,13 @@ Tokenizer::~Tokenizer() {
     if (chatTemplate != NULL) delete[] chatTemplate;
     if (chatStop != NULL) delete[] chatStop;
 
-    for (int i = 0; i < vocabSize; i++) { free(vocab[i]); }
-    free(vocab);
-    free(vocabScores);
-    free(sortedVocab);
+    for (int i = 0; i < vocabSize; i++)
+        delete[] vocab[i];
+    delete[] vocab;
+    delete[] vocabScores;
+    delete[] regularVocab;
+    delete[] specialVocab;
+    delete[] strBuffer;
 }
 
 char* Tokenizer::decode(int prev_token, int token) {
@@ -220,48 +247,22 @@ char* Tokenizer::decode(int prev_token, int token) {
 int str_lookup(char *str, TokenIndex *sorted_vocab, int vocab_size) {
     // efficiently find the perfect match for str in vocab, return its index or -1 if not found
     TokenIndex tok = { .str = str }; // acts as the key to search for
-    TokenIndex *res = (TokenIndex*)bsearch(&tok, sorted_vocab, vocab_size, sizeof(TokenIndex), compare_tokens);
+    TokenIndex *res = (TokenIndex*)bsearch(&tok, sorted_vocab, vocab_size, sizeof(TokenIndex), compareTokens);
     return res != NULL ? res->id : -1;
 }
 
-void Tokenizer::encode(char *text, int *tokens, int *nTokens, bool addBos, bool addEos) {
-    // encode the string text (input) into an upper-bound preallocated tokens[] array
-    // bos != 0 means prepend the BOS token (=1), eos != 0 means append the EOS token (=2)
-    if (text == NULL) { fprintf(stderr, "cannot encode NULL text\n"); exit(EXIT_FAILURE); }
+void Tokenizer::encode(char *text, int *tokens, int *nTokens, bool addBos, bool addSpecialTokens) {
+    if (text == nullptr)
+        throw std::runtime_error("Input text is null");
 
-    if (sortedVocab == NULL) {
-        // lazily malloc and sort the vocabulary
-        sortedVocab = new TokenIndex[vocabSize];
-        for (int i = 0; i < vocabSize; i++) {
-            sortedVocab[i].str = vocab[i];
-            sortedVocab[i].id = i;
-        }
-        qsort(sortedVocab, vocabSize, sizeof(TokenIndex), compare_tokens);
-    }
-
-    // create a temporary buffer that will store merge candidates of always two consecutive tokens
-    // *2 for concat, +1 for null terminator +2 for UTF8 (in case max_token_length is 1)
-    int str_buffer_size = maxTokenLength*2 +1 +2;
-    char* str_buffer = new char[str_buffer_size];
-    size_t str_len = 0;
+    size_t strLen = 0;
 
     // start at 0 tokens
     *nTokens = 0;
 
     // add optional BOS (=1) token, if desired
-    if (addBos) tokens[(*nTokens)++] = bosId;
-
-    // add_dummy_prefix is true by default
-    // so prepend a dummy prefix token to the input string, but only if text != ""
-    // TODO: pretty sure this isn't correct in the general case but I don't have the
-    // energy to read more of the sentencepiece code to figure out what it's doing
-    if (text[0] != '\0') {
-        char space[] = " ";
-        int dummy_prefix = str_lookup(space, sortedVocab, vocabSize);
-        // TODO: this condition saves us from segmentation fault
-        if (dummy_prefix != -1)
-            tokens[(*nTokens)++] = dummy_prefix;
-    }
+    if (addBos)
+        tokens[(*nTokens)++] = bosId;
 
     // Okay UTF-8 time. This will get messy. Here is the reference from Wikipedia:
     // Code point ↔ UTF-8 conversion
@@ -273,6 +274,21 @@ void Tokenizer::encode(char *text, int *tokens, int *nTokens, bool addBos, bool 
 
     // process the raw (UTF-8) byte sequence of the input string
     for (char *c = text; *c != '\0'; c++) {
+        if (addSpecialTokens) {
+            bool foundSpecialToken = false;
+            for (unsigned int i = 0; i < specialVocabSize; i++) {
+                unsigned int tokenId = specialVocab[i].id;
+                unsigned int length = vocabLength[tokenId];
+                if (std::strncmp(vocab[tokenId], c, length) == 0) {
+                    tokens[(*nTokens)++] = tokenId;
+                    foundSpecialToken = true;
+                    c += length - 1;
+                    break;
+                }
+            }
+            if (foundSpecialToken)
+                continue;
+        }
 
         // reset buffer if the current byte is ASCII or a leading byte
         // 0xC0 is 11000000, so (*c & 0xC0) keeps the first 2 bits and zeros the rest
@@ -282,21 +298,21 @@ void Tokenizer::encode(char *text, int *tokens, int *nTokens, bool addBos, bool 
         if ((*c & 0xC0) != 0x80) {
             // this byte must be either a leading byte (11...) or an ASCII char (0x...)
             // => reset our location, as we're starting a new UTF-8 codepoint
-            str_len = 0;
+            strLen = 0;
         }
 
         // append the current byte to the buffer
-        str_buffer[str_len++] = *c; // ++ is post-increment, incremented after this line
-        str_buffer[str_len] = '\0';
+        strBuffer[strLen++] = *c; // ++ is post-increment, incremented after this line
+        strBuffer[strLen] = '\0';
 
         // while the next character is a continuation byte, continue appending
         // but if there are too many of them, just stop to avoid overruning str_buffer size.
-        if ((*(c+1) & 0xC0) == 0x80 && str_len < 4) {
+        if ((*(c+1) & 0xC0) == 0x80 && strLen < 4) {
             continue;
         }
 
         // ok c+1 is not a continuation byte, so we've read in a full codepoint
-        int id = str_lookup(str_buffer, sortedVocab, vocabSize);
+        int id = str_lookup(strBuffer, regularVocab, vocabSize);
         if (id != -1) {
             // we found this codepoint in vocab, add it as a token
             tokens[(*nTokens)++] = id;
@@ -304,11 +320,11 @@ void Tokenizer::encode(char *text, int *tokens, int *nTokens, bool addBos, bool 
             // byte_fallback encoding: just encode each byte as a token
             // +3 is here because the first 3 vocab elements are <unk>, <s>, </s>
             // so the individual bytes only start at index 3
-            for (int i=0; i < str_len; i++) {
-                tokens[(*nTokens)++] = (unsigned char)str_buffer[i] + 3;
+            for (int i=0; i < strLen; i++) {
+                tokens[(*nTokens)++] = (unsigned char)strBuffer[i] + 3;
             }
         }
-        str_len = 0; // protect against a sequence of stray UTF8 continuation bytes
+        strLen = 0; // protect against a sequence of stray UTF8 continuation bytes
     }
 
     // merge the best consecutive pair each iteration, according the scores in vocab_scores
@@ -319,8 +335,8 @@ void Tokenizer::encode(char *text, int *tokens, int *nTokens, bool addBos, bool 
 
         for (int i=0; i < (*nTokens-1); i++) {
             // check if we can merge the pair (tokens[i], tokens[i+1])
-            snprintf(str_buffer, str_buffer_size, "%s%s", vocab[tokens[i]], vocab[tokens[i+1]]);
-            int id = str_lookup(str_buffer, sortedVocab, vocabSize);
+            snprintf(strBuffer, strBufferSize, "%s%s", vocab[tokens[i]], vocab[tokens[i+1]]);
+            int id = str_lookup(strBuffer, regularVocab, vocabSize);
             if (id != -1 && vocabScores[id] > best_score) {
                 // this merge pair exists in vocab! record its score and position
                 best_score = vocabScores[id];
@@ -341,11 +357,6 @@ void Tokenizer::encode(char *text, int *tokens, int *nTokens, bool addBos, bool 
         }
         (*nTokens)--; // token length decreased
     }
-
-    // add optional EOS (=2) token, if desired
-    if (addEos) tokens[(*nTokens)++] = eosId;
-
-    delete[] str_buffer;
 }
 
 int sample_argmax(float* probabilities, int n) {
