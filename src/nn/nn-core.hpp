@@ -193,7 +193,7 @@ typedef struct {
 } NnInvRmsOpConfig;
 
 typedef struct {
-    NnSize rmsBufferIndex;
+    NnSize invRmsBufferIndex;
 } NnRmsNormOpConfig;
 
 typedef struct {

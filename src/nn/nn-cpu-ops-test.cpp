@@ -89,7 +89,7 @@ void testQuantization(const NnSize m) {
     compare_F32("testQuantization_Q80", a.data(), aTemp.data(), m * Q80_BLOCK_SIZE, 0.01);
 }
 
-// rms
+// invRms
 void testInvRms() {
     const float epsilon = 0.00001;
 

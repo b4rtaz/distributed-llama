@@ -127,7 +127,7 @@ static void rmsNorm_F32(float *output, const float *x, const float invRms, const
 #endif
 }
 
-static void rmsNorm_Q80_F32_F32(float *output, const NnBlockQ80 *x, const float rms, const float *w, const NnSize size, const NnSize nThreads, const NnSize threadIndex) {
+static void rmsNorm_Q80_F32_F32(float *output, const NnBlockQ80 *x, const float invRms, const float *w, const NnSize size, const NnSize nThreads, const NnSize threadIndex) {
     assert(size % Q80_BLOCK_SIZE == 0);
     const NnSize nBlocks = size / Q80_BLOCK_SIZE;
     SPLIT_THREADS(start, end, nBlocks, nThreads, threadIndex);
@@ -136,7 +136,7 @@ static void rmsNorm_Q80_F32_F32(float *output, const NnBlockQ80 *x, const float 
         float d = convertF16toF32(x[i].d);
         for (NnSize j = 0; j < Q80_BLOCK_SIZE; j++) {
             NnSize k = i * Q80_BLOCK_SIZE + j;
-            output[k] = w[k] * (rms * d * x[i].qs[j]);
+            output[k] = w[k] * (invRms * d * x[i].qs[j]);
         }
     }
 }
@@ -826,7 +826,7 @@ static void invRmsForward_F32_F32(NnSize nThreads, NnSize threadIndex, NnSize ba
 
 static void initRmsNormForward_ANY_F32_F32(NnCpuOpContext *context) {
     NnRmsNormOpConfig *config = (NnRmsNormOpConfig *)context->opConfig;
-    NnBufferConfig *rmsBufferConfig = &context->bufferConfigs[config->rmsBufferIndex];
+    NnBufferConfig *rmsBufferConfig = &context->bufferConfigs[config->invRmsBufferIndex];
     ASSERT_EQ(context->inputSize.y, context->nBatches);
     ASSERT_EQ(context->inputSize.x, context->outputSize.x);
     ASSERT_EQ(context->outputSize.floatType, F_32);
@@ -844,7 +844,7 @@ static void rmsNormForward_F32_F32_F32(NnSize nThreads, NnSize threadIndex, NnSi
 
     NnRmsNormOpConfig *config = (NnRmsNormOpConfig *)context->opConfig;
     const float *weight = (float *)context->weight;
-    const float *rms = (float *)context->buffers[config->rmsBufferIndex];
+    const float *invRms = (float *)context->buffers[config->invRmsBufferIndex];
 
     for (NnSize batchIndex = 0; batchIndex < batchSize; batchIndex++) {
         float *input = (float *)context->input[batchIndex];
@@ -852,7 +852,7 @@ static void rmsNormForward_F32_F32_F32(NnSize nThreads, NnSize threadIndex, NnSi
         rmsNorm_F32(
             output,
             input,
-            rms[batchIndex],
+            invRms[batchIndex],
             weight,
             context->inputSize.x,
             nThreads,
@@ -865,7 +865,7 @@ static void rmsNormForward_Q80_F32_F32(NnSize nThreads, NnSize threadIndex, NnSi
 
     NnRmsNormOpConfig *config = (NnRmsNormOpConfig *)context->opConfig;
     const float *weight = (float *)context->weight;
-    const float *rms = (float *)context->buffers[config->rmsBufferIndex];
+    const float *invRms = (float *)context->buffers[config->invRmsBufferIndex];
 
     for (NnSize batchIndex = 0; batchIndex < batchSize; batchIndex++) {
         NnBlockQ80 *input = (NnBlockQ80 *)context->input[batchIndex];
@@ -873,7 +873,7 @@ static void rmsNormForward_Q80_F32_F32(NnSize nThreads, NnSize threadIndex, NnSi
         rmsNorm_Q80_F32_F32(
             output,
             input,
-            rms[batchIndex],
+            invRms[batchIndex],
             weight,
             context->inputSize.x,
             nThreads,

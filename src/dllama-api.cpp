@@ -20,7 +20,7 @@
 #include "tokenizer.hpp"
 #include "app.hpp"
 #include "json.hpp"
-#include "types.hpp"
+#include "api-types.hpp"
 #include "nn/nn-network.hpp"
 
 typedef unsigned int pos_t;
