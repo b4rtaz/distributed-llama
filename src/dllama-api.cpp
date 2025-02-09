@@ -368,11 +368,12 @@ public:
         std::string buffer;
         size_t nStops = params.stop.size();
 
-        NnSize pos = 0;
+        NnSize pos = startPos;
+        NnSize promptPos = 0;
         int token;
         for (;;) {
             Timer batchTimer;
-            long remainingTokens = nPromptTokens - 1 - (long)pos;
+            long remainingTokens = nPromptTokens - 1 - (long)promptPos;
             if (remainingTokens <= 0)
                 break;
             NnSize batchSize = remainingTokens < args->nBatches
@@ -382,47 +383,44 @@ public:
             inference->setBatchSize(batchSize);
             inference->setPosition(pos);
             for (NnSize i = 0; i < batchSize; i++)
-                inference->setToken(i, promptTokens[pos + i]);
+                inference->setToken(i, promptTokens[promptPos + i]);
 
             inference->forward();
 
             pos += batchSize;
-            token = promptTokens[pos + 1];
+            promptPos += batchSize;
+            token = promptTokens[promptPos + 1];
         }
         inference->setBatchSize(1);
 
         for (; pos < maxPos; pos++) {
-            if (pos < promptEndPos - 1) {
-                token = promptTokens[pos - startPos + 1];
-            } else {
-                int prevToken = token;
-                inference->setPosition(pos);
-                inference->setToken(0, token);
-                inference->forward();
-                token = sampler->sample(inference->logitsPipe);
+            int prevToken = token;
+            inference->setPosition(pos);
+            inference->setToken(0, token);
+            inference->forward();
+            token = sampler->sample(inference->logitsPipe);
 
-                char* piece = tokenizer->decode(prevToken, token);
-                bool isSafe = isSafePiece(piece);
+            char* piece = tokenizer->decode(prevToken, token);
+            bool isSafe = isSafePiece(piece);
 
-                EosDetectorType eosType = eosDetector->append(token, isSafe ? piece : "");
-    
-                if (isSafePiece(piece)) {
-                    printf("%s", piece);
-                    fflush(stdout);
-                }
+            EosDetectorType eosType = eosDetector->append(token, isSafe ? piece : "");
 
-                if (eosType == NOT_EOS || eosType == EOS) {
-                    char* delta = eosDetector->getDelta();
-                    if (delta != NULL) {
-                        std::string deltaStr(delta);
-                        if (params.stream)
-                            writeChatCompletionChunk(request, deltaStr, false);
-                        buffer += deltaStr;
-                    }
-                    eosDetector->clear();
-                }
-                if (eosType == EOS) break;
+            if (isSafePiece(piece)) {
+                printf("%s", piece);
+                fflush(stdout);
             }
+
+            if (eosType == NOT_EOS || eosType == EOS) {
+                char* delta = eosDetector->getDelta();
+                if (delta != NULL) {
+                    std::string deltaStr(delta);
+                    if (params.stream)
+                        writeChatCompletionChunk(request, deltaStr, false);
+                    buffer += deltaStr;
+                }
+                eosDetector->clear();
+            }
+            if (eosType == EOS) break;
         }
         free(promptTokens);
 
