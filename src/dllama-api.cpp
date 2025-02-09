@@ -372,7 +372,6 @@ public:
         NnSize promptPos = 0;
         int token;
         for (;;) {
-            Timer batchTimer;
             long remainingTokens = nPromptTokens - 1 - (long)promptPos;
             if (remainingTokens <= 0)
                 break;
