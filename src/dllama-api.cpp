@@ -541,7 +541,6 @@ void usage() {
     fprintf(stderr, "        [--max-seq-len <max>]\n");
     fprintf(stderr, "        [--nthreads <n>]\n");
     fprintf(stderr, "        [--workers <ip:port> ...]\n");
-    fprintf(stderr, "        [--packet-alignment <pa>]\n");
     fprintf(stderr, "        [--temperature <temp>]\n");
     fprintf(stderr, "        [--topp <t>]\n");
     fprintf(stderr, "        [--seed <s>]\n");

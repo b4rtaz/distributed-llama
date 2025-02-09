@@ -1039,13 +1039,13 @@ static void ropeLlamaForward_F32_F32(NnSize nThreads, NnSize threadIndex, NnSize
     const NnSize iEnd = e * 2;
     const bool applyScale = config->ropeScalingFactor != 1.0f;
 
-    const float *cache = (float *)context->buffers[config->ropeCacheBufferIndex + shift];
+    const float *cache = (float *)context->buffers[config->ropeCacheBufferIndex];
     const float *positions = (float *)context->pipes[config->positionPipeIndex];
 
     for (NnSize batchIndex = 0; batchIndex < batchSize; batchIndex++) {
         float *x = (float *)context->input[batchIndex];
         const NnSize pos = (NnSize)positions[batchIndex];
-        const float *posCache = &cache[pos * slice->sliceDim];
+        const float *posCache = &cache[pos * slice->sliceDim + shift];
 
         for (NnSize i = iStart; i < iEnd; i += 2) {
             const float fcr = posCache[i];
