@@ -103,11 +103,113 @@ static void inference(AppInferenceContext *context) {
         predTime / ((float) nPredTokens));
 }
 
+static size_t readStdin(const char *guide, char *buffer, size_t size) {
+    std::fflush(stdin);
+    std::printf("%s", guide);
+    if (std::fgets(buffer, size, stdin) != NULL) {
+        size_t length = std::strlen(buffer);
+        if (length > 0 && buffer[length - 1] == '\n') {
+            buffer[length - 1] = '\0';
+            length--;
+        }
+        return length;
+    }
+    return 0;
+}
+
+static void chat(AppInferenceContext *context) {
+    const NnSize seqLen = context->header->seqLen;
+    char prompt[2048];
+
+    TokenizerChatStops stops(context->tokenizer);
+    ChatTemplate chatTemplate(context->args->chatTemplateType, context->tokenizer->chatTemplate, stops.stops[0]);
+    EosDetector eosDetector(context->tokenizer->chatEosId, stops.nStops, stops.stops, stops.maxStopLength, stops.maxStopLength);
+
+    const size_t sysPromptLength = readStdin("💻 System prompt (optional): ", prompt, sizeof(prompt));
+    std::vector<ChatItem> deltaItems;
+    if (sysPromptLength > 0)
+        deltaItems.push_back(ChatItem{"system", prompt});
+
+    NnSize pos = 0;
+    size_t userPromptLength;
+    int token;
+    int nInputTokens;
+    do {
+        do {
+            userPromptLength = readStdin("\n👱 User\n> ", prompt, sizeof(prompt));
+        } while (userPromptLength == 0);
+
+        deltaItems.push_back(ChatItem{"user", prompt});
+
+        std::string inputPrompt = chatTemplate.generate(deltaItems.size(), deltaItems.data(), true);
+        std::unique_ptr<int[]> inputTokensPtr(new int[inputPrompt.size() + 3]);
+        int *inputTokens = inputTokensPtr.get();
+
+        bool addBos = pos == 0;
+        context->tokenizer->encode((char*)inputPrompt.c_str(), inputTokens, &nInputTokens, addBos, false);
+
+        NnSize userPromptEndPos = (NnSize)std::min<unsigned int>(seqLen, pos + nInputTokens - 1);
+        for (;;) {
+            int remainingTokens = userPromptEndPos - pos;
+            if (remainingTokens <= 0)
+                break;
+            NnSize batchSize = remainingTokens < context->args->nBatches
+                ? remainingTokens
+                : context->args->nBatches;
+
+            context->inference->setBatchSize(batchSize);
+            context->inference->setPosition(pos);
+            for (NnSize i = 0; i < batchSize; i++)
+                context->inference->setToken(i, inputTokens[i]);
+
+            context->inference->forward();
+
+            pos += batchSize;
+            token = inputTokens[pos + 1];
+        }
+
+        context->inference->setBatchSize(1);
+
+        printf("\n🤖 Assistant\n");
+        std::string answer;
+        while (pos < seqLen) {
+            int prevToken = token;
+
+            context->inference->setPosition(pos);
+            context->inference->setToken(0, token);
+
+            context->inference->forward();
+
+            token = context->sampler->sample(context->inference->logitsPipe);
+
+            char *piece = context->tokenizer->decode(prevToken, token);
+            bool isSafe = isSafePiece(piece);
+            EosDetectorType eosType = eosDetector.append(token, isSafe ? piece : "");
+            if (eosType == NOT_EOS || eosType == EOS) {
+                char *delta = eosDetector.getDelta();
+                if (delta != NULL) {
+                    printf("%s", delta);
+                    fflush(stdout);
+                }
+                eosDetector.clear();
+            }
+            pos++;
+            if (eosType == EOS) break;
+        }
+
+        deltaItems.clear();
+    } while (pos < seqLen);
+
+    printf("(end of context)\n");
+}
+
 int main(int argc, char **argv) {
     try {
         AppCliArgs args = AppCliArgs::parse(argc, argv, true);
         if (std::strcmp(args.mode, "inference") == 0)
             runInferenceApp(&args, &inference);
+        else if (std::strcmp(args.mode, "chat") == 0)
+            runInferenceApp(&args, &chat);
         else if (std::strcmp(args.mode, "worker") == 0)
             runWorkerApp(&args);
         else
