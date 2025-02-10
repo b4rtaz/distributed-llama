@@ -398,7 +398,7 @@ public:
 
         inference->setBatchSize(1);
 
-        for (; pos < maxPredPos; pos++) {
+        for (; pos < maxPredPos;) {
             int prevToken = token;
 
             inference->setPosition(pos);
@@ -426,6 +426,7 @@ public:
                 }
                 eosDetector->clear();
             }
+            pos++;
             if (eosType == EOS) break;
         }
 
