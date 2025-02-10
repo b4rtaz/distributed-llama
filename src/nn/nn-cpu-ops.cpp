@@ -107,13 +107,14 @@ static float invRms_F32(const float *x, const unsigned int size, const float eps
 
 static void rmsNorm_F32(float *output, const float *x, const float invRms, const float *w, const NnSize size, const NnSize nThreads, const NnSize threadIndex) {
     SPLIT_THREADS(start, end, size, nThreads, threadIndex);
+    unsigned int i = start;
 #if defined(__ARM_NEON)
-    assert(size % 4 == 0);
-    assert((start - end) % 4 == 0);
+    const unsigned int count = end - start;
+    const unsigned int neonEnd = end - (count % 4);
     float32x4_t fw;
     float32x4_t fx;
     float32x4_t fss = vmovq_n_f32(invRms);
-    for (unsigned int i = start; i < end; i += 4) {
+    for (; i < neonEnd; i += 4) {
         fw = vld1q_f32(&w[i]);
         fx = vld1q_f32(&x[i]);
         fx = vmulq_f32(fx, fw);
@@ -122,23 +123,18 @@ static void rmsNorm_F32(float *output, const float *x, const float invRms, const
     }
 #elif defined(__AVX2__)
     const unsigned int count = end - start;
-    const unsigned int avxEnd = start + (count / 8) * 8;
-    unsigned int i = start;
+    const unsigned int avxEnd = end - (count % 8);
     const __m256 invRmsVec = _mm256_set1_ps(invRms);
-
     for (; i < avxEnd; i += 8) {
-        __m256 xVec = _mm256_loadu_ps(x + i);
-        __m256 wVec = _mm256_loadu_ps(w + i);
+        __m256 xVec = _mm256_loadu_ps(&x[i]);
+        __m256 wVec = _mm256_loadu_ps(&w[i]);
         __m256 scaledX = _mm256_mul_ps(xVec, invRmsVec);
         __m256 result = _mm256_mul_ps(scaledX, wVec);
         _mm256_storeu_ps(output + i, result);
     }
-    for (; i < end; ++i)
-        output[i] = w[i] * (invRms * x[i]);
-#else
-    for (unsigned int i = start; i < end; i++)
-        output[i] = w[i] * (invRms * x[i]);
 #endif
+    for (; i < end; i++)
+        output[i] = w[i] * (invRms * x[i]);
 }
 
 static void rmsNorm_Q80_F32_F32(float *output, const NnBlockQ80 *x, const float invRms, const float *w, const NnSize size, const NnSize nThreads, const NnSize threadIndex) {
@@ -433,9 +429,10 @@ static void silu_F32(float *output, const unsigned int n, const NnSize nThreads,
     SPLIT_THREADS(start, end, n, nThreads, threadIndex);
     unsigned int i = start;
 #if defined(__ARM_NEON)
-    const unsigned int end4 = end - ((end - start) % 4);
+    const unsigned int count = end - start;
+    const unsigned int neonEnd = end - (count % 4);
 
-    for (; i < end4; i += 4) {
+    for (; i < neonEnd; i += 4) {
         float32x4_t x = vld1q_f32(output + i);
         float32x4_t neg_x = vnegq_f32(x);
         float32x4_t exp_negx = exp_F32_neon(neg_x);
