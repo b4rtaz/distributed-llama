@@ -120,10 +120,24 @@ static void rmsNorm_F32(float *output, const float *x, const float invRms, const
         fx = vmulq_f32(fx, fss);
         vst1q_f32(&output[i], fx);
     }
-#else
-    for (unsigned int i = start; i < end; i++) {
-        output[i] = w[i] * (invRms * x[i]);
+#elif defined(__AVX2__)
+    const unsigned int count = end - start;
+    const unsigned int avxEnd = start + (count / 8) * 8;
+    unsigned int i = start;
+    const __m256 invRmsVec = _mm256_set1_ps(invRms);
+
+    for (; i < avxEnd; i += 8) {
+        __m256 xVec = _mm256_loadu_ps(x + i);
+        __m256 wVec = _mm256_loadu_ps(w + i);
+        __m256 scaledX = _mm256_mul_ps(xVec, invRmsVec);
+        __m256 result = _mm256_mul_ps(scaledX, wVec);
+        _mm256_storeu_ps(output + i, result);
     }
+    for (; i < end; ++i)
+        output[i] = w[i] * (invRms * x[i]);
+#else
+    for (unsigned int i = start; i < end; i++)
+        output[i] = w[i] * (invRms * x[i]);
 #endif
 }
 
