@@ -75,34 +75,34 @@ static inline float32x4_t exp_F32_neon(float32x4_t x) {
 #endif
 
 static float invRms_F32(const float *x, const unsigned int size, const float epsilon) {
-    assert(size % 8 == 0);
-    float ss;
+    float sum;
 #if defined(__ARM_NEON)
+    assert(size % 4 == 0);
     float32x4_t fsq;
     float32x4_t fs = vmovq_n_f32(0);
     for (unsigned int j = 0; j < size; j += 4) {
         fsq = vld1q_f32(&x[j]);
         fs = vmlaq_f32(fs, fsq, fsq);
     }
-    ss = vaddvq_f32(fs);
+    sum = vaddvq_f32(fs);
 #elif defined(__AVX2__)
+    assert(size % 8 == 0);
     __m256 a;
     __m256 u = _mm256_set1_ps(0.0f);
     for (unsigned int j = 0; j < size; j += 8) {
         a = _mm256_loadu_ps(&x[j]);
         u = _mm256_fmadd_ps(a, a, u);
     }
-    ss = hsum_F8(u);
+    sum = hsum_F8(u);
 #else
-    ss = 0;
+    sum = 0;
     for (unsigned int j = 0; j < size; j++) {
-        ss += x[j] * x[j];
+        sum += x[j] * x[j];
     }
 #endif
-    ss /= size;
-    ss += epsilon;
-    ss = 1.0f / sqrtf(ss);
-    return ss;
+    sum /= size;
+    sum += epsilon;
+    return 1.0f / sqrtf(sum);
 }
 
 static void rmsNorm_F32(float *output, const float *x, const float invRms, const float *w, const NnSize size, const NnSize nThreads, const NnSize threadIndex) {
@@ -598,34 +598,34 @@ static void softmax_F32(float *x, const NnSize size) {
 }
 
 static float dotProduct_F32(const float *a, const float *b, const unsigned int size) {
-    #if defined(__ARM_NEON)
-        assert(size % 4 == 0);
-        float32x4_t fa;
-        float32x4_t fb;
-        float32x4_t fs = vmovq_n_f32(0);
-        for (unsigned int i = 0; i < size; i += 4) {
-            fa = vld1q_f32(&a[i]);
-            fb = vld1q_f32(&b[i]);
-            fs = vmlaq_f32(fs, fa, fb);
-        }
-        return vaddvq_f32(fs);
-    #elif defined(__AVX2__)
-        assert(size % 8 == 0);
-        __m256 a0, b0;
-        __m256 u = _mm256_set1_ps(0.0f);
-        for (unsigned int i = 0; i < size; i += 8) {
-            a0 = _mm256_loadu_ps(&a[i]);
-            b0 = _mm256_loadu_ps(&b[i]);
-            u = _mm256_fmadd_ps(a0, b0, u);
-        }
-        return hsum_F8(u);
-    #else
-        float sum = 0.0f;
-        for (unsigned int i = 0; i < size; i++) {
-            sum += a[i] * b[i];
-        }
-        return sum;
-    #endif
+#if defined(__ARM_NEON)
+    assert(size % 4 == 0);
+    float32x4_t fa;
+    float32x4_t fb;
+    float32x4_t fs = vmovq_n_f32(0);
+    for (unsigned int i = 0; i < size; i += 4) {
+        fa = vld1q_f32(&a[i]);
+        fb = vld1q_f32(&b[i]);
+        fs = vmlaq_f32(fs, fa, fb);
+    }
+    return vaddvq_f32(fs);
+#elif defined(__AVX2__)
+    assert(size % 8 == 0);
+    __m256 a0, b0;
+    __m256 u = _mm256_set1_ps(0.0f);
+    for (unsigned int i = 0; i < size; i += 8) {
+        a0 = _mm256_loadu_ps(&a[i]);
+        b0 = _mm256_loadu_ps(&b[i]);
+        u = _mm256_fmadd_ps(a0, b0, u);
+    }
+    return hsum_F8(u);
+#else
+    float sum = 0.0f;
+    for (unsigned int i = 0; i < size; i++) {
+        sum += a[i] * b[i];
+    }
+    return sum;
+#endif
 }
 
 static void multiheadAtt_F32(
