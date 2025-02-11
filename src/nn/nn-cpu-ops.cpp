@@ -351,6 +351,43 @@ static void matmul_Q80_Q40_F32(float *output, const NnBlockQ80 *x, const NnBlock
 
         output[di] = vaddvq_f32(sumv0) + vaddvq_f32(sumv1) + vaddvq_f32(sumv2) + vaddvq_f32(sumv3);
     }
+#elif defined(__AVX512F__)
+    for (NnSize i = start; i < end; i++) {
+        float sum = 0.0f;
+        for (NnSize j = 0; j < nBlocks; j++) {
+            const NnBlockQ40 *wb = &w[i * nBlocks + j];
+            const NnBlockQ80 *xb = &x[j];
+            const float s = CONVERT_F16_TO_F32(wb->d) * CONVERT_F16_TO_F32(xb->d);
+
+            __m128i v_w = _mm_loadu_si128((const __m128i*)wb->qs);
+
+            __m128i v_w0 = _mm_and_si128(v_w, _mm_set1_epi8(0x0F));
+            __m128i v_w1 = _mm_srli_epi16(v_w, 4);
+            v_w1 = _mm_and_si128(v_w1, _mm_set1_epi8(0x0F));
+            v_w0 = _mm_sub_epi8(v_w0, _mm_set1_epi8(8));
+            v_w1 = _mm_sub_epi8(v_w1, _mm_set1_epi8(8));
+
+            __m128i v_i1 = _mm_loadu_si128((const __m128i*)xb->qs);
+            __m128i v_i2 = _mm_loadu_si128((const __m128i*)(xb->qs + 16));
+
+            __m512i w0 = _mm512_cvtepi8_epi16(v_w0);
+            __m512i w1 = _mm512_cvtepi8_epi16(v_w1);
+            __m512i i1 = _mm512_cvtepi8_epi16(v_i1);
+            __m512i i2 = _mm512_cvtepi8_epi16(v_i2);
+
+            __m512i p0 = _mm512_mullo_epi16(w0, i1);
+            __m512i p1 = _mm512_mullo_epi16(w1, i2);
+
+            __m512i psum = _mm512_add_epi32(
+                _mm512_cvtepi16_epi32(p0),
+                _mm512_cvtepi16_epi32(p1)
+            );
+
+            int32_t total = _mm512_reduce_add_epi32(psum);
+            sum += total * s;
+        }
+        output[i] = sum;
+    }
 #elif defined(__AVX2__)
     for (NnSize i = start; i < end; i++) {
         float sum = 0.0f;
@@ -1257,6 +1294,9 @@ void printCpuInstructionSet() {
 #endif
 #if defined(__AVX2__)
     printf(" avx2");
+#endif
+#if defined(__AVX512F__)
+    printf(" avx512f");
 #endif
     printf("\n");
 }
