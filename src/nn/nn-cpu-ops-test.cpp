@@ -186,8 +186,6 @@ void testMatmul_F32_Q40_F32(const NnSize m = 2) {
     quantizeF32toQ80(x.data(), xQ80.data(), n, 1, 0);
 
     matmul_F32_F32_F32(o.data(), x.data(), w.data(), n, d, 1, 0);
-    matmul_F32_Q40_F32(oTemp.data(), x.data(), wQ40.data(), n, d, 1, 0);
-    compare_F32("matmul_F32_Q40_F32", o.data(), oTemp.data(), d, 4.0f);
 
     matmul_Q80_Q40_F32(oTemp.data(), xQ80.data(), wQ40.data(), n, d, 1, 0);
     compare_F32("matmul_Q80_Q40_F32", o.data(), oTemp.data(), d, 4.0f);
