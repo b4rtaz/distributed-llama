@@ -12,7 +12,7 @@ float f16ToF32Lookup[65536];
 void initQuants() {
 #if defined(CONVERT_F16_TO_F32_LOOKUP)
     for (NnSize i = 0; i < 65536; i++)
-        f16ToF32Lookup[i] = convertF16toF32Impl(i);
+        f16ToF32Lookup[i] = convertF16toF32Impl((NnFp16)i);
 #endif
 }
 

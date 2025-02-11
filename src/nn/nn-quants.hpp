@@ -25,6 +25,7 @@ inline NnFp16 convertF32ToF16Neon(const float x) {
     __fp16 h = x;
     return *(NnFp16 *)&h;
 }
+
 #define CONVERT_F16_TO_F32(value) convertF16ToF32Neon(value)
 #define CONVERT_F32_TO_F16(value) convertF32ToF16Neon(value)
 #endif
@@ -32,7 +33,7 @@ inline NnFp16 convertF32ToF16Neon(const float x) {
 #if !defined(CONVERT_F16_TO_F32)
 extern float f16ToF32Lookup[65536];
 
-inline NnFp16 convertF16ToF32Lookup(const NnFp16 value) {
+inline static float convertF16ToF32Lookup(const NnFp16 value) {
     return f16ToF32Lookup[value];
 }
 
