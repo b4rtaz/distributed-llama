@@ -477,7 +477,7 @@ static void silu_F32(float *output, const unsigned int n, const NnSize nThreads,
     const unsigned int neonEnd = end - (count % 4);
 
     for (; i < neonEnd; i += 4) {
-        float32x4_t x = vld1q_f32(output + i);
+        float32x4_t x = vld1q_f32(&output[i]);
         float32x4_t neg_x = vnegq_f32(x);
         float32x4_t exp_negx = exp_F32_neon(neg_x);
         float32x4_t denominator = vaddq_f32(exp_negx, vdupq_n_f32(1.0f));
@@ -710,57 +710,31 @@ static void multiheadAtt_F32(
 }
 
 static void mul_F32(float *output, const float *x, const NnSize n, const NnSize nThreads, const NnSize threadIndex) {
-    assert(n % 4 == 0);
-    NnSize nBlocks = n / 4;
-    SPLIT_THREADS(start, end, nBlocks, nThreads, threadIndex);
+    SPLIT_THREADS(start, end, n, nThreads, threadIndex);
+    unsigned int i = start;
 
 #if defined(__ARM_NEON)
-    assert(n % 16 == 0);
-    const float *xi = x + start * 4;
-    float *oi = output + start * 4;
-    NnSize blocksRemaining = end - start;
-
-    while (blocksRemaining >= 4) {
-        float32x4_t x0 = vld1q_f32(xi);
-        float32x4_t o0 = vld1q_f32(oi);
-        o0 = vmulq_f32(o0, x0);
-        vst1q_f32(oi, o0);
-        xi += 4; oi += 4;
-
-        x0 = vld1q_f32(xi);
-        o0 = vld1q_f32(oi);
-        vst1q_f32(oi, vmulq_f32(o0, x0));
-        xi += 4; oi += 4;
-
-        x0 = vld1q_f32(xi);
-        o0 = vld1q_f32(oi);
-        vst1q_f32(oi, vmulq_f32(o0, x0));
-        xi += 4; oi += 4;
-
-        x0 = vld1q_f32(xi);
-        o0 = vld1q_f32(oi);
-        vst1q_f32(oi, vmulq_f32(o0, x0));
-        xi += 4; oi += 4;
-
-        blocksRemaining -= 4;
+    const unsigned int count = end - start;
+    const unsigned int neonEnd = end - (count % 8);
+    for (; i < neonEnd; i += 4) {
+        float32x4_t out_vec = vld1q_f32(&output[i]);
+        float32x4_t x_vec = vld1q_f32(&x[i]);
+        float32x4_t res_vec = vmulq_f32(out_vec, x_vec);
+        vst1q_f32(&output[i], res_vec);
     }
-
-    while (blocksRemaining-- > 0) {
-        float32x4_t x_vec = vld1q_f32(xi);
-        float32x4_t o_vec = vld1q_f32(oi);
-        vst1q_f32(oi, vmulq_f32(o_vec, x_vec));
-        xi += 4; oi += 4;
-    }
-#else
-    for (NnSize i = start; i < end; i++) {
-        const float *xi = &x[i * 4];
-        float *oi = &output[i * 4];
-        oi[0] *= xi[0];
-        oi[1] *= xi[1];
-        oi[2] *= xi[2];
-        oi[3] *= xi[3];
+#elif defined(__AVX2__)
+    const unsigned int count = end - start;
+    const unsigned int avxEnd = end - (count % 8);
+    unsigned int i = start;
+    for (; i < avxEnd; i += 8) {
+        __m256 out_vec = _mm256_loadu_ps(&output[i]);
+        __m256 x_vec = _mm256_loadu_ps(&x[i]);
+        __m256 res_vec = _mm256_mul_ps(out_vec, x_vec);
+        _mm256_storeu_ps(&output[i], res_vec);
     }
 #endif
+    for (; i < end; i++)
+        output[i] *= x[i];
 }
 
 static void mul_Q80_F32(float *output, const NnBlockQ80 *x, const NnSize n, const NnSize nThreads, const NnSize threadIndex) {
@@ -1120,7 +1094,7 @@ static void ropeLlamaForward_F32_F32(NnSize nThreads, NnSize threadIndex, NnSize
     }
 }
 
-static void multiHeadAttForward_F32_F32(NnSize nThreads, NnSize threadIndex, NnSize batchSize, NnCpuOpContext *context) {
+static void initMultiHeadAttForward(NnCpuOpContext *context) {
     const NnMultiHeadAttOpConfig *config = (NnMultiHeadAttOpConfig *)context->opConfig;
 
     ASSERT_EQ(context->weightSize.nBytes, 0);
@@ -1131,6 +1105,10 @@ static void multiHeadAttForward_F32_F32(NnSize nThreads, NnSize threadIndex, NnS
     NnSize2D *posSize = &context->pipeConfigs[config->positionPipeIndex].size;
     ASSERT_EQ(posSize->x, 1);
     ASSERT_EQ(posSize->y, context->nBatches);
+}
+
+static void multiHeadAttForward_F32_F32(NnSize nThreads, NnSize threadIndex, NnSize batchSize, NnCpuOpContext *context) {
+    const NnMultiHeadAttOpConfig *config = (NnMultiHeadAttOpConfig *)context->opConfig;
 
     float *query = (float *)context->buffers[config->queryBufferIndex];
     float *keyCache = (float *)context->buffers[config->keyCacheBufferIndex];
@@ -1259,6 +1237,8 @@ NnCpuOpForwardInit getCpuOpForwardInit(NnOpCode code, NnOpQuantType quantType) {
         return initRmsNormForward_ANY_F32_F32;
     if (code == OP_ROPE_LLAMA)
         return initRopeLlama31Forward;
+    if (code == OP_MULTIHEAD_ATT)
+        return initMultiHeadAttForward;
     if (code == OP_MATMUL)
         return initMatmulForward;
     if (code == OP_CAST)

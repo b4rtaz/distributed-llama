@@ -21,7 +21,7 @@ void compare_F32(const char *name, const float *a, const float *b, const NnSize 
             exit(1);
         }
     }
-    printf("✅ %24s passed (%.3f %.3f %.3f %.3f...)\n", name, a[0], a[1], a[2], a[3]);
+    printf("✅ %24s passed\n", name);
 }
 
 // tests
