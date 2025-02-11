@@ -359,45 +359,22 @@ static void matmul_Q80_Q40_F32(float *output, const NnBlockQ80 *x, const NnBlock
             const NnBlockQ80 *xb = &x[j];
             const float s = CONVERT_F16_TO_F32(wb->d) * CONVERT_F16_TO_F32(xb->d);
 
-            __m128i v_w = _mm_loadu_si128((const __m128i*)wb->qs);
-
-            __m128i v_w0 = _mm_and_si128(v_w, _mm_set1_epi8(0x0F));
-            __m128i v_w1 = _mm_srli_epi16(v_w, 4);
+            __m128i w8 = _mm_loadu_si128((const __m128i*)wb->qs);
+            __m128i v_w0 = _mm_and_si128(w8, _mm_set1_epi8(0x0F));
+            __m128i v_w1 = _mm_srli_epi16(w8, 4);
+            v_w1 = _mm_and_si128(v_w1, _mm_set1_epi8(0x0F));
+            
             v_w0 = _mm_sub_epi8(v_w0, _mm_set1_epi8(8));
             v_w1 = _mm_sub_epi8(v_w1, _mm_set1_epi8(8));
 
-            __m256i w0_256 = _mm256_setr_m128i(v_w0, _mm_setzero_si128());
-            __m256i w1_256 = _mm256_setr_m128i(v_w1, _mm_setzero_si128());
+            __m256i w8_combined = _mm256_set_m128i(v_w1, v_w0);
+            __m512i w16 = _mm512_cvtepi8_epi16(w8_combined);
 
-            __m128i v_i1 = _mm_loadu_si128((const __m128i*)xb->qs);
-            __m128i v_i2 = _mm_loadu_si128((const __m128i*)(xb->qs + 16));
+            __m256i x8 = _mm256_loadu_si256((const __m256i*)xb->qs);
+            __m512i x16 = _mm512_cvtepi8_epi16(x8);
 
-            __m256i i1_256 = _mm256_setr_m128i(v_i1, _mm_setzero_si128());
-            __m256i i2_256 = _mm256_setr_m128i(v_i2, _mm_setzero_si128());
-
-            __m512i w0 = _mm512_cvtepi8_epi16(w0_256);
-            __m512i w1 = _mm512_cvtepi8_epi16(w1_256);
-            __m512i i1 = _mm512_cvtepi8_epi16(i1_256);
-            __m512i i2 = _mm512_cvtepi8_epi16(i2_256);
-
-            __m512i p0 = _mm512_mullo_epi16(w0, i1);
-            __m512i p1 = _mm512_mullo_epi16(w1, i2);
-
-            __m256i p0_lo = _mm512_extracti64x4_epi64(p0, 0);
-            __m256i p0_hi = _mm512_extracti64x4_epi64(p0, 1);
-            __m256i p1_lo = _mm512_extracti64x4_epi64(p1, 0);
-            __m256i p1_hi = _mm512_extracti64x4_epi64(p1, 1);
-
-            __m512i p0_lo_ext = _mm512_cvtepi16_epi32(p0_lo);
-            __m512i p0_hi_ext = _mm512_cvtepi16_epi32(p0_hi);
-            __m512i p1_lo_ext = _mm512_cvtepi16_epi32(p1_lo);
-            __m512i p1_hi_ext = _mm512_cvtepi16_epi32(p1_hi);
-
-            __m512i sum0 = _mm512_add_epi32(p0_lo_ext, p0_hi_ext);
-            __m512i sum1 = _mm512_add_epi32(p1_lo_ext, p1_hi_ext);
-            __m512i total = _mm512_add_epi32(sum0, sum1);
-
-            sum += _mm512_reduce_add_epi32(total) * s;
+            __m512i products = _mm512_madd_epi16(w16, x16);
+            sum += _mm512_reduce_add_epi32(products) * s;
         }
         output[i] = sum;
     }
