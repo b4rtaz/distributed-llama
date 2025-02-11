@@ -1,6 +1,6 @@
 import os
 import sys
-import requests
+from urllib.request import urlopen
 
 def parts(length):
     result = []
@@ -30,49 +30,51 @@ MODELS = {
     'llama3_1_8b_instruct_q40': [
         ['https://huggingface.co/b4rtaz/Llama-3_1-8B-Q40-Instruct-Distributed-Llama/resolve/main/dllama_model_llama3.1_instruct_q40.m?download=true'],
         'https://huggingface.co/b4rtaz/Llama-3_1-8B-Q40-Instruct-Distributed-Llama/resolve/main/dllama_tokenizer_llama_3_1.t?download=true',
-        'q40', 'q80', 'chat'
+        'q40', 'q80', 'chat', '--max-seq-len 4096'
     ],
     'llama3_1_405b_instruct_q40': [
         list(map(lambda suffix : f'https://huggingface.co/b4rtaz/Llama-3_1-405B-Q40-Instruct-Distributed-Llama/resolve/main/dllama_model_llama31_405b_q40_{suffix}?download=true', parts(56))),
         'https://huggingface.co/b4rtaz/Llama-3_1-405B-Q40-Instruct-Distributed-Llama/resolve/main/dllama_tokenizer_llama_3_1.t?download=true',
-        'q40', 'q80', 'chat'
+        'q40', 'q80', 'chat', '--max-seq-len 4096'
     ],
     'llama3_2_1b_instruct_q40': [
         ['https://huggingface.co/b4rtaz/Llama-3_2-1B-Q40-Instruct-Distributed-Llama/resolve/main/dllama_model_llama3.2-1b-instruct_q40.m?download=true'],
         'https://huggingface.co/b4rtaz/Llama-3_2-1B-Q40-Instruct-Distributed-Llama/resolve/main/dllama_tokenizer_llama3_2.t?download=true',
-        'q40', 'q80', 'chat', '--max-seq-len 8192'
+        'q40', 'q80', 'chat', '--max-seq-len 4096'
     ],
     'llama3_2_3b_instruct_q40': [
         ['https://huggingface.co/b4rtaz/Llama-3_2-3B-Q40-Instruct-Distributed-Llama/resolve/main/dllama_model_llama3.2-3b-instruct_q40.m?download=true'],
         'https://huggingface.co/b4rtaz/Llama-3_2-3B-Q40-Instruct-Distributed-Llama/resolve/main/dllama_tokenizer_llama3_2.t?download=true',
-        'q40', 'q80', 'chat', '--max-seq-len 8192'
+        'q40', 'q80', 'chat', '--max-seq-len 4096'
     ],
     'llama3_3_70b_instruct_q40': [
         list(map(lambda suffix : f'https://huggingface.co/b4rtaz/Llama-3_3-70B-Q40-Instruct-Distributed-Llama/resolve/main/dllama_model_llama-3.3-70b_q40{suffix}?download=true', parts(11))),
         'https://huggingface.co/b4rtaz/Llama-3_3-70B-Q40-Instruct-Distributed-Llama/resolve/main/dllama_tokenizer_llama-3.3-70b.t?download=true',
-        'q40', 'q80', 'chat', '--max-seq-len 8192'
+        'q40', 'q80', 'chat', '--max-seq-len 4096'
     ],
 }
 
-def downloadFile(urls: str, path: str):
-    if (os.path.isfile(path)):
+def downloadFile(urls, path: str):
+    if os.path.isfile(path):
         fileName = os.path.basename(path)
         result = input(f'❓ {fileName} already exists, do you want to download again? ("Y" if yes): ')
-        if (result.upper() != 'Y'):
+        if result.upper() != 'Y':
             return
 
     lastSizeMb = 0
     with open(path, 'wb') as file:
         for url in urls:
             print(f'📄 {url}')
-            response = requests.get(url, stream=True)
-            response.raise_for_status()
-            for chunk in response.iter_content(chunk_size=4096):
-                file.write(chunk)
-                sizeMb = file.tell() // (1024 * 1024)
-                if (sizeMb != lastSizeMb):
-                    sys.stdout.write("\rDownloaded %i MB" % sizeMb)
-                    lastSizeMb = sizeMb
+            with urlopen(url) as response:
+                while True:
+                    chunk = response.read(4096)
+                    if not chunk:
+                        break
+                    file.write(chunk)
+                    sizeMb = file.tell() // (1024 * 1024)
+                    if sizeMb != lastSizeMb:
+                        sys.stdout.write("\rDownloaded %i MB" % sizeMb)
+                        lastSizeMb = sizeMb
             sys.stdout.write('\n')
     sys.stdout.write(' ✅\n')
 
