@@ -207,6 +207,7 @@ static void chat(AppInferenceContext *context) {
 }
 
 int main(int argc, char **argv) {
+    initQuants();
     initSockets();
 
     int returnCode = EXIT_SUCCESS;

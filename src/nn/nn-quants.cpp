@@ -5,6 +5,13 @@
 #include <stdexcept>
 #include <cstdio>
 
+void initQuants() {
+#if defined(CONVERT_F16_TO_F32_LOOKUP)
+    for (NnSize i = 0; i < 65536; i++)
+        f16ToF32Lookup[i] = convertF16toF32Impl(i);
+#endif
+}
+
 float convertF16toF32Impl(const NnFp16 value) {
     union Fl32 {
         uint32_t u;
@@ -81,7 +88,7 @@ void quantizeF32toQ80(const float *input, NnBlockQ80 *output, const NnSize n, co
         const float d = amax / 127.0f;
         const float id = d != 0.0f ? 1.0f / d : 0.0f;
         
-        y->d = convertF32ToF16(d);
+        y->d = CONVERT_F32_TO_F16(d);
 
         const float32x4_t vid_vec = vdupq_n_f32(id);
         j = 0;
@@ -117,7 +124,7 @@ void quantizeF32toQ80(const float *input, NnBlockQ80 *output, const NnSize n, co
 
         const float d = amax / ((1 << 7) - 1);
         const float id = d ? 1.0f / d : 0.0f;
-        y->d = convertF32ToF16(d);
+        y->d = CONVERT_F32_TO_F16(d);
         for (NnSize j = 0; j < Q80_BLOCK_SIZE; ++j) {
             y->qs[j] = roundf(x[j] * id);
         }
@@ -136,7 +143,7 @@ void dequantizeQ80toF32(const NnBlockQ80 *input, float* output, const NnSize k, 
     float* y = &output[sk * threadIndex];
 
     for (int i = 0; i < currentThreadBlocks; i++) {
-        const float d = convertF16toF32(x[i].d);
+        const float d = CONVERT_F16_TO_F32(x[i].d);
         for (int j = 0; j < Q80_BLOCK_SIZE; j++) {
             y[i * Q80_BLOCK_SIZE + j] = x[i].qs[j] * d;
         }
@@ -164,7 +171,7 @@ void quantizeF32toQ40(const float *x, NnBlockQ40 *output, const NnSize n, const 
         const float id = d ? 1.0f / d : 0.0f;
 
         NnBlockQ40 *o = &output[i];
-        o->d = convertF32ToF16(d);
+        o->d = CONVERT_F32_TO_F16(d);
         for (NnSize j = 0; j < halfSize; j++) {
             const float x0 = x[i * Q40_BLOCK_SIZE + j] * id;
             const float x1 = x[i * Q40_BLOCK_SIZE + halfSize + j] * id;
@@ -186,7 +193,7 @@ void dequantizeQ40toF32(const NnBlockQ40 *x, float *output, const NnSize n, cons
 
     for (NnSize i = start; i < end; i++) {
         const NnBlockQ40 *b = &x[i];
-        const float d = convertF16toF32(b->d);
+        const float d = CONVERT_F16_TO_F32(b->d);
 
         for (int j = 0; j < Q40_BLOCK_SIZE / 2; ++j) {
             const int x0 = (b->qs[j] & 0x0F) - 8;

@@ -243,6 +243,8 @@ void testLlamafileSgemm() {
 }
 
 int main() {
+    initQuants();
+
     printCpuInstructionSet();
     testSplitThreads();
     testQuantization(32);

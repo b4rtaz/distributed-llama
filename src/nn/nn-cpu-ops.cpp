@@ -143,7 +143,7 @@ static void rmsNorm_Q80_F32_F32(float *output, const NnBlockQ80 *x, const float 
     SPLIT_THREADS(start, end, nBlocks, nThreads, threadIndex);
 
     for (NnSize i = start; i < end; i++) {
-        float d = convertF16toF32(x[i].d);
+        float d = CONVERT_F16_TO_F32(x[i].d);
         for (NnSize j = 0; j < Q80_BLOCK_SIZE; j++) {
             NnSize k = i * Q80_BLOCK_SIZE + j;
             output[k] = w[k] * (invRms * d * x[i].qs[j]);
@@ -201,7 +201,7 @@ static void matmul_F32_Q40_F32(float *output, const float *x, const NnBlockQ40 *
         float sum = 0.0f;
         for (NnSize j = 0; j < nBlocks; j++) {
             const NnBlockQ40 *b = &w[i * nBlocks + j];
-            const float d_scale = convertF16toF32(b->d);
+            const float d_scale = CONVERT_F16_TO_F32(b->d);
             const float *x_block = x + j * Q40_BLOCK_SIZE;
 
             float32x4_t sumv = vdupq_n_f32(0.0f);
@@ -258,7 +258,7 @@ static void matmul_F32_Q40_F32(float *output, const float *x, const NnBlockQ40 *
                 v += w0 * x[j * Q40_BLOCK_SIZE + k];
                 v += w1 * x[j * Q40_BLOCK_SIZE + k + Q40_BLOCK_SIZE / 2];
             }
-            sum += v * convertF16toF32(b->d);
+            sum += v * CONVERT_F16_TO_F32(b->d);
         }
         output[i] = sum;
     }
@@ -320,10 +320,10 @@ static void matmul_Q80_Q40_F32(float *output, const NnBlockQ80 *x, const NnBlock
             const int32x4_t p2 = vdotq_s32(vdotq_s32(vdupq_n_s32(0), w2l, x2l), w2h, x2h);
             const int32x4_t p3 = vdotq_s32(vdotq_s32(vdupq_n_s32(0), w3l, x3l), w3h, x3h);
 
-            sumv0 = vmlaq_n_f32(sumv0, vcvtq_f32_s32(p0), convertF16toF32(w0->d) * convertF16toF32(x0->d));
-            sumv1 = vmlaq_n_f32(sumv1, vcvtq_f32_s32(p1), convertF16toF32(w1->d) * convertF16toF32(x1->d));
-            sumv2 = vmlaq_n_f32(sumv2, vcvtq_f32_s32(p2), convertF16toF32(w2->d) * convertF16toF32(x2->d));
-            sumv3 = vmlaq_n_f32(sumv3, vcvtq_f32_s32(p3), convertF16toF32(w3->d) * convertF16toF32(x3->d));
+            sumv0 = vmlaq_n_f32(sumv0, vcvtq_f32_s32(p0), CONVERT_F16_TO_F32(w0->d) * CONVERT_F16_TO_F32(x0->d));
+            sumv1 = vmlaq_n_f32(sumv1, vcvtq_f32_s32(p1), CONVERT_F16_TO_F32(w1->d) * CONVERT_F16_TO_F32(x1->d));
+            sumv2 = vmlaq_n_f32(sumv2, vcvtq_f32_s32(p2), CONVERT_F16_TO_F32(w2->d) * CONVERT_F16_TO_F32(x2->d));
+            sumv3 = vmlaq_n_f32(sumv3, vcvtq_f32_s32(p3), CONVERT_F16_TO_F32(w3->d) * CONVERT_F16_TO_F32(x3->d));
         }
 #else
         for (; j + 1 < nBlocks; j += 2) {
@@ -360,8 +360,8 @@ static void matmul_Q80_Q40_F32(float *output, const NnBlockQ80 *x, const NnBlock
             const int32x4_t pl1 = vaddq_s32(vpaddlq_s16(pl1l), vpaddlq_s16(pl1h));
             const int32x4_t ph1 = vaddq_s32(vpaddlq_s16(ph1l), vpaddlq_s16(ph1h));
 
-            sumv0 = vmlaq_n_f32(sumv0, vcvtq_f32_s32(vaddq_s32(pl0, ph0)), convertF16toF32(w0->d) * convertF16toF32(x0->d));
-            sumv1 = vmlaq_n_f32(sumv1, vcvtq_f32_s32(vaddq_s32(pl1, ph1)), convertF16toF32(w1->d) * convertF16toF32(x1->d));
+            sumv0 = vmlaq_n_f32(sumv0, vcvtq_f32_s32(vaddq_s32(pl0, ph0)), CONVERT_F16_TO_F32(w0->d) * CONVERT_F16_TO_F32(x0->d));
+            sumv1 = vmlaq_n_f32(sumv1, vcvtq_f32_s32(vaddq_s32(pl1, ph1)), CONVERT_F16_TO_F32(w1->d) * CONVERT_F16_TO_F32(x1->d));
         }
 #endif
 
@@ -388,11 +388,55 @@ static void matmul_Q80_Q40_F32(float *output, const NnBlockQ80 *x, const NnBlock
             const int32x4_t ph = vaddq_s32(vpaddlq_s16(phl), vpaddlq_s16(phh));
             const int32x4_t p = vaddq_s32(pl, ph);
 #endif
-            const float s = convertF16toF32(wb->d) * convertF16toF32(xb->d);
+            const float s = CONVERT_F16_TO_F32(wb->d) * CONVERT_F16_TO_F32(xb->d);
             sumv0 = vmlaq_n_f32(sumv0, vcvtq_f32_s32(p), s);
         }
 
         output[di] = vaddvq_f32(sumv0) + vaddvq_f32(sumv1) + vaddvq_f32(sumv2) + vaddvq_f32(sumv3);
+    }
+#elif defined(__AVX2__)
+    for (NnSize i = start; i < end; i++) {
+        float sum = 0.0f;
+        for (NnSize j = 0; j < nBlocks; j++) {
+            const NnBlockQ40 *wb = &w[i * nBlocks + j];
+            const NnBlockQ80 *xb = &x[j];
+            const float s = CONVERT_F16_TO_F32(wb->d) * CONVERT_F16_TO_F32(xb->d);
+
+            __m128i w_packed = _mm_loadu_si128((const __m128i*)wb->qs);
+
+            __m128i w0_low = _mm_and_si128(w_packed, _mm_set1_epi8(0x0F));
+            __m128i w0 = _mm_sub_epi8(w0_low, _mm_set1_epi8(8));
+
+            __m128i w1_high = _mm_srli_epi16(w_packed, 4);
+            w1_high = _mm_and_si128(w1_high, _mm_set1_epi8(0x0F));
+            __m128i w1 = _mm_sub_epi8(w1_high, _mm_set1_epi8(8));
+
+            __m256i w0_16 = _mm256_cvtepi8_epi16(w0);
+            __m256i w1_16 = _mm256_cvtepi8_epi16(w1);
+
+            __m128i i1_8 = _mm_loadu_si128((const __m128i*)xb->qs);
+            __m128i i2_8 = _mm_loadu_si128((const __m128i*)(xb->qs + Q40_BLOCK_SIZE / 2));
+
+            __m256i i1_16 = _mm256_cvtepi8_epi16(i1_8);
+            __m256i i2_16 = _mm256_cvtepi8_epi16(i2_8);
+
+            __m256i prod0 = _mm256_mullo_epi16(w0_16, i1_16);
+            __m256i prod1 = _mm256_mullo_epi16(w1_16, i2_16);
+            __m256i sum_prod = _mm256_add_epi16(prod0, prod1);
+
+            __m256i ones = _mm256_set1_epi16(1);
+            __m256i sum32 = _mm256_madd_epi16(sum_prod, ones);
+
+            __m128i sum_low = _mm256_castsi256_si128(sum32);
+            __m128i sum_high = _mm256_extracti128_si256(sum32, 1);
+            sum_low = _mm_add_epi32(sum_low, sum_high);
+            sum_low = _mm_hadd_epi32(sum_low, sum_low);
+            sum_low = _mm_hadd_epi32(sum_low, sum_low);
+            int32_t block_sum = _mm_extract_epi32(sum_low, 0);
+
+            sum += block_sum * s;
+        }
+        output[i] = sum;
     }
 #else
     for (NnSize i = start; i < end; i++) {
@@ -400,7 +444,7 @@ static void matmul_Q80_Q40_F32(float *output, const NnBlockQ80 *x, const NnBlock
         for (NnSize j = 0; j < nBlocks; j++) {
             const NnBlockQ40 *wb = &w[i * nBlocks + j];
             const NnBlockQ80 *xb = &x[j];
-            const float s = convertF16toF32(wb->d) * convertF16toF32(xb->d);
+            const float s = CONVERT_F16_TO_F32(wb->d) * CONVERT_F16_TO_F32(xb->d);
             for (NnSize k = 0; k < Q40_BLOCK_SIZE / 2; k++) {
                 const int w0 = (wb->qs[k] & 0x0F) - 8;
                 const int w1 = (wb->qs[k] >> 4) - 8;
@@ -465,7 +509,7 @@ static void add_Q80_F32(float *y, const NnBlockQ80 *x, const NnSize n, const NnS
 #if defined(__ARM_NEON)
     for (unsigned int i = start; i < end; i++) {
         const NnBlockQ80 *xi = &x[i];
-        const float xid = convertF16toF32(xi->d);
+        const float xid = CONVERT_F16_TO_F32(xi->d);
         float *y_base = y + i * Q80_BLOCK_SIZE;
         const int8_t *qs = xi->qs;
 
@@ -515,7 +559,7 @@ static void add_Q80_F32(float *y, const NnBlockQ80 *x, const NnSize n, const NnS
 #else
     for (unsigned int i = start; i < end; i++) {
         const NnBlockQ80 *xi = &x[i];
-        const float xid = convertF16toF32(xi->d);
+        const float xid = CONVERT_F16_TO_F32(xi->d);
         for (unsigned int j = 0; j < Q80_BLOCK_SIZE; j++) {
             y[i * Q80_BLOCK_SIZE + j] += xid * xi->qs[j];
         }
@@ -724,7 +768,7 @@ static void mul_Q80_F32(float *output, const NnBlockQ80 *x, const NnSize n, cons
     SPLIT_THREADS(start, end, nBlocks, nThreads, threadIndex);
     for (NnSize i = start; i < end; i++) {
         const NnBlockQ80 *b = &x[i];
-        float d = convertF16toF32(b->d);
+        float d = CONVERT_F16_TO_F32(b->d);
         for (NnSize j = 0; j < Q80_BLOCK_SIZE; j++) {
             NnSize k = i * Q80_BLOCK_SIZE + j;
             output[k] *= d * b->qs[j];
