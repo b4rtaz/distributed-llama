@@ -37,8 +37,9 @@ void NnNetExecution::setBatchSize(NnSize batchSize) {
 }
 
 NnExecutor::NnExecutor(NnNetConfig *netConfig, NnNodeConfig *nodeConfig, NnDevice *device, NnNetExecution *netExecution, NnNodeSynchronizer *synchronizer) {
-    if (netExecution->nThreads > device->maxNThreads())
-        throw std::invalid_argument("This device does not support that many threads");
+    NnSize maxNThreads = device->maxNThreads();
+    if (netExecution->nThreads > maxNThreads)
+        throw std::invalid_argument("This CPU supports max " + std::to_string(maxNThreads) + " threads");
     this->netExecution = netExecution;
     this->nodeConfig = nodeConfig;
 
