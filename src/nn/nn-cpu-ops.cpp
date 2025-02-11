@@ -725,7 +725,6 @@ static void mul_F32(float *output, const float *x, const NnSize n, const NnSize 
 #elif defined(__AVX2__)
     const unsigned int count = end - start;
     const unsigned int avxEnd = end - (count % 8);
-    unsigned int i = start;
     for (; i < avxEnd; i += 8) {
         __m256 out_vec = _mm256_loadu_ps(&output[i]);
         __m256 x_vec = _mm256_loadu_ps(&x[i]);
