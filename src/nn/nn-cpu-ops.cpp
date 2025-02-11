@@ -29,18 +29,8 @@
     #define DEBUG_SCALAR(context, suffix, scalar)
 #endif
 
-#if defined(__AVX2__)
-static inline float hsum_F8(const __m256 x) {
-    __m128 res = _mm256_extractf128_ps(x, 1);
-    res = _mm_add_ps(res, _mm256_castps256_ps128(x));
-    res = _mm_add_ps(res, _mm_movehl_ps(res, res));
-    res = _mm_add_ss(res, _mm_movehdup_ps(res));
-    return _mm_cvtss_f32(res);
-}
-#endif
-
 #if defined(__ARM_NEON)
-static inline float32x4_t exp_F32_neon(float32x4_t x) {
+static inline float32x4_t expf_neon(float32x4_t x) {
     const float32x4_t ln2 = vdupq_n_f32(0.69314718056f);
     const float32x4_t inv_ln2 = vdupq_n_f32(1.44269504089f);
     const float32x4_t c1 = vdupq_n_f32(1.0f);
@@ -74,6 +64,47 @@ static inline float32x4_t exp_F32_neon(float32x4_t x) {
 }
 #endif
 
+#if defined(__AVX2__)
+static inline float horizontalSum_avx2(const __m256 x) {
+    __m128 res = _mm256_extractf128_ps(x, 1);
+    res = _mm_add_ps(res, _mm256_castps256_ps128(x));
+    res = _mm_add_ps(res, _mm_movehl_ps(res, res));
+    res = _mm_add_ss(res, _mm_movehdup_ps(res));
+    return _mm_cvtss_f32(res);
+}
+
+static inline float horizontalMax_avx2(__m256 v) {
+    __m128 v_low = _mm256_castps256_ps128(v);
+    __m128 v_high = _mm256_extractf128_ps(v, 1);
+    __m128 max128 = _mm_max_ps(v_low, v_high);
+    __m128 max64 = _mm_max_ps(max128, _mm_movehl_ps(max128, max128));
+    __m128 max32 = _mm_max_ss(max64, _mm_shuffle_ps(max64, max64, _MM_SHUFFLE(1, 1, 1, 1)));
+    return _mm_cvtss_f32(max32);
+}
+
+static inline __m256 expf_avx2(__m256 x) {
+    const __m256 log2e = _mm256_set1_ps(1.4426950408889634f);
+    const __m256 c0 = _mm256_set1_ps(1.0f);
+    const __m256 c1 = _mm256_set1_ps(0.6931471805599453f);
+    const __m256 c2 = _mm256_set1_ps(0.2402265069591007f);
+    const __m256 c3 = _mm256_set1_ps(0.05550410866482158f);
+    const __m256 c4 = _mm256_set1_ps(0.009618129107628477f);
+    __m256 y = _mm256_mul_ps(x, log2e);
+    __m256i n = _mm256_cvtps_epi32(y);
+    __m256 n_float = _mm256_cvtepi32_ps(n);
+    __m256 f = _mm256_sub_ps(y, n_float);
+    __m256 p = c4;
+    p = _mm256_fmadd_ps(p, f, c3);
+    p = _mm256_fmadd_ps(p, f, c2);
+    p = _mm256_fmadd_ps(p, f, c1);
+    p = _mm256_fmadd_ps(p, f, c0);
+    __m256i exponent = _mm256_add_epi32(n, _mm256_set1_epi32(127));
+    exponent = _mm256_slli_epi32(exponent, 23);
+    __m256 two_n = _mm256_castsi256_ps(exponent);
+    return _mm256_mul_ps(p, two_n);
+}
+#endif
+
 static float invRms_F32(const float *x, const unsigned int size, const float epsilon) {
     float sum;
 #if defined(__ARM_NEON)
@@ -93,7 +124,7 @@ static float invRms_F32(const float *x, const unsigned int size, const float eps
         a = _mm256_loadu_ps(&x[j]);
         u = _mm256_fmadd_ps(a, a, u);
     }
-    sum = hsum_F8(u);
+    sum = horizontalSum_avx2(u);
 #else
     sum = 0;
     for (unsigned int j = 0; j < size; j++) {
@@ -178,7 +209,7 @@ static void matmul_F32_F32_F32(float *output, const float *x, const float *w, co
             b0 = _mm256_loadu_ps(&w[i * n + j]);
             u = _mm256_fmadd_ps(a0, b0, u);
         }
-        output[i] = hsum_F8(u);
+        output[i] = horizontalSum_avx2(u);
     }
 #else
     for (i = start; i < end; i++) {
@@ -405,7 +436,7 @@ static void silu_F32(float *output, const unsigned int n, const NnSize nThreads,
     for (; i < neonEnd; i += 4) {
         float32x4_t x = vld1q_f32(&output[i]);
         float32x4_t neg_x = vnegq_f32(x);
-        float32x4_t exp_negx = exp_F32_neon(neg_x);
+        float32x4_t exp_negx = expf_neon(neg_x);
         float32x4_t denominator = vaddq_f32(exp_negx, vdupq_n_f32(1.0f));
 
         float32x4_t recip = vrecpeq_f32(denominator);
@@ -543,7 +574,7 @@ static void softmax_F32(float *x, const NnSize size) {
     for (; i + 4 <= size; i += 4) {
         float32x4_t val = vld1q_f32(x + i);
         val = vsubq_f32(val, maxVal_vec);
-        val = exp_F32_neon(val);
+        val = expf_neon(val);
         vst1q_f32(x + i, val);
         sumv = vaddq_f32(sumv, val);
     }
@@ -570,6 +601,64 @@ static void softmax_F32(float *x, const NnSize size) {
     }
     for (; i < size; ++i)
         x[i] /= sum;
+#elif defined(__AVX2__)
+    float maxVal = x[0];
+    NnSize i = 0;
+
+    if (size >= 8) {
+        __m256 max_vec = _mm256_loadu_ps(x);
+        i = 8;
+        for (; i <= size - 8; i += 8) {
+            __m256 vec = _mm256_loadu_ps(x + i);
+            max_vec = _mm256_max_ps(max_vec, vec);
+        }
+        maxVal = horizontalMax_avx2(max_vec);
+
+        for (; i < size; ++i) {
+            if (x[i] > maxVal)
+                maxVal = x[i];
+        }
+    } else {
+        for (i = 1; i < size; ++i) {
+            if (x[i] > maxVal)
+                maxVal = x[i];
+        }
+    }
+
+    __m256 max_val_vec = _mm256_set1_ps(maxVal);
+    __m256 sum_vec = _mm256_setzero_ps();
+    float sum = 0.0f;
+    i = 0;
+
+    for (; i <= size - 8; i += 8) {
+        __m256 vec = _mm256_loadu_ps(x + i);
+        vec = _mm256_sub_ps(vec, max_val_vec);
+        vec = expf_avx2(vec);
+        _mm256_storeu_ps(x + i, vec);
+        sum_vec = _mm256_add_ps(sum_vec, vec);
+    }
+    sum = horizontalSum_avx2(sum_vec);
+
+    for (; i < size; ++i) {
+        x[i] = expf(x[i] - maxVal);
+        sum += x[i];
+    }
+
+    if (sum == 0.0)
+        sum = 0.000001;
+
+    const float inv_sum = 1.0f / sum;
+    const __m256 inv_sum_vec = _mm256_set1_ps(inv_sum);
+    i = 0;
+
+    for (; i <= size - 8; i += 8) {
+        __m256 vec = _mm256_loadu_ps(x + i);
+        vec = _mm256_mul_ps(vec, inv_sum_vec);
+        _mm256_storeu_ps(x + i, vec);
+    }
+
+    for (; i < size; i++)
+        x[i] *= inv_sum;
 #else
     float maxVal = x[0];
     for (NnSize i = 1; i < size; i++) {
@@ -609,7 +698,7 @@ static float dotProduct_F32(const float *a, const float *b, const unsigned int s
         b0 = _mm256_loadu_ps(&b[i]);
         u = _mm256_fmadd_ps(a0, b0, u);
     }
-    return hsum_F8(u);
+    return horizontalSum_avx2(u);
 #else
     float sum = 0.0f;
     for (unsigned int i = 0; i < size; i++) {

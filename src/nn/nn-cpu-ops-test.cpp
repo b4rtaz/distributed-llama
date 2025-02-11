@@ -168,6 +168,26 @@ void testAdd(const NnSize m) {
     compare_F32("add_Q80_F32", y.data(), yTemp.data(), n, 0.01);
 }
 
+void testSoftmax() {
+    std::vector<float> y(8);
+    for (NnSize i = 0; i < 8; i++)
+        y[i] = i / 8.0f;
+
+    softmax_F32(y.data(), 8);
+
+    float expected[8] = {
+        0.077399f,
+        0.087780f,
+        0.099500f,
+        0.112761f,
+        0.127778f,
+        0.144793f,
+        0.164072f,
+        0.185917f
+    };
+    compare_F32("softmax_F32", y.data(), expected, 8, 0.01);
+}
+
 // matmul
 void testMatmul_F32_Q40_F32(const NnSize m = 2) {
     const NnSize n = Q80_BLOCK_SIZE * m;
@@ -256,6 +276,7 @@ int main() {
     testAdd(32);
     testAdd(2);
     testAdd(1);
+    testSoftmax();
     testMatmul_F32_Q40_F32(32);
     testMatmul_F32_Q40_F32(2);
     testMatmul_F32_Q40_F32(1);
