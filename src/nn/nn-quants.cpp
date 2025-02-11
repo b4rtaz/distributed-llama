@@ -74,20 +74,14 @@ void quantizeF32toQ80(const float *input, NnBlockQ80 *output, const NnSize n, co
         const float *x = &input[i * Q80_BLOCK_SIZE];
         NnBlockQ80 *y = &output[i];
 
-        float32x4_t amax_vec = vdupq_n_f32(0.0f);
-        NnSize j = 0;
-        
-        for (; j + 3 < Q80_BLOCK_SIZE; j += 4) {
-            const float32x4_t vec = vld1q_f32(x + j);
+        float32x4_t amaxVec = vdupq_n_f32(0.0f);
+        for (NnSize j = 0; j < Q80_BLOCK_SIZE; j += 4) {
+            const float32x4_t vec = vld1q_f32(&x[j]);
             const float32x4_t abs_vec = vabsq_f32(vec);
-            amax_vec = vmaxq_f32(amax_vec, abs_vec);
+            amaxVec = vmaxq_f32(amaxVec, abs_vec);
         }
 
-        float amax = vmaxvq_f32(amax_vec);
-        for (; j < Q80_BLOCK_SIZE; j++) {
-            const float v = fabsf(x[j]);
-            amax = amax > v ? amax : v;
-        }
+        float amax = vmaxvq_f32(amaxVec);
 
         const float d = amax / 127.0f;
         const float id = d != 0.0f ? 1.0f / d : 0.0f;
@@ -95,10 +89,9 @@ void quantizeF32toQ80(const float *input, NnBlockQ80 *output, const NnSize n, co
         y->d = CONVERT_F32_TO_F16(d);
 
         const float32x4_t vid_vec = vdupq_n_f32(id);
-        j = 0;
-        
-        for (; j + 3 < Q80_BLOCK_SIZE; j += 4) {
-            float32x4_t vec = vld1q_f32(x + j);
+
+        for (NnSize j = 0; j < Q80_BLOCK_SIZE; j += 4) {
+            float32x4_t vec = vld1q_f32(&x[j]);
             vec = vmulq_f32(vec, vid_vec);
 
             const uint32x4_t sign_mask = vcgeq_f32(vec, vdupq_n_f32(0.0f));
@@ -111,9 +104,6 @@ void quantizeF32toQ80(const float *input, NnBlockQ80 *output, const NnSize n, co
 
             vst1_lane_s32((int32_t *)(y->qs + j), vreinterpret_s32_s8(vec_i8), 0);
         }
-
-        for (; j < Q80_BLOCK_SIZE; j++)
-            y->qs[j] = roundf(x[j] * id);
     }
 #else
     for (NnSize i = start; i < end; i++) {

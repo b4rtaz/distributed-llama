@@ -9,7 +9,7 @@
 __pycache__
 
 *-test
-/socket-benchmark
+/models
 main
 run*.sh
 server
