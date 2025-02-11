@@ -666,14 +666,14 @@ static void softmax_F32(float *x, const NnSize size) {
     for (; i < size; ++i)
         x[i] /= sum;
 #elif defined(__AVX2__)
-    float maxVal = x[0];
+    float maxVal;
+    const unsigned avxEnd = size - (size % 8);
     NnSize i = 0;
 
-    if (size >= 8) {
+    if (avxEnd >= 8) {
         __m256 max_vec = _mm256_loadu_ps(x);
-        i = 8;
-        for (; i <= size - 8; i += 8) {
-            __m256 vec = _mm256_loadu_ps(x + i);
+        for (; i < avxEnd; i += 8) {
+            __m256 vec = _mm256_loadu_ps(&x[i]);
             max_vec = _mm256_max_ps(max_vec, vec);
         }
         maxVal = horizontalMax_avx2(max_vec);
@@ -683,26 +683,27 @@ static void softmax_F32(float *x, const NnSize size) {
                 maxVal = x[i];
         }
     } else {
-        for (i = 1; i < size; ++i) {
-            if (x[i] > maxVal)
-                maxVal = x[i];
-        }
+        maxVal = x[0];
+        i = 1;
+    }
+    for (; i < size; ++i) {
+        if (x[i] > maxVal)
+            maxVal = x[i];
     }
 
     __m256 max_val_vec = _mm256_set1_ps(maxVal);
     __m256 sum_vec = _mm256_setzero_ps();
     float sum = 0.0f;
+    
     i = 0;
-
-    for (; i <= size - 8; i += 8) {
-        __m256 vec = _mm256_loadu_ps(x + i);
+    for (; i < avxEnd; i += 8) {
+        __m256 vec = _mm256_loadu_ps(&x[i]);
         vec = _mm256_sub_ps(vec, max_val_vec);
         vec = expf_avx2(vec);
-        _mm256_storeu_ps(x + i, vec);
+        _mm256_storeu_ps(&x[i], vec);
         sum_vec = _mm256_add_ps(sum_vec, vec);
     }
     sum = horizontalSum_avx2(sum_vec);
-
     for (; i < size; ++i) {
         x[i] = expf(x[i] - maxVal);
         sum += x[i];
@@ -713,14 +714,13 @@ static void softmax_F32(float *x, const NnSize size) {
 
     const float inv_sum = 1.0f / sum;
     const __m256 inv_sum_vec = _mm256_set1_ps(inv_sum);
-    i = 0;
 
-    for (; i <= size - 8; i += 8) {
+    i = 0;
+    for (; i < avxEnd; i += 8) {
         __m256 vec = _mm256_loadu_ps(x + i);
         vec = _mm256_mul_ps(vec, inv_sum_vec);
         _mm256_storeu_ps(x + i, vec);
     }
-
     for (; i < size; i++)
         x[i] *= inv_sum;
 #else
