@@ -44,6 +44,8 @@ void print2D(const char *name, NnSize x, NnSize y, float *w) {
 }
 
 int main() {
+    initQuants();
+
     NnSize nThreads = 2;
     NnNetConfig netConfig;
     NnNodeConfig nodeConfig;
