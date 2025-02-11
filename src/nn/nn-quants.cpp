@@ -5,6 +5,10 @@
 #include <stdexcept>
 #include <cstdio>
 
+#if defined(CONVERT_F16_TO_F32_LOOKUP)
+float f16ToF32Lookup[65536];
+#endif
+
 void initQuants() {
 #if defined(CONVERT_F16_TO_F32_LOOKUP)
     for (NnSize i = 0; i < 65536; i++)
