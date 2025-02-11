@@ -36,7 +36,7 @@ inline NnFp16 convertF16ToF32Lookup(const NnFp16 value) {
     return f16ToF32Lookup[value];
 }
 
-#define CONVERT_F16_TO_F32_LOOKUP true
+#define CONVERT_F16_TO_F32_LOOKUP
 #define CONVERT_F16_TO_F32(value) convertF16ToF32Lookup(value)
 #endif
 
