@@ -445,6 +445,20 @@ static void silu_F32(float *output, const unsigned int n, const NnSize nThreads,
         float32x4_t result = vmulq_f32(x, recip);
         vst1q_f32(output + i, result);
     }
+#elif defined(__AVX2__)
+    const unsigned int count = end - start;
+    const unsigned int avxEnd = end - (count % 8);
+
+    const __m256 ones = _mm256_set1_ps(1.0f);
+    const __m256 zero = _mm256_setzero_ps();
+    for (; i < avxEnd; i += 8) {
+        __m256 x_vec = _mm256_loadu_ps(output + i);
+        __m256 neg_x = _mm256_sub_ps(zero, x_vec);
+        __m256 exp_negx = expf_avx2(neg_x);
+        __m256 denominator = _mm256_add_ps(ones, exp_negx);
+        __m256 result = _mm256_div_ps(x_vec, denominator);
+        _mm256_storeu_ps(output + i, result);
+    }
 #endif
     for (; i < end; i++) {
         float x = output[i];

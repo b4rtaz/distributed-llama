@@ -175,7 +175,7 @@ void testSoftmax() {
 
     softmax_F32(y.data(), 8);
 
-    float expected[8] = {
+    float expectedOutput[8] = {
         0.077399f,
         0.087780f,
         0.099500f,
@@ -185,7 +185,27 @@ void testSoftmax() {
         0.164072f,
         0.185917f
     };
-    compare_F32("softmax_F32", y.data(), expected, 8, 0.01);
+    compare_F32("softmax_F32", y.data(), expectedOutput, 8, 0.001);
+}
+
+void testSilu() {
+    std::vector<float> y(8);
+    for (NnSize i = 0; i < 8; i++)
+        y[i] = i / 8.0f;
+
+    silu_F32(y.data(), 8, 1, 0);
+
+    float expectedOutput[8] = {
+        0.000000f,
+        0.066401f,
+        0.140544f,
+        0.222250f,
+        0.311233f,
+        0.407116f,
+        0.509461f,
+        0.617802f
+    };
+    compare_F32("silu_F32", y.data(), expectedOutput, 8, 0.001);
 }
 
 // matmul
@@ -277,6 +297,7 @@ int main() {
     testAdd(2);
     testAdd(1);
     testSoftmax();
+    testSilu();
     testMatmul_F32_Q40_F32(32);
     testMatmul_F32_Q40_F32(2);
     testMatmul_F32_Q40_F32(1);
