@@ -151,14 +151,16 @@ Tokenizer::Tokenizer(const char* tokenizerPath) {
             throw std::runtime_error("Old tokenizer version, please regenerate your tokenizer");
 
         if (chatTemplateLength > 0) {
-            chatTemplate = new char[chatTemplateLength];
+            chatTemplate = new char[chatTemplateLength + 1];
             if (fread(chatTemplate, chatTemplateLength, 1, file) != 1)
                 throw std::runtime_error("Cannot read chat template from tokenizer file");
+            chatTemplate[chatTemplateLength] = '\0';
         }
         if (chatStopLength > 0) {
-            chatStop = new char[chatStopLength];
+            chatStop = new char[chatStopLength + 1];
             if (fread(chatStop, chatStopLength, 1, file) != 1)
                 throw std::runtime_error("Cannot read chat stop from tokenizer file");
+            chatStop[chatStopLength] = '\0';
         }
     } else {
         throw std::runtime_error("Invalid tokenizer file");
