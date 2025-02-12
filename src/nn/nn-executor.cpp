@@ -71,7 +71,8 @@ NnExecutor::NnExecutor(NnNetConfig *netConfig, NnNodeConfig *nodeConfig, NnDevic
 
     NnSize currentSegmentIndex = 0;
     NnSize currentOpIndex = 0;
-    for (NnSize stepIndex = 0; stepIndex < context.nSteps;) {
+    NnSize stepIndex = 0;
+    for (;;) {
         NnDeviceSegment *segment = segments[currentSegmentIndex];
         NnSegmentConfig *segmentConfig = &nodeConfig->segments[currentSegmentIndex];
         if (currentOpIndex >= segmentConfig->nOps) {
@@ -85,6 +86,8 @@ NnExecutor::NnExecutor(NnNetConfig *netConfig, NnNodeConfig *nodeConfig, NnDevic
             }
             currentSegmentIndex++;
             currentOpIndex = 0;
+            if (currentSegmentIndex >= nodeConfig->nSegments)
+                break;
             segment = segments[currentSegmentIndex];
         }
         NnOpConfig *opConfig = &segmentConfig->ops[currentOpIndex];
@@ -92,6 +95,7 @@ NnExecutor::NnExecutor(NnNetConfig *netConfig, NnNodeConfig *nodeConfig, NnDevic
         currentOpIndex++;
         stepIndex++;
     }
+    assert(stepIndex == context.nSteps);
 
     threads = new NnExecutorThread[netExecution->nThreads];
     for (NnSize threadIndex = 0; threadIndex < netExecution->nThreads; threadIndex++) {
