@@ -114,10 +114,11 @@ void printLlmHeader(LlmHeader *header) {
     printf("💡 RopeType: %s\n", ropeTypeToString(header->ropeType));
     printf("💡 RopeTheta: %.0f\n", header->ropeTheta);
     if (header->ropeType == ROPE_LLAMA3_1) {
-        printf("💡 RopeScaling: %.1f, %.1f, %.1f\n",
+        printf("💡 RopeScaling: f=%.1f, l=%.1f, h=%.1f, o=%d\n",
             header->ropeScalingFactor,
             header->ropeScalingLowFreqFactor,
-            header->ropeScalingHighFreqFactory);
+            header->ropeScalingHighFreqFactory,
+            header->ropeScalingOrigMaxSeqLen);
     }
 }
 

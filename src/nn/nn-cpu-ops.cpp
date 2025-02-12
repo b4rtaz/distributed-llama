@@ -1102,7 +1102,8 @@ static void initRopeLlama31Forward(NnCpuOpContext *context) {
 }
 
 static inline float ropeLlama31Scale(const float freq, const NnRopeLlamaOpConfig *config) {
-    const float waveLen = 2.0f * M_PI * freq;
+    // https://github.com/meta-llama/llama-models/blob/4269717b2ea587627903bacbb75ccce1427ad914/models/llama3/reference_impl/model.py#L55
+    const float waveLen = 2.0f * M_PI / freq;
     const float highFreqWavelen = config->ropeScalingOrigMaxSeqLen / config->ropeScalingHighFreqFactory;
     if (waveLen < highFreqWavelen) {
         return freq;
@@ -1111,7 +1112,8 @@ static inline float ropeLlama31Scale(const float freq, const NnRopeLlamaOpConfig
     if (waveLen > lowFreqWavelen) {
         return freq / config->ropeScalingFactor;
     }
-    const float smooth = (config->ropeScalingOrigMaxSeqLen / waveLen - config->ropeScalingLowFreqFactor) / (config->ropeScalingHighFreqFactory - config->ropeScalingLowFreqFactor);
+    const float smooth = (config->ropeScalingOrigMaxSeqLen / waveLen - config->ropeScalingLowFreqFactor) /
+        (config->ropeScalingHighFreqFactory - config->ropeScalingLowFreqFactor);
     return (1 - smooth) * freq / config->ropeScalingFactor + smooth * freq;
 }
 
