@@ -3,14 +3,13 @@
 
 #include <cstdio>
 #include <string>
-#include "tasks.hpp"
 
 bool isSafePiece(char *piece);
 void safePrintf(char *piece);
 
 typedef struct {
     char *str;
-    int id;
+    unsigned int id;
 } TokenIndex;
 
 struct TokenizerOldHeader {
@@ -36,23 +35,29 @@ enum TokenizerHeaderKey {
 class Tokenizer {
 private:
     unsigned int maxTokenLength;
-    float* vocabScores;
-    TokenIndex *sortedVocab;
-    int vocabSize;
+    unsigned int regularVocabSize;
+    unsigned int specialVocabSize;
+    float *vocabScores;
+    unsigned int *vocabLength;
+    TokenIndex *regularVocab;
+    TokenIndex *specialVocab;
     unsigned char bytePieces[512]; // stores all single-byte strings
+    size_t strBufferSize;
+    char *strBuffer;
 
 public:
+    unsigned int vocabSize;
     char** vocab;
     int bosId;
     int eosId;
     int chatEosId;
-    char* chatTemplate;
-    char* chatStop;
+    char *chatTemplate;
+    char *chatStop;
 
-    Tokenizer(char* tokenizer_path, int vocab_size);
+    Tokenizer(const char* tokenizer_path);
     ~Tokenizer();
-    void encode(char *text, int *tokens, int *nTokens, bool addBos, bool addEos);
-    char* decode(int prev_token, int token);
+    void encode(char *text, int *tokens, int *nTokens, bool addBos, bool addSpecialTokens);
+    char *decode(int prev_token, int token);
 };
 
 // struct used when sorting probabilities during top-p sampling

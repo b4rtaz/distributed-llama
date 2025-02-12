@@ -1,161 +1,322 @@
-#include <cstring>
-#include <cstdlib>
-#include <cstdint>
-#include <cstdio>
-#include <cassert>
-#include <stdexcept>
-#include <ctime>
 #include "app.hpp"
+#include <cassert>
+#include <cstring>
+#include <stdexcept>
 
-FloatType parseFloatType(char* val) {
-    if (strcmp(val, "f32") == 0) return F32;
-    if (strcmp(val, "f16") == 0) return F16;
-    if (strcmp(val, "q40") == 0) return Q40;
-    if (strcmp(val, "q80") == 0) return Q80;
-    std::string errMsg = "Invalid float type '" + std::string(val) + "'";
-    throw BadArgumentException(errMsg);
+static NnFloatType parseFloatType(char *val) {
+    if (std::strcmp(val, "f32") == 0) return F_32;
+    if (std::strcmp(val, "f16") == 0) return F_16;
+    if (std::strcmp(val, "q40") == 0) return F_Q40;
+    if (std::strcmp(val, "q80") == 0) return F_Q80;
+    throw std::runtime_error("Invalid float type: " + std::string(val));
 }
 
-ChatTemplateType parseChatTemplateType(char* val) {
-    if (strcmp(val, "llama2") == 0) return TEMPLATE_LLAMA2;
-    if (strcmp(val, "llama3") == 0) return TEMPLATE_LLAMA3;
-    if (strcmp(val, "zephyr") == 0) return TEMPLATE_ZEPHYR;
-    if (strcmp(val, "chatml") == 0) return TEMPLATE_CHATML;
-    std::string errMsg = "Invalid chat template type '" + std::string(val) + "'";
-    throw BadArgumentException(errMsg);
+static ChatTemplateType parseChatTemplateType(char *val) {
+    if (std::strcmp(val, "llama2") == 0) return TEMPLATE_LLAMA2;
+    if (std::strcmp(val, "llama3") == 0) return TEMPLATE_LLAMA3;
+    if (std::strcmp(val, "zephyr") == 0) return TEMPLATE_ZEPHYR;
+    if (std::strcmp(val, "chatml") == 0) return TEMPLATE_CHATML;
+    throw std::runtime_error("Invalid chat template type: " + std::string(val));
 }
 
-AppArgs AppArgs::parse(int argc, char** argv, bool hasMode) {
-    AppArgs args;
+AppCliArgs AppCliArgs::parse(int argc, char* *argv, bool requireMode) {
+    AppCliArgs args;
     args.help = false;
-    args.mode = NULL;
-    args.nThreads = 4;
-    args.modelPath = NULL;
-    args.tokenizerPath = NULL;
-    args.prompt = NULL;
-    args.weightsFloatType = FUNK;
-    args.bufferFloatType = F32;
+    args.mode = nullptr;
+    args.nBatches = 32;
+    args.nThreads = 1;
+    args.modelPath = nullptr;
+    args.tokenizerPath = nullptr;
+    args.prompt = nullptr;
+    args.syncType = F_32;
     args.nWorkers = 0;
+    args.workerHosts = nullptr;
+    args.workerPorts = nullptr;
     args.port = 9990;
     args.temperature = 0.8f;
     args.topp = 0.9f;
     args.steps = 0;
-    args.seed = (unsigned long long)time(NULL);
+    args.seed = (unsigned long long)time(nullptr);
     args.chatTemplateType = TEMPLATE_UNKNOWN;
     args.maxSeqLen = 0;
-    args.packetAlignment = 0;
     int i = 1;
-    if (hasMode && argc > 1) {
+    if (requireMode && argc > 1) {
         args.mode = argv[1];
         i++;
     }
     // First see if any of the args are asking for help/usage and fail fast
     for (int x = 0; x < argc; x++) {
-        if ((strcmp(argv[x], "--usage") == 0) ||
-            (strcmp(argv[x], "--help") == 0) ||
-            (strcmp(argv[x], "-h") == 0)) {
+        if ((std::strcmp(argv[x], "--usage") == 0) ||
+            (std::strcmp(argv[x], "--help") == 0) ||
+            (std::strcmp(argv[x], "-h") == 0)) {
             args.help = true;
             return args;
         }
     }
     for (; i + 1 < argc; i += 2) {
-        char* name = argv[i];
-        char* value = argv[i + 1];
-        if (strcmp(name, "--model") == 0) {
+        char *name = argv[i];
+        char *value = argv[i + 1];
+        if (std::strcmp(name, "--model") == 0) {
             args.modelPath = value;
-        } else if (strcmp(name, "--tokenizer") == 0) {
+        } else if (std::strcmp(name, "--tokenizer") == 0) {
             args.tokenizerPath = value;
-        } else if (strcmp(name, "--prompt") == 0) {
+        } else if (std::strcmp(name, "--prompt") == 0) {
             args.prompt = value;
-        } else if (strcmp(name, "--weights-float-type") == 0) {
-            args.weightsFloatType = parseFloatType(value);
-        } else if (strcmp(name, "--buffer-float-type") == 0) {
-            args.bufferFloatType = parseFloatType(value);
-        } else if (strcmp(name, "--workers") == 0) {
+        } else if (std::strcmp(name, "--buffer-float-type") == 0) {
+            args.syncType = parseFloatType(value);
+        } else if (std::strcmp(name, "--workers") == 0) {
             int j = i + 1;
             for (; j < argc && argv[j][0] != '-'; j++);
             int count = j - i - 1;
 
             args.nWorkers = count;
             args.workerHosts = new char*[count];
-            args.workerPorts = new int[count];
+            args.workerPorts = new NnSize[count];
 
             for (int s = 0; s < count; s++) {
-                char* v = argv[i + 1 + s];
-                char* sep = strstr(v, ":");
+                char *v = argv[i + 1 + s];
+                char *sep = std::strstr(v, ":");
                 if (sep == NULL) {
-                    std::string errMsg = "Invalid worker address '" + std::string(v) + "'";
-                    throw BadArgumentException(errMsg);
+                    throw std::runtime_error("Invalid worker address: " + std::string(v));
                 }
                 int hostLen = sep - v;
                 args.workerHosts[s] = new char[hostLen + 1];
-                memcpy(args.workerHosts[s], v, hostLen);
+                std::memcpy(args.workerHosts[s], v, hostLen);
                 args.workerHosts[s][hostLen] = '\0';
-                args.workerPorts[s] = atoi(sep + 1);
+                args.workerPorts[s] = std::atoi(sep + 1);
             }
 
             i += count - 1;
-        } else if (strcmp(name, "--port") == 0) {
+        } else if (std::strcmp(name, "--port") == 0) {
             args.port = atoi(value);
-        } else if (strcmp(name, "--nthreads") == 0) {
+        } else if (std::strcmp(name, "--nthreads") == 0) {
             args.nThreads = atoi(value);
-        } else if (strcmp(name, "--steps") == 0) {
+        } else if (std::strcmp(name, "--steps") == 0) {
             args.steps = atoi(value);
-        } else if (strcmp(name, "--temperature") == 0) {
+        } else if (std::strcmp(name, "--temperature") == 0) {
             args.temperature = atof(value);
-        } else if (strcmp(name, "--topp") == 0) {
+        } else if (std::strcmp(name, "--topp") == 0) {
             args.topp = atof(value);
-        } else if (strcmp(name, "--seed") == 0) {
+        } else if (std::strcmp(name, "--seed") == 0) {
             args.seed = atoll(value);
-        } else if (strcmp(name, "--chat-template") == 0) {
+        } else if (std::strcmp(name, "--chat-template") == 0) {
             args.chatTemplateType = parseChatTemplateType(value);
-        } else if (strcmp(name, "--max-seq-len") == 0) {
+        } else if (std::strcmp(name, "--max-seq-len") == 0) {
             args.maxSeqLen = (unsigned int)atoi(value);
-        } else if (strcmp(name, "--packet-alignment") == 0) {
-            args.packetAlignment = (size_t)atoi(value);
         } else {
-            std::string errMsg = "Unknown option '" + std::string(name) + "'";
-            throw BadArgumentException(errMsg);
+            throw std::runtime_error("Unknown option: " + std::string(name));
         }
     }
     return args;
 }
 
-TransformerArch TransformerArchFactory::create(TransformerSpec* spec) {
-    if (spec->archType == LLAMA) return buildLlamaArch(spec);
-    printf("Unsupported arch type: %d\n", spec->archType);
-    exit(EXIT_FAILURE);
+AppCliArgs::~AppCliArgs() {
+    if (workerHosts != nullptr) {
+        for (NnSize i = 0; i < nWorkers; i++)
+            delete[] workerHosts[i];
+        delete[] workerHosts;
+    }
+    if (workerPorts != nullptr)
+        delete[] workerPorts;
 }
 
-void App::run(AppArgs* args, void (*program)(Inference* inference, SocketPool* socketPool, Tokenizer* tokenizer, Sampler* sampler, AppArgs* args, TransformerSpec* spec)) {
-    if (args->modelPath == NULL) {
-        throw BadArgumentException("Model is required");
+Timer::Timer() {
+    startTime = std::chrono::high_resolution_clock::now();
+}
+
+NnSize Timer::elapsed() {
+    auto endTime = std::chrono::high_resolution_clock::now();
+    return (NnSize)std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
+}
+
+RootLlmInference::RootLlmInference(LlmNet *net, NnDevice *device, NnNetExecution *execution, NnExecutor *executor, NnNetwork *network) {
+    this->header = net->header;
+    this->tokenPipe = (float *)execution->pipes[net->tokenPipeIndex];
+    this->positionPipe = (float *)execution->pipes[net->positionPipeIndex];
+    this->logitsPipe = (float *)execution->pipes[net->logitsPipeIndex];
+    this->device = device;
+    this->execution = execution;
+    this->executor = executor;
+    this->network = network; // May be nullptr!
+}
+
+void RootLlmInference::setBatchSize(NnSize batchSize) {
+    execution->setBatchSize(batchSize);
+    controlPacket.batchSize = batchSize;
+}
+
+void RootLlmInference::setPosition(NnSize position) {
+    assert(position >= 0);
+    assert(position + execution->batchSize - 1 < header->seqLen);
+
+    controlPacket.position = position;
+    for (NnSize i = 0; i < execution->batchSize; i++)
+        positionPipe[i] = (float)(position + i);
+}
+
+void RootLlmInference::setToken(NnSize batchIndex, NnSize token) {
+    assert(batchIndex >= 0 && batchIndex < execution->batchSize);
+    tokenPipe[batchIndex] = (float)token;
+}
+
+void RootLlmInference::forward() {
+    if (network != nullptr) 
+        network->writeAll(&controlPacket, sizeof(LlmControlPacket));
+    device->syncPointers();
+    executor->forward();
+}
+
+void RootLlmInference::finish() {
+    if (network != nullptr) {
+        controlPacket.batchSize = 0;
+        network->writeAll(&controlPacket, sizeof(LlmControlPacket));
     }
-    if (args->tokenizerPath == NULL) {
-        throw BadArgumentException("Tokenizer is required");
+}
+
+WorkerLlmInference::WorkerLlmInference(NnNetExecution *execution, NnNetwork *network) {
+    this->isFinished = false;
+    this->execution = execution;
+    this->network = network;
+    this->positionPipe = (float *)execution->pipes[0];
+}
+
+bool WorkerLlmInference::tryReadControlPacket() {
+    const unsigned long maxAttempts = 10000;
+    if (!network->tryReadWithMaxAttempts(ROOT_SOCKET_INDEX, &controlPacket, sizeof(LlmControlPacket), maxAttempts))
+        return false;
+    if (controlPacket.batchSize == 0) {
+        printf("🛑 Stop signal\n");
+        isFinished = true;
+        return true;
+    }
+    for (NnSize i = 0; i < controlPacket.batchSize; i++)
+        positionPipe[i] = (float)(controlPacket.position + i);
+    execution->setBatchSize(controlPacket.batchSize);
+    return true;
+}
+
+void runInferenceApp(AppCliArgs *args, void (*handler)(AppInferenceContext *context)) {
+    NnSize nNodes = args->nWorkers + 1;
+
+    LlmHeader header = loadLlmHeader(args->modelPath, args->maxSeqLen, args->syncType);
+    if (nNodes > header.nKvHeads)
+        // TODO: https://github.com/b4rtaz/distributed-llama/issues/70
+        throw std::runtime_error("This version does not support more nodes than the number of KV heads in the model");
+    if (header.weightType == F_Q40 && header.syncType != F_Q80)
+        throw std::runtime_error("This version supports only Q40 weights with Q80 sync type");
+
+    Tokenizer tokenizer(args->tokenizerPath);
+    if (tokenizer.vocabSize != header.vocabSize)
+        throw std::runtime_error("Tokenizer vocab size does not match the model vocab size");
+
+    Sampler sampler(header.vocabSize, args->temperature, args->topp, args->seed);
+
+    LlmNet net = buildLlmNet(&header, nNodes, args->nBatches);
+    std::unique_ptr<LlmNet, void(*)(LlmNet *)> netPtr(&net, releaseLlmNet);
+
+    NnNodeConfig *rootNodeConfig = &net.nodeConfigs[0];
+
+    printLlmHeader(&header);
+    printNodeRequiredMemory(&net.netConfig, rootNodeConfig);
+
+    NnNetExecution execution(args->nThreads, &net.netConfig);
+
+    std::unique_ptr<NnNodeSynchronizer> synchronizer(nullptr);
+    std::unique_ptr<NnNetwork> networkPtr(nullptr);
+    NnNetwork *network = nullptr;
+
+    if (nNodes == 1) {
+        synchronizer.reset(new NnFakeNodeSynchronizer());
+    } else {
+        networkPtr = NnNetwork::connect(args->nWorkers, args->workerHosts, args->workerPorts);
+        network = networkPtr.get();
+        synchronizer.reset(new NnNetworkNodeSynchronizer(network, &execution, &net.netConfig, rootNodeConfig));
+
+        NnRootConfigWriter configWriter(network);
+        configWriter.writeToWorkers(&net.netConfig, net.nodeConfigs);
     }
 
-    SocketPool* socketPool = SocketPool::connect(args->nWorkers, args->workerHosts, args->workerPorts, args->packetAlignment);
-    unsigned int nSlices = args->nWorkers + 1;
+    NnCpuDevice cpu(&net.netConfig, rootNodeConfig, &execution);
+    NnExecutor executor(&net.netConfig, rootNodeConfig, &cpu, &execution, synchronizer.get());
 
-    TransformerSpec spec = Transformer::loadSpecFromFile(args->modelPath, nSlices, args->maxSeqLen, args->weightsFloatType, args->bufferFloatType);
-    TransformerArch arch = TransformerArchFactory::create(&spec);
-    Tokenizer tokenizer(args->tokenizerPath, spec.vocabSize);
+    NnRootWeightLoader weightLoader(&executor, network, nNodes);
+    loadLlmNetWeight(args->modelPath, &net, &weightLoader);
 
-    if (args->steps == 0 || args->steps > spec.seqLen) {
-        args->steps = spec.seqLen;
+    RootLlmInference inference(&net, &cpu, &execution, &executor, network);
+
+    if (network != nullptr)
+        network->resetStats();
+
+    AppInferenceContext context;
+    context.args = args;
+    context.header = &header;
+    context.inference = &inference;
+    context.sampler = &sampler;
+    context.tokenizer = &tokenizer;
+    context.network = network;
+
+    handler(&context);
+
+    inference.finish();
+}
+
+void runWorkerApp(AppCliArgs *args) {
+    while (true) {
+        std::unique_ptr<NnNetwork> networkPtr = NnNetwork::serve(args->port);
+        NnNetwork *network = networkPtr.get();
+
+        NnWorkerConfigReader configReader(network);
+        NnNetConfig netConfig = configReader.readNet();
+        NnNodeConfig nodeConfig = configReader.readNode();
+        std::unique_ptr<NnNetConfig, void(*)(NnNetConfig *)> netConfigPtr(&netConfig, releaseNetConfig);
+        std::unique_ptr<NnNodeConfig, void(*)(NnNodeConfig *)> nodeConfigPtr(&nodeConfig, releaseNodeConfig);
+
+        printNodeRequiredMemory(&netConfig, &nodeConfig);
+
+        NnNetExecution execution(args->nThreads, &netConfig);
+
+        NnNetworkNodeSynchronizer synchronizer(network, &execution, &netConfig, &nodeConfig);
+        NnCpuDevice cpu(&netConfig, &nodeConfig, &execution);
+        NnExecutor executor(&netConfig, &nodeConfig, &cpu, &execution, &synchronizer);
+
+        NnWorkerWeightReader weightReader(&executor, network);
+        weightReader.read();
+
+        WorkerLlmInference inference(&execution, network);
+        bool isFirstAttempt = true;
+        bool isTurboEnabled = false;
+        clock_t startTime;
+        while (true) {
+            try {
+                if (isFirstAttempt)
+                    startTime = clock();
+
+                if (!inference.tryReadControlPacket()) {
+                    if (isTurboEnabled && !isFirstAttempt && clock() - startTime > CLOCKS_PER_SEC) {
+                        network->setTurbo(false);
+                        isTurboEnabled = false;
+                        printf("🚁 Network is in blocking mode\n");
+                    }
+                    isFirstAttempt = false;
+                    continue;
+                }
+                if (inference.isFinished)
+                    break;
+
+                if (!isTurboEnabled) {
+                    network->setTurbo(true);
+                    isTurboEnabled = true;
+                    printf("🚁 Network is in non-blocking mode\n");
+                }
+                executor.forward();
+                isFirstAttempt = true;
+            } catch (const NnReadNetworkException &e) {
+                printf("Read network exception: %s\n", e.message);
+                break;
+            } catch (const NnWriteNetworkException &e) {
+                printf("Write network exception: %s\n", e.message);
+                break;
+            }
+        }
     }
-
-    TransformerConfig config;
-
-    Transformer transformer = Transformer::loadRootFromFile(args->modelPath, &spec, &config, socketPool);
-    socketPool->setTurbo(true);
-
-    Inference inference = Inference(&arch, args->nThreads, &transformer, socketPool);
-
-    Sampler sampler(spec.vocabSize, args->temperature, args->topp, args->seed);
-
-    program(&inference, socketPool, &tokenizer, &sampler, args, &spec);
-
-    delete socketPool;
 }

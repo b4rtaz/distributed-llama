@@ -1,59 +1,63 @@
 CXX = g++
-CXXFLAGS = -std=c++11 -Werror -O3 -march=native -mtune=native -Wformat -Werror=format-security
+CXXFLAGS = -std=c++11 -Werror -Wformat -Werror=format-security
 
-# Conditional settings for Windows
-ifeq ($(OS),Windows_NT)
-    LIBS = -lws2_32 # or -lpthreadGC2 if needed
-    DELETECMD = del /f
-else
-    LIBS = -lpthread
-    DELETECMD = rm -fv
+ifndef TERMUX_VERSION
+	CXXFLAGS += -march=native -mtune=native
 endif
 
-.PHONY: all apps clean tests
+ifdef DEBUG
+	CXXFLAGS += -g
+else
+	CXXFLAGS += -O3
+endif
 
-apps: dllama dllama-api socket-benchmark
-tests: funcs-test quants-test tokenizer-test commands-test llama2-tasks-test
-all: apps tests
+ifdef WVLA
+	CXXFLAGS += -Wvla-extension
+endif
+
+ifeq ($(OS),Windows_NT)
+    LIBS = -lws2_32
+	DELETE_CMD = del /f
+else
+    LIBS = -lpthread
+    DELETE_CMD = rm -fv
+endif
+
+.PHONY: clean dllama
+
 clean:
-	$(DELETECMD) *.o dllama dllama-* socket-benchmark mmap-buffer-* *-test *.exe
-utils: src/utils.cpp
-	$(CXX) $(CXXFLAGS) -c src/utils.cpp -o utils.o
-quants: src/quants.cpp
-	$(CXX) $(CXXFLAGS) -c src/quants.cpp -o quants.o
-funcs: src/funcs.cpp
-	$(CXX) $(CXXFLAGS) -c src/funcs.cpp -o funcs.o
-commands: src/commands.cpp
-	$(CXX) $(CXXFLAGS) -c src/commands.cpp -o commands.o
-socket: src/socket.cpp
-	$(CXX) $(CXXFLAGS) -c src/socket.cpp -o socket.o
-transformer: src/utils.cpp
-	$(CXX) $(CXXFLAGS) -c src/transformer.cpp -o transformer.o
-tasks: src/tasks.cpp
-	$(CXX) $(CXXFLAGS) -c src/tasks.cpp -o tasks.o
-llama2-tasks: src/llama2-tasks.cpp
-	$(CXX) $(CXXFLAGS) -c src/llama2-tasks.cpp -o llama2-tasks.o
-mixtral-tasks: src/mixtral-tasks.cpp
-	$(CXX) $(CXXFLAGS) -c src/mixtral-tasks.cpp -o mixtral-tasks.o
-tokenizer: src/tokenizer.cpp
-	$(CXX) $(CXXFLAGS) -c src/tokenizer.cpp -o tokenizer.o
-app: src/app.cpp
-	$(CXX) $(CXXFLAGS) -c src/app.cpp -o app.o
+	$(DELETE_CMD) *.o dllama dllama-* socket-benchmark mmap-buffer-* *-test *.exe
 
-dllama: src/apps/dllama/dllama.cpp utils quants funcs commands socket transformer tasks llama2-tasks mixtral-tasks tokenizer app
-	$(CXX) $(CXXFLAGS) src/apps/dllama/dllama.cpp -o dllama utils.o quants.o funcs.o commands.o socket.o transformer.o tasks.o llama2-tasks.o mixtral-tasks.o tokenizer.o app.o $(LIBS)
-dllama-api: src/apps/dllama-api/dllama-api.cpp utils quants funcs commands socket transformer tasks llama2-tasks mixtral-tasks tokenizer app
-	$(CXX) $(CXXFLAGS) src/apps/dllama-api/dllama-api.cpp -o dllama-api utils.o quants.o funcs.o commands.o socket.o transformer.o tasks.o llama2-tasks.o mixtral-tasks.o tokenizer.o app.o $(LIBS)
-socket-benchmark: src/apps/socket-benchmark/socket-benchmark.cpp socket
-	$(CXX) $(CXXFLAGS) src/apps/socket-benchmark/socket-benchmark.cpp -o socket-benchmark socket.o $(LIBS)
+# nn
+nn-quants.o: src/nn/nn-quants.cpp
+	$(CXX) $(CXXFLAGS) -c $^ -o $@
+nn-core.o: src/nn/nn-core.cpp
+	$(CXX) $(CXXFLAGS) -c $^ -o $@
+nn-executor.o: src/nn/nn-executor.cpp
+	$(CXX) $(CXXFLAGS) -c $^ -o $@
+nn-network.o: src/nn/nn-network.cpp
+	$(CXX) $(CXXFLAGS) -c $^ -o $@
+llamafile-sgemm.o: src/nn/llamafile/sgemm.cpp
+	$(CXX) $(CXXFLAGS) -c $^ -o $@
+nn-cpu-ops.o: src/nn/nn-cpu-ops.cpp
+	$(CXX) $(CXXFLAGS) -c $^ -o $@
+nn-cpu.o: src/nn/nn-cpu.cpp
+	$(CXX) $(CXXFLAGS) -c $^ -o $@
+nn-cpu-test: src/nn/nn-cpu-test.cpp nn-quants.o nn-core.o nn-executor.o llamafile-sgemm.o nn-cpu-ops.o nn-cpu.o
+	$(CXX) $(CXXFLAGS) $^ -o $@ $(LIBS)
+nn-cpu-ops-test: src/nn/nn-cpu-ops-test.cpp nn-quants.o nn-core.o nn-executor.o llamafile-sgemm.o nn-cpu.o
+	$(CXX) $(CXXFLAGS) $^ -o $@ $(LIBS)
 
-funcs-test: src/funcs-test.cpp funcs utils quants
-	$(CXX) $(CXXFLAGS) src/funcs-test.cpp -o funcs-test funcs.o utils.o quants.o $(LIBS)
-quants-test: src/quants.cpp utils quants
-	$(CXX) $(CXXFLAGS) src/quants-test.cpp -o quants-test utils.o quants.o $(LIBS)
-tokenizer-test: src/tokenizer-test.cpp tokenizer funcs commands utils quants
-	$(CXX) $(CXXFLAGS) src/tokenizer-test.cpp -o tokenizer-test tokenizer.o funcs.o commands.o utils.o quants.o $(LIBS)
-commands-test: src/commands-test.cpp funcs commands utils quants transformer socket
-	$(CXX) $(CXXFLAGS) src/commands-test.cpp -o commands-test funcs.o commands.o utils.o quants.o transformer.o socket.o $(LIBS)
-llama2-tasks-test: src/llama2-tasks-test.cpp utils quants funcs commands socket transformer tasks llama2-tasks tokenizer
-	$(CXX) $(CXXFLAGS) src/llama2-tasks-test.cpp -o llama2-tasks-test utils.o quants.o funcs.o commands.o socket.o transformer.o tasks.o llama2-tasks.o tokenizer.o $(LIBS)
+# llm
+tokenizer.o: src/tokenizer.cpp
+	$(CXX) $(CXXFLAGS) -c $^ -o $@
+llm.o: src/llm.cpp
+	$(CXX) $(CXXFLAGS) -c $^ -o $@
+app.o: src/app.cpp
+	$(CXX) $(CXXFLAGS) -c $^ -o $@
+tokenizer-test: src/tokenizer-test.cpp tokenizer.o
+	$(CXX) $(CXXFLAGS) $^ -o $@ $(LIBS)
+dllama: src/dllama.cpp nn-quants.o nn-core.o nn-executor.o nn-network.o llamafile-sgemm.o nn-cpu-ops.o nn-cpu.o tokenizer.o llm.o app.o
+	$(CXX) $(CXXFLAGS) $^ -o $@ $(LIBS)
+dllama-api: src/dllama-api.cpp nn-quants.o nn-core.o nn-executor.o nn-network.o llamafile-sgemm.o nn-cpu-ops.o nn-cpu.o tokenizer.o llm.o app.o
+	$(CXX) $(CXXFLAGS) $^ -o $@ $(LIBS)

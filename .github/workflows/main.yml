@@ -3,9 +3,11 @@ on:
   pull_request:
     branches:
       - main
+      - feat/nn
   push:
     branches:
       - main
+      - feat/nn
 jobs:
   build-linux:
     name: Linux
@@ -27,22 +29,12 @@ jobs:
         id: build
         run: |
           make dllama
-          make dllama-api
-          make funcs-test
-          make quants-test
-          make tokenizer-test
-          make commands-test
-          make llama2-tasks-test
-      - name: funcs-test
-        run: ./funcs-test
-      - name: quants-test
-        run: ./quants-test
-      - name: tokenizer-test
-        run: ./tokenizer-test
-      - name: commands-test
-        run: ./commands-test
-      - name: llama2-tasks-test
-        run: ./llama2-tasks-test
+          make nn-cpu-test
+          make nn-cpu-ops-test
+      - name: nn-cpu-test
+        run: ./nn-cpu-test
+      - name: nn-cpu-ops-test
+        run: ./nn-cpu-ops-test
 
   build-windows:
     name: Windows
@@ -57,19 +49,9 @@ jobs:
         id: build
         run: |
           make dllama
-          make dllama-api
-          make funcs-test
-          make quants-test
-          make tokenizer-test
-          make commands-test
-          make llama2-tasks-test
-      - name: funcs-test
-        run: ./funcs-test
-      - name: quants-test
-        run: ./quants-test
-      - name: tokenizer-test
-        run: ./tokenizer-test
-      - name: commands-test
-        run: ./commands-test
-      - name: llama2-tasks-test
-        run: ./llama2-tasks-test
+          make nn-cpu-test
+          make nn-cpu-ops-test
+      - name: nn-cpu-test
+        run: ./nn-cpu-test
+      - name: nn-cpu-ops-test
+        run: ./nn-cpu-ops-test

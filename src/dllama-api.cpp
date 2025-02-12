@@ -17,13 +17,13 @@
 #include <unistd.h>
 #endif
 
-#include "types.hpp"
-#include "../../utils.hpp"
-#include "../../socket.hpp"
-#include "../../transformer.hpp"
-#include "../../tokenizer.hpp"
-#include "../../app.hpp"
-#include "../../common/json.hpp"
+#include "tokenizer.hpp"
+#include "app.hpp"
+#include "json.hpp"
+#include "api-types.hpp"
+#include "nn/nn-network.hpp"
+
+typedef unsigned int pos_t;
 
 using json = nlohmann::json;
 
@@ -119,7 +119,7 @@ public:
             buffer[bytesRead] = '\0';
             headerData.append(buffer);
 
-            // Check for end of headers (http spec says "\r\n\r\n")
+            // Check for end of headers (http header says "\r\n\r\n")
             headerEnd = headerData.find("\r\n\r\n");
             if (headerEnd != std::string::npos) {
                 headerDone = true;
@@ -310,22 +310,22 @@ public:
 
 class ApiServer {
 private:
-    Inference* inference;
+    RootLlmInference* inference;
     Tokenizer* tokenizer;
     Sampler* sampler;
-    AppArgs* args;
-    TransformerSpec* spec;
+    AppCliArgs* args;
+    LlmHeader* header;
     EosDetector* eosDetector;
     ChatTemplate* chatTemplate;
     NaiveCache naiveCache;
 
 public:
-    ApiServer( Inference* inference, Tokenizer* tokenizer, Sampler* sampler, AppArgs* args, TransformerSpec* spec, EosDetector* eosDetector, ChatTemplate* chatTemplate) {
+    ApiServer( RootLlmInference* inference, Tokenizer* tokenizer, Sampler* sampler, AppCliArgs* args, LlmHeader* header, EosDetector* eosDetector, ChatTemplate* chatTemplate) {
         this->inference = inference;
         this->tokenizer = tokenizer;
         this->sampler = sampler;
         this->args = args;
-        this->spec = spec;
+        this->header = header;
         this->eosDetector = eosDetector;
         this->chatTemplate = chatTemplate;
     }
@@ -338,7 +338,8 @@ public:
         naiveCache.resolveDeltaPrompt(deltaPrompt, startPos);
 
         size_t nInputItems = deltaPrompt.size();
-        ChatItem inputItems[nInputItems];
+        std::unique_ptr<ChatItem[]> inputItemsPtr(new ChatItem[nInputItems]);
+        ChatItem *inputItems = inputItemsPtr.get();
         for (size_t i = 0; i < nInputItems; i++) {
             inputItems[i].role = deltaPrompt[i].role;
             inputItems[i].message = deltaPrompt[i].content;
@@ -347,18 +348,23 @@ public:
         std::string inputPrompt = chatTemplate->generate(nInputItems, inputItems, true);
         printf("🔹%s🔸", inputPrompt.c_str());
 
-        int promptLength = inputPrompt.size();
+        size_t promptLength = inputPrompt.size();
         int nPromptTokens;
-        int promptTokens[promptLength + 3];
-        tokenizer->encode((char*)inputPrompt.c_str(), promptTokens, &nPromptTokens, true, false);
-        int promptEndPos = startPos + nPromptTokens;
+        std::unique_ptr<int[]> promptTokensPtr(new int[promptLength + 2]);
+        int *promptTokens = promptTokensPtr.get();
+        tokenizer->encode((char*)inputPrompt.c_str(), promptTokens, &nPromptTokens, true, true);
+
+        pos_t promptEndPos = startPos + nPromptTokens - 1;
+        if (promptEndPos > header->seqLen)
+            promptEndPos = header->seqLen;
+
+        pos_t maxPredPos = params.max_tokens > 0 ? (promptEndPos + params.max_tokens) : header->seqLen;
+        if (maxPredPos > header->seqLen)
+            maxPredPos = header->seqLen;
 
         for (size_t j = 0; j < deltaPrompt.size(); j++) {
             naiveCache.push(NaiveCacheItem(promptEndPos, deltaPrompt[j]));
         }
-
-        pos_t maxPos = params.max_tokens > 0 ? (promptEndPos + params.max_tokens) : spec->seqLen;
-        if (maxPos > spec->seqLen) maxPos = spec->seqLen;
 
         if (params.stream) {
             request.writeStreamStartChunk();
@@ -367,43 +373,65 @@ public:
         std::string buffer;
         size_t nStops = params.stop.size();
 
-        int token = promptTokens[0];
-        pos_t pos = startPos;
-        for (; pos < maxPos; pos++) {
-            float* logits = inference->infer(token, pos);
+        NnSize pos = startPos;
+        int token;
+        for (NnSize i = 0; ;) {
+            long remainingTokens = promptEndPos - pos;
+            if (remainingTokens <= 0)
+                break;
 
-            if (pos < promptEndPos - 1) {
-                token = promptTokens[pos - startPos + 1];
-            } else {
-                int prevToken = token;
-                token = sampler->sample(logits);
+            NnSize batchSize = remainingTokens < args->nBatches
+                ? remainingTokens
+                : args->nBatches;
 
-                char* piece = tokenizer->decode(prevToken, token);
-                bool isSafe = isSafePiece(piece);
+            inference->setBatchSize(batchSize);
+            inference->setPosition(pos);
+            for (NnSize i = 0; i < batchSize; i++)
+                inference->setToken(i, promptTokens[i]);
 
-                EosDetectorType eosType = eosDetector->append(token, isSafe ? piece : "");
+            inference->forward();
 
-                if (isSafePiece(piece)) {
-                    printf("%s", piece);
-                    fflush(stdout);
-                }
+            i += batchSize;
+            pos += batchSize;
+            token = promptTokens[i + 1];
+        }
 
-                if (eosType == NOT_EOS || eosType == EOS) {
-                    char* delta = eosDetector->getDelta();
-                    if (delta != NULL) {
-                        std::string deltaStr(delta);
-                        if (params.stream)
-                            writeChatCompletionChunk(request, deltaStr, false);
-                        buffer += deltaStr;
-                    }
-                    eosDetector->clear();
-                }
-                if (eosType == EOS) break;
+        inference->setBatchSize(1);
+
+        for (; pos < maxPredPos;) {
+            int prevToken = token;
+
+            inference->setPosition(pos);
+            inference->setToken(0, token);
+            inference->forward();
+
+            token = sampler->sample(inference->logitsPipe);
+
+            char* piece = tokenizer->decode(prevToken, token);
+            bool isSafe = isSafePiece(piece);
+            EosDetectorType eosType = eosDetector->append(token, isSafe ? piece : "");
+
+            if (isSafePiece(piece)) {
+                printf("%s", piece);
+                fflush(stdout);
             }
+
+            if (eosType == NOT_EOS || eosType == EOS) {
+                char* delta = eosDetector->getDelta();
+                if (delta != NULL) {
+                    std::string deltaStr(delta);
+                    if (params.stream)
+                        writeChatCompletionChunk(request, deltaStr, false);
+                    buffer += deltaStr;
+                }
+                eosDetector->clear();
+            }
+            pos++;
+            if (eosType == EOS) break;
         }
 
         ChatMessage chatMessage("assistant", buffer);
-        if (pos == spec->seqLen) {
+        if (pos == header->seqLen) {
             naiveCache.clear();
         } else {
             naiveCache.push(NaiveCacheItem(pos, chatMessage));
@@ -468,15 +496,15 @@ void handleModelsRequest(HttpRequest& request) {
         "] }");
 }
 
-void server(Inference* inference, SocketPool* socketPool, Tokenizer *tokenizer, Sampler *sampler, AppArgs* args, TransformerSpec* spec) {
-    int serverSocket = createServerSocket(args->port);
+static void server(AppInferenceContext *context) {
+    int serverSocket = createServerSocket(context->args->port);
 
-    TokenizerChatStops stops(tokenizer);
-    ChatTemplate chatTemplate(args->chatTemplateType, tokenizer->chatTemplate, stops.stops[0]);
-    EosDetector eosDetector(tokenizer->chatEosId, stops.nStops, stops.stops, stops.maxStopLength, stops.maxStopLength);
-    ApiServer api(inference, tokenizer, sampler, args, spec, &eosDetector, &chatTemplate);
+    TokenizerChatStops stops(context->tokenizer);
+    ChatTemplate chatTemplate(context->args->chatTemplateType, context->tokenizer->chatTemplate, stops.stops[0]);
+    EosDetector eosDetector(context->tokenizer->chatEosId, stops.nStops, stops.stops, stops.maxStopLength, stops.maxStopLength);
+    ApiServer api(context->inference, context->tokenizer, context->sampler, context->args, context->header, &eosDetector, &chatTemplate);
 
-    printf("Server URL: http://127.0.0.1:%d/v1/\n", args->port);
+    printf("Server URL: http://127.0.0.1:%d/v1/\n", context->args->port);
 
     std::vector<Route> routes = {
         {
@@ -497,9 +525,9 @@ void server(Inference* inference, SocketPool* socketPool, Tokenizer *tokenizer, 
             HttpRequest request = HttpRequest::read(clientSocket);
             printf("🔷 %s %s\n", request.getMethod().c_str(), request.path.c_str());
             Router::resolve(request, routes);
-        } catch (ReadSocketException& ex) {
+        } catch (NnReadNetworkException& ex) {
             printf("Read socket error: %d %s\n", ex.code, ex.message);
-        } catch (WriteSocketException& ex) {
+        } catch (NnWriteNetworkException& ex) {
             printf("Write socket error: %d %s\n", ex.code, ex.message);
         }
     }
@@ -520,7 +548,6 @@ void usage() {
     fprintf(stderr, "        [--max-seq-len <max>]\n");
     fprintf(stderr, "        [--nthreads <n>]\n");
     fprintf(stderr, "        [--workers <ip:port> ...]\n");
-    fprintf(stderr, "        [--packet-alignment <pa>]\n");
     fprintf(stderr, "        [--temperature <temp>]\n");
     fprintf(stderr, "        [--topp <t>]\n");
     fprintf(stderr, "        [--seed <s>]\n");
@@ -534,23 +561,21 @@ void usage() {
 }
 
 int main(int argc, char *argv[]) {
-    initQuants();
     initSockets();
 
+    int returnCode = EXIT_SUCCESS;
     try {
-        AppArgs args = AppArgs::parse(argc, argv, false);
+        AppCliArgs args = AppCliArgs::parse(argc, argv, false);
         if (args.help) {
             usage();
-            return EXIT_SUCCESS;
+        } else {
+            runInferenceApp(&args, server);
         }
-        App::run(&args, server);
-    } catch (const BadArgumentException& e) {
-        fprintf(stderr, "%s\n\n", e.what());
-        usage();
-        cleanupSockets();
-        return EXIT_FAILURE;
+    } catch (std::exception &e) {
+        printf("🚨 Critical error: %s\n", e.what());
+        returnCode = EXIT_FAILURE;
     }
 
     cleanupSockets();
-    return EXIT_SUCCESS;
+    return returnCode;
 }

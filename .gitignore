@@ -5,10 +5,11 @@
 *.dSYM
 *.data
 *.temp
+*.tmp
 __pycache__
 
 *-test
-/socket-benchmark
+/models
 main
 run*.sh
 server
