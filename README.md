@@ -18,9 +18,6 @@ Python 3 and C++ compiler required. The command will download the model and the 
 
 | Model                       | Purpose   | Size     | Command                                       |
 | --------------------------- | --------- | -------- | --------------------------------------------- |
-| TinyLlama 1.1B 3T Q40       | Benchmark | 844 MB   | `python launch.py tinyllama_1_1b_3t_q40`      |
-| Llama 3 8B Q40              | Benchmark | 6.32 GB  | `python launch.py llama3_8b_q40`              |
-| Llama 3 8B Instruct Q40     | Chat, API | 6.32 GB  | `python launch.py llama3_8b_instruct_q40`     |
 | Llama 3.1 8B Instruct Q40   | Chat, API | 6.32 GB  | `python launch.py llama3_1_8b_instruct_q40`   |
 | Llama 3.1 405B Instruct Q40 | Chat, API | 238 GB   | `python launch.py llama3_1_405b_instruct_q40` |
 | Llama 3.2 1B Instruct Q40   | Chat, API | 1.7 GB   | `python launch.py llama3_2_1b_instruct_q40`   |
