@@ -79,8 +79,8 @@ class NnExecutor {
 public:
     NnNetExecution *netExecution;
     NnNodeConfig *nodeConfig;
-    NnSize nSegments;
-    NnDeviceSegment **segments;
+    std::vector<std::unique_ptr<NnDeviceSegment>> segments;
+    std::vector<NnExecutorStep> steps;
     NnExecutorThread *threads;
     NnExecutorContext context;
     NnExecutor(NnNetConfig *netConfig, NnNodeConfig *nodeConfig, NnDevice *device, NnNetExecution *netExecution, NnNodeSynchronizer *synchronizer);

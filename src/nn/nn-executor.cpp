@@ -36,7 +36,9 @@ void NnNetExecution::setBatchSize(NnSize batchSize) {
     this->batchSize = batchSize;
 }
 
-NnExecutor::NnExecutor(NnNetConfig *netConfig, NnNodeConfig *nodeConfig, NnDevice *device, NnNetExecution *netExecution, NnNodeSynchronizer *synchronizer) {
+NnExecutor::NnExecutor(NnNetConfig *netConfig, NnNodeConfig *nodeConfig, NnDevice *device, NnNetExecution *netExecution, NnNodeSynchronizer *synchronizer)
+    : segments(nodeConfig->nSegments), steps()
+{
     NnSize maxNThreads = device->maxNThreads();
     if (netExecution->nThreads > maxNThreads)
         throw std::invalid_argument("This CPU supports max " + std::to_string(maxNThreads) + " threads");
@@ -44,59 +46,27 @@ NnExecutor::NnExecutor(NnNetConfig *netConfig, NnNodeConfig *nodeConfig, NnDevic
     this->nodeConfig = nodeConfig;
 
     bool useSynchronizer = netConfig->nNodes > 1;
+    for (NnSize segmentIndex = 0; segmentIndex < nodeConfig->nSegments; segmentIndex++) {
+        NnSegmentConfig *segmentConfig = &nodeConfig->segments[segmentIndex];
+        if (segmentConfig->nOps > 0) {
+            NnDeviceSegment *segment = device->createSegment(segmentIndex);
+            segments[segmentIndex] = std::unique_ptr<NnDeviceSegment>(segment);
+    
+            for (NnSize opIndex = 0; opIndex < segmentConfig->nOps; opIndex++)
+                steps.push_back(NnExecutorStep{ STEP_EXECUTE_OP, segment, opIndex, &segmentConfig->ops[opIndex] });
+        }
+        if (useSynchronizer && segmentConfig->nSyncs > 0)
+            steps.push_back(NnExecutorStep{ STEP_SYNC_NODES, nullptr, segmentIndex, nullptr });
+        if (segmentConfig->syncPointers)
+            steps.push_back(NnExecutorStep{ STEP_SYNC_POINTERS, nullptr, 0, nullptr });
+    }
+
+    steps.shrink_to_fit();
 
     context.nThreads = netExecution->nThreads;
     context.synchronizer = synchronizer;
     context.device = device;
-    context.nSteps = 0;
-
-    std::unique_ptr<NnDeviceSegment *> deviceSegmentsPtr(new NnDeviceSegment *[nodeConfig->nSegments]);
-    NnDeviceSegment **deviceSegments = deviceSegmentsPtr.get();
-
-    for (NnSize segmentIndex = 0; segmentIndex < nodeConfig->nSegments; segmentIndex++) {
-        NnSegmentConfig *segmentConfig = &nodeConfig->segments[segmentIndex];
-        if (segmentConfig->nOps > 0) {
-            deviceSegments[segmentIndex] = device->createSegment(segmentIndex);
-            context.nSteps += segmentConfig->nOps;
-        }
-        if (useSynchronizer && segmentConfig->nSyncs > 0)
-            context.nSteps++;
-        if (segmentConfig->syncPointers)
-            context.nSteps++;
-    }
-    assert(context.nSteps > 0);
-
-    nSegments = nodeConfig->nSegments;
-    segments = deviceSegmentsPtr.release();
-    context.steps = new NnExecutorStep[context.nSteps];
-
-    NnSize currentSegmentIndex = 0;
-    NnSize currentOpIndex = 0;
-    NnSize stepIndex = 0;
-    for (;;) {
-        NnDeviceSegment *segment = segments[currentSegmentIndex];
-        NnSegmentConfig *segmentConfig = &nodeConfig->segments[currentSegmentIndex];
-        if (currentOpIndex >= segmentConfig->nOps) {
-            if (useSynchronizer && segmentConfig->nSyncs > 0) {
-                context.steps[stepIndex] = { STEP_SYNC_NODES, nullptr, currentSegmentIndex, nullptr };
-                stepIndex++;
-            }
-            if (segmentConfig->syncPointers) {
-                context.steps[stepIndex] = { STEP_SYNC_POINTERS, nullptr, 0, nullptr };
-                stepIndex++;
-            }
-            currentSegmentIndex++;
-            currentOpIndex = 0;
-            if (currentSegmentIndex >= nodeConfig->nSegments)
-                break;
-            segment = segments[currentSegmentIndex];
-        }
-        NnOpConfig *opConfig = &segmentConfig->ops[currentOpIndex];
-        context.steps[stepIndex] = { STEP_EXECUTE_OP, segment, currentOpIndex, opConfig };
-        currentOpIndex++;
-        stepIndex++;
-    }
-    assert(stepIndex == context.nSteps);
+    context.steps = steps.data();
 
     threads = new NnExecutorThread[netExecution->nThreads];
     for (NnSize threadIndex = 0; threadIndex < netExecution->nThreads; threadIndex++) {
@@ -107,10 +77,6 @@ NnExecutor::NnExecutor(NnNetConfig *netConfig, NnNodeConfig *nodeConfig, NnDevic
 }
 
 NnExecutor::~NnExecutor() {
-    for (NnSize segmentIndex = 0; segmentIndex < nSegments; segmentIndex++)
-        delete segments[segmentIndex];
-    delete[] context.steps;
-    delete[] segments;
     delete[] threads;
 }
 
