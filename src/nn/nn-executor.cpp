@@ -66,6 +66,7 @@ NnExecutor::NnExecutor(NnNetConfig *netConfig, NnNodeConfig *nodeConfig, NnDevic
     context.nThreads = netExecution->nThreads;
     context.synchronizer = synchronizer;
     context.device = device;
+    context.nSteps = (NnSize)steps.size();
     context.steps = steps.data();
 
     threads = new NnExecutorThread[netExecution->nThreads];
@@ -85,8 +86,10 @@ void NnExecutor::loadWeight(const char *name, NnSize index, NnSize nBytes, NnByt
         NnSegmentConfig *segmentConfig = &nodeConfig->segments[segmentIndex];
         for (NnSize opIndex = 0; opIndex < segmentConfig->nOps; opIndex++) {
             NnOpConfig *opConfig = &segmentConfig->ops[opIndex];
-            if (std::strcmp(opConfig->name, name) == 0 && opConfig->index == index) {
-                segments[segmentIndex]->loadWeight(opIndex, nBytes, weight);
+            if (opConfig->index == index && std::strcmp(opConfig->name, name) == 0) {
+                NnDeviceSegment *segment = segments[segmentIndex].get();
+                assert(segment != nullptr);
+                segment->loadWeight(opIndex, nBytes, weight);
                 return;
             }
         }

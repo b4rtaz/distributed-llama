@@ -35,7 +35,6 @@ enum TokenizerHeaderKey {
 class Tokenizer {
 private:
     unsigned int maxTokenLength;
-    unsigned int vocabSize;
     unsigned int regularVocabSize;
     unsigned int specialVocabSize;
     float *vocabScores;
@@ -47,6 +46,7 @@ private:
     char *strBuffer;
 
 public:
+    unsigned int vocabSize;
     char** vocab;
     int bosId;
     int eosId;

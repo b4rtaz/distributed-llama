@@ -206,9 +206,16 @@ void runInferenceApp(AppCliArgs *args, void (*handler)(AppInferenceContext *cont
         throw std::runtime_error("This version supports only Q40 weights with Q80 sync type");
 
     Tokenizer tokenizer(args->tokenizerPath);
+    if (tokenizer.vocabSize != header.vocabSize)
+        throw std::runtime_error("Tokenizer vocab size does not match the model vocab size");
+
     Sampler sampler(header.vocabSize, args->temperature, args->topp, args->seed);
+
     LlmNet net = buildLlmNet(&header, nNodes, args->nBatches);
+    std::unique_ptr<LlmNet, void(*)(LlmNet *)> netPtr(&net, releaseLlmNet);
+
     NnNodeConfig *rootNodeConfig = &net.nodeConfigs[0];
+
     printLlmHeader(&header);
     printNodeRequiredMemory(&net.netConfig, rootNodeConfig);
 
@@ -251,7 +258,6 @@ void runInferenceApp(AppCliArgs *args, void (*handler)(AppInferenceContext *cont
     handler(&context);
 
     inference.finish();
-    releaseLlmNet(&net);
 }
 
 void runWorkerApp(AppCliArgs *args) {
@@ -262,6 +268,9 @@ void runWorkerApp(AppCliArgs *args) {
         NnWorkerConfigReader configReader(network);
         NnNetConfig netConfig = configReader.readNet();
         NnNodeConfig nodeConfig = configReader.readNode();
+        std::unique_ptr<NnNetConfig, void(*)(NnNetConfig *)> netConfigPtr(&netConfig, releaseNetConfig);
+        std::unique_ptr<NnNodeConfig, void(*)(NnNodeConfig *)> nodeConfigPtr(&nodeConfig, releaseNodeConfig);
+
         printNodeRequiredMemory(&netConfig, &nodeConfig);
 
         NnNetExecution execution(args->nThreads, &netConfig);
