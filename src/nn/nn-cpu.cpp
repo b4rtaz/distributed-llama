@@ -46,19 +46,20 @@ NnCpuDevice::NnCpuDevice(NnNetConfig *netConfig, NnNodeConfig *nodeConfig, NnNet
 
     printCpuInstructionSet();
 
-    buffers = new NnByte *[nodeConfig->nBuffers];
-    for (NnSize bufferIndex = 0; bufferIndex < nodeConfig->nBuffers; bufferIndex++) {
+    nBuffers = nodeConfig->nBuffers;
+    buffers = new NnByte *[nBuffers];
+    for (NnSize bufferIndex = 0; bufferIndex < nBuffers; bufferIndex++) {
         NnBufferConfig *config = &nodeConfig->buffers[bufferIndex];
         NnByte *buffer = allocAlignedBuffer(config->size.nBytes);
         buffers[bufferIndex] = buffer;
     }
 
-    bufferFlags = new NnByte[nodeConfig->nBuffers];
-    std::memset(bufferFlags, 0, nodeConfig->nBuffers * sizeof(NnByte));
+    bufferFlags = new NnByte[nBuffers];
+    std::memset(bufferFlags, 0, nBuffers * sizeof(NnByte));
 }
 
 NnCpuDevice::~NnCpuDevice() {
-    for (NnSize bufferIndex = 0; bufferIndex < nodeConfig->nBuffers; bufferIndex++)
+    for (NnSize bufferIndex = 0; bufferIndex < nBuffers; bufferIndex++)
         releaseAlignedBuffer(buffers[bufferIndex]);
     delete[] buffers;
     delete[] bufferFlags;

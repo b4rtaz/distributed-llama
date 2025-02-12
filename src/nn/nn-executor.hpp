@@ -79,6 +79,7 @@ class NnExecutor {
 public:
     NnNetExecution *netExecution;
     NnNodeConfig *nodeConfig;
+    NnSize nSegments;
     NnDeviceSegment **segments;
     NnExecutorThread *threads;
     NnExecutorContext context;

@@ -13,13 +13,15 @@ typedef struct {
 } NnCpuDynamicPointer;
 
 class NnCpuDevice : public NnDevice {
-public:
+private:
     NnNetConfig *netConfig;
     NnNodeConfig *nodeConfig;
     NnNetExecution *netExecution;
+    NnSize nBuffers;
     NnByte **buffers;
     NnByte *bufferFlags;
     std::vector<NnCpuDynamicPointer> dynamicPointers;
+public:
     NnCpuDevice(NnNetConfig *netConfig, NnNodeConfig *nodeConfig, NnNetExecution *netExecution);
     ~NnCpuDevice();
     NnSize maxNThreads() override;

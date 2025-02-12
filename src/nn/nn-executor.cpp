@@ -66,6 +66,7 @@ NnExecutor::NnExecutor(NnNetConfig *netConfig, NnNodeConfig *nodeConfig, NnDevic
     }
     assert(context.nSteps > 0);
 
+    nSegments = nodeConfig->nSegments;
     segments = deviceSegmentsPtr.release();
     context.steps = new NnExecutorStep[context.nSteps];
 
@@ -106,7 +107,7 @@ NnExecutor::NnExecutor(NnNetConfig *netConfig, NnNodeConfig *nodeConfig, NnDevic
 }
 
 NnExecutor::~NnExecutor() {
-    for (NnSize segmentIndex = 0; segmentIndex < nodeConfig->nSegments; segmentIndex++)
+    for (NnSize segmentIndex = 0; segmentIndex < nSegments; segmentIndex++)
         delete segments[segmentIndex];
     delete[] context.steps;
     delete[] segments;
