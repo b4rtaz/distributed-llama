@@ -1,5 +1,6 @@
 import os
 import sys
+import multiprocessing
 from urllib.request import urlopen
 
 def parts(length):
@@ -12,21 +13,6 @@ def parts(length):
 
 # [['model-url-0', 'model-url-1', ...], 'tokenizer-url', 'weights-float-type', 'buffer-float-type', 'model-type']
 MODELS = {
-    'tinyllama_1_1b_3t_q40': [
-        ['https://huggingface.co/b4rtaz/TinyLlama-1.1B-3T-Distributed-Llama/resolve/main/dllama_model_tinylama_1.1b_3t_q40.m?download=true'],
-        'https://huggingface.co/b4rtaz/TinyLlama-1.1B-3T-Distributed-Llama/resolve/main/dllama_tokenizer_tinylama_1.1b_3t.t?download=true',
-        'q40', 'q80', 'base'
-    ],
-    'llama3_8b_q40': [
-        ['https://huggingface.co/b4rtaz/Llama-3-8B-Q40-Distributed-Llama/resolve/main/dllama_model_meta-llama-3-8b_q40.m?download=true'],
-        'https://huggingface.co/b4rtaz/Llama-3-8B-Q40-Distributed-Llama/resolve/main/dllama_tokenizer_llama3.t?download=true',
-        'q40', 'q80', 'base'
-    ],
-    'llama3_8b_instruct_q40': [
-        ['https://huggingface.co/b4rtaz/Llama-3-8B-Q40-Instruct-Distributed-Llama/resolve/main/dllama_model_lama3_instruct_q40.m?download=true'],
-        'https://huggingface.co/b4rtaz/Llama-3-8B-Q40-Instruct-Distributed-Llama/resolve/main/dllama_tokenizer_llama3.t?download=true',
-        'q40', 'q80', 'chat'
-    ],
     'llama3_1_8b_instruct_q40': [
         ['https://huggingface.co/b4rtaz/Llama-3_1-8B-Q40-Instruct-Distributed-Llama/resolve/main/dllama_model_llama3.1_instruct_q40.m?download=true'],
         'https://huggingface.co/b4rtaz/Llama-3_1-8B-Q40-Instruct-Distributed-Llama/resolve/main/dllama_tokenizer_llama_3_1.t?download=true',
@@ -54,11 +40,14 @@ MODELS = {
     ],
 }
 
+def confirm(message: str):
+    result = input(f'❓ {message} ("Y" if yes): ').upper()
+    return result == 'Y' or result == 'YES'
+
 def downloadFile(urls, path: str):
     if os.path.isfile(path):
         fileName = os.path.basename(path)
-        result = input(f'❓ {fileName} already exists, do you want to download again? ("Y" if yes): ')
-        if result.upper() != 'Y':
+        if confirm(f'{fileName} already exists, do you want to download again?'):
             return
 
     lastSizeMb = 0
@@ -125,11 +114,13 @@ if __name__ == '__main__':
 
     model = MODELS[modelName]
     (modelPath, tokenizerPath) = download(modelName, model)
+
+    nThreads = multiprocessing.cpu_count()
     if (model[4] == 'chat'):
         command = './dllama chat'
     else:
         command = './dllama inference --steps 64 --prompt "Hello world"'
-    command += f' --model {modelPath} --tokenizer {tokenizerPath} --buffer-float-type {model[3]} --nthreads 4'
+    command += f' --model {modelPath} --tokenizer {tokenizerPath} --buffer-float-type {model[3]} --nthreads {nThreads}'
     if (len(model) > 5):
         command += f' {model[5]}'
 
@@ -144,7 +135,7 @@ if __name__ == '__main__':
     print(f'🌻 Created {runFilePath} script to easy run')
 
     if (not runAfterDownload):
-        runAfterDownload = input('❓ Do you want to run Distributed Llama? ("Y" if yes): ').upper() == 'Y'
+        runAfterDownload = confirm('Do you want to run Distributed Llama?')
     if (runAfterDownload):
         if (not os.path.isfile('dllama')):
             os.system('make dllama')
