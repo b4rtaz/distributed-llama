@@ -181,7 +181,8 @@ WorkerLlmInference::WorkerLlmInference(NnNetExecution *execution, NnNetwork *net
 }
 
 bool WorkerLlmInference::tryReadControlPacket() {
-    if (!network->tryReadWithMaxAttempts(ROOT_SOCKET_INDEX, &controlPacket, sizeof(LlmControlPacket), 1000))
+    const unsigned long maxAttempts = 10000;
+    if (!network->tryReadWithMaxAttempts(ROOT_SOCKET_INDEX, &controlPacket, sizeof(LlmControlPacket), maxAttempts))
         return false;
     if (controlPacket.batchSize == 0) {
         printf("🛑 Stop signal\n");
@@ -257,7 +258,7 @@ void runWorkerApp(AppCliArgs *args) {
     while (true) {
         std::unique_ptr<NnNetwork> networkPtr = NnNetwork::serve(args->port);
         NnNetwork *network = networkPtr.get();
-    
+
         NnWorkerConfigReader configReader(network);
         NnNetConfig netConfig = configReader.readNet();
         NnNodeConfig nodeConfig = configReader.readNode();
@@ -273,15 +274,33 @@ void runWorkerApp(AppCliArgs *args) {
         weightReader.read();
 
         WorkerLlmInference inference(&execution, network);
+        bool isFirstAttempt = true;
+        bool isTurboEnabled = false;
+        clock_t startTime;
         while (true) {
             try {
+                if (isFirstAttempt)
+                    startTime = clock();
+
                 if (!inference.tryReadControlPacket()) {
-                    // TODO
+                    if (isTurboEnabled && !isFirstAttempt && clock() - startTime > CLOCKS_PER_SEC) {
+                        network->setTurbo(false);
+                        isTurboEnabled = false;
+                        printf("🚁 Network is in blocking mode\n");
+                    }
+                    isFirstAttempt = false;
                     continue;
                 }
                 if (inference.isFinished)
                     break;
+
+                if (!isTurboEnabled) {
+                    network->setTurbo(true);
+                    isTurboEnabled = true;
+                    printf("🚁 Network is in non-blocking mode\n");
+                }
                 executor.forward();
+                isFirstAttempt = true;
             } catch (const NnReadNetworkException &e) {
                 printf("Read network exception: %s\n", e.message);
                 break;

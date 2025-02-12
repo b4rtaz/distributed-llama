@@ -470,5 +470,5 @@ void loadLlmNetWeight(const char *path, LlmNet *net, NnRootWeightLoader *loader)
 
     unsigned long missingBytes = (b - data) - net->header->fileSize;
     assert(missingBytes == 0);
-    printf("💿 Loaded\n");
+    printf("💿 Weights loaded\n");
 }

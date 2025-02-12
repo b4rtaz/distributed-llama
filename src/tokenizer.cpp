@@ -521,7 +521,7 @@ ChatTemplate::ChatTemplate(const ChatTemplateType type, const char* chatTemplate
     }
     this->eos = eos;
 
-    printf("⭐ chat template: ");
+    printf("⭐ Chat template: ");
     if (this->type == TEMPLATE_LLAMA2) {
         printf("llama2\n");
     } else if (this->type == TEMPLATE_LLAMA3) {
@@ -574,7 +574,7 @@ EosDetector::EosDetector(int eosId, size_t nStops, const char** stops, int paddi
     this->stopSizes = new size_t[nStops];
     for (size_t s = 0; s < nStops; s++) {
         stopSizes[s] = strlen(stops[s]);
-        printf("🛑 stop: %s\n", stops[s]);
+        printf("🛑 Stop: %s\n", stops[s]);
     }
     this->bufferPos = 0;
     this->bufferSize = 0;

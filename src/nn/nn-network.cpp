@@ -853,7 +853,7 @@ void NnWorkerWeightReader::read() {
                 delete temp;
                 tempSize = 0;
             }
-            return;
+            break;
         }
         char *opName = new char[nameSize];
         network->read(ROOT_SOCKET_INDEX, opName, nameSize);
@@ -865,4 +865,5 @@ void NnWorkerWeightReader::read() {
         printf("💿 Loaded %22s %3d, %12d kB\n", opName, opIndex, nBytes / 1024);
         delete[] opName;
     }
+    printf("💿 Weights loaded\n");
 }
