@@ -14,7 +14,7 @@
 
 #define DEBUG_CPU_OP_QUANTS false
 
-#define BUFFER_ALIGNMENT 16
+#define BUFFER_ALIGNMENT 64
 
 static NnByte *allocAlignedBuffer(size_t size) {
     NnByte *buffer;
@@ -25,8 +25,7 @@ static NnByte *allocAlignedBuffer(size_t size) {
 #else
     if (posix_memalign((void **)&buffer, BUFFER_ALIGNMENT, size) != 0)
         throw std::runtime_error("posix_memalign failed");
-    if (mlock(buffer, size) != 0)
-        fprintf(stderr, "🚧 Cannot allocate %zu bytes directly in RAM\n", size);
+    mlock(buffer, size);
 #endif
     return buffer;
 }
