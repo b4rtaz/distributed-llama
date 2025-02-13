@@ -152,7 +152,7 @@ static void chat(AppInferenceContext *context) {
         context->tokenizer->encode((char*)inputPrompt.c_str(), inputTokens, &nInputTokens, addBos, true);
 
         NnSize userPromptEndPos = (NnSize)std::min<unsigned int>(seqLen, pos + nInputTokens - 1);
-        for (;;) {
+        for (NnSize i = 0; ;) {
             int remainingTokens = userPromptEndPos - pos;
             if (remainingTokens <= 0)
                 break;
@@ -162,13 +162,14 @@ static void chat(AppInferenceContext *context) {
 
             context->inference->setBatchSize(batchSize);
             context->inference->setPosition(pos);
-            for (NnSize i = 0; i < batchSize; i++)
-                context->inference->setToken(i, inputTokens[i]);
+            for (NnSize j = 0; j < batchSize; j++)
+                context->inference->setToken(j, inputTokens[i + j]);
 
             context->inference->forward();
 
+            i += batchSize;
             pos += batchSize;
-            token = inputTokens[pos + 1];
+            token = inputTokens[i + 1];
         }
 
         context->inference->setBatchSize(1);

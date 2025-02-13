@@ -386,8 +386,8 @@ public:
 
             inference->setBatchSize(batchSize);
             inference->setPosition(pos);
-            for (NnSize i = 0; i < batchSize; i++)
-                inference->setToken(i, promptTokens[i]);
+            for (NnSize j = 0; j < batchSize; j++)
+                inference->setToken(j, promptTokens[i + j]);
 
             inference->forward();
 
