@@ -345,14 +345,13 @@ public:
             inputItems[i].message = deltaPrompt[i].content;
         }
 
-        std::string inputPrompt = chatTemplate->generate(nInputItems, inputItems, true);
-        printf("🔹%s🔸", inputPrompt.c_str());
+        GeneratedChat inputPrompt = chatTemplate->generate(nInputItems, inputItems, true);
+        printf("🔹%s🔸", inputPrompt.content);
 
-        size_t promptLength = inputPrompt.size();
         int nPromptTokens;
-        std::unique_ptr<int[]> promptTokensPtr(new int[promptLength + 2]);
+        std::unique_ptr<int[]> promptTokensPtr(new int[inputPrompt.length + 2]);
         int *promptTokens = promptTokensPtr.get();
-        tokenizer->encode((char*)inputPrompt.c_str(), promptTokens, &nPromptTokens, true, true);
+        tokenizer->encode((char*)inputPrompt.content, promptTokens, &nPromptTokens, true, true);
 
         pos_t promptEndPos = startPos + nPromptTokens - 1;
         if (promptEndPos > header->seqLen)
@@ -366,12 +365,15 @@ public:
             naiveCache.push(NaiveCacheItem(promptEndPos, deltaPrompt[j]));
         }
 
-        if (params.stream) {
-            request.writeStreamStartChunk();
-        }
-
         std::string buffer;
-        size_t nStops = params.stop.size();
+
+        if (params.stream)
+            request.writeStreamStartChunk();
+        if (inputPrompt.publicPrompt != nullptr) {
+            if (params.stream)
+                writeChatCompletionChunk(request, inputPrompt.publicPrompt, false);
+            buffer += inputPrompt.publicPrompt;
+        }
 
         NnSize pos = startPos;
         int token;
@@ -400,8 +402,6 @@ public:
         tokenizer->resetDecoder();
 
         for (; pos < maxPredPos;) {
-            int prevToken = token;
-
             inference->setPosition(pos);
             inference->setToken(0, token);
             inference->forward();

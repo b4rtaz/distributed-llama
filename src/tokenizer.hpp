@@ -99,8 +99,7 @@ enum ChatTemplateType {
     TEMPLATE_UNKNOWN = 0,
     TEMPLATE_LLAMA2 = 1,
     TEMPLATE_LLAMA3 = 2,
-    TEMPLATE_ZEPHYR = 3,
-    TEMPLATE_CHATML = 4,
+    TEMPLATE_DEEP_SEEK3 = 3,
 };
 
 struct ChatItem {
@@ -108,12 +107,19 @@ struct ChatItem {
     std::string message;
 };
 
+struct GeneratedChat {
+    const char *content;
+    size_t length;
+    const char *publicPrompt;
+};
+
 class ChatTemplate {
 public:
     const char* eos;
     ChatTemplateType type;
+    std::string buffer;
     ChatTemplate(const ChatTemplateType type, const char* chatTemplate, const char* eos);
-    std::string generate(unsigned int nMessages, ChatItem* items, bool appendGenerationPrompt);
+    GeneratedChat generate(unsigned int nItems, ChatItem* items, bool appendGenerationPrompt);
 };
 
 enum EosDetectorType {

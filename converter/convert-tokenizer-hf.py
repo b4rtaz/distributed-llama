@@ -2,11 +2,25 @@ import sys
 import json
 import os
 from sentencepiece import SentencePieceProcessor
+from transformers import PreTrainedTokenizerFast
 writer = __import__('tokenizer-writer')
 
 def openJson(path):
     with open(path, 'r', encoding='utf-8') as file:
         return json.load(file)
+
+def unicodeToBytes():
+    # https://github.com/openai/gpt-2/blob/9b63575ef42771a015060c964af2c3da4cf7c8ab/src/encoder.py#L9
+    bs = list(range(ord("!"), ord("~") + 1)) + list(range(ord("¡"), ord("¬") + 1)) + list(range(ord("®"), ord("ÿ") + 1))
+    cs = bs[:]
+    n = 0
+    for b in range(2 ** 8):
+        if b not in bs:
+            bs.append(b)
+            cs.append(2 ** 8 + n)
+            n += 1
+    cs = [chr(n) for n in cs]
+    return dict(zip(cs, bs))
 
 class TokensResolver:
     def __init__(self, dirPath, tokenizerConfig):
@@ -18,25 +32,28 @@ class TokensResolver:
         self.scores = []
 
     def resolvePreTrainedTokenizerFast(self):
-        tokenizer = openJson(os.path.join(self.dirPath, 'tokenizer.json'))
-        assert(tokenizer['model']['type'] == 'BPE')
-
-        i = 0
-        for token in tokenizer['model']['vocab'].keys():
-            assert(tokenizer['model']['vocab'][token] == i)
-            self.tokens.append(token.encode('utf8'))
+        utb = unicodeToBytes()
+        tokenizer = PreTrainedTokenizerFast(tokenizer_file = os.path.join(self.dirPath, 'tokenizer.json'))
+        vocabLen = len(tokenizer.get_vocab())
+        for i in range(vocabLen):
+            tokenChars = list(tokenizer.convert_ids_to_tokens([i])[0])
+            tokenBytes = []
+            for chr in tokenChars:
+                if (chr in utb):
+                    tokenBytes.append(utb[chr])
+                else:
+                    tokenBytes += list(chr.encode('utf-8'))
+            self.tokens.append(bytes(tokenBytes))
             self.scores.append(-float(i))
-            i += 1
-        if ('added_tokens' in tokenizer):
-            for at in tokenizer['added_tokens']:
-                assert(at['id'] == i)
-                self.tokens.append(at['content'].encode('utf8'))
-                self.scores.append(-float(i))
-                if (at['content'] == self.tokenizerConfig['bos_token']):
-                    self.bosId = i
-                if (at['content'] == self.tokenizerConfig['eos_token']):
-                    self.eosId = i
-                i += 1
+
+        self.bosId = tokenizer.bos_token_id
+        self.eosId = tokenizer.eos_token_id
+        if (self.bosId is None or self.eosId is None):
+            config = openJson(os.path.join(self.dirPath, 'config.json'))
+            if (self.bosId is None):
+                self.bosId = config['bos_token_id']
+            if (self.eosId is None):
+                self.eosId = config['eos_token_id']
 
     def resolveLlamaTokenizer(self):
         modelPath = os.path.join(self.dirPath, 'tokenizer.model')
@@ -57,11 +74,12 @@ class TokensResolver:
 
     def resolve(self):
         cls = self.tokenizerConfig['tokenizer_class']
-        if (cls == 'PreTrainedTokenizerFast'):
+        if (cls == 'PreTrainedTokenizerFast' or cls == 'LlamaTokenizerFast'):
             return self.resolvePreTrainedTokenizerFast()
         if (cls == 'LlamaTokenizer'):
             return self.resolveLlamaTokenizer()
         raise Exception(f'Tokenizer {cls} is not supported')
+
 
 def printUsage():
     print('Usage: python convert-tokenizer-hf.py <tokenizerFolderPath> <name>')
@@ -82,6 +100,8 @@ if __name__ == '__main__':
     resolver = TokensResolver(dirPath, tokenizerConfig)
     resolver.resolve()
 
+    if (resolver.bosId is None or resolver.eosId is None):
+        raise Exception('Cannot resolve bosId or eosId')
     print(f'bosId: {resolver.bosId} ({resolver.tokens[resolver.bosId]})')
     print(f'eosId: {resolver.eosId} ({resolver.tokens[resolver.eosId]})')
 

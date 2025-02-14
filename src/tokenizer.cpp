@@ -471,7 +471,16 @@ TokenizerChatStops::~TokenizerChatStops() {
     delete[] stops;
 }
 
-ChatTemplate::ChatTemplate(const ChatTemplateType type, const char* chatTemplate, const char* eos) {
+static const char *chatTemplateTypeToString(const ChatTemplateType type) {
+    if (type == TEMPLATE_LLAMA2) return "llama2";
+    if (type == TEMPLATE_LLAMA3) return "llama3";
+    if (type == TEMPLATE_DEEP_SEEK3) return "deepSeek3";
+    return "unknown";
+}
+
+ChatTemplate::ChatTemplate(const ChatTemplateType type, const char* chatTemplate, const char* eos)
+    : buffer() 
+{
     if (type == TEMPLATE_UNKNOWN) {
         if (chatTemplate == NULL)
             throw std::runtime_error("The tokenizer does not include chat template");
@@ -479,62 +488,67 @@ ChatTemplate::ChatTemplate(const ChatTemplateType type, const char* chatTemplate
             this->type = TEMPLATE_LLAMA2;
         } else if (strstr(chatTemplate, "<|start_header_id|>") != NULL) {
             this->type = TEMPLATE_LLAMA3;
-        } else if (strstr(chatTemplate, "<|user|>") != NULL) {
-            this->type = TEMPLATE_ZEPHYR;
-        } else if (strstr(chatTemplate, "<|im_start|>") != NULL) {
-            this->type = TEMPLATE_CHATML;
+        } else if (strstr(chatTemplate, "<｜Assistant｜>") != NULL) {
+            this->type = TEMPLATE_DEEP_SEEK3;
         } else {
-            throw new std::runtime_error("Not supported chat template");
+            throw std::runtime_error("Not supported chat template");
         }
     } else {
         this->type = type;
     }
     this->eos = eos;
 
-    printf("⭐ Chat template: ");
-    if (this->type == TEMPLATE_LLAMA2) {
-        printf("llama2\n");
-    } else if (this->type == TEMPLATE_LLAMA3) {
-        printf("llama3\n");
-    } else if (this->type == TEMPLATE_ZEPHYR) {
-        printf("zephyr\n");
-    } else if (this->type == TEMPLATE_CHATML) {
-        printf("chatml\n");
-    }
+    printf("⭐ Chat template: %s\n", chatTemplateTypeToString(this->type));
 }
 
-std::string ChatTemplate::generate(unsigned int nMessages, ChatItem* items, bool appendGenerationPrompt) {
-    std::ostringstream buffer;
+GeneratedChat ChatTemplate::generate(unsigned int nItems, ChatItem* items, bool appendGenerationPrompt) {
+    buffer.clear();
+
+    size_t publicPromptSize = 0;
+
     if (type == TEMPLATE_LLAMA2) {
         unsigned int i = 0;
-        if (nMessages >= 2 && items[0].role == "system" && items[1].role == "user") {
-            buffer << "[INST] <<SYS>>\n" << items[0].message << "\n<</SYS>>\n\n" << items[1].message << " [/INST]" << eos;
+        if (nItems >= 2 && items[0].role == "system" && items[1].role == "user") {
+            buffer += "[INST] <<SYS>>\n" + items[0].message + "\n<</SYS>>\n\n" + items[1].message + " [/INST]" + eos;
             i += 2;
         }
-        for (; i < nMessages; i++) {
+        for (; i < nItems; i++) {
             if (items[i].role == "assistant") {
-                buffer << items[i].message << eos;
+                buffer += items[i].message + eos;
             } else if (items[i].role == "user") {
-                buffer << "[INST] " << items[i].message << " [/INST]" << eos;
+                buffer += "[INST] " + items[i].message + " [/INST]" + eos;
             }
         }
     } else if (type == TEMPLATE_LLAMA3) {
-        for (unsigned int i = 0; i < nMessages; i++)
-            buffer << "<|start_header_id|>" << items[i].role << "<|end_header_id|>\n\n" << items[i].message << eos;
+        for (unsigned int i = 0; i < nItems; i++)
+            buffer += "<|start_header_id|>" + items[i].role + "<|end_header_id|>\n\n" + items[i].message + eos;
         if (appendGenerationPrompt)
-            buffer << "<|start_header_id|>assistant<|end_header_id|>\n\n";
-    } else if (type == TEMPLATE_CHATML) {
-        for (unsigned int i = 0; i < nMessages; i++)
-            buffer << "<|im_start|>" << items[i].role << "\n" << items[i].message << "<|im_end|>\n";
-        if (appendGenerationPrompt)
-            buffer << "<|im_start|>assistant\n";
-    } else if (type == TEMPLATE_ZEPHYR) {
-        for (unsigned int i = 0; i < nMessages; i++)
-            buffer << "<|" << items[i].role << "|>\n" << items[i].message << eos << "\n";
-        if (appendGenerationPrompt)
-            buffer << "<|assistant|>\n";
+            buffer += "<|start_header_id|>assistant<|end_header_id|>\n\n";
+    } else if (type == TEMPLATE_DEEP_SEEK3) {
+        unsigned int i = 0;
+        if (nItems > 0 && items[0].role == "system") {
+            buffer += items[0].message;
+            i++;
+        }
+        for (; i < nItems; i++) {
+            if (items[i].role == "user") {
+                buffer += "<｜User｜>" + items[i].message;
+            } else if (items[i].role == "assistant") {
+                buffer += "<｜Assistant｜>" + items[i].message;
+            }
+        }
+        if (appendGenerationPrompt) {
+            buffer += "<｜Assistant｜><think>\n";
+            publicPromptSize = 8; 
+        }
     }
-    return buffer.str();
+
+    const char *content = buffer.c_str();
+    size_t length = buffer.size();
+    const char *publicPrompt = publicPromptSize > 0
+        ? &content[length - publicPromptSize]
+        : nullptr;
+    return {content, length, publicPrompt};
 }
 
 EosDetector::EosDetector(size_t nTokens, const int *tokens, const char** pieces, int paddingLeft, int paddingRight) {
