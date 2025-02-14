@@ -74,32 +74,10 @@ int compareTokens(const void *a, const void *b) {
     return strcmp(((TokenIndex*)a)->str, ((TokenIndex*)b)->str);
 }
 
-bool isSafePiece(char *piece) {
-    // piece might be a raw byte token, and we only want to print printable chars or whitespace
-    // because some of the other bytes can be various control codes, backspace, etc.
-    if (piece == NULL) return false;
-    if (piece[0] == '\0') return false;
-    if (piece[1] == '\0') {
-        unsigned char byte_val = piece[0];
-        if (!(isprint(byte_val) || isspace(byte_val))) {
-            return false; // bad byte, don't print it
-        }
-    }
-    return true;
-}
-
-void safePrintf(char *piece) {
-    if (isSafePiece(piece)) {
-        printf("%s", piece);
-    }
-}
-
-Tokenizer::Tokenizer(const char* tokenizerPath) {
-    eosId = -1;
+Tokenizer::Tokenizer(const char* tokenizerPath)
+    : eosTokenIds() {
     bosId = -1;
-    chatEosId = -1;
     chatTemplate = nullptr;
-    chatStop = nullptr;
     maxTokenLength = 0;
 
     // read in the file
@@ -110,6 +88,7 @@ Tokenizer::Tokenizer(const char* tokenizerPath) {
     if (fread(&magic, sizeof(int), 1, file) != 1)
         throw std::runtime_error("Cannot read tokenizer magic number");
 
+
     if (magic == 0x567123) {
         TokenizerOldHeader header;
         if (fread(&header, sizeof(TokenizerOldHeader), 1, file) != 1)
@@ -117,7 +96,7 @@ Tokenizer::Tokenizer(const char* tokenizerPath) {
         maxTokenLength = header.maxTokenLength;
         vocabSize = header.vocabSize;
         bosId = header.bosId;
-        eosId = header.eosId;
+        eosTokenIds.push_back(header.eosId);
     } else if (magic == 0x567124) {
         int headerSize;
         if (fread(&headerSize, sizeof(int), 1, file) != 1)
@@ -129,7 +108,6 @@ Tokenizer::Tokenizer(const char* tokenizerPath) {
         }
         int version = -1;
         int chatTemplateLength = -1;
-        int chatStopLength = -1;
         for (int i = 0; i < nKv; i += 2) {
             int key = buffer[i];
             int value = buffer[i + 1];
@@ -137,10 +115,10 @@ Tokenizer::Tokenizer(const char* tokenizerPath) {
             else if (key == TOK_VOCAB_SIZE) vocabSize = value;
             else if (key == MAX_TOKEN_LENGTH) maxTokenLength = (unsigned int)value;
             else if (key == BOS_ID) bosId = value;
-            else if (key == EOS_ID) eosId = value;
-            else if (key == CHAT_EOS_ID) chatEosId = value;
+            else if (key == EOS_ID) eosTokenIds.push_back(value);
+            else if (key == CHAT_EOS_ID) eosTokenIds.push_back(value);
             else if (key == CHAT_TEMPLATE) chatTemplateLength = value;
-            else if (key == CHAT_STOP) chatStopLength = value;
+            else if (key == CHAT_STOP) fseek(file, value, SEEK_CUR); // ignore
             else if (key == PAD_ID) {} // ignore
             else {
                 throw std::runtime_error("Invalid tokenizer header key:" + std::to_string(key));
@@ -155,12 +133,6 @@ Tokenizer::Tokenizer(const char* tokenizerPath) {
             if (fread(chatTemplate, chatTemplateLength, 1, file) != 1)
                 throw std::runtime_error("Cannot read chat template from tokenizer file");
             chatTemplate[chatTemplateLength] = '\0';
-        }
-        if (chatStopLength > 0) {
-            chatStop = new char[chatStopLength + 1];
-            if (fread(chatStop, chatStopLength, 1, file) != 1)
-                throw std::runtime_error("Cannot read chat stop from tokenizer file");
-            chatStop[chatStopLength] = '\0';
         }
     } else {
         throw std::runtime_error("Invalid tokenizer file");
@@ -212,8 +184,13 @@ Tokenizer::Tokenizer(const char* tokenizerPath) {
     strBuffer = new char[strBufferSize];
 
     if (bosId >= 0) printf("📄 BosId: %d (%s)\n", bosId, vocab[bosId]);
-    if (eosId >= 0) printf("📄 EosId: %d (%s)\n", eosId, vocab[eosId]);
-    if (chatEosId >= 0) printf("📄 ChatEosId: %d (%s)\n", chatEosId, vocab[eosId]);
+    if (eosTokenIds.size() > 0) {
+        printf("📄 EosId: ");
+        for (unsigned int i = 0; i < eosTokenIds.size(); i++) {
+            printf("%d (%s) ", eosTokenIds[i], vocab[eosTokenIds[i]]);
+        }
+        printf("\n");
+    }
     printf("📄 RegularVocabSize: %d\n", regularVocabSize);
     printf("📄 SpecialVocabSize: %d\n", specialVocabSize);
 
@@ -222,7 +199,6 @@ Tokenizer::Tokenizer(const char* tokenizerPath) {
 
 Tokenizer::~Tokenizer() {
     if (chatTemplate != NULL) delete[] chatTemplate;
-    if (chatStop != NULL) delete[] chatStop;
 
     for (int i = 0; i < vocabSize; i++)
         delete[] vocab[i];
@@ -233,24 +209,57 @@ Tokenizer::~Tokenizer() {
     delete[] strBuffer;
 }
 
-char* Tokenizer::decode(int prev_token, int token) {
-    char *piece = vocab[token];
-    // following BOS (1) token, sentencepiece decoder strips any leading whitespace (see PR #89)
-    if (prev_token == bosId && piece[0] == ' ') { piece++; }
-    // careful, some tokens designate raw bytes, and look like e.g. '<0x01>'
-    // parse this and convert and return the actual byte
-    unsigned char byte_val;
-    if (sscanf(piece, "<0x%02hhX>", &byte_val) == bosId) {
-        piece = (char*)bytePieces + byte_val * 2;
+int Tokenizer::findSpecialTokenStartWith(char *piece) {
+    for (unsigned int i = 0; i < specialVocabSize; i++) {
+        unsigned int tokenId = specialVocab[i].id;
+        unsigned int length = vocabLength[tokenId];
+        if (std::strncmp(vocab[tokenId], piece, length) == 0)
+            return tokenId;
     }
-    return piece;
+    return -1;
 }
 
-int str_lookup(char *str, TokenIndex *sorted_vocab, int vocab_size) {
-    // efficiently find the perfect match for str in vocab, return its index or -1 if not found
-    TokenIndex tok = { .str = str }; // acts as the key to search for
-    TokenIndex *res = (TokenIndex*)bsearch(&tok, sorted_vocab, vocab_size, sizeof(TokenIndex), compareTokens);
+int Tokenizer::findRegularToken(char *piece) {
+    TokenIndex tok = { .str = piece };
+    TokenIndex *res = (TokenIndex*)bsearch(&tok, regularVocab, regularVocabSize, sizeof(TokenIndex), compareTokens);
     return res != NULL ? res->id : -1;
+}
+
+bool Tokenizer::isEos(int token) {
+    for (unsigned int i = 0; i < eosTokenIds.size(); i++) {
+        if (token == eosTokenIds[i])
+            return true;
+    }
+    return false;
+}
+
+void Tokenizer::resetDecoder() {
+    strBufferPos = 0;
+}
+
+char *Tokenizer::decode(int token) {
+    if (token == bosId)
+        return nullptr;
+    if (isEos(token)) {
+        if (strBufferPos > 0)
+            return strBuffer;
+        return nullptr;
+    }
+
+    char *piece = vocab[token];
+    int pieceLen = vocabLength[token];
+    bool hasContinuation = (piece[pieceLen - 1] & 0xC0) == 0x80;
+
+    assert(strBufferPos + pieceLen + 1 < strBufferSize);
+    std::memcpy(&strBuffer[strBufferPos], piece, pieceLen * sizeof(char));
+    strBufferPos += pieceLen;
+    strBuffer[strBufferPos] = '\0';
+
+    if (!hasContinuation) {
+        strBufferPos = 0;
+        return strBuffer;
+    }
+    return nullptr;
 }
 
 void Tokenizer::encode(char *text, int *tokens, int *nTokens, bool addBos, bool addSpecialTokens) {
@@ -259,75 +268,34 @@ void Tokenizer::encode(char *text, int *tokens, int *nTokens, bool addBos, bool 
 
     size_t strLen = 0;
 
-    // start at 0 tokens
     *nTokens = 0;
 
-    // add optional BOS (=1) token, if desired
     if (addBos)
         tokens[(*nTokens)++] = bosId;
 
-    // Okay UTF-8 time. This will get messy. Here is the reference from Wikipedia:
-    // Code point ↔ UTF-8 conversion
-    // First code point	Last code point	Byte 1	Byte 2	Byte 3	Byte 4
-    // U+0000	U+007F	    0xxxxxxx
-    // U+0080	U+07FF	    110xxxxx	10xxxxxx
-    // U+0800	U+FFFF	    1110xxxx	10xxxxxx	10xxxxxx
-    // U+10000	U+10FFFF    11110xxx	10xxxxxx	10xxxxxx	10xxxxxx
-
-    // process the raw (UTF-8) byte sequence of the input string
     for (char *c = text; *c != '\0'; c++) {
         if (addSpecialTokens) {
-            bool foundSpecialToken = false;
-            for (unsigned int i = 0; i < specialVocabSize; i++) {
-                unsigned int tokenId = specialVocab[i].id;
-                unsigned int length = vocabLength[tokenId];
-                if (std::strncmp(vocab[tokenId], c, length) == 0) {
-                    tokens[(*nTokens)++] = tokenId;
-                    foundSpecialToken = true;
-                    c += length - 1;
-                    break;
-                }
-            }
-            if (foundSpecialToken)
+            int specialTokenId = findSpecialTokenStartWith(c);
+            if (specialTokenId >= 0) {
+                tokens[(*nTokens)++] = specialTokenId;
+                c += vocabLength[specialTokenId] - 1;
                 continue;
+            }
         }
 
-        // reset buffer if the current byte is ASCII or a leading byte
-        // 0xC0 is 11000000, so (*c & 0xC0) keeps the first 2 bits and zeros the rest
-        // 0x80 is 10000000
-        // in UTF-8, all continuation bytes start with "10" in first two bits
-        // so in English this is: "if this byte is not a continuation byte"
-        if ((*c & 0xC0) != 0x80) {
-            // this byte must be either a leading byte (11...) or an ASCII char (0x...)
-            // => reset our location, as we're starting a new UTF-8 codepoint
-            strLen = 0;
-        }
-
-        // append the current byte to the buffer
-        strBuffer[strLen++] = *c; // ++ is post-increment, incremented after this line
+        strBuffer[strLen] = *c;
+        strLen++;
+        assert(strLen < strBufferSize);
         strBuffer[strLen] = '\0';
 
-        // while the next character is a continuation byte, continue appending
-        // but if there are too many of them, just stop to avoid overruning str_buffer size.
-        if ((*(c+1) & 0xC0) == 0x80 && strLen < 4) {
-            continue;
-        }
-
-        // ok c+1 is not a continuation byte, so we've read in a full codepoint
-        int id = str_lookup(strBuffer, regularVocab, vocabSize);
+        int id = findRegularToken(strBuffer);
         if (id != -1) {
-            // we found this codepoint in vocab, add it as a token
             tokens[(*nTokens)++] = id;
-        } else {
-            // byte_fallback encoding: just encode each byte as a token
-            // +3 is here because the first 3 vocab elements are <unk>, <s>, </s>
-            // so the individual bytes only start at index 3
-            for (int i=0; i < strLen; i++) {
-                tokens[(*nTokens)++] = (unsigned char)strBuffer[i] + 3;
-            }
+            strLen = 0;
         }
-        strLen = 0; // protect against a sequence of stray UTF8 continuation bytes
     }
+
+    assert(strLen == 0);
 
     // merge the best consecutive pair each iteration, according the scores in vocab_scores
     while (1) {
@@ -338,7 +306,7 @@ void Tokenizer::encode(char *text, int *tokens, int *nTokens, bool addBos, bool 
         for (int i=0; i < (*nTokens-1); i++) {
             // check if we can merge the pair (tokens[i], tokens[i+1])
             snprintf(strBuffer, strBufferSize, "%s%s", vocab[tokens[i]], vocab[tokens[i+1]]);
-            int id = str_lookup(strBuffer, regularVocab, vocabSize);
+            int id = findRegularToken(strBuffer);
             if (id != -1 && vocabScores[id] > best_score) {
                 // this merge pair exists in vocab! record its score and position
                 best_score = vocabScores[id];
@@ -485,12 +453,12 @@ void Sampler::setSeed(unsigned long long seed) {
 }
 
 TokenizerChatStops::TokenizerChatStops(Tokenizer* tokenizer) {
-    const bool hasExtraStop = tokenizer->chatStop != NULL;
-    nStops = hasExtraStop ? 2 : 1;
+    nStops = tokenizer->eosTokenIds.size();
     char** s = new char*[nStops];
-    s[0] = tokenizer->vocab[tokenizer->chatEosId];
-    if (hasExtraStop)
-        s[1] = tokenizer->chatStop;
+    for (unsigned int i = 0; i < nStops; i++) {
+        s[i] = tokenizer->vocab[tokenizer->eosTokenIds[i]];
+    }
+
     maxStopLength = 0;
     for (size_t i = 0; i < nStops; i++) {
         size_t len = strlen(s[i]);
@@ -569,14 +537,14 @@ std::string ChatTemplate::generate(unsigned int nMessages, ChatItem* items, bool
     return buffer.str();
 }
 
-EosDetector::EosDetector(int eosId, size_t nStops, const char** stops, int paddingLeft, int paddingRight) {
-    this->eosId = eosId;
-    this->nStops = nStops;
-    this->stops = stops;
-    this->stopSizes = new size_t[nStops];
-    for (size_t s = 0; s < nStops; s++) {
-        stopSizes[s] = strlen(stops[s]);
-        printf("🛑 Stop: %s\n", stops[s]);
+EosDetector::EosDetector(size_t nTokens, const int *tokens, const char** pieces, int paddingLeft, int paddingRight) {
+    this->nTokens = nTokens;
+    this->tokens = tokens;
+    this->pieces = pieces;
+    this->pieceSizes = new size_t[nTokens];
+    for (size_t s = 0; s < nTokens; s++) {
+        pieceSizes[s] = strlen(pieces[s]);
+        printf("🛑 Stop: %s\n", pieces[s]);
     }
     this->bufferPos = 0;
     this->bufferSize = 0;
@@ -587,43 +555,55 @@ EosDetector::EosDetector(int eosId, size_t nStops, const char** stops, int paddi
 EosDetector::~EosDetector() {
     if (bufferSize > 0)
         delete[] buffer;
-    delete[] stopSizes;
+    delete[] pieceSizes;
 }
 
-EosDetectorType EosDetector::append(int tokenId, const char* piece) {
-    int pieceLength = strlen(piece);
-    int newSize = bufferPos + pieceLength + 1;
-    if (newSize > bufferSize) {
-        char* newBuffer = new char[newSize];
-        if (bufferPos > 0)
-            memcpy(newBuffer, buffer, bufferPos);
-        if (bufferSize > 0)
-            delete[] buffer;
-        buffer = newBuffer;
-        bufferSize = newSize;
+bool EosDetector::isEos(int tokenId) {
+    for (size_t i = 0; i < nTokens; i++) {
+        if (tokenId == tokens[i])
+            return true;
     }
-    memcpy(&buffer[bufferPos], piece, pieceLength + 1);
-    bufferPos += pieceLength;
+    return false;
+}
+
+EosDetectorType EosDetector::append(int tokenId, const char *piece) {
+    if (piece != nullptr) {
+        int pieceLength = std::strlen(piece);
+        int newSize = bufferPos + pieceLength + 1;
+        if (newSize > bufferSize) {
+            char* newBuffer = new char[newSize];
+            if (bufferPos > 0)
+                std::memcpy(newBuffer, buffer, bufferPos);
+            if (bufferSize > 0)
+                delete[] buffer;
+            buffer = newBuffer;
+            bufferSize = newSize;
+        }
+        std::memcpy(&buffer[bufferPos], piece, pieceLength);
+        bufferPos += pieceLength;
+        buffer[bufferPos] = '\0';
+    }
 
     // detection
 
-    if (tokenId == eosId) {
-        eosPos = bufferPos - pieceLength;
+    if (isEos(tokenId)) {
+        eosPos = bufferPos;
         return EOS;
     }
     eosPos = -1;
 
-    for (size_t s = 0; s < nStops; s++) {
-        size_t stopSize = stopSizes[s];
-        if (bufferPos > stopSize + paddingLeft + paddingRight) continue;
+    for (size_t s = 0; s < nTokens; s++) {
+        size_t pieceSize = pieceSizes[s];
+        if (bufferPos > pieceSize + paddingLeft + paddingRight) continue;
 
         for (int lo = 0; lo <= paddingLeft; lo++) {
             int n = bufferPos - lo;
-            if (n == 0 || n > stopSize + paddingRight) continue;
-            if (n > stopSize) n = stopSize;
-            if (strncmp(buffer + lo, stops[s], n) == 0) {
-                if (n == stopSize) {
+            if (n == 0 || n > pieceSize + paddingRight) continue;
+            if (n > pieceSize) n = pieceSize;
+            if (strncmp(buffer + lo, pieces[s], n) == 0) {
+                if (n == pieceSize) {
                     eosPos = lo;
+                    buffer[eosPos] = '\0';
                     return EOS;
                 }
                 return MAYBE_EOS;
@@ -634,12 +614,12 @@ EosDetectorType EosDetector::append(int tokenId, const char* piece) {
 }
 
 char* EosDetector::getDelta() {
+    if (bufferPos == 0) return nullptr;
     if (eosPos == -1) return buffer;
-    if (eosPos == 0) return NULL;
-    buffer[eosPos] = '\0';
+    if (eosPos == 0) return nullptr;
     return buffer;
 }
 
-void EosDetector::clear() {
+void EosDetector::reset() {
     bufferPos = 0;
 }

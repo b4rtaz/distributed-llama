@@ -3,9 +3,7 @@
 
 #include <cstdio>
 #include <string>
-
-bool isSafePiece(char *piece);
-void safePrintf(char *piece);
+#include <vector>
 
 typedef struct {
     char *str;
@@ -44,20 +42,24 @@ private:
     unsigned char bytePieces[512]; // stores all single-byte strings
     size_t strBufferSize;
     char *strBuffer;
+    size_t strBufferPos;
+
 
 public:
+    std::vector<int> eosTokenIds;
     unsigned int vocabSize;
     char** vocab;
     int bosId;
-    int eosId;
-    int chatEosId;
     char *chatTemplate;
-    char *chatStop;
 
     Tokenizer(const char* tokenizer_path);
     ~Tokenizer();
+    int findSpecialTokenStartWith(char *piece);
+    int findRegularToken(char *piece);
     void encode(char *text, int *tokens, int *nTokens, bool addBos, bool addSpecialTokens);
-    char *decode(int prev_token, int token);
+    bool isEos(int token);
+    char *decode(int token);
+    void resetDecoder();
 };
 
 // struct used when sorting probabilities during top-p sampling
@@ -122,10 +124,10 @@ enum EosDetectorType {
 
 class EosDetector {
 private:
-    int eosId;
-    size_t nStops;
-    const char** stops;
-    size_t* stopSizes;
+    size_t nTokens;
+    const int *tokens;
+    const char** pieces;
+    size_t* pieceSizes;
     size_t bufferPos;
     size_t bufferSize;
     int eosPos;
@@ -133,12 +135,13 @@ private:
     int paddingRight;
 public:
     char* buffer;
-    EosDetector(int eosId, size_t nStops, const char** stops, int paddingLeft, int paddingRight);
+    EosDetector(size_t nTokens, const int *tokens, const char** pieces, int paddingLeft, int paddingRight);
     ~EosDetector();
 
     EosDetectorType append(int tokenId, const char* piece);
+    bool isEos(int tokenId);
     char* getDelta();
-    void clear();
+    void reset();
 };
 
 #endif

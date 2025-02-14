@@ -31,10 +31,13 @@ jobs:
           make dllama
           make nn-cpu-test
           make nn-cpu-ops-test
+          make tokenizer-test
       - name: nn-cpu-test
         run: ./nn-cpu-test
       - name: nn-cpu-ops-test
         run: ./nn-cpu-ops-test
+      - name: tokenizer-test
+        run: ./tokenizer-test
 
   build-windows:
     name: Windows
@@ -51,7 +54,10 @@ jobs:
           make dllama
           make nn-cpu-test
           make nn-cpu-ops-test
+          make tokenizer-test
       - name: nn-cpu-test
         run: ./nn-cpu-test
       - name: nn-cpu-ops-test
         run: ./nn-cpu-ops-test
+      - name: tokenizer-test
+        run: ./tokenizer-test
