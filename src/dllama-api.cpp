@@ -397,6 +397,7 @@ public:
         }
 
         inference->setBatchSize(1);
+        tokenizer->resetDecoder();
 
         for (; pos < maxPredPos;) {
             int prevToken = token;
@@ -407,24 +408,23 @@ public:
 
             token = sampler->sample(inference->logitsPipe);
 
-            char* piece = tokenizer->decode(prevToken, token);
-            bool isSafe = isSafePiece(piece);
-            EosDetectorType eosType = eosDetector->append(token, isSafe ? piece : "");
+            char *piece = tokenizer->decode(token);
+            EosDetectorType eosType = eosDetector->append(token, piece);
 
-            if (isSafePiece(piece)) {
+            if (piece != nullptr) {
                 printf("%s", piece);
                 fflush(stdout);
             }
 
             if (eosType == NOT_EOS || eosType == EOS) {
-                char* delta = eosDetector->getDelta();
-                if (delta != NULL) {
+                char *delta = eosDetector->getDelta();
+                if (delta != nullptr) {
                     std::string deltaStr(delta);
                     if (params.stream)
                         writeChatCompletionChunk(request, deltaStr, false);
                     buffer += deltaStr;
                 }
-                eosDetector->clear();
+                eosDetector->reset();
             }
             pos++;
             if (eosType == EOS) break;
@@ -501,7 +501,7 @@ static void server(AppInferenceContext *context) {
 
     TokenizerChatStops stops(context->tokenizer);
     ChatTemplate chatTemplate(context->args->chatTemplateType, context->tokenizer->chatTemplate, stops.stops[0]);
-    EosDetector eosDetector(context->tokenizer->chatEosId, stops.nStops, stops.stops, stops.maxStopLength, stops.maxStopLength);
+    EosDetector eosDetector(stops.nStops, context->tokenizer->eosTokenIds.data(), stops.stops, stops.maxStopLength, stops.maxStopLength);
     ApiServer api(context->inference, context->tokenizer, context->sampler, context->args, context->header, &eosDetector, &chatTemplate);
 
     printf("Server URL: http://127.0.0.1:%d/v1/\n", context->args->port);

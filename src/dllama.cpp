@@ -62,31 +62,29 @@ static void inference(AppInferenceContext *context) {
     fflush(stdout);
 
     context->inference->setBatchSize(1);
+    context->tokenizer->resetDecoder();
 
     Timer predTimer;
     const NnSize maxPos = std::min(context->header->seqLen, context->args->steps);
     for (; pos < maxPos; pos++) {
         Timer tokenTimer;
-        unsigned int prevToken = token;
         context->inference->setPosition(pos);
         context->inference->setToken(0, token);
         context->inference->forward();
 
         token = context->sampler->sample(context->inference->logitsPipe);
 
-        char* piece = context->tokenizer->decode(prevToken, token);
+        char *piece = context->tokenizer->decode(token);
 
-        if (isSafePiece(piece)) {
-            if (context->network != nullptr)
-                context->network->getStats(&sentBytes, &recvBytes);
-        
-            printf("🔶 P%5u ms S%6zu kB R%6zu kB %s\n",
-                tokenTimer.elapsed(),
-                sentBytes / 1024,
-                recvBytes / 1024,
-                piece);
-            fflush(stdout);
-        }
+        if (context->network != nullptr)
+            context->network->getStats(&sentBytes, &recvBytes);
+
+        printf("🔶 P%5u ms S%6zu kB R%6zu kB %s\n",
+            tokenTimer.elapsed(),
+            sentBytes / 1024,
+            recvBytes / 1024,
+            piece == nullptr ? "~" : piece);
+        fflush(stdout);
     }
     NnSize predTime = predTimer.elapsed();
 
@@ -126,7 +124,7 @@ static void chat(AppInferenceContext *context) {
 
     TokenizerChatStops stops(context->tokenizer);
     ChatTemplate chatTemplate(context->args->chatTemplateType, context->tokenizer->chatTemplate, stops.stops[0]);
-    EosDetector eosDetector(context->tokenizer->chatEosId, stops.nStops, stops.stops, stops.maxStopLength, stops.maxStopLength);
+    EosDetector eosDetector(stops.nStops, context->tokenizer->eosTokenIds.data(), stops.stops, stops.maxStopLength, stops.maxStopLength);
 
     const size_t sysPromptLength = readStdin("💻 System prompt (optional): ", prompt, sizeof(prompt));
     std::vector<ChatItem> deltaItems;
@@ -173,29 +171,26 @@ static void chat(AppInferenceContext *context) {
         }
 
         context->inference->setBatchSize(1);
+        context->tokenizer->resetDecoder();
 
         printf("\n🤖 Assistant\n");
         std::string answer;
         while (pos < seqLen) {
-            int prevToken = token;
-
             context->inference->setPosition(pos);
             context->inference->setToken(0, token);
-
             context->inference->forward();
 
             token = context->sampler->sample(context->inference->logitsPipe);
 
-            char *piece = context->tokenizer->decode(prevToken, token);
-            bool isSafe = isSafePiece(piece);
-            EosDetectorType eosType = eosDetector.append(token, isSafe ? piece : "");
+            char *piece = context->tokenizer->decode(token);
+            EosDetectorType eosType = eosDetector.append(token, piece);
             if (eosType == NOT_EOS || eosType == EOS) {
                 char *delta = eosDetector.getDelta();
-                if (delta != NULL) {
+                if (delta != nullptr) {
                     printf("%s", delta);
                     fflush(stdout);
                 }
-                eosDetector.clear();
+                eosDetector.reset();
             }
             pos++;
             if (eosType == EOS) break;
