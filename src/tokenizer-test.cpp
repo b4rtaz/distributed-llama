@@ -1,4 +1,5 @@
 #include <cassert>
+#include <cstring>
 #include "tokenizer.hpp"
 
 #define DEV_TESTS false
@@ -135,7 +136,7 @@ void testEosDetectorWithPadding() {
 
         char *delta = detector.getDelta();
         assert(delta != nullptr);
-        assert(strcmp(delta, " ") == 0);
+        assert(std::strcmp(delta, " ") == 0);
     }
 
     // "!<eos> "
@@ -147,7 +148,7 @@ void testEosDetectorWithPadding() {
 
         char *delta = detector.getDelta();
         assert(delta != nullptr);
-        assert(strcmp(delta, "!") == 0);
+        assert(std::strcmp(delta, "!") == 0);
     }
 
     // "!<eos> "
@@ -158,7 +159,7 @@ void testEosDetectorWithPadding() {
 
         char *delta = detector.getDelta();
         assert(delta != nullptr);
-        assert(strcmp(delta, "<eos>XY") == 0);
+        assert(std::strcmp(delta, "<eos>XY") == 0);
     }
 
     // "<eo" + EOS
@@ -169,7 +170,7 @@ void testEosDetectorWithPadding() {
 
         char *delta = detector.getDelta();
         assert(delta != nullptr);
-        assert(strcmp(delta, "<eo") == 0);
+        assert(std::strcmp(delta, "<eo") == 0);
     }
 
     // EOS
@@ -184,7 +185,7 @@ void testEosDetectorWithPadding() {
     {
         ASSERT_EQ(detector.append(1, "x"), NOT_EOS);
         char *delta0 = detector.getDelta();
-        assert(strcmp(delta0, "x") == 0);
+        assert(std::strcmp(delta0, "x") == 0);
 
         detector.reset();
 
@@ -206,7 +207,7 @@ void testEosDetectorWithLongPadding() {
         ASSERT_EQ(detector.append(1, "lipsum"), NOT_EOS);
         char *delta = detector.getDelta();
         assert(delta != nullptr);
-        assert(strcmp(delta, "lipsum") == 0);
+        assert(std::strcmp(delta, "lipsum") == 0);
     }
 
     // "lorem"
@@ -215,7 +216,7 @@ void testEosDetectorWithLongPadding() {
         ASSERT_EQ(detector.append(1, "lorem"), NOT_EOS);
         char *delta = detector.getDelta();
         assert(delta != nullptr);
-        assert(strcmp(delta, "lorem") == 0);
+        assert(std::strcmp(delta, "lorem") == 0);
     }
 
     // "lorem|enQ"
@@ -225,7 +226,7 @@ void testEosDetectorWithLongPadding() {
         ASSERT_EQ(detector.append(2, "enQ"), NOT_EOS);
         char *delta = detector.getDelta();
         assert(delta != nullptr);
-        assert(strcmp(delta, "lorem|enQ") == 0);
+        assert(std::strcmp(delta, "lorem|enQ") == 0);
     }
 
     printOk("eosDetectorWithLongPadding");
@@ -250,7 +251,7 @@ void testEosDetectorWithoutPadding() {
         ASSERT_EQ(detector.append(1, " <"), NOT_EOS);
         char *delta = detector.getDelta();
         assert(delta != nullptr);
-        assert(strcmp(delta, " <") == 0);
+        assert(std::strcmp(delta, " <") == 0);
     }
 
     // "<eos> "
@@ -260,7 +261,7 @@ void testEosDetectorWithoutPadding() {
         ASSERT_EQ(detector.append(2, "> "), NOT_EOS);
         char *delta = detector.getDelta();
         assert(delta != nullptr);
-        assert(strcmp(delta, "<eos> ") == 0);
+        assert(std::strcmp(delta, "<eos> ") == 0);
     }
 
     // EOS
@@ -276,7 +277,7 @@ void testEosDetectorWithoutPadding() {
         ASSERT_EQ(detector.append(TEST_EOS_ID, "😃"), EOS);
         char *delta = detector.getDelta();
         assert(delta != nullptr);
-        assert(strcmp(delta, "😃") == 0);
+        assert(std::strcmp(delta, "😃") == 0);
     }
 
     printOk("eosDetectorWithLongPadding");
