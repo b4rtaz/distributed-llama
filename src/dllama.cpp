@@ -142,12 +142,12 @@ static void chat(AppInferenceContext *context) {
 
         deltaItems.push_back(ChatItem{"user", prompt});
 
-        std::string inputPrompt = chatTemplate.generate(deltaItems.size(), deltaItems.data(), true);
-        std::unique_ptr<int[]> inputTokensPtr(new int[inputPrompt.size() + 2]);
+        GeneratedChat inputPrompt = chatTemplate.generate(deltaItems.size(), deltaItems.data(), true);
+        std::unique_ptr<int[]> inputTokensPtr(new int[inputPrompt.length + 2]);
         int *inputTokens = inputTokensPtr.get();
 
         bool addBos = pos == 0;
-        context->tokenizer->encode((char*)inputPrompt.c_str(), inputTokens, &nInputTokens, addBos, true);
+        context->tokenizer->encode((char*)inputPrompt.content, inputTokens, &nInputTokens, addBos, true);
 
         NnSize userPromptEndPos = (NnSize)std::min<unsigned int>(seqLen, pos + nInputTokens - 1);
         for (NnSize i = 0; ;) {
@@ -174,7 +174,9 @@ static void chat(AppInferenceContext *context) {
         context->tokenizer->resetDecoder();
 
         printf("\n🤖 Assistant\n");
-        std::string answer;
+        if (inputPrompt.publicPrompt != nullptr)
+            printf("%s", inputPrompt.publicPrompt);
+
         while (pos < seqLen) {
             context->inference->setPosition(pos);
             context->inference->setToken(0, token);

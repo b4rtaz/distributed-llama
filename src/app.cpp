@@ -14,8 +14,7 @@ static NnFloatType parseFloatType(char *val) {
 static ChatTemplateType parseChatTemplateType(char *val) {
     if (std::strcmp(val, "llama2") == 0) return TEMPLATE_LLAMA2;
     if (std::strcmp(val, "llama3") == 0) return TEMPLATE_LLAMA3;
-    if (std::strcmp(val, "zephyr") == 0) return TEMPLATE_ZEPHYR;
-    if (std::strcmp(val, "chatml") == 0) return TEMPLATE_CHATML;
+    if (std::strcmp(val, "deepSeek3") == 0) return TEMPLATE_DEEP_SEEK3;
     throw std::runtime_error("Invalid chat template type: " + std::string(val));
 }
 
