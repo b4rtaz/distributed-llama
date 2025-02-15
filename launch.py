@@ -38,6 +38,11 @@ MODELS = {
         'https://huggingface.co/b4rtaz/Llama-3_3-70B-Q40-Instruct-Distributed-Llama/resolve/main/dllama_tokenizer_llama-3.3-70b.t?download=true',
         'q40', 'q80', 'chat', '--max-seq-len 4096'
     ],
+    'deepseek_r1_distill_llama_8b_q40': [
+        ['https://huggingface.co/b4rtaz/DeepSeek-R1-Distill-Llama-8B-Distributed-Llama/resolve/main/dllama_model_deepseek-r1-distill-llama-8b_q40.m?download=true'],
+        'https://huggingface.co/b4rtaz/DeepSeek-R1-Distill-Llama-8B-Distributed-Llama/resolve/main/dllama_tokenizer_deepseek-r1-distill-llama-8b.t?download=true',
+        'q40', 'q80', 'chat', '--max-seq-len 4096'
+    ],
 }
 
 def confirm(message: str):

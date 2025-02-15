@@ -4,7 +4,9 @@
 
 [![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/b4rtaz/distributed-llama/.github%2Fworkflows%2Fmain.yml?style=flat-square)](https://github.com/b4rtaz/distributed-llama/actions) [![License: MIT](https://img.shields.io/github/license/mashape/apistatus.svg?style=flat-square)](/LICENSE) [![Support this project](https://img.shields.io/github/sponsors/b4rtaz?style=flat-square&label=support%20this%20project&color=green)](https://github.com/sponsors/b4rtaz) [![Discord](https://discordapp.com/api/guilds/1245814812353495070/widget.png?style=shield)](https://discord.com/widget?id=1245814812353495070&theme=dark)
 
-Tensor parallelism is all you need. Run LLMs on weak devices or make powerful devices even more powerful by distributing the workload and dividing the RAM usage. This project proves that it's possible split the workload of LLMs across multiple devices and achieve a significant speedup. Distributed Llama allows you to run huge LLMs in-house. The project uses TCP sockets to synchronize the state. You can easily configure your AI cluster by using a home router.
+Connect home devices into a powerful cluster to accelerate LLM inference. More devices mean faster performance, leveraging tensor parallelism and high-speed synchronization over Ethernet.
+
+Supports Linux, macOS, and Windows. Optimized for ARM and x86_64 AVX2 CPUs.
 
 **News**
 - 12 Feb 2025 - 🚧 Merged the [fundamental codebase refactor](https://github.com/b4rtaz/distributed-llama/releases/tag/v0.12.0)
@@ -16,36 +18,26 @@ Tensor parallelism is all you need. Run LLMs on weak devices or make powerful de
 
 Python 3 and C++ compiler required. The command will download the model and the tokenizer.
 
-| Model                       | Purpose   | Size     | Command                                       |
-| --------------------------- | --------- | -------- | --------------------------------------------- |
-| Llama 3.1 8B Instruct Q40   | Chat, API | 6.32 GB  | `python launch.py llama3_1_8b_instruct_q40`   |
-| Llama 3.1 405B Instruct Q40 | Chat, API | 238 GB   | `python launch.py llama3_1_405b_instruct_q40` |
-| Llama 3.2 1B Instruct Q40   | Chat, API | 1.7 GB   | `python launch.py llama3_2_1b_instruct_q40`   |
-| Llama 3.2 3B Instruct Q40   | Chat, API | 3.4 GB   | `python launch.py llama3_2_3b_instruct_q40`   |
-| Llama 3.3 70B Instruct Q40  | Chat, API | 40 GB    | `python launch.py llama3_3_70b_instruct_q40`  |
+| Model                             | Purpose   | Size     | Command                                              |
+| --------------------------------- | --------- | -------- | ---------------------------------------------------- |
+| Llama 3.1 8B Instruct Q40         | Chat, API | 6.32 GB  | `python launch.py llama3_1_8b_instruct_q40`          |
+| Llama 3.1 405B Instruct Q40.      | Chat, API | 238 GB   | `python launch.py llama3_1_405b_instruct_q40`.       |
+| Llama 3.2 1B Instruct Q40         | Chat, API | 1.7 GB   | `python launch.py llama3_2_1b_instruct_q40`          |
+| Llama 3.2 3B Instruct Q40         | Chat, API | 3.4 GB   | `python launch.py llama3_2_3b_instruct_q40`          |
+| Llama 3.3 70B Instruct Q40        | Chat, API | 40 GB    | `python launch.py llama3_3_70b_instruct_q40`         |
+| DeepSeek R1 Distill Llama 8B Q40  | Chat, API | 6.32 GB  | `python launch.py deepseek_r1_distill_llama_8b_q40`  |
 
 ### 🛠️ Convert Model Manually
 
-Supported architectures: Llama, Mixtral
+Supported architectures: Llama.
 
-* [How to Convert Llama 2, Llama 3, Llama 3.1](./docs/LLAMA.md)
+* [How to Convert Llama 3.1](./docs/LLAMA.md)
 * [How to Convert Hugging Face Model](./docs/HUGGINGFACE.md)
 
 ### 🚧 Known Limitations
 
 * You can run Distributed Llama only on 1, 2, 4... 2^n nodes.
 * The maximum number of nodes is equal to the number of KV heads in the model [#70](https://github.com/b4rtaz/distributed-llama/issues/70).
-* CPU support only, GPU support is planned, optimized for (weights format × buffer format):
-  * ARM CPUs
-    * ✅ F32 × F32
-    * ❌ F16 × F32
-    * ✅ Q40 × F32
-    * ✅ Q40 × Q80
-  * x86_64 AVX2 CPUs
-    * ✅ F32 × F32
-    * ❌ F16 × F32
-    * ✅ Q40 × F32
-    * ✅ Q40 × Q80
 
 ### 👷 Architecture
 
