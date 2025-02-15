@@ -37,16 +37,6 @@ public:
     ~AppCliArgs();
 };
 
-
-class Timer {
-private:
-    std::chrono::time_point<std::chrono::high_resolution_clock> startTime;
-public:
-    Timer();
-    NnSize elapsed();
-};
-
-
 typedef struct {
     NnSize position;
     NnSize batchSize; // 0 = stop signal

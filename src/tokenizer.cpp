@@ -10,52 +10,17 @@
 #include <stdexcept>
 #include <sstream>
 #include <vector>
+#include "nn/nn-core.hpp"
+#include "nn/nn-cpu-ops.hpp"
 #include "tokenizer.hpp"
-
 #if defined(__ARM_NEON)
     #include <arm_neon.h>
 #endif
 
-static void softmax(float *x, const unsigned int size) {
-    if (size == 0)
-        return;
-    float maxVal;
-#if defined(__ARM_NEON)
-    unsigned int j;
-    if (size >= 4) {
-        float32x4_t fs;
-        float32x4_t fmaxv = vld1q_f32(&x[0]);
-        j = size - (size % 4);
-        for (unsigned int i = 4; i < j; i += 4) {
-            fs = vld1q_f32(&x[i]);
-            fmaxv = vmaxq_f32(fmaxv, fs);
-        }
-        maxVal = vmaxvq_f32(fmaxv);
-    } else {
-        maxVal = x[0];
-        j = 1;
-    }
-    for (unsigned int i = j; i < size; i++) {
-        maxVal = fmaxf(maxVal, x[i]);
-    }
-#else
-    maxVal = x[0];
-    for (unsigned int i = 1; i < size; i++) {
-        if (x[i] > maxVal) {
-            maxVal = x[i];
-        }
-    }
-#endif
-    float sum = 0.0f;
-    for (unsigned int i = 0; i < size; i++) {
-        x[i] = expf(x[i] - maxVal);
-        sum += x[i];
-    }
-    if (sum == 0.0) sum = 0.000001;
-    for (unsigned int i = 0; i < size; i++) {
-        x[i] /= sum;
-    }
-}
+#define DEBUG_TOKENIZER_ENCODER false
+#define DEBUG_TOKENIZER_BENCHMARK false
+#define DEBUG_TEMPLATE_GENERATOR false
+#define DEBUG_SAMPLER_BENCHMARK false
 
 unsigned int randomU32(unsigned long long *state) {
     // xorshift rng: https://en.wikipedia.org/wiki/Xorshift#xorshift.2A
@@ -145,10 +110,6 @@ Tokenizer::Tokenizer(const char* tokenizerPath)
     vocab = new char*[vocabSize];
     vocabLength = new unsigned int[vocabSize];
     vocabScores = new float[vocabSize];
-    for (int i = 0; i < 256; i++) {
-        bytePieces[i * 2] = (unsigned char)i;
-        bytePieces[i * 2 + 1] = '\0';
-    }
 
     int length;
     for (int i = 0; i < vocabSize; i++) {
@@ -263,6 +224,9 @@ char *Tokenizer::decode(int token) {
 }
 
 void Tokenizer::encode(char *text, int *tokens, int *nTokens, bool addBos, bool addSpecialTokens) {
+#if DEBUG_TOKENIZER_BENCHMARK
+    Timer startTime;
+#endif
     if (text == nullptr)
         throw std::runtime_error("Input text is null");
 
@@ -327,6 +291,17 @@ void Tokenizer::encode(char *text, int *tokens, int *nTokens, bool addBos, bool 
         }
         (*nTokens)--; // token length decreased
     }
+
+#if DEBUG_TOKENIZER_BENCHMARK
+    NnSize duration = startTime.elapsedMicroseconds();
+    printf("🕒 [%22s] %u μs\n", "ENCODER", duration);
+#endif
+#if DEBUG_TOKENIZER_ENCODER
+    printf("\033[1;33m[");
+    for (unsigned int i = 0; i < *nTokens; i++)
+        printf("%d,", tokens[i]);
+    printf("]\033[0m");
+#endif
 }
 
 int sample_argmax(float* probabilities, int n) {
@@ -420,6 +395,9 @@ Sampler::~Sampler() {
 }
 
 int Sampler::sample(float* logits) {
+#if DEBUG_SAMPLER_BENCHMARK
+    Timer startTime;
+#endif
     // sample the token given the logits and some hyperparameters
     int next;
     if (temperature == 0.0f) {
@@ -429,7 +407,7 @@ int Sampler::sample(float* logits) {
         // apply the temperature to the logits
         for (int q=0; q < vocab_size; q++) { logits[q] /= temperature; }
         // apply softmax to the logits to get the probabilities for next token
-        softmax(logits, vocab_size);
+        softmax_F32(logits, vocab_size);
         // flip a (float) coin (this is our source of entropy for sampling)
         float coin = randomF32(&rngState);
         // we sample from this distribution to get the next token
@@ -441,6 +419,10 @@ int Sampler::sample(float* logits) {
             next = sample_topp(logits, vocab_size, topp, probindex, coin);
         }
     }
+#if DEBUG_SAMPLER_BENCHMARK
+    NnSize duration = startTime.elapsedMicroseconds();
+    printf("🕒 [%22s] %u μs\n", "SAMPLER", duration);
+#endif
     return next;
 }
 
@@ -478,7 +460,7 @@ static const char *chatTemplateTypeToString(const ChatTemplateType type) {
     return "unknown";
 }
 
-ChatTemplate::ChatTemplate(const ChatTemplateType type, const char* chatTemplate, const char* eos)
+ChatTemplateGenerator::ChatTemplateGenerator(const ChatTemplateType type, const char* chatTemplate, const char* eos)
     : buffer() 
 {
     if (type == TEMPLATE_UNKNOWN) {
@@ -501,7 +483,7 @@ ChatTemplate::ChatTemplate(const ChatTemplateType type, const char* chatTemplate
     printf("⭐ Chat template: %s\n", chatTemplateTypeToString(this->type));
 }
 
-GeneratedChat ChatTemplate::generate(unsigned int nItems, ChatItem* items, bool appendGenerationPrompt) {
+GeneratedChat ChatTemplateGenerator::generate(unsigned int nItems, ChatItem* items, bool appendGenerationPrompt) {
     buffer.clear();
 
     size_t publicPromptSize = 0;
@@ -548,6 +530,9 @@ GeneratedChat ChatTemplate::generate(unsigned int nItems, ChatItem* items, bool 
     const char *publicPrompt = publicPromptSize > 0
         ? &content[length - publicPromptSize]
         : nullptr;
+#if DEBUG_TEMPLATE_GENERATOR
+    printf("\033[1;31m[%s]\033[0m", content);
+#endif
     return {content, length, publicPrompt};
 }
 

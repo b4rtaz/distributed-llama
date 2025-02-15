@@ -1,6 +1,7 @@
 #ifndef NN_CORE_H
 #define NN_CORE_H
 
+#include <chrono>
 #include <list>
 #include <memory>
 #include <cstdint>
@@ -261,6 +262,15 @@ void releaseNetConfig(NnNetConfig *netConfig);
 void releaseNodeConfig(NnNodeConfig *nodeConfig);
 
 void printNodeRequiredMemory(NnNetConfig *netConfig, NnNodeConfig *nodeConfig);
+
+class Timer {
+private:
+    std::chrono::time_point<std::chrono::high_resolution_clock> startTime;
+public:
+    Timer();
+    NnSize elapsedMiliseconds();
+    NnSize elapsedMicroseconds();
+};
 
 // slicers
 

@@ -586,7 +586,7 @@ static void add_Q80_F32(float *y, const NnBlockQ80 *x, const NnSize n, const NnS
 #endif
 }
 
-static void softmax_F32(float *x, const NnSize size) {
+void softmax_F32(float *x, const NnSize size) {
     if (size == 0)
         return;
 
