@@ -119,15 +119,6 @@ AppCliArgs::~AppCliArgs() {
         delete[] workerPorts;
 }
 
-Timer::Timer() {
-    startTime = std::chrono::high_resolution_clock::now();
-}
-
-NnSize Timer::elapsed() {
-    auto endTime = std::chrono::high_resolution_clock::now();
-    return (NnSize)std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
-}
-
 RootLlmInference::RootLlmInference(LlmNet *net, NnDevice *device, NnNetExecution *execution, NnExecutor *executor, NnNetwork *network) {
     this->header = net->header;
     this->tokenPipe = (float *)execution->pipes[net->tokenPipeIndex];

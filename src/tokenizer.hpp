@@ -39,7 +39,6 @@ private:
     unsigned int *vocabLength;
     TokenIndex *regularVocab;
     TokenIndex *specialVocab;
-    unsigned char bytePieces[512]; // stores all single-byte strings
     size_t strBufferSize;
     char *strBuffer;
     size_t strBufferPos;
@@ -48,11 +47,11 @@ private:
 public:
     std::vector<int> eosTokenIds;
     unsigned int vocabSize;
-    char** vocab;
+    char **vocab;
     int bosId;
     char *chatTemplate;
 
-    Tokenizer(const char* tokenizer_path);
+    Tokenizer(const char *tokenizer_path);
     ~Tokenizer();
     int findSpecialTokenStartWith(char *piece);
     int findRegularToken(char *piece);
@@ -62,18 +61,15 @@ public:
     void resetDecoder();
 };
 
-// struct used when sorting probabilities during top-p sampling
 typedef struct {
     float prob;
     int index;
 } ProbIndex;
 
-// The Sampler, which takes logits and returns a sampled token
-// sampling can be done in a few ways: greedy argmax, sampling, top-p sampling
 class Sampler {
 private:
     int vocab_size;
-    ProbIndex* probindex; // buffer used in top-p sampling
+    ProbIndex *probindex;
     float temperature;
     float topp;
     unsigned long long rngState;
@@ -81,17 +77,17 @@ private:
 public:
     Sampler(int vocab_size, float temperature, float topp, unsigned long long rngSeed);
     ~Sampler();
-    int sample(float* logits);
+    int sample(float *logits);
     void setTemp(float temp);
     void setSeed(unsigned long long rngSeed);
 };
 
 class TokenizerChatStops {
 public:
-    const char** stops;
+    const char **stops;
     size_t nStops;
     size_t maxStopLength;
-    TokenizerChatStops(Tokenizer* tokenizer);
+    TokenizerChatStops(Tokenizer *tokenizer);
     ~TokenizerChatStops();
 };
 
@@ -113,13 +109,13 @@ struct GeneratedChat {
     const char *publicPrompt;
 };
 
-class ChatTemplate {
+class ChatTemplateGenerator {
 public:
-    const char* eos;
+    const char *eos;
     ChatTemplateType type;
     std::string buffer;
-    ChatTemplate(const ChatTemplateType type, const char* chatTemplate, const char* eos);
-    GeneratedChat generate(unsigned int nItems, ChatItem* items, bool appendGenerationPrompt);
+    ChatTemplateGenerator(const ChatTemplateType type, const char *chatTemplate, const char *eos);
+    GeneratedChat generate(unsigned int nItems, ChatItem *items, bool appendGenerationPrompt);
 };
 
 enum EosDetectorType {
@@ -132,21 +128,21 @@ class EosDetector {
 private:
     size_t nTokens;
     const int *tokens;
-    const char** pieces;
-    size_t* pieceSizes;
+    const char **pieces;
+    size_t *pieceSizes;
     size_t bufferPos;
     size_t bufferSize;
     int eosPos;
     int paddingLeft;
     int paddingRight;
 public:
-    char* buffer;
-    EosDetector(size_t nTokens, const int *tokens, const char** pieces, int paddingLeft, int paddingRight);
+    char *buffer;
+    EosDetector(size_t nTokens, const int *tokens, const char* *pieces, int paddingLeft, int paddingRight);
     ~EosDetector();
 
-    EosDetectorType append(int tokenId, const char* piece);
+    EosDetectorType append(int tokenId, const char *piece);
     bool isEos(int tokenId);
-    char* getDelta();
+    char *getDelta();
     void reset();
 };
 

@@ -165,6 +165,20 @@ void printNodeRequiredMemory(NnNetConfig *netConfig, NnNodeConfig *nodeConfig) {
     printf("📀 RequiredMemory: %lu kB\n", total / 1024);
 }
 
+Timer::Timer() {
+    startTime = std::chrono::high_resolution_clock::now();
+}
+
+NnSize Timer::elapsedMiliseconds() {
+    auto endTime = std::chrono::high_resolution_clock::now();
+    return (NnSize)std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
+}
+
+NnSize Timer::elapsedMicroseconds() {
+    auto endTime = std::chrono::high_resolution_clock::now();
+    return (NnSize)std::chrono::duration_cast<std::chrono::microseconds>(endTime - startTime).count();
+}
+
 // slicers
 
 NnKvCacheSlice sliceKvCache(NnSize kvDim, NnSize seqLen, NnSize nNodes) {

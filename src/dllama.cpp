@@ -52,12 +52,12 @@ static void inference(AppInferenceContext *context) {
         if (context->network != nullptr)
             context->network->getStats(&sentBytes, &recvBytes);
         printf("🔷️ E%5u ms S%6zu kB R%6zu kB (%d tokens)\n",
-            batchTimer.elapsed(),
+            batchTimer.elapsedMiliseconds(),
             sentBytes / 1024,
             recvBytes / 1024,
             batchSize);
     }
-    NnSize evalTime = evalTimer.elapsed();
+    NnSize evalTime = evalTimer.elapsedMiliseconds();
 
     fflush(stdout);
 
@@ -80,13 +80,13 @@ static void inference(AppInferenceContext *context) {
             context->network->getStats(&sentBytes, &recvBytes);
 
         printf("🔶 P%5u ms S%6zu kB R%6zu kB %s\n",
-            tokenTimer.elapsed(),
+            tokenTimer.elapsedMiliseconds(),
             sentBytes / 1024,
             recvBytes / 1024,
             piece == nullptr ? "~" : piece);
         fflush(stdout);
     }
-    NnSize predTime = predTimer.elapsed();
+    NnSize predTime = predTimer.elapsedMiliseconds();
 
     NnSize nEvalTokens = nInputTokens - 1;
     NnSize nPredTokens = pos - nEvalTokens;
@@ -123,7 +123,7 @@ static void chat(AppInferenceContext *context) {
     char prompt[2048];
 
     TokenizerChatStops stops(context->tokenizer);
-    ChatTemplate chatTemplate(context->args->chatTemplateType, context->tokenizer->chatTemplate, stops.stops[0]);
+    ChatTemplateGenerator templateGenerator(context->args->chatTemplateType, context->tokenizer->chatTemplate, stops.stops[0]);
     EosDetector eosDetector(stops.nStops, context->tokenizer->eosTokenIds.data(), stops.stops, stops.maxStopLength, stops.maxStopLength);
 
     const size_t sysPromptLength = readStdin("💻 System prompt (optional): ", prompt, sizeof(prompt));
@@ -142,7 +142,7 @@ static void chat(AppInferenceContext *context) {
 
         deltaItems.push_back(ChatItem{"user", prompt});
 
-        GeneratedChat inputPrompt = chatTemplate.generate(deltaItems.size(), deltaItems.data(), true);
+        GeneratedChat inputPrompt = templateGenerator.generate(deltaItems.size(), deltaItems.data(), true);
         std::unique_ptr<int[]> inputTokensPtr(new int[inputPrompt.length + 2]);
         int *inputTokens = inputTokensPtr.get();
 

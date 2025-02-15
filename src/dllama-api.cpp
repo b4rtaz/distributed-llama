@@ -187,7 +187,7 @@ public:
     }
 
     void writeNotFound() {
-        const char* data = "HTTP/1.1 404 Not Found\r\n";
+        const char *data = "HTTP/1.1 404 Not Found\r\n";
         writeSocket(serverSocket, data, strlen(data));
     }
 
@@ -218,7 +218,7 @@ public:
     }
 
     void writeStreamEndChunk() {
-        const char* endChunk = "0000\r\n\r\n";
+        const char *endChunk = "0000\r\n\r\n";
         writeSocket(serverSocket, endChunk, strlen(endChunk));
     }
 };
@@ -310,24 +310,24 @@ public:
 
 class ApiServer {
 private:
-    RootLlmInference* inference;
-    Tokenizer* tokenizer;
-    Sampler* sampler;
-    AppCliArgs* args;
-    LlmHeader* header;
-    EosDetector* eosDetector;
-    ChatTemplate* chatTemplate;
+    RootLlmInference *inference;
+    Tokenizer *tokenizer;
+    Sampler *sampler;
+    AppCliArgs *args;
+    LlmHeader *header;
+    EosDetector *eosDetector;
+    ChatTemplateGenerator *templateGenerator;
     NaiveCache naiveCache;
 
 public:
-    ApiServer( RootLlmInference* inference, Tokenizer* tokenizer, Sampler* sampler, AppCliArgs* args, LlmHeader* header, EosDetector* eosDetector, ChatTemplate* chatTemplate) {
+    ApiServer(RootLlmInference *inference, Tokenizer *tokenizer, Sampler *sampler, AppCliArgs *args, LlmHeader *header, EosDetector *eosDetector, ChatTemplateGenerator *templateGenerator) {
         this->inference = inference;
         this->tokenizer = tokenizer;
         this->sampler = sampler;
         this->args = args;
         this->header = header;
         this->eosDetector = eosDetector;
-        this->chatTemplate = chatTemplate;
+        this->templateGenerator = templateGenerator;
     }
 
     void complete(HttpRequest& request) {
@@ -345,7 +345,7 @@ public:
             inputItems[i].message = deltaPrompt[i].content;
         }
 
-        GeneratedChat inputPrompt = chatTemplate->generate(nInputItems, inputItems, true);
+        GeneratedChat inputPrompt = templateGenerator->generate(nInputItems, inputItems, true);
         printf("🔹%s🔸", inputPrompt.content);
 
         int nPromptTokens;
@@ -484,7 +484,7 @@ private:
     }
 };
 
-void handleCompletionsRequest(HttpRequest& request, ApiServer* api) {
+void handleCompletionsRequest(HttpRequest& request, ApiServer *api) {
     api->complete(request);
 }
 
@@ -500,9 +500,9 @@ static void server(AppInferenceContext *context) {
     int serverSocket = createServerSocket(context->args->port);
 
     TokenizerChatStops stops(context->tokenizer);
-    ChatTemplate chatTemplate(context->args->chatTemplateType, context->tokenizer->chatTemplate, stops.stops[0]);
+    ChatTemplateGenerator templateGenerator(context->args->chatTemplateType, context->tokenizer->chatTemplate, stops.stops[0]);
     EosDetector eosDetector(stops.nStops, context->tokenizer->eosTokenIds.data(), stops.stops, stops.maxStopLength, stops.maxStopLength);
-    ApiServer api(context->inference, context->tokenizer, context->sampler, context->args, context->header, &eosDetector, &chatTemplate);
+    ApiServer api(context->inference, context->tokenizer, context->sampler, context->args, context->header, &eosDetector, &templateGenerator);
 
     printf("Server URL: http://127.0.0.1:%d/v1/\n", context->args->port);
 

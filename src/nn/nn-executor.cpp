@@ -1,10 +1,9 @@
 #include <cassert>
-#include <chrono>
 #include <cstring>
 #include <stdexcept>
 #include "nn-executor.hpp"
 
-#define DEBUG_BENCHMARK false
+#define DEBUG_EXECUTOR_BENCHMARK false
 
 void NnFakeNodeSynchronizer::sync(NnSize segmentIndex, NnSize nThreads, NnSize threadIndex) {
     // Nothing
@@ -98,10 +97,10 @@ void NnExecutor::loadWeight(const char *name, NnSize index, NnSize nBytes, NnByt
 }
 
 inline void executeStep(NnExecutorStep *step, NnSize nThreads, NnExecutorThread *thread, NnExecutorContext *context) {
-    #if DEBUG_BENCHMARK
+#if DEBUG_EXECUTOR_BENCHMARK
     assert(nThreads == 1);
-    auto startTime = std::chrono::high_resolution_clock::now();
-    #endif
+    Timer startTime;
+#endif
 
     if (step->type == STEP_EXECUTE_OP) {
         step->segment->forward(step->arg0, nThreads, thread->threadIndex, context->batchSize);
@@ -114,14 +113,13 @@ inline void executeStep(NnExecutorStep *step, NnSize nThreads, NnExecutorThread 
         throw std::invalid_argument("Unsupported step type");
     }
 
-    #if DEBUG_BENCHMARK
-    auto endTime = std::chrono::high_resolution_clock::now();
-    NnSize duration = (NnSize)std::chrono::duration_cast<std::chrono::microseconds>(endTime - startTime).count();
+#if DEBUG_EXECUTOR_BENCHMARK
+    NnSize duration = startTime.elapsedMicroseconds();
     if (step->type == STEP_EXECUTE_OP)
         printf("🕒 [OP %16s %2d] %u μs\n", opCodeToString(step->opConfig->code), step->opConfig->index, duration);
     else if (step->type == STEP_SYNC_NODES)
         printf("🕒 [SYNC %17d] %u μs\n", step->arg0, duration);
-    #endif
+#endif
 }
 
 static inline void *executorThreadHandler(void *arg) {

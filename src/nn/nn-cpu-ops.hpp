@@ -38,4 +38,6 @@ void printCpuInstructionSet();
 NnCpuOpForwardInit getCpuOpForwardInit(NnOpCode code, NnOpQuantType quantType);
 NnCpuOpForward getCpuOpForward(NnOpCode code, NnOpQuantType quantType);
 
+void softmax_F32(float *x, const NnSize size);
+
 #endif
