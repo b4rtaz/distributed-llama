@@ -525,8 +525,7 @@ static void syncNodeSlices(bool onlyFromWorkerToRoot, NnNetwork *network, NnSize
     if (nSocketsPerThread == 0) return;
     NnSize sliceBytes = nBytes / nNodes;
 
-    std::unique_ptr<NnSocketIo> iosPtr(new NnSocketIo[nSocketsPerThread]);
-    NnSocketIo *ios = iosPtr.get();
+    std::vector<NnSocketIo> ios(nSocketsPerThread);
 
     if (!onlyFromWorkerToRoot || isWorker) {
         NnByte *mySliceData = &buffer[sliceBytes * nodeIndex];
@@ -537,7 +536,7 @@ static void syncNodeSlices(bool onlyFromWorkerToRoot, NnNetwork *network, NnSize
             ios[i].data = mySliceData;
             ios[i].size = sliceBytes;
         }
-        network->writeMany(nSocketsPerThread, ios);
+        network->writeMany(nSocketsPerThread, &ios[0]);
     }
 
     if (!onlyFromWorkerToRoot || !isWorker) {
@@ -549,7 +548,7 @@ static void syncNodeSlices(bool onlyFromWorkerToRoot, NnNetwork *network, NnSize
             ios[i].data = sliceData;
             ios[i].size = sliceBytes;
         }
-        network->readMany(nSocketsPerThread, ios);
+        network->readMany(nSocketsPerThread, &ios[0]);
     }
 }
 
