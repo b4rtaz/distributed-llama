@@ -234,8 +234,10 @@ void runInferenceApp(AppCliArgs *args, void (*handler)(AppInferenceContext *cont
 
     RootLlmInference inference(&net, &cpu, &execution, &executor, network);
 
-    if (network != nullptr)
+    if (network != nullptr) {
         network->resetStats();
+        network->setTurbo(true);
+    }
 
     AppInferenceContext context;
     context.args = args;
