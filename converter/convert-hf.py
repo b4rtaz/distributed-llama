@@ -7,7 +7,6 @@ from safetensors import safe_open
 
 class ArchType:
     LLAMA = 0xABCD00
-    MIXTRAL = 0xABCD02
 
 def permute(tensor, nHeads: int, nKvHeads: int):
     if nHeads != nKvHeads:
@@ -128,7 +127,6 @@ def parseArchType(type: str):
     archType = {
         'llama': ArchType.LLAMA,
         'mistral': ArchType.LLAMA,
-        'mixtral': ArchType.MIXTRAL,
     }.get(type)
     if (archType is None):
         raise Exception(f'Unsupported arch type: {type}')
