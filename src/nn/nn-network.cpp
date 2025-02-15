@@ -338,11 +338,11 @@ std::unique_ptr<NnNetwork> NnNetwork::connect(NnSize nSockets, char **hosts, NnS
     return std::unique_ptr<NnNetwork>(new NnNetwork(nSockets, sockets));
 }
 
-NnNetwork::NnNetwork(NnSize nSockets, int *sockets) {
+NnNetwork::NnNetwork(NnSize nSockets, int *sockets)
+    : sentBytes(0), recvBytes(0)
+{
     this->nSockets = nSockets;
     this->sockets = sockets;
-    this->sentBytes.exchange(0);
-    this->recvBytes.exchange(0);
 }
 
 NnNetwork::~NnNetwork() {
@@ -362,7 +362,7 @@ void NnNetwork::setTurbo(bool enabled) {
 
 void NnNetwork::write(NnSize socketIndex, const void *data, size_t size) {
     assert(socketIndex >= 0 && socketIndex < nSockets);
-    sentBytes += size;
+    sentBytes.fetch_add(size);
 
     char *current = (char*)data;
     int s = sockets[socketIndex];
@@ -375,7 +375,7 @@ void NnNetwork::write(NnSize socketIndex, const void *data, size_t size) {
 
 void NnNetwork::read(NnSize socketIndex, void *data, size_t size) {
     assert(socketIndex >= 0 && socketIndex < nSockets);
-    recvBytes += size;
+    recvBytes.fetch_add(size);
 
     char *current = (char*)data;
     int s = sockets[socketIndex];
@@ -399,7 +399,7 @@ void NnNetwork::readAck(NnSize socketIndex) {
 bool NnNetwork::tryReadWithMaxAttempts(NnSize socketIndex, void *data, size_t size, unsigned long maxAttempts) {
     assert(socketIndex >= 0 && socketIndex < nSockets);
     if (tryReadSocket(sockets[socketIndex], data, size, maxAttempts)) {
-        recvBytes += size;
+        recvBytes.fetch_add(size);
         return true;
     }
     return false;
@@ -434,7 +434,7 @@ void NnNetwork::writeMany(NnSize n, NnSocketIo *ios) {
             }
         }
     } while (isWriting);
-    sentBytes += nBytes;
+    sentBytes.fetch_add(nBytes);
 }
 
 void NnNetwork::writeAll(void *data, size_t size) {
@@ -477,18 +477,18 @@ void NnNetwork::readMany(NnSize n, NnSocketIo *ios) {
             }
         }
     } while (isReading);
-    recvBytes += nBytes;
+    recvBytes.fetch_add(nBytes);
 }
 
 void NnNetwork::getStats(size_t *sentBytes, size_t *recvBytes) {
-    *sentBytes = this->sentBytes;
-    *recvBytes = this->recvBytes;
-    this->resetStats();
+    *sentBytes = this->sentBytes.load();
+    *recvBytes = this->recvBytes.load();
+    resetStats();
 }
 
 void NnNetwork::resetStats() {
-    this->sentBytes.exchange(0);
-    this->recvBytes.exchange(0);
+    sentBytes.exchange(0);
+    recvBytes.exchange(0);
 }
 
 static void syncWithRoot(NnNetwork *network, NnByte nodeIndex, NnByte *buffer, NnSize nBytes, NnSize nThreads, NnSize threadIndex) {
