@@ -185,10 +185,13 @@ public:
         if (method == HttpMethod::METHOD_DELETE) return "DELETE";
         return "UNKNOWN";
     }
-
+ 
     void writeNotFound() {
-        const char *data = "HTTP/1.1 404 Not Found\r\n";
-        writeSocket(serverSocket, data, strlen(data));
+        std::ostringstream buffer;
+        buffer << "HTTP/1.1 404 Not Found\r\n"
+            << "Content-Length: 9\r\n\r\nNot Found";
+        std::string data = buffer.str();
+        writeSocket(serverSocket, data.c_str(), data.size());
     }
 
     void writeJson(std::string json) {
