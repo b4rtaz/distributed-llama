@@ -21,7 +21,7 @@ typedef SSIZE_T ssize_t;
 #define SOCKET_LAST_ERROR strerror(errno)
 
 #define ACK 23571113
-#define ONE_MB 1048576
+#define MAX_CHUNK_SIZE 4096
 
 static inline bool isEagainError() {
     #ifdef _WIN32
@@ -366,8 +366,8 @@ void NnNetwork::write(NnSize socketIndex, const void *data, size_t size) {
 
     char *current = (char*)data;
     int s = sockets[socketIndex];
-    for (size_t chunk = 0; chunk < size; chunk += ONE_MB) {
-        size_t chunkSize = chunk + ONE_MB < size ? ONE_MB : size - chunk;
+    for (size_t chunk = 0; chunk < size; chunk += MAX_CHUNK_SIZE) {
+        size_t chunkSize = chunk + MAX_CHUNK_SIZE < size ? MAX_CHUNK_SIZE : size - chunk;
         writeSocket(s, current, chunkSize);
         current += chunkSize;
     }
@@ -379,8 +379,8 @@ void NnNetwork::read(NnSize socketIndex, void *data, size_t size) {
 
     char *current = (char*)data;
     int s = sockets[socketIndex];
-    for (size_t chunk = 0; chunk < size; chunk += ONE_MB) {
-        size_t chunkSize = chunk + ONE_MB < size ? ONE_MB : size - chunk;
+    for (size_t chunk = 0; chunk < size; chunk += MAX_CHUNK_SIZE) {
+        size_t chunkSize = chunk + MAX_CHUNK_SIZE < size ? MAX_CHUNK_SIZE : size - chunk;
         readSocket(s, current, chunkSize);
         current += chunkSize;
     }
@@ -420,7 +420,8 @@ void NnNetwork::writeMany(NnSize n, NnSocketIo *ios) {
             if (io->size > 0) {
                 isWriting = true;
                 int socket = sockets[io->socketIndex];
-                ssize_t s = send(socket, (const char*)io->data, io->size, 0);
+                ssize_t chunkSize = io->size > MAX_CHUNK_SIZE ? MAX_CHUNK_SIZE : io->size;
+                ssize_t s = send(socket, (const char*)io->data, chunkSize, 0);
                 if (s < 0) {
                     if (isEagainError()) {
                         continue;
