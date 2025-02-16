@@ -30,9 +30,7 @@ NnFp16 convertF32ToF16Impl(const float x);
 
     #define CONVERT_F16_TO_F32(value) convertF16ToF32Neon(value)
     #define CONVERT_F32_TO_F16(value) convertF32ToF16Neon(value)
-#endif
-
-#if defined(__F16C__)
+#elif defined(__F16C__)
     #define CONVERT_F32_TO_F16(v) _cvtss_sh((v), _MM_FROUND_TO_NEAREST_INT)
 #endif
 
