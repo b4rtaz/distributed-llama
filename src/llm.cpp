@@ -467,9 +467,9 @@ void loadLlmNetWeight(const char *path, LlmNet *net, NnRootWeightLoader *loader)
     b += loader->loadAll("final_rms_norm", 0, net->rmsNormSize.nBytes, b);
     b += loader->loadRowMatmulSlices("final_matmul_logits", 0, &net->wclsSlice, b);
 
-    loader->finish();
-
     unsigned long missingBytes = (b - data) - net->header->fileSize;
     assert(missingBytes == 0);
     printf("💿 Weights loaded\n");
+
+    loader->finish();
 }
