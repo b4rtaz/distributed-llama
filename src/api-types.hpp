@@ -82,6 +82,25 @@ struct ChatCompletion {
     }
 };
 
+struct Model {
+    std::string id;
+    std::string object;
+    long long created;
+    std::string owned_by;
+
+    Model() : id(), object(), created(0), owned_by() {}
+    Model(const std::string &id_) : id(id_), object("model"), created(0), owned_by("user") {}
+};
+
+struct ModelList {
+    std::string object;
+    std::vector<Model> data;
+    ModelList(): object("list") {}
+    ModelList(const Model &model_) : object("list") {
+        data.push_back(model_);
+    }
+};
+
 struct InferenceParams {
     std::vector<ChatMessage> messages;
     int max_tokens;
@@ -130,6 +149,18 @@ void to_json(json& j, const ChatCompletion& completion) {
         {"model", completion.model},
         {"usage", completion.usage},
         {"choices", completion.choices}};
+}
+
+void to_json(json& j, const Model& model) {
+    j = json{{"id", model.id},
+        {"object", model.object},
+        {"created", model.created},
+        {"owned_by", model.owned_by}};
+}
+
+void to_json(json& j, const ModelList& models) {
+    j = json{{"object", models.object},
+        {"data", models.data}};
 }
 
 std::vector<ChatMessage> parseChatMessages(json &json){

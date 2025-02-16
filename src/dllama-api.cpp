@@ -495,15 +495,13 @@ void handleCompletionsRequest(HttpRequest& request, ApiServer *api) {
 
 void handleModelsRequest(HttpRequest& request, const char* modelPath) {
     std::string path(modelPath);
-
     size_t pos = path.find_last_of("/\\");
-    std::string modelName = (pos == std::string::npos) ? path : path.substr(pos+1);
+    std::string modelName = (pos == std::string::npos) ? path : path.substr(pos + 1);
 
-    request.writeJson(
-        "{ \"object\": \"list\","
-        "\"data\": ["
-        "{ \"id\": \"" + modelName + "\", \"object\": \"model\", \"created\": 0, \"owned_by\": \"user\" }"
-        "] }");
+    Model model(modelName);
+    ModelList list(model);
+    std::string response = ((json)list).dump();
+    request.writeJson(response);
 }
 
 static void server(AppInferenceContext *context) {
