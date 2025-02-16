@@ -354,7 +354,8 @@ public:
         int nPromptTokens;
         std::unique_ptr<int[]> promptTokensPtr(new int[inputPrompt.length + 2]);
         int *promptTokens = promptTokensPtr.get();
-        tokenizer->encode((char*)inputPrompt.content, promptTokens, &nPromptTokens, true, true);
+        bool addBos = startPos == 0;
+        tokenizer->encode((char*)inputPrompt.content, promptTokens, &nPromptTokens, addBos, true);
 
         pos_t promptEndPos = startPos + nPromptTokens - 1;
         if (promptEndPos > header->seqLen)
@@ -564,6 +565,7 @@ void usage() {
 }
 
 int main(int argc, char *argv[]) {
+    initQuants();
     initSockets();
 
     int returnCode = EXIT_SUCCESS;
