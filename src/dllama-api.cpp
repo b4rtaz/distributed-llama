@@ -7,6 +7,7 @@
 #include <iostream>
 #include <algorithm>
 #include <vector>
+#include <string>
 
 #ifdef _WIN32
 #include <winsock2.h>
@@ -492,11 +493,16 @@ void handleCompletionsRequest(HttpRequest& request, ApiServer *api) {
     api->complete(request);
 }
 
-void handleModelsRequest(HttpRequest& request) {
+void handleModelsRequest(HttpRequest& request, const char* modelPath) {
+    std::string path(modelPath);
+
+    size_t pos = path.find_last_of("/\\");
+    std::string modelName = (pos == std::string::npos) ? path : path.substr(pos+1);
+
     request.writeJson(
         "{ \"object\": \"list\","
         "\"data\": ["
-        "{ \"id\": \"dl\", \"object\": \"model\", \"created\": 0, \"owned_by\": \"user\" }"
+        "{ \"id\": \"" + modelName + "\", \"object\": \"model\", \"created\": 0, \"owned_by\": \"user\" }"
         "] }");
 }
 
@@ -519,7 +525,7 @@ static void server(AppInferenceContext *context) {
         {
             "/v1/models",
             HttpMethod::METHOD_GET,
-            std::bind(&handleModelsRequest, std::placeholders::_1)
+            std::bind(&handleModelsRequest, std::placeholders::_1, context->args->modelPath)
         }
     };
 
