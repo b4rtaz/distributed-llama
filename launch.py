@@ -1,5 +1,6 @@
 import os
 import sys
+import time
 import multiprocessing
 from urllib.request import urlopen
 
@@ -58,18 +59,27 @@ def downloadFile(urls, path: str):
     lastSizeMb = 0
     with open(path, 'wb') as file:
         for url in urls:
-            print(f'📄 {url}')
-            with urlopen(url) as response:
-                while True:
-                    chunk = response.read(4096)
-                    if not chunk:
-                        break
-                    file.write(chunk)
-                    sizeMb = file.tell() // (1024 * 1024)
-                    if sizeMb != lastSizeMb:
-                        sys.stdout.write("\rDownloaded %i MB" % sizeMb)
-                        lastSizeMb = sizeMb
-            sys.stdout.write('\n')
+            startPosition = file.tell()
+            for attempt in range(8):
+                print(f'📄 {url} (attempt: {attempt})')
+                try:
+                    with urlopen(url) as response:
+                        while True:
+                            chunk = response.read(4096)
+                            if not chunk:
+                                break
+                            file.write(chunk)
+                            sizeMb = file.tell() // (1024 * 1024)
+                            if sizeMb != lastSizeMb:
+                                sys.stdout.write("\rDownloaded %i MB" % sizeMb)
+                                lastSizeMb = sizeMb
+                    sys.stdout.write('\n')
+                    break
+                except Exception as e:
+                    print(f'\n❌ Error downloading {url}: {e}')
+                file.seek(startPosition)
+                file.truncate()
+                time.sleep(1 * attempt)
     sys.stdout.write(' ✅\n')
 
 def download(modelName: str, model: list):
