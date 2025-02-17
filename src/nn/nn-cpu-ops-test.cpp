@@ -69,6 +69,15 @@ void testSplitThreads() {
     printf("✅ %24s passed\n", "splitThreads");
 }
 
+void testConvertF32toF16() {
+    float x[] = {0.0f, 0.25f, 0.3456f, 1.0f};
+    for (NnSize i = 0; i < sizeof(x) / sizeof(float); i++) {
+        NnFp16 f16 = CONVERT_F32_TO_F16(x[i]);
+        float f32 = CONVERT_F16_TO_F32(f16);
+        compare_F32("convertF32toF16", &x[i], &f32, 1, 0.0005);
+    }
+}
+
 // quantization
 void testQuantization(const NnSize m) {
     std::vector<float> a(m * Q40_BLOCK_SIZE);
@@ -285,6 +294,7 @@ int main() {
 
     printCpuInstructionSet();
     testSplitThreads();
+    testConvertF32toF16();
     testQuantization(32);
     testQuantization(2);
     testQuantization(1);

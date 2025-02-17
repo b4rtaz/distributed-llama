@@ -105,6 +105,52 @@ void quantizeF32toQ80(const float *input, NnBlockQ80 *output, const NnSize n, co
             vst1_lane_s32((int32_t *)(y->qs + j), vreinterpret_s32_s8(vec_i8), 0);
         }
     }
+#elif defined(__AVX2__)
+    for (NnSize i = start; i < end; ++i) {
+        const float *x = input + i * Q80_BLOCK_SIZE;
+        NnBlockQ80 *y = output + i;
+
+        __m256 max_abs = _mm256_setzero_ps();
+        for (int j = 0; j < Q80_BLOCK_SIZE; j += 8) {
+            __m256 vec = _mm256_loadu_ps(x + j);
+            __m256 abs_vec = _mm256_and_ps(vec, _mm256_castsi256_ps(_mm256_set1_epi32(0x7FFFFFFF)));
+            max_abs = _mm256_max_ps(max_abs, abs_vec);
+        }
+        __m128 max_hi = _mm256_extractf128_ps(max_abs, 1);
+        __m128 max_lo = _mm256_castps256_ps128(max_abs);
+        __m128 max_128 = _mm_max_ps(max_hi, max_lo);
+        max_128 = _mm_max_ps(max_128, _mm_movehl_ps(max_128, max_128));
+        max_128 = _mm_max_ss(max_128, _mm_shuffle_ps(max_128, max_128, _MM_SHUFFLE(1, 1, 1, 1)));
+        float amax = _mm_cvtss_f32(max_128);
+
+        const float d = amax / 127.0f;
+        const float id = (d != 0.0f) ? 1.0f / d : 0.0f;
+        y->d = CONVERT_F32_TO_F16(d);
+
+        const __m256 id_vec = _mm256_set1_ps(id);
+        const __m128i shuffle_mask = _mm_set_epi8(
+            -1, -1, -1, -1, -1, -1, -1, -1,
+            -1, -1, -1, -1, 12, 8, 4, 0
+        );
+
+        for (int j = 0; j < Q80_BLOCK_SIZE; j += 8) {
+            __m256 vec = _mm256_loadu_ps(x + j);
+            __m256 scaled = _mm256_mul_ps(vec, id_vec);
+            __m256 rounded = _mm256_round_ps(scaled, _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC);
+            __m256i integers = _mm256_cvtps_epi32(rounded);
+
+            __m128i low = _mm256_extracti128_si256(integers, 0);
+            __m128i high = _mm256_extracti128_si256(integers, 1);
+
+            __m128i low_bytes = _mm_shuffle_epi8(low, shuffle_mask);
+            __m128i high_bytes = _mm_shuffle_epi8(high, shuffle_mask);
+
+            uint32_t low_part = _mm_extract_epi32(low_bytes, 0);
+            uint32_t high_part = _mm_extract_epi32(high_bytes, 0);
+            uint64_t packed = (static_cast<uint64_t>(high_part) << 32) | low_part;
+            std::memcpy(y->qs + j, &packed, sizeof(packed));
+        }
+    }
 #else
     for (NnSize i = start; i < end; i++) {
         const float *x = &input[i * Q80_BLOCK_SIZE];
