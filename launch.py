@@ -60,6 +60,7 @@ def downloadFile(urls, path: str):
     with open(path, 'wb') as file:
         for url in urls:
             startPosition = file.tell()
+            success = False
             for attempt in range(8):
                 print(f'📄 {url} (attempt: {attempt})')
                 try:
@@ -74,12 +75,15 @@ def downloadFile(urls, path: str):
                                 sys.stdout.write("\rDownloaded %i MB" % sizeMb)
                                 lastSizeMb = sizeMb
                     sys.stdout.write('\n')
+                    success = True
                     break
                 except Exception as e:
                     print(f'\n❌ Error downloading {url}: {e}')
                 file.seek(startPosition)
                 file.truncate()
                 time.sleep(1 * attempt)
+            if not success:
+                raise Exception(f'Failed to download {url}')
     sys.stdout.write(' ✅\n')
 
 def download(modelName: str, model: list):
