@@ -52,7 +52,7 @@ def confirm(message: str):
 def downloadFile(urls, path: str):
     if os.path.isfile(path):
         fileName = os.path.basename(path)
-        if confirm(f'{fileName} already exists, do you want to download again?'):
+        if not confirm(f'{fileName} already exists, do you want to download again?'):
             return
 
     lastSizeMb = 0
