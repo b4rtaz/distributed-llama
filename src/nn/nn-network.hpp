@@ -37,8 +37,8 @@ struct NnSocketIo {
 class NnNetwork {
 private:
     int *sockets;
-    std::atomic_uint sentBytes;
-    std::atomic_uint recvBytes;
+    NnSize *sentBytes;
+    NnSize *recvBytes;
 
 public:
     static std::unique_ptr<NnNetwork> serve(int port);
@@ -50,10 +50,10 @@ public:
     ~NnNetwork();
 
     void setTurbo(bool enabled);
-    void write(NnUint socketIndex, const void *data, NnSize size);
-    void read(NnUint socketIndex, void *data, NnSize size);
-    void writeAck(NnUint socketIndex);
-    void readAck(NnUint socketIndex);
+    void write(const NnUint socketIndex, const void *data, const NnSize size);
+    void read(const NnUint socketIndex, void *data, const NnSize size);
+    void writeAck(const NnUint socketIndex);
+    void readAck(const NnUint socketIndex);
     bool tryReadWithMaxAttempts(NnUint socketIndex, void *data, NnSize size, unsigned long maxAttempts);
     void writeMany(NnUint n, NnSocketIo *ios);
     void writeAll(void *data, NnSize size);

@@ -27,8 +27,8 @@ static void inference(AppInferenceContext *context) {
         throw std::runtime_error("The number of prompt tokens is greater than the number of steps");
 
     Timer evalTimer;
-    size_t sentBytes = 0;
-    size_t recvBytes = 0;
+    NnSize sentBytes = 0;
+    NnSize recvBytes = 0;
     printf("%s\n", context->args->prompt);
     for (;;) {
         Timer batchTimer;
@@ -104,11 +104,11 @@ static void inference(AppInferenceContext *context) {
         predTime / ((float) nPredTokens));
 }
 
-static size_t readStdin(const char *guide, char *buffer, size_t size) {
+static NnUint readStdin(const char *guide, char *buffer, NnUint size) {
     std::fflush(stdin);
     std::printf("%s", guide);
     if (std::fgets(buffer, size, stdin) != NULL) {
-        size_t length = std::strlen(buffer);
+        NnUint length = std::strlen(buffer);
         if (length > 0 && buffer[length - 1] == '\n') {
             buffer[length - 1] = '\0';
             length--;
@@ -126,13 +126,13 @@ static void chat(AppInferenceContext *context) {
     ChatTemplateGenerator templateGenerator(context->args->chatTemplateType, context->tokenizer->chatTemplate, stops.stops[0]);
     EosDetector eosDetector(stops.nStops, context->tokenizer->eosTokenIds.data(), stops.stops, stops.maxStopLength, stops.maxStopLength);
 
-    const size_t sysPromptLength = readStdin("💻 System prompt (optional): ", prompt, sizeof(prompt));
+    const NnUint sysPromptLength = readStdin("💻 System prompt (optional): ", prompt, sizeof(prompt));
     std::vector<ChatItem> deltaItems;
     if (sysPromptLength > 0)
         deltaItems.push_back(ChatItem{"system", prompt});
 
     NnUint pos = 0;
-    size_t userPromptLength;
+    NnUint userPromptLength;
     int token;
     int nInputTokens;
     do {
