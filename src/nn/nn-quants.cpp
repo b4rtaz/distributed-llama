@@ -11,7 +11,7 @@ float f16ToF32Lookup[65536];
 
 void initQuants() {
 #if defined(CONVERT_F16_TO_F32_LOOKUP)
-    for (NnSize i = 0; i < 65536; i++)
+    for (NnUint i = 0; i < 65536; i++)
         f16ToF32Lookup[i] = convertF16toF32Impl((NnFp16)i);
 #endif
 }
@@ -64,18 +64,18 @@ NnFp16 convertF32ToF16Impl(const float x) {
     return s | (e << 10) | (m >> 13);
 }
 
-void quantizeF32toQ80(const float *input, NnBlockQ80 *output, const NnSize n, const NnSize nThreads, const NnSize threadIndex) {
+void quantizeF32toQ80(const float *input, NnBlockQ80 *output, const NnUint n, const NnUint nThreads, const NnUint threadIndex) {
     assert(n % Q80_BLOCK_SIZE == 0);
-    const NnSize nBlocks = n / Q80_BLOCK_SIZE;
+    const NnUint nBlocks = n / Q80_BLOCK_SIZE;
     SPLIT_THREADS(start, end, nBlocks, nThreads, threadIndex);
 
 #if defined(__ARM_NEON)
-    for (NnSize i = start; i < end; i++) {
+    for (NnUint i = start; i < end; i++) {
         const float *x = &input[i * Q80_BLOCK_SIZE];
         NnBlockQ80 *y = &output[i];
 
         float32x4_t amaxVec = vdupq_n_f32(0.0f);
-        for (NnSize j = 0; j < Q80_BLOCK_SIZE; j += 4) {
+        for (NnUint j = 0; j < Q80_BLOCK_SIZE; j += 4) {
             const float32x4_t vec = vld1q_f32(&x[j]);
             const float32x4_t abs_vec = vabsq_f32(vec);
             amaxVec = vmaxq_f32(amaxVec, abs_vec);
@@ -90,7 +90,7 @@ void quantizeF32toQ80(const float *input, NnBlockQ80 *output, const NnSize n, co
 
         const float32x4_t vid_vec = vdupq_n_f32(id);
 
-        for (NnSize j = 0; j < Q80_BLOCK_SIZE; j += 4) {
+        for (NnUint j = 0; j < Q80_BLOCK_SIZE; j += 4) {
             float32x4_t vec = vld1q_f32(&x[j]);
             vec = vmulq_f32(vec, vid_vec);
 
@@ -106,7 +106,7 @@ void quantizeF32toQ80(const float *input, NnBlockQ80 *output, const NnSize n, co
         }
     }
 #elif defined(__AVX2__)
-    for (NnSize i = start; i < end; ++i) {
+    for (NnUint i = start; i < end; ++i) {
         const float *x = input + i * Q80_BLOCK_SIZE;
         NnBlockQ80 *y = output + i;
 
@@ -152,12 +152,12 @@ void quantizeF32toQ80(const float *input, NnBlockQ80 *output, const NnSize n, co
         }
     }
 #else
-    for (NnSize i = start; i < end; i++) {
+    for (NnUint i = start; i < end; i++) {
         const float *x = &input[i * Q80_BLOCK_SIZE];
         NnBlockQ80 *y = &output[i];
 
         float amax = 0.0f;
-        for (NnSize j = 0; j < Q80_BLOCK_SIZE; j++) {
+        for (NnUint j = 0; j < Q80_BLOCK_SIZE; j++) {
             const float v = fabsf(x[j]);
             amax = amax > v ? amax : v;
         }
@@ -165,14 +165,14 @@ void quantizeF32toQ80(const float *input, NnBlockQ80 *output, const NnSize n, co
         const float d = amax / ((1 << 7) - 1);
         const float id = d ? 1.0f / d : 0.0f;
         y->d = CONVERT_F32_TO_F16(d);
-        for (NnSize j = 0; j < Q80_BLOCK_SIZE; ++j) {
+        for (NnUint j = 0; j < Q80_BLOCK_SIZE; ++j) {
             y->qs[j] = roundf(x[j] * id);
         }
     }
 #endif
 }
 
-void dequantizeQ80toF32(const NnBlockQ80 *input, float* output, const NnSize k, const NnSize nThreads, const NnSize threadIndex) {
+void dequantizeQ80toF32(const NnBlockQ80 *input, float* output, const NnUint k, const NnUint nThreads, const NnUint threadIndex) {
     assert(k % Q80_BLOCK_SIZE == 0);
     const int nBlocks = k / Q80_BLOCK_SIZE;
     const int blocksPerThread = nBlocks / nThreads;
@@ -190,16 +190,16 @@ void dequantizeQ80toF32(const NnBlockQ80 *input, float* output, const NnSize k, 
     }
 }
 
-void quantizeF32toQ40(const float *x, NnBlockQ40 *output, const NnSize n, const NnSize nThreads, const NnSize threadIndex) {
+void quantizeF32toQ40(const float *x, NnBlockQ40 *output, const NnUint n, const NnUint nThreads, const NnUint threadIndex) {
     assert(n % Q40_BLOCK_SIZE == 0);
-    const NnSize nBlocks = n / Q40_BLOCK_SIZE;
-    const NnSize halfSize = Q40_BLOCK_SIZE / 2;
+    const NnUint nBlocks = n / Q40_BLOCK_SIZE;
+    const NnUint halfSize = Q40_BLOCK_SIZE / 2;
     SPLIT_THREADS(start, end, nBlocks, nThreads, threadIndex);
 
-    for (NnSize i = start; i < end; i++) {
+    for (NnUint i = start; i < end; i++) {
         float amax = 0.0f;
         float max = 0.0f;
-        for (NnSize j = 0; j < Q40_BLOCK_SIZE; j++) {
+        for (NnUint j = 0; j < Q40_BLOCK_SIZE; j++) {
             float v = x[i * Q40_BLOCK_SIZE + j];
             if (amax < fabsf(v)) {
                 amax = fabsf(v);
@@ -212,7 +212,7 @@ void quantizeF32toQ40(const float *x, NnBlockQ40 *output, const NnSize n, const 
 
         NnBlockQ40 *o = &output[i];
         o->d = CONVERT_F32_TO_F16(d);
-        for (NnSize j = 0; j < halfSize; j++) {
+        for (NnUint j = 0; j < halfSize; j++) {
             const float x0 = x[i * Q40_BLOCK_SIZE + j] * id;
             const float x1 = x[i * Q40_BLOCK_SIZE + halfSize + j] * id;
     
@@ -226,12 +226,12 @@ void quantizeF32toQ40(const float *x, NnBlockQ40 *output, const NnSize n, const 
     }
 }
 
-void dequantizeQ40toF32(const NnBlockQ40 *x, float *output, const NnSize n, const NnSize nThreads, const NnSize threadIndex) {
+void dequantizeQ40toF32(const NnBlockQ40 *x, float *output, const NnUint n, const NnUint nThreads, const NnUint threadIndex) {
     assert(n % Q40_BLOCK_SIZE == 0);
-    const NnSize nBlocks = n / Q40_BLOCK_SIZE;
+    const NnUint nBlocks = n / Q40_BLOCK_SIZE;
     SPLIT_THREADS(start, end, nBlocks, nThreads, threadIndex);
 
-    for (NnSize i = start; i < end; i++) {
+    for (NnUint i = start; i < end; i++) {
         const NnBlockQ40 *b = &x[i];
         const float d = CONVERT_F16_TO_F32(b->d);
 

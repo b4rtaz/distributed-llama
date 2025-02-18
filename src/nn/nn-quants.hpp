@@ -10,7 +10,8 @@
 #endif
 
 typedef std::uint8_t NnByte;
-typedef std::uint32_t NnSize;
+typedef std::uint32_t NnUint;
+typedef std::size_t NnSize;
 typedef std::uint16_t NnFp16;
 
 float convertF16toF32Impl(const NnFp16 value);
@@ -71,17 +72,17 @@ typedef struct {
 } NnBlockQ80;
 
 void initQuants();
-void quantizeF32toQ80(const float *input, NnBlockQ80 *output, const NnSize k, const NnSize nThreads, const NnSize threadIndex);
-void dequantizeQ80toF32(const NnBlockQ80 *input, float* output, const NnSize k, const NnSize nThreads, const NnSize threadIndex);
-void quantizeF32toQ40(const float *x, NnBlockQ40 *output, const NnSize n, const NnSize nThreads, const NnSize threadIndex);
-void dequantizeQ40toF32(const NnBlockQ40 *x, float *output, const NnSize n, const NnSize nThreads, const NnSize threadIndex);
+void quantizeF32toQ80(const float *input, NnBlockQ80 *output, const NnUint k, const NnUint nThreads, const NnUint threadIndex);
+void dequantizeQ80toF32(const NnBlockQ80 *input, float* output, const NnUint k, const NnUint nThreads, const NnUint threadIndex);
+void quantizeF32toQ40(const float *x, NnBlockQ40 *output, const NnUint n, const NnUint nThreads, const NnUint threadIndex);
+void dequantizeQ40toF32(const NnBlockQ40 *x, float *output, const NnUint n, const NnUint nThreads, const NnUint threadIndex);
 
 const char *floatTypeToString(NnFloatType type);
 
 #define SPLIT_THREADS(varStart, varEnd, rangeLen, nThreads, threadIndex) \
-    const NnSize rangeSlice = rangeLen / nThreads; \
-    const NnSize rangeRest = rangeLen % nThreads; \
-    const NnSize varStart = threadIndex * rangeSlice + (threadIndex < rangeRest ? threadIndex : rangeRest); \
-    const NnSize varEnd = varStart + rangeSlice + (threadIndex < rangeRest ? 1 : 0);
+    const NnUint rangeSlice = rangeLen / nThreads; \
+    const NnUint rangeRest = rangeLen % nThreads; \
+    const NnUint varStart = threadIndex * rangeSlice + (threadIndex < rangeRest ? threadIndex : rangeRest); \
+    const NnUint varEnd = varStart + rangeSlice + (threadIndex < rangeRest ? 1 : 0);
 
 #endif

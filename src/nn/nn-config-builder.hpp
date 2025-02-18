@@ -6,7 +6,7 @@
 #include <cstring>
 
 static char *cloneString(const char *str) {
-    NnSize len = std::strlen(str);
+    NnUint len = std::strlen(str);
     char *copy = new char[len + 1];
     std::memcpy(copy, str, len + 1);
     return copy;
@@ -14,17 +14,17 @@ static char *cloneString(const char *str) {
 
 class NnNetConfigBuilder {
 public:
-    NnSize nNodes;
-    NnSize nBatches;
+    NnUint nNodes;
+    NnUint nBatches;
     std::list<NnPipeConfig> pipes;
 
-    NnNetConfigBuilder(NnSize nNodes, NnSize nBatches) {
+    NnNetConfigBuilder(NnUint nNodes, NnUint nBatches) {
         this->nNodes = nNodes;
         this->nBatches = nBatches;
     }
 
-    NnSize addPipe(const char *name, NnSize2D size) {
-        NnSize pipeIndex = pipes.size();
+    NnUint addPipe(const char *name, NnSize2D size) {
+        NnUint pipeIndex = pipes.size();
         pipes.push_back({ cloneString(name), size });
         return pipeIndex;
     }
@@ -42,16 +42,16 @@ public:
 
 class NnNodeConfigBuilder {
 public:
-    NnSize nodeIndex;
+    NnUint nodeIndex;
     std::list<NnBufferConfig> buffers;
     std::list<NnSegmentConfig> segments;
 
-    NnNodeConfigBuilder(NnSize nodeIndex) {
+    NnNodeConfigBuilder(NnUint nodeIndex) {
         this->nodeIndex = nodeIndex;
     }
 
-    NnSize addBuffer(const char *name, NnSize2D size) {
-        NnSize bufferIndex = buffers.size();
+    NnUint addBuffer(const char *name, NnSize2D size) {
+        NnUint bufferIndex = buffers.size();
         buffers.push_back({ cloneString(name), size });
         return bufferIndex;
     }
@@ -84,8 +84,8 @@ private:
 
 public:
     template <typename T>
-    void addOp(NnOpCode code, const char *name, NnSize index, NnPointerConfig input, NnPointerConfig output, NnSize2D weightSize, T config) {
-        NnSize configSize = sizeof(T);
+    void addOp(NnOpCode code, const char *name, NnUint index, NnPointerConfig input, NnPointerConfig output, NnSize2D weightSize, T config) {
+        NnUint configSize = sizeof(T);
         NnByte *configCopy = new NnByte[configSize];
         std::memcpy(configCopy, &config, configSize);
         ops.push_back({
@@ -100,7 +100,7 @@ public:
         });
     };
 
-    void addSync(NnSize pipeIndex, NnSyncType syncType) {
+    void addSync(NnUint pipeIndex, NnSyncType syncType) {
         syncs.push_back({ pipeIndex, syncType });
     }
 

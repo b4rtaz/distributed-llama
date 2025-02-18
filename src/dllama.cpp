@@ -16,7 +16,7 @@ static void inference(AppInferenceContext *context) {
     std::vector<int> inputTokensVec(std::strlen(context->args->prompt) + 3);
     int *inputTokens = inputTokensVec.data();
 
-    NnSize pos = 0;
+    NnUint pos = 0;
     int token;
     int nInputTokens;
     context->tokenizer->encode(context->args->prompt, inputTokens, &nInputTokens, true, false);
@@ -35,13 +35,13 @@ static void inference(AppInferenceContext *context) {
         long remainingTokens = nInputTokens - 1 - (long)pos;
         if (remainingTokens <= 0)
             break;
-        NnSize batchSize = remainingTokens < context->args->nBatches
+        NnUint batchSize = remainingTokens < context->args->nBatches
             ? remainingTokens
             : context->args->nBatches;
 
         context->inference->setBatchSize(batchSize);
         context->inference->setPosition(pos);
-        for (NnSize i = 0; i < batchSize; i++)
+        for (NnUint i = 0; i < batchSize; i++)
             context->inference->setToken(i, inputTokens[pos + i]);
 
         context->inference->forward();
@@ -57,7 +57,7 @@ static void inference(AppInferenceContext *context) {
             recvBytes / 1024,
             batchSize);
     }
-    NnSize evalTime = evalTimer.elapsedMiliseconds();
+    NnUint evalTime = evalTimer.elapsedMiliseconds();
 
     fflush(stdout);
 
@@ -65,7 +65,7 @@ static void inference(AppInferenceContext *context) {
     context->tokenizer->resetDecoder();
 
     Timer predTimer;
-    const NnSize maxPos = std::min(context->header->seqLen, context->args->steps);
+    const NnUint maxPos = std::min(context->header->seqLen, context->args->steps);
     for (; pos < maxPos; pos++) {
         Timer tokenTimer;
         context->inference->setPosition(pos);
@@ -86,10 +86,10 @@ static void inference(AppInferenceContext *context) {
             piece == nullptr ? "~" : piece);
         fflush(stdout);
     }
-    NnSize predTime = predTimer.elapsedMiliseconds();
+    NnUint predTime = predTimer.elapsedMiliseconds();
 
-    NnSize nEvalTokens = nInputTokens - 1;
-    NnSize nPredTokens = pos - nEvalTokens;
+    NnUint nEvalTokens = nInputTokens - 1;
+    NnUint nPredTokens = pos - nEvalTokens;
     printf("\n");
     printf("Evaluation\n");
     printf("   nBatches: %d\n", context->args->nBatches);
@@ -119,7 +119,7 @@ static size_t readStdin(const char *guide, char *buffer, size_t size) {
 }
 
 static void chat(AppInferenceContext *context) {
-    const NnSize seqLen = context->header->seqLen;
+    const NnUint seqLen = context->header->seqLen;
     char prompt[2048];
 
     TokenizerChatStops stops(context->tokenizer);
@@ -131,7 +131,7 @@ static void chat(AppInferenceContext *context) {
     if (sysPromptLength > 0)
         deltaItems.push_back(ChatItem{"system", prompt});
 
-    NnSize pos = 0;
+    NnUint pos = 0;
     size_t userPromptLength;
     int token;
     int nInputTokens;
@@ -149,18 +149,18 @@ static void chat(AppInferenceContext *context) {
         bool addBos = pos == 0;
         context->tokenizer->encode((char*)inputPrompt.content, inputTokens, &nInputTokens, addBos, true);
 
-        NnSize userPromptEndPos = (NnSize)std::min<unsigned int>(seqLen, pos + nInputTokens - 1);
-        for (NnSize i = 0; ;) {
+        NnUint userPromptEndPos = (NnUint)std::min<unsigned int>(seqLen, pos + nInputTokens - 1);
+        for (NnUint i = 0; ;) {
             int remainingTokens = userPromptEndPos - pos;
             if (remainingTokens <= 0)
                 break;
-            NnSize batchSize = remainingTokens < context->args->nBatches
+            NnUint batchSize = remainingTokens < context->args->nBatches
                 ? remainingTokens
                 : context->args->nBatches;
 
             context->inference->setBatchSize(batchSize);
             context->inference->setPosition(pos);
-            for (NnSize j = 0; j < batchSize; j++)
+            for (NnUint j = 0; j < batchSize; j++)
                 context->inference->setToken(j, inputTokens[i + j]);
 
             context->inference->forward();

@@ -70,7 +70,7 @@ AppCliArgs AppCliArgs::parse(int argc, char* *argv, bool requireMode) {
 
             args.nWorkers = count;
             args.workerHosts = new char*[count];
-            args.workerPorts = new NnSize[count];
+            args.workerPorts = new NnUint[count];
 
             for (int s = 0; s < count; s++) {
                 char *v = argv[i + 1 + s];
@@ -111,7 +111,7 @@ AppCliArgs AppCliArgs::parse(int argc, char* *argv, bool requireMode) {
 
 AppCliArgs::~AppCliArgs() {
     if (workerHosts != nullptr) {
-        for (NnSize i = 0; i < nWorkers; i++)
+        for (NnUint i = 0; i < nWorkers; i++)
             delete[] workerHosts[i];
         delete[] workerHosts;
     }
@@ -130,21 +130,21 @@ RootLlmInference::RootLlmInference(LlmNet *net, NnDevice *device, NnNetExecution
     this->network = network; // May be nullptr!
 }
 
-void RootLlmInference::setBatchSize(NnSize batchSize) {
+void RootLlmInference::setBatchSize(NnUint batchSize) {
     execution->setBatchSize(batchSize);
     controlPacket.batchSize = batchSize;
 }
 
-void RootLlmInference::setPosition(NnSize position) {
+void RootLlmInference::setPosition(NnUint position) {
     assert(position >= 0);
     assert(position + execution->batchSize - 1 < header->seqLen);
 
     controlPacket.position = position;
-    for (NnSize i = 0; i < execution->batchSize; i++)
+    for (NnUint i = 0; i < execution->batchSize; i++)
         positionPipe[i] = (float)(position + i);
 }
 
-void RootLlmInference::setToken(NnSize batchIndex, NnSize token) {
+void RootLlmInference::setToken(NnUint batchIndex, NnUint token) {
     assert(batchIndex >= 0 && batchIndex < execution->batchSize);
     tokenPipe[batchIndex] = (float)token;
 }
@@ -179,14 +179,14 @@ bool WorkerLlmInference::tryReadControlPacket() {
         isFinished = true;
         return true;
     }
-    for (NnSize i = 0; i < controlPacket.batchSize; i++)
+    for (NnUint i = 0; i < controlPacket.batchSize; i++)
         positionPipe[i] = (float)(controlPacket.position + i);
     execution->setBatchSize(controlPacket.batchSize);
     return true;
 }
 
 void runInferenceApp(AppCliArgs *args, void (*handler)(AppInferenceContext *context)) {
-    NnSize nNodes = args->nWorkers + 1;
+    NnUint nNodes = args->nWorkers + 1;
 
     LlmHeader header = loadLlmHeader(args->modelPath, args->maxSeqLen, args->syncType);
     if (nNodes > header.nKvHeads)
