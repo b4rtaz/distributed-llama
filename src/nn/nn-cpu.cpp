@@ -92,9 +92,9 @@ NnDeviceSegment *NnCpuDevice::createSegment(NnSize segmentIndex) {
             inputSize.floatType,
             opConfig->weightSize.floatType,
             outputSize.floatType);
-        #if DEBUG_CPU_OP_QUANTS
+#if DEBUG_CPU_OP_QUANTS
             printf("%20s %2d: %s\n", opConfig->name, opConfig->index, opQuantTypeToString(opQuant));
-        #endif
+#endif
         NnCpuOpForward forward = getCpuOpForward(opConfig->code, opQuant);
         if (forward == nullptr) {
             throw std::invalid_argument(
@@ -136,10 +136,12 @@ NnDeviceSegment *NnCpuDevice::createSegment(NnSize segmentIndex) {
         opContext->outputSize = outputSizes[opIndex];
         opContext->hasOutputContinuousMemory = hasPointerContinuousMemory(&opConfig->output);
 
+#if not(DEBUG_USE_MMAP_FOR_WEIGHTS)
         if (opContext->weightSize.nBytes > 0)
             opContext->weight = allocAlignedBuffer(opContext->weightSize.nBytes);
         else
             opContext->weight = nullptr;
+#endif
 
         if (opInit != nullptr)
             opInit(opContext);
@@ -155,8 +157,10 @@ NnCpuDeviceSegment::~NnCpuDeviceSegment() {
             delete[] context->input;
             delete[] context->output;
         }
+#if not(DEBUG_USE_MMAP_FOR_WEIGHTS)
         if (context->weightSize.nBytes > 0)
             releaseAlignedBuffer(context->weight);
+#endif
     }
     delete[] opForward;
     delete[] opContexts;
@@ -226,7 +230,11 @@ void NnCpuDeviceSegment::loadWeight(NnSize opIndex, NnSize nBytes, NnByte *weigh
     assert(opIndex < nOps);
     NnCpuOpContext *context = &opContexts[opIndex];
     ASSERT_EQ(context->weightSize.nBytes, nBytes);
+#if DEBUG_USE_MMAP_FOR_WEIGHTS
+    context->weight = weight;
+#else
     std::memcpy(context->weight, weight, nBytes);
+#endif
 }
 
 void NnCpuDeviceSegment::forward(NnSize opIndex, NnSize nThreads, NnSize threadIndex, NnSize batchSize) {

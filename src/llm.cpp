@@ -445,7 +445,12 @@ void releaseLlmNet(LlmNet *net) {
 void loadLlmNetWeight(const char *path, LlmNet *net, NnRootWeightLoader *loader) {
     MmapFile file;
     openMmapFile(&file, path, net->header->fileSize);
+#if DEBUG_USE_MMAP_FOR_WEIGHTS
+    assert(net->netConfig.nNodes == 1);
+#else
     std::unique_ptr<MmapFile, void(*)(MmapFile *)> fdPtr(&file, closeMmapFile);
+    printf("💿 Loading weights...\n");
+#endif
 
     NnByte *data = (NnByte *)file.data;
     NnByte *b = &data[net->header->headerSize];
@@ -467,8 +472,9 @@ void loadLlmNetWeight(const char *path, LlmNet *net, NnRootWeightLoader *loader)
     b += loader->loadAll("final_rms_norm", 0, net->rmsNormSize.nBytes, b);
     b += loader->loadRowMatmulSlices("final_matmul_logits", 0, &net->wclsSlice, b);
 
-    unsigned long missingBytes = (b - data) - net->header->fileSize;
-    assert(missingBytes == 0);
+    long long missingBytes = (long long)(b - data) - net->header->fileSize;
+    if (missingBytes != 0)
+        throw std::runtime_error("Missing bytes in weight file: " + std::to_string(missingBytes));
     printf("💿 Weights loaded\n");
 
     loader->finish();

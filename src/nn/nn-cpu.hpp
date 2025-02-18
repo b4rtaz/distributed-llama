@@ -5,6 +5,8 @@
 #include "nn-executor.hpp"
 #include "nn-cpu-ops.hpp"
 
+#define DEBUG_USE_MMAP_FOR_WEIGHTS false
+
 typedef struct {
     NnByte *source;
     NnSize2D *sourceSize;

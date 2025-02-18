@@ -788,35 +788,43 @@ NnSize NnRootWeightLoader::loadRoot(const char *opName, NnSize opIndex, NnSize n
 }
 
 NnSize NnRootWeightLoader::loadAll(const char *opName, NnSize opIndex, NnSize nBytes, NnByte *weight) {
-    for (NnSize nodeIndex = 0; nodeIndex < nNodes; nodeIndex++) {
-        if (nodeIndex == 0)
-            executor->loadWeight(opName, opIndex, nBytes, weight);
-        else
+    executor->loadWeight(opName, opIndex, nBytes, weight);
+
+    if (nNodes > 1) {
+        for (NnSize nodeIndex = 1; nodeIndex < nNodes; nodeIndex++)
             writeWeight(nodeIndex, opName, opIndex, nBytes, weight);
     }
     return nBytes;
 }
 
 NnSize NnRootWeightLoader::loadRowMatmulSlices(const char *opName, NnSize opIndex, NnRowMatmulSlice *slice, NnByte *weight) {
-    allocate(slice->sliceSize.nBytes);
-    for (NnSize nodeIndex = 0; nodeIndex < nNodes; nodeIndex++) {
-        splitRowMatmulWeight(slice, nodeIndex, weight, temp);
-        if (nodeIndex == 0)
-            executor->loadWeight(opName, opIndex, slice->sliceSize.nBytes, temp);
-        else
-            writeWeight(nodeIndex, opName, opIndex, slice->sliceSize.nBytes, temp);
+    if (nNodes == 1) {
+        executor->loadWeight(opName, opIndex, slice->sliceSize.nBytes, weight);
+    } else {
+        allocate(slice->sliceSize.nBytes);
+        for (NnSize nodeIndex = 0; nodeIndex < nNodes; nodeIndex++) {
+            splitRowMatmulWeight(slice, nodeIndex, weight, temp);
+            if (nodeIndex == 0)
+                executor->loadWeight(opName, opIndex, slice->sliceSize.nBytes, temp);
+            else
+                writeWeight(nodeIndex, opName, opIndex, slice->sliceSize.nBytes, temp);
+        }
     }
     return slice->size.nBytes;
 }
 
 NnSize NnRootWeightLoader::loadColMatmulSlices(const char *opName, NnSize opIndex, NnColMatmulSlice *slice, NnByte *weight) {
-    allocate(slice->sliceSize.nBytes);
-    for (NnSize nodeIndex = 0; nodeIndex < nNodes; nodeIndex++) {
-        splitColMatmulWeight(slice, nodeIndex, weight, temp);
-        if (nodeIndex == 0)
-            executor->loadWeight(opName, opIndex, slice->sliceSize.nBytes, temp);
-        else
-            writeWeight(nodeIndex, opName, opIndex, slice->sliceSize.nBytes, temp);
+    if (nNodes == 1) {
+        executor->loadWeight(opName, opIndex, slice->sliceSize.nBytes, weight);
+    } else {
+        allocate(slice->sliceSize.nBytes);
+        for (NnSize nodeIndex = 0; nodeIndex < nNodes; nodeIndex++) {
+            splitColMatmulWeight(slice, nodeIndex, weight, temp);
+            if (nodeIndex == 0)
+                executor->loadWeight(opName, opIndex, slice->sliceSize.nBytes, temp);
+            else
+                writeWeight(nodeIndex, opName, opIndex, slice->sliceSize.nBytes, temp);
+        }
     }
     return slice->size.nBytes;
 }
