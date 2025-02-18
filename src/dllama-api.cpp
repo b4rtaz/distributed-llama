@@ -380,20 +380,20 @@ public:
             buffer += inputPrompt.publicPrompt;
         }
 
-        NnSize pos = startPos;
+        NnUint pos = startPos;
         int token;
-        for (NnSize i = 0; ;) {
+        for (NnUint i = 0; ;) {
             long remainingTokens = promptEndPos - pos;
             if (remainingTokens <= 0)
                 break;
 
-            NnSize batchSize = remainingTokens < args->nBatches
+            NnUint batchSize = remainingTokens < args->nBatches
                 ? remainingTokens
                 : args->nBatches;
 
             inference->setBatchSize(batchSize);
             inference->setPosition(pos);
-            for (NnSize j = 0; j < batchSize; j++)
+            for (NnUint j = 0; j < batchSize; j++)
                 inference->setToken(j, promptTokens[i + j]);
 
             inference->forward();

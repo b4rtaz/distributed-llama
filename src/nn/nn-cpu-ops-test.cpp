@@ -3,20 +3,20 @@
 
 // framework
 
-void rand(float *o, const NnSize n, const NnSize seed) {
+void rand(float *o, const NnUint n, const NnUint seed) {
     srand(seed + 123456);
-    for (NnSize i = 0; i < n; i++) {
+    for (NnUint i = 0; i < n; i++) {
         float v = (float)(rand() / RAND_MAX);
         o[i] = v * 2.0f - 1.0f;
     }
 }
 
-void compare_F32(const char *name, const float *a, const float *b, const NnSize n, const float epsilon) {
-    for (NnSize i = 0; i < n; i++) {
+void compare_F32(const char *name, const float *a, const float *b, const NnUint n, const float epsilon) {
+    for (NnUint i = 0; i < n; i++) {
         float error = fabs(a[i] - b[i]);
         if (error > epsilon) {
             printf("❌ %s failed\n", name);
-            for (NnSize j = i; j < i + 16 && j < n; j++)
+            for (NnUint j = i; j < i + 16 && j < n; j++)
                 printf("   [%3d] %f != %f\n", j, a[j], b[j]);
             exit(1);
         }
@@ -71,7 +71,7 @@ void testSplitThreads() {
 
 void testConvertF32toF16() {
     float x[] = {0.0f, 0.25f, 0.3456f, 1.0f};
-    for (NnSize i = 0; i < sizeof(x) / sizeof(float); i++) {
+    for (NnUint i = 0; i < sizeof(x) / sizeof(float); i++) {
         NnFp16 f16 = CONVERT_F32_TO_F16(x[i]);
         float f32 = CONVERT_F16_TO_F32(f16);
         compare_F32("convertF32toF16", &x[i], &f32, 1, 0.0005);
@@ -79,7 +79,7 @@ void testConvertF32toF16() {
 }
 
 // quantization
-void testQuantization(const NnSize m) {
+void testQuantization(const NnUint m) {
     std::vector<float> a(m * Q40_BLOCK_SIZE);
     std::vector<float> aTemp(m * Q40_BLOCK_SIZE);
     std::vector<NnBlockQ40> aQ40(m);
@@ -118,7 +118,7 @@ void testInvRms() {
 }
 
 // rmsNorm
-void testRmsNorm(const NnSize m) {
+void testRmsNorm(const NnUint m) {
     std::vector<float> x(m);
     std::vector<NnBlockQ80> xQ80(m / Q80_BLOCK_SIZE);
     std::vector<float> w(m);
@@ -137,8 +137,8 @@ void testRmsNorm(const NnSize m) {
 }
 
 // a *= b
-void testMul(const NnSize m) {
-    const NnSize n = Q80_BLOCK_SIZE * m;
+void testMul(const NnUint m) {
+    const NnUint n = Q80_BLOCK_SIZE * m;
 
     std::vector<float> a0(n);
     std::vector<float> b0(n);
@@ -158,8 +158,8 @@ void testMul(const NnSize m) {
 }
 
 // y += x
-void testAdd(const NnSize m) {
-    const NnSize n = Q80_BLOCK_SIZE * m;
+void testAdd(const NnUint m) {
+    const NnUint n = Q80_BLOCK_SIZE * m;
 
     std::vector<float> y(n);
     std::vector<float> yTemp(n);
@@ -179,7 +179,7 @@ void testAdd(const NnSize m) {
 
 void testSoftmax() {
     std::vector<float> y(8);
-    for (NnSize i = 0; i < 8; i++)
+    for (NnUint i = 0; i < 8; i++)
         y[i] = i / 8.0f;
 
     softmax_F32(y.data(), 8);
@@ -199,7 +199,7 @@ void testSoftmax() {
 
 void testSilu() {
     std::vector<float> y(8);
-    for (NnSize i = 0; i < 8; i++)
+    for (NnUint i = 0; i < 8; i++)
         y[i] = i / 8.0f;
 
     silu_F32(y.data(), 8, 1, 0);
@@ -218,9 +218,9 @@ void testSilu() {
 }
 
 // matmul
-void testMatmul_F32_Q40_F32(const NnSize m = 2) {
-    const NnSize n = Q80_BLOCK_SIZE * m;
-    const NnSize d = Q80_BLOCK_SIZE * m;
+void testMatmul_F32_Q40_F32(const NnUint m = 2) {
+    const NnUint n = Q80_BLOCK_SIZE * m;
+    const NnUint d = Q80_BLOCK_SIZE * m;
 
     std::vector<float> x(n);
     std::vector<float> w(n * d);
@@ -241,9 +241,9 @@ void testMatmul_F32_Q40_F32(const NnSize m = 2) {
 }
 
 void testLlamafileSgemm() {
-    const NnSize batchSize = 8;
-    const NnSize n = 256;
-    const NnSize d = 128;
+    const NnUint batchSize = 8;
+    const NnUint n = 256;
+    const NnUint d = 128;
 
     std::vector<float> x(n * batchSize);
     std::vector<NnBlockQ80> xQ((n * batchSize) / Q80_BLOCK_SIZE);
@@ -260,7 +260,7 @@ void testLlamafileSgemm() {
 
     // f32
 
-    for (NnSize i = 0; i < batchSize; i++) {
+    for (NnUint i = 0; i < batchSize; i++) {
         matmul_F32_F32_F32(o.data() + i * d, x.data() + i * n, w.data(), n, d, 1, 0);
     }
 

@@ -293,7 +293,7 @@ void Tokenizer::encode(char *text, int *tokens, int *nTokens, bool addBos, bool 
     }
 
 #if DEBUG_TOKENIZER_BENCHMARK
-    NnSize duration = startTime.elapsedMicroseconds();
+    NnUint duration = startTime.elapsedMicroseconds();
     printf("🕒 [%22s] %u μs\n", "ENCODER", duration);
 #endif
 #if DEBUG_TOKENIZER_ENCODER
@@ -420,7 +420,7 @@ int Sampler::sample(float* logits) {
         }
     }
 #if DEBUG_SAMPLER_BENCHMARK
-    NnSize duration = startTime.elapsedMicroseconds();
+    NnUint duration = startTime.elapsedMicroseconds();
     printf("🕒 [%22s] %u μs\n", "SAMPLER", duration);
 #endif
     return next;

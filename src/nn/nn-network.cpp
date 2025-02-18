@@ -20,7 +20,7 @@ typedef SSIZE_T ssize_t;
 #define SOCKET_LAST_ERRCODE errno
 #define SOCKET_LAST_ERROR strerror(errno)
 
-#define ACK 23571113
+#define ACK 23571114
 #define MAX_CHUNK_SIZE 4096
 
 static inline bool isEagainError() {
@@ -81,7 +81,7 @@ void setReuseAddr(int socket) {
     #endif
 }
 
-void writeSocket(int socket, const void *data, size_t size) {
+void writeSocket(int socket, const void *data, NnSize size) {
     while (size > 0) {
         ssize_t s = send(socket, (const char*)data, size, 0);
         if (s < 0) {
@@ -97,9 +97,9 @@ void writeSocket(int socket, const void *data, size_t size) {
     }
 }
 
-static inline bool tryReadSocket(int socket, void *data, size_t size, unsigned long maxAttempts) {
+static inline bool tryReadSocket(int socket, void *data, NnSize size, unsigned long maxAttempts) {
     // maxAttempts = 0 means infinite attempts
-    size_t s = size;
+    NnSize s = size;
     while (s > 0) {
         ssize_t r = recv(socket, (char*)data, s, 0);
         if (r < 0) {
@@ -122,21 +122,21 @@ static inline bool tryReadSocket(int socket, void *data, size_t size, unsigned l
     return true;
 }
 
-void readSocket(int socket, void *data, size_t size) {
+void readSocket(int socket, void *data, NnSize size) {
     if (!tryReadSocket(socket, data, size, 0)) {
         throw std::runtime_error("Error reading from socket");
     }
 }
 
 static void readAckPacket(int socket) {
-    NnSize packet;
+    NnUint packet;
     readSocket(socket, &packet, sizeof(packet));
     if (packet != ACK)
         throw std::runtime_error("Invalid ack packet");
 }
 
 static void writeAckPacket(int socket) {
-    NnSize packet = ACK;
+    NnUint packet = ACK;
     writeSocket(socket, &packet, sizeof(packet));
 }
 
@@ -254,13 +254,13 @@ NnWriteNetworkException::NnWriteNetworkException(int code, const char *message) 
 std::unique_ptr<NnNetwork> NnNetwork::serve(int port) {
     int serverSocket = createServerSocket(port);
 
-    NnSize nSockets;
-    NnSize nodeIndex;
+    NnUint nSockets;
+    NnUint nodeIndex;
     int rootSocket = acceptSocket(serverSocket);
     printf("⭕ The root node has connected\n");
 
     readSocket(rootSocket, &nSockets, sizeof(nSockets));
-    NnSize nNodes = nSockets - 1; // nSockets - 1 root node
+    NnUint nNodes = nSockets - 1; // nSockets - 1 root node
     printf("⭕ nNodes: %d\n", nNodes);
     readSocket(rootSocket, &nodeIndex, sizeof(nodeIndex));
     printf("⭕ NodeIndex: %d\n", nodeIndex);
@@ -271,8 +271,8 @@ std::unique_ptr<NnNetwork> NnNetwork::serve(int port) {
     int *ports = new int[nNodes];
     printf("⭕ Socket[0]: accepted root node\n");
 
-    size_t hostLen;
-    for (NnSize i = 0; i < nNodes; i++) {
+    NnUint hostLen;
+    for (NnUint i = 0; i < nNodes; i++) {
         readSocket(rootSocket, &hostLen, sizeof(hostLen));
         hosts[i] = new char[hostLen];
         readSocket(rootSocket, hosts[i], hostLen);
@@ -284,8 +284,8 @@ std::unique_ptr<NnNetwork> NnNetwork::serve(int port) {
     // We need to wait here until the root node will send a "root is ready" packet
     readAckPacket(rootSocket);
 
-    for (NnSize i = 0; i < nNodes; i++) {
-        NnSize socketIndex = i + 1;
+    for (NnUint i = 0; i < nNodes; i++) {
+        NnUint socketIndex = i + 1;
         if (i >= nodeIndex) {
             printf("⭕ Socket[%d]: connecting to %s:%d worker\n", socketIndex, hosts[i], ports[i]);
             sockets[socketIndex] = connectSocket(hosts[i], ports[i]);
@@ -297,7 +297,7 @@ std::unique_ptr<NnNetwork> NnNetwork::serve(int port) {
         }
     }
 
-    for (NnSize i = 0; i < nNodes; i++)
+    for (NnUint i = 0; i < nNodes; i++)
         delete[] hosts[i];
     delete[] hosts;
     delete[] ports;
@@ -308,22 +308,21 @@ std::unique_ptr<NnNetwork> NnNetwork::serve(int port) {
     return std::unique_ptr<NnNetwork>(new NnNetwork(nSockets, sockets));
 }
 
-std::unique_ptr<NnNetwork> NnNetwork::connect(NnSize nSockets, char **hosts, NnSize *ports) {
+std::unique_ptr<NnNetwork> NnNetwork::connect(NnUint nSockets, char **hosts, NnUint *ports) {
     assert(nSockets > 0);
 
     int *sockets = new int[nSockets];
     struct sockaddr_in addr;
-    NnSize confirmPacket;
-    for (NnSize i = 0; i < nSockets; i++) {
+    for (NnUint i = 0; i < nSockets; i++) {
         printf("⭕ Socket[%d]: connecting to %s:%d worker\n", i, hosts[i], ports[i]);
         int socket = connectSocket(hosts[i], ports[i]);
         sockets[i] = socket;
         writeSocket(socket, &nSockets, sizeof(nSockets));
         writeSocket(socket, &i, sizeof(i)); // send node index
-        for (NnSize j = 0; j < nSockets; j++) {
+        for (NnUint j = 0; j < nSockets; j++) {
             if (j == i)
                 continue;
-            size_t hostLen = strlen(hosts[j]) + 1;
+            NnUint hostLen = strlen(hosts[j]) + 1;
             writeSocket(socket, &hostLen, sizeof(hostLen));
             writeSocket(socket, hosts[j], hostLen);
             writeSocket(socket, &ports[j], sizeof(ports[j]));
@@ -331,22 +330,24 @@ std::unique_ptr<NnNetwork> NnNetwork::connect(NnSize nSockets, char **hosts, NnS
         readAckPacket(socket);
         printf("⭕ Socket[%d]: connected\n", i);
     }
-    for (NnSize i = 0; i < nSockets; i++) {
+    for (NnUint i = 0; i < nSockets; i++) {
         writeAckPacket(sockets[i]);
     }
     printf("⭕ Network is initialized\n");
     return std::unique_ptr<NnNetwork>(new NnNetwork(nSockets, sockets));
 }
 
-NnNetwork::NnNetwork(NnSize nSockets, int *sockets)
-    : sentBytes(0), recvBytes(0)
-{
+NnNetwork::NnNetwork(NnUint nSockets, int *sockets) {
     this->nSockets = nSockets;
     this->sockets = sockets;
+    this->sentBytes = new NnSize[nSockets];
+    this->recvBytes = new NnSize[nSockets];
 }
 
 NnNetwork::~NnNetwork() {
-    for (NnSize i = 0; i < nSockets; i++) {
+    delete[] sentBytes;
+    delete[] recvBytes;
+    for (NnUint i = 0; i < nSockets; i++) {
         shutdown(sockets[i], 2);
         close(sockets[i]);
     }
@@ -355,67 +356,67 @@ NnNetwork::~NnNetwork() {
 }
 
 void NnNetwork::setTurbo(bool enabled) {
-    for (NnSize i = 0; i < nSockets; i++) {
+    for (NnUint i = 0; i < nSockets; i++) {
         ::setNonBlocking(sockets[i], enabled);
     }
 }
 
-void NnNetwork::write(NnSize socketIndex, const void *data, size_t size) {
-    assert(socketIndex >= 0 && socketIndex < nSockets);
-    sentBytes.fetch_add(size);
+void NnNetwork::write(const NnUint socketIndex, const void *data, const NnSize size) {
+    assert(socketIndex < nSockets);
 
-    char *current = (char*)data;
+    NnByte *current = (NnByte *)data;
     int s = sockets[socketIndex];
-    for (size_t chunk = 0; chunk < size; chunk += MAX_CHUNK_SIZE) {
-        size_t chunkSize = chunk + MAX_CHUNK_SIZE < size ? MAX_CHUNK_SIZE : size - chunk;
+    for (NnSize chunk = 0; chunk < size; chunk += MAX_CHUNK_SIZE) {
+        NnSize chunkSize = chunk + MAX_CHUNK_SIZE < size ? MAX_CHUNK_SIZE : size - chunk;
         writeSocket(s, current, chunkSize);
         current += chunkSize;
     }
+    sentBytes[socketIndex] += size;
 }
 
-void NnNetwork::read(NnSize socketIndex, void *data, size_t size) {
-    assert(socketIndex >= 0 && socketIndex < nSockets);
-    recvBytes.fetch_add(size);
+void NnNetwork::read(const NnUint socketIndex, void *data, const NnSize size) {
+    assert(socketIndex < nSockets);
 
-    char *current = (char*)data;
+    NnByte *current = (NnByte *)data;
     int s = sockets[socketIndex];
-    for (size_t chunk = 0; chunk < size; chunk += MAX_CHUNK_SIZE) {
-        size_t chunkSize = chunk + MAX_CHUNK_SIZE < size ? MAX_CHUNK_SIZE : size - chunk;
+    for (NnSize chunk = 0; chunk < size; chunk += MAX_CHUNK_SIZE) {
+        NnSize chunkSize = chunk + MAX_CHUNK_SIZE < size ? MAX_CHUNK_SIZE : size - chunk;
         readSocket(s, current, chunkSize);
         current += chunkSize;
     }
+    recvBytes[socketIndex] += size;
 }
 
-void NnNetwork::writeAck(NnSize socketIndex) {
+void NnNetwork::writeAck(const NnUint socketIndex) {
     assert(socketIndex >= 0 && socketIndex < nSockets);
     writeAckPacket(sockets[socketIndex]);
 }
 
-void NnNetwork::readAck(NnSize socketIndex) {
+void NnNetwork::readAck(const NnUint socketIndex) {
     assert(socketIndex >= 0 && socketIndex < nSockets);
     readAckPacket(sockets[socketIndex]);
 }
 
-bool NnNetwork::tryReadWithMaxAttempts(NnSize socketIndex, void *data, size_t size, unsigned long maxAttempts) {
+bool NnNetwork::tryReadWithMaxAttempts(NnUint socketIndex, void *data, NnSize size, unsigned long maxAttempts) {
     assert(socketIndex >= 0 && socketIndex < nSockets);
     if (tryReadSocket(sockets[socketIndex], data, size, maxAttempts)) {
-        recvBytes.fetch_add(size);
+        recvBytes[socketIndex] += size;
         return true;
     }
     return false;
 }
 
-void NnNetwork::writeMany(NnSize n, NnSocketIo *ios) {
+void NnNetwork::writeMany(NnUint n, NnSocketIo *ios) {
     bool isWriting;
-    size_t nBytes = 0;
-    for (NnSize i = 0; i < n; i++) {
+    NnSize nBytes = 0;
+    for (NnUint i = 0; i < n; i++) {
         NnSocketIo *io = &ios[i];
-        assert(io->socketIndex >= 0 && io->socketIndex < nSockets);
-        nBytes += io->size;
+        assert(io->socketIndex < nSockets);
+        sentBytes[io->socketIndex] += io->size;
     }
     do {
         isWriting = false;
-        for (NnSize i = 0; i < n; i++) {
+        for (NnUint i = 0; i < n; i++) {
             NnSocketIo *io = &ios[i];
             if (io->size > 0) {
                 isWriting = true;
@@ -435,12 +436,11 @@ void NnNetwork::writeMany(NnSize n, NnSocketIo *ios) {
             }
         }
     } while (isWriting);
-    sentBytes.fetch_add(nBytes);
 }
 
-void NnNetwork::writeAll(void *data, size_t size) {
+void NnNetwork::writeAll(void *data, NnSize size) {
     std::vector<NnSocketIo> ios(nSockets);
-    for (NnSize i = 0; i < nSockets; i++) {
+    for (NnUint i = 0; i < nSockets; i++) {
         NnSocketIo *io = &ios[i];
         io->socketIndex = i;
         io->data = data;
@@ -449,17 +449,17 @@ void NnNetwork::writeAll(void *data, size_t size) {
     writeMany(nSockets, &ios[0]);
 }
 
-void NnNetwork::readMany(NnSize n, NnSocketIo *ios) {
+void NnNetwork::readMany(NnUint n, NnSocketIo *ios) {
     bool isReading;
-    size_t nBytes = 0;
-    for (NnSize i = 0; i < n; i++) {
+    NnSize nBytes = 0;
+    for (NnUint i = 0; i < n; i++) {
         NnSocketIo *io = &ios[i];
-        assert(io->socketIndex >= 0 && io->socketIndex < nSockets);
-        nBytes += io->size;
+        assert(io->socketIndex < nSockets);
+        recvBytes[io->socketIndex] += io->size;
     }
     do {
         isReading = false;
-        for (NnSize i = 0; i < n; i++) {
+        for (NnUint i = 0; i < n; i++) {
             NnSocketIo *io = &ios[i];
             if (io->size > 0) {
                 isReading = true;
@@ -478,29 +478,34 @@ void NnNetwork::readMany(NnSize n, NnSocketIo *ios) {
             }
         }
     } while (isReading);
-    recvBytes.fetch_add(nBytes);
 }
 
-void NnNetwork::getStats(size_t *sentBytes, size_t *recvBytes) {
-    *sentBytes = this->sentBytes.load();
-    *recvBytes = this->recvBytes.load();
+void NnNetwork::getStats(NnSize *sentBytes, NnSize *recvBytes) {
+    *sentBytes = 0;
+    *recvBytes = 0;
+    for (NnUint i = 0; i < nSockets; i++) {
+        *sentBytes += this->sentBytes[i];
+        *recvBytes += this->recvBytes[i];
+    }
     resetStats();
 }
 
 void NnNetwork::resetStats() {
-    sentBytes.exchange(0);
-    recvBytes.exchange(0);
+    for (NnUint i = 0; i < nSockets; i++) {
+        sentBytes[i] = 0;
+        recvBytes[i] = 0;
+    }
 }
 
-static void syncWithRoot(NnNetwork *network, NnByte nodeIndex, NnByte *buffer, NnSize nBytes, NnSize nThreads, NnSize threadIndex) {
+static void syncWithRoot(NnNetwork *network, NnByte nodeIndex, NnByte *buffer, NnSize nBytes, NnUint nThreads, NnUint threadIndex) {
     if (nodeIndex == 0) {
         // root
 
-        unsigned int nSocketsPerThread = network->nSockets / nThreads + (network->nSockets % nThreads > threadIndex ? 1 : 0);
+        NnUint nSocketsPerThread = network->nSockets / nThreads + (network->nSockets % nThreads > threadIndex ? 1 : 0);
         if (nSocketsPerThread == 0) return;
 
         std::vector<NnSocketIo> ios(nSocketsPerThread);
-        for (int i = 0; i < nSocketsPerThread; i++) {
+        for (NnUint i = 0; i < nSocketsPerThread; i++) {
             ios[i].socketIndex = threadIndex + i * nThreads;
             ios[i].data = buffer;
             ios[i].size = nBytes;
@@ -519,10 +524,10 @@ static void syncWithRoot(NnNetwork *network, NnByte nodeIndex, NnByte *buffer, N
     }
 }
 
-static void syncNodeSlices(bool onlyFromWorkerToRoot, NnNetwork *network, NnSize nodeIndex, NnSize nNodes, NnByte *buffer, NnSize nBytes, NnSize nThreads, NnSize threadIndex) {
+static void syncNodeSlices(bool onlyFromWorkerToRoot, NnNetwork *network, NnUint nodeIndex, NnUint nNodes, NnByte *buffer, NnSize nBytes, NnUint nThreads, NnUint threadIndex) {
     bool isWorker = nodeIndex != 0;
-    NnSize nSockets = onlyFromWorkerToRoot && isWorker ? 1 : network->nSockets;
-    NnSize nSocketsPerThread = nSockets / nThreads + (nSockets % nThreads > threadIndex ? 1 : 0);
+    NnUint nSockets = onlyFromWorkerToRoot && isWorker ? 1 : network->nSockets;
+    NnUint nSocketsPerThread = nSockets / nThreads + (nSockets % nThreads > threadIndex ? 1 : 0);
     if (nSocketsPerThread == 0) return;
     NnSize sliceBytes = nBytes / nNodes;
 
@@ -531,8 +536,8 @@ static void syncNodeSlices(bool onlyFromWorkerToRoot, NnNetwork *network, NnSize
     if (!onlyFromWorkerToRoot || isWorker) {
         NnByte *mySliceData = &buffer[sliceBytes * nodeIndex];
 
-        for (unsigned int i = 0; i < nSocketsPerThread; i++) {
-            unsigned int socketIndex = threadIndex + i * nThreads;
+        for (NnUint i = 0; i < nSocketsPerThread; i++) {
+            NnUint socketIndex = threadIndex + i * nThreads;
             ios[i].socketIndex = socketIndex;
             ios[i].data = mySliceData;
             ios[i].size = sliceBytes;
@@ -541,9 +546,9 @@ static void syncNodeSlices(bool onlyFromWorkerToRoot, NnNetwork *network, NnSize
     }
 
     if (!onlyFromWorkerToRoot || !isWorker) {
-        for (unsigned int i = 0; i < nSocketsPerThread; i++) {
-            unsigned int socketIndex = threadIndex + i * nThreads;
-            int sliceIndex = socketIndex >= nodeIndex ? socketIndex + 1 : socketIndex;
+        for (NnUint i = 0; i < nSocketsPerThread; i++) {
+            NnUint socketIndex = threadIndex + i * nThreads;
+            NnUint sliceIndex = socketIndex >= nodeIndex ? socketIndex + 1 : socketIndex;
             NnByte *sliceData = &buffer[sliceBytes * sliceIndex];
             ios[i].socketIndex = socketIndex;
             ios[i].data = sliceData;
@@ -560,16 +565,16 @@ NnNetworkNodeSynchronizer::NnNetworkNodeSynchronizer(NnNetwork *network, NnNetEx
     this->nodeConfig = nodeConfig;
 }
 
-void NnNetworkNodeSynchronizer::sync(NnSize segmentIndex, NnSize nThreads, NnSize threadIndex) {
+void NnNetworkNodeSynchronizer::sync(NnUint segmentIndex, NnUint nThreads, NnUint threadIndex) {
     NnSegmentConfig *segmentConfig = &nodeConfig->segments[segmentIndex];
 
-    for (NnSize syncIndex = 0; syncIndex < segmentConfig->nSyncs; syncIndex++) {
+    for (NnUint syncIndex = 0; syncIndex < segmentConfig->nSyncs; syncIndex++) {
         NnSyncConfig *syncConfig = &segmentConfig->syncs[syncIndex];
         NnByte *pipe = execution->pipes[syncConfig->pipeIndex];
         NnPipeConfig *pipeConfig = &netConfig->pipes[syncConfig->pipeIndex];
         NnSize batchBytes = getBytes(pipeConfig->size.floatType, pipeConfig->size.x);
 
-        for (NnSize batchIndex = 0; batchIndex < execution->batchSize; batchIndex++) {
+        for (NnUint batchIndex = 0; batchIndex < execution->batchSize; batchIndex++) {
             NnByte *pipeBatch = &pipe[batchIndex * batchBytes];
 
             if (syncConfig->syncType == SYNC_WITH_ROOT) {
@@ -585,15 +590,15 @@ void NnNetworkNodeSynchronizer::sync(NnSize segmentIndex, NnSize nThreads, NnSiz
     }
 }
 
-static void writeString(NnNetwork *network, NnSize socketIndex, char *str) {
-    NnSize bytes = std::strlen(str) + 1;
-    network->write(socketIndex, &bytes, sizeof(NnSize));
+static void writeString(NnNetwork *network, NnUint socketIndex, char *str) {
+    NnUint bytes = std::strlen(str) + 1;
+    network->write(socketIndex, &bytes, sizeof(NnUint));
     network->write(socketIndex, str, bytes);
 }
 
-static char *readString(NnNetwork *network, NnSize socketIndex) {
-    NnSize bytes;
-    network->read(socketIndex, &bytes, sizeof(NnSize));
+static char *readString(NnNetwork *network, NnUint socketIndex) {
+    NnUint bytes;
+    network->read(socketIndex, &bytes, sizeof(NnUint));
     char *str = new char[bytes];
     network->read(socketIndex, str, bytes);
     return str;
@@ -603,12 +608,12 @@ NnRootConfigWriter::NnRootConfigWriter(NnNetwork *network) {
     this->network = network;
 }
 
-void NnRootConfigWriter::writeNet(NnSize socketIndex, NnNetConfig *config) {
+void NnRootConfigWriter::writeNet(NnUint socketIndex, NnNetConfig *config) {
     network->writeAck(socketIndex);
     network->write(socketIndex, &config->nBatches, sizeof(config->nBatches));
     network->write(socketIndex, &config->nNodes, sizeof(config->nNodes));
     network->write(socketIndex, &config->nPipes, sizeof(config->nPipes));
-    for (NnSize pipeIndex = 0; pipeIndex < config->nPipes; pipeIndex++) {
+    for (NnUint pipeIndex = 0; pipeIndex < config->nPipes; pipeIndex++) {
         NnPipeConfig *pipeConfig = &config->pipes[pipeIndex];
         network->write(socketIndex, &pipeConfig->size, sizeof(pipeConfig->size));
         writeString(network, socketIndex, pipeConfig->name);
@@ -616,30 +621,30 @@ void NnRootConfigWriter::writeNet(NnSize socketIndex, NnNetConfig *config) {
     network->readAck(socketIndex);
 }
 
-void NnRootConfigWriter::writeNode(NnSize socketIndex, NnNodeConfig *config) {
+void NnRootConfigWriter::writeNode(NnUint socketIndex, NnNodeConfig *config) {
     network->writeAck(socketIndex);
     network->write(socketIndex, &config->nodeIndex, sizeof(config->nodeIndex));
     network->write(socketIndex, &config->nBuffers, sizeof(config->nBuffers));
     network->write(socketIndex, &config->nSegments, sizeof(config->nSegments));
 
-    for (NnSize bufferIndex = 0; bufferIndex < config->nBuffers; bufferIndex++) {
+    for (NnUint bufferIndex = 0; bufferIndex < config->nBuffers; bufferIndex++) {
         NnBufferConfig *bufferConfig = &config->buffers[bufferIndex];
         network->write(socketIndex, &bufferConfig->size, sizeof(bufferConfig->size));
         writeString(network, socketIndex, bufferConfig->name);
     }
 
-    for (NnSize segmentIndex = 0; segmentIndex < config->nSegments; segmentIndex++) {
+    for (NnUint segmentIndex = 0; segmentIndex < config->nSegments; segmentIndex++) {
         NnSegmentConfig *segmentConfig = &config->segments[segmentIndex];
         network->write(socketIndex, &segmentConfig->nSyncs, sizeof(segmentConfig->nSyncs));
         network->write(socketIndex, &segmentConfig->nOps, sizeof(segmentConfig->nOps));
         network->write(socketIndex, &segmentConfig->syncPointers, sizeof(segmentConfig->syncPointers));
 
-        for (NnSize syncIndex = 0; syncIndex < segmentConfig->nSyncs; syncIndex++) {
+        for (NnUint syncIndex = 0; syncIndex < segmentConfig->nSyncs; syncIndex++) {
             NnSyncConfig *syncConfig = &segmentConfig->syncs[syncIndex];
             network->write(socketIndex, &syncConfig->pipeIndex, sizeof(syncConfig->pipeIndex));
             network->write(socketIndex, &syncConfig->syncType, sizeof(syncConfig->syncType));
         }
-        for (NnSize opIndex = 0; opIndex < segmentConfig->nOps; opIndex++) {
+        for (NnUint opIndex = 0; opIndex < segmentConfig->nOps; opIndex++) {
             NnOpConfig *opConfig = &segmentConfig->ops[opIndex];
             network->write(socketIndex, &opConfig->code, sizeof(opConfig->code));
             network->write(socketIndex, &opConfig->index, sizeof(opConfig->index));
@@ -656,8 +661,8 @@ void NnRootConfigWriter::writeNode(NnSize socketIndex, NnNodeConfig *config) {
 }
 
 void NnRootConfigWriter::writeToWorkers(NnNetConfig *netConfig, NnNodeConfig *nodeConfigs) {
-    for (NnSize nodeIndex = 1; nodeIndex < netConfig->nNodes; nodeIndex++) {
-        NnSize socketIndex = nodeIndex - 1;
+    for (NnUint nodeIndex = 1; nodeIndex < netConfig->nNodes; nodeIndex++) {
+        NnUint socketIndex = nodeIndex - 1;
         writeNet(socketIndex, netConfig);
         writeNode(socketIndex, &nodeConfigs[nodeIndex]);
     }
@@ -674,7 +679,7 @@ NnNetConfig NnWorkerConfigReader::readNet() {
     network->read(ROOT_SOCKET_INDEX, &config.nNodes, sizeof(config.nNodes));
     network->read(ROOT_SOCKET_INDEX, &config.nPipes, sizeof(config.nPipes));
     config.pipes = new NnPipeConfig[config.nPipes];
-    for (NnSize pipeIndex = 0; pipeIndex < config.nPipes; pipeIndex++) {
+    for (NnUint pipeIndex = 0; pipeIndex < config.nPipes; pipeIndex++) {
         NnPipeConfig *pipeConfig = &config.pipes[pipeIndex];
         network->read(ROOT_SOCKET_INDEX, &pipeConfig->size, sizeof(pipeConfig->size));
         pipeConfig->name = readString(network, ROOT_SOCKET_INDEX);
@@ -694,13 +699,13 @@ NnNodeConfig NnWorkerConfigReader::readNode() {
     config.buffers = new NnBufferConfig[config.nBuffers];
     config.segments = new NnSegmentConfig[config.nSegments];
 
-    for (NnSize bufferIndex = 0; bufferIndex < config.nBuffers; bufferIndex++) {
+    for (NnUint bufferIndex = 0; bufferIndex < config.nBuffers; bufferIndex++) {
         NnBufferConfig *bufferConfig = &config.buffers[bufferIndex];
         network->read(ROOT_SOCKET_INDEX, &bufferConfig->size, sizeof(bufferConfig->size));
         bufferConfig->name = readString(network, ROOT_SOCKET_INDEX);
     }
 
-    for (NnSize segmentIndex = 0; segmentIndex < config.nSegments; segmentIndex++) {
+    for (NnUint segmentIndex = 0; segmentIndex < config.nSegments; segmentIndex++) {
         NnSegmentConfig *segmentConfig = &config.segments[segmentIndex];
         network->read(ROOT_SOCKET_INDEX, &segmentConfig->nSyncs, sizeof(segmentConfig->nSyncs));
         network->read(ROOT_SOCKET_INDEX, &segmentConfig->nOps, sizeof(segmentConfig->nOps));
@@ -709,7 +714,7 @@ NnNodeConfig NnWorkerConfigReader::readNode() {
         if (segmentConfig->nSyncs > 0) {
             segmentConfig->syncs = new NnSyncConfig[segmentConfig->nSyncs];
 
-            for (NnSize syncIndex = 0; syncIndex < segmentConfig->nSyncs; syncIndex++) {
+            for (NnUint syncIndex = 0; syncIndex < segmentConfig->nSyncs; syncIndex++) {
                 NnSyncConfig *syncConfig = &segmentConfig->syncs[syncIndex];
                 network->read(ROOT_SOCKET_INDEX, &syncConfig->pipeIndex, sizeof(syncConfig->pipeIndex));
                 network->read(ROOT_SOCKET_INDEX, &syncConfig->syncType, sizeof(syncConfig->syncType));
@@ -719,7 +724,7 @@ NnNodeConfig NnWorkerConfigReader::readNode() {
         if (segmentConfig->nOps > 0) {
             segmentConfig->ops = new NnOpConfig[segmentConfig->nOps];
 
-            for (NnSize opIndex = 0; opIndex < segmentConfig->nOps; opIndex++) {
+            for (NnUint opIndex = 0; opIndex < segmentConfig->nOps; opIndex++) {
                 NnOpConfig *opConfig = &segmentConfig->ops[opIndex];
                 network->read(ROOT_SOCKET_INDEX, &opConfig->code, sizeof(opConfig->code));
                 network->read(ROOT_SOCKET_INDEX, &opConfig->index, sizeof(opConfig->index));
@@ -739,7 +744,7 @@ NnNodeConfig NnWorkerConfigReader::readNode() {
     return config;
 }
 
-NnRootWeightLoader::NnRootWeightLoader(NnExecutor *executor, NnNetwork *network, NnSize nNodes) {
+NnRootWeightLoader::NnRootWeightLoader(NnExecutor *executor, NnNetwork *network, NnUint nNodes) {
     this->executor = executor;
     this->network = network;
     this->nNodes = nNodes;
@@ -752,8 +757,8 @@ NnRootWeightLoader::~NnRootWeightLoader() {
 }
 
 void NnRootWeightLoader::finish() {
-    NnSize zeroSize = 0;
-    for (NnSize socketIndex = 0; socketIndex < nNodes - 1; socketIndex++) {
+    NnUint zeroSize = 0;
+    for (NnUint socketIndex = 0; socketIndex < nNodes - 1; socketIndex++) {
         network->write(socketIndex, &zeroSize, sizeof(zeroSize));
         network->readAck(socketIndex);
     }
@@ -772,9 +777,9 @@ void NnRootWeightLoader::allocate(NnSize size) {
     }
 }
 
-void NnRootWeightLoader::writeWeight(NnSize nodeIndex, const char *opName, NnSize opIndex, NnSize nBytes, NnByte *weight) {
-    NnSize nameSize = std::strlen(opName) + 1;
-    NnSize socketIndex = nodeIndex - 1;
+void NnRootWeightLoader::writeWeight(NnUint nodeIndex, const char *opName, NnUint opIndex, NnSize nBytes, NnByte *weight) {
+    NnUint nameSize = std::strlen(opName) + 1;
+    NnUint socketIndex = nodeIndex - 1;
     network->write(socketIndex, &nameSize, sizeof(nameSize));
     network->write(socketIndex, opName, nameSize);
     network->write(socketIndex, &opIndex, sizeof(opIndex));
@@ -782,41 +787,49 @@ void NnRootWeightLoader::writeWeight(NnSize nodeIndex, const char *opName, NnSiz
     network->write(socketIndex, weight, nBytes);
 }
 
-NnSize NnRootWeightLoader::loadRoot(const char *opName, NnSize opIndex, NnSize nBytes, NnByte *weight) {
+NnSize NnRootWeightLoader::loadRoot(const char *opName, NnUint opIndex, NnSize nBytes, NnByte *weight) {
     executor->loadWeight(opName, opIndex, nBytes, weight);
     return nBytes;
 }
 
-NnSize NnRootWeightLoader::loadAll(const char *opName, NnSize opIndex, NnSize nBytes, NnByte *weight) {
-    for (NnSize nodeIndex = 0; nodeIndex < nNodes; nodeIndex++) {
-        if (nodeIndex == 0)
-            executor->loadWeight(opName, opIndex, nBytes, weight);
-        else
+NnSize NnRootWeightLoader::loadAll(const char *opName, NnUint opIndex, NnSize nBytes, NnByte *weight) {
+    executor->loadWeight(opName, opIndex, nBytes, weight);
+
+    if (nNodes > 1) {
+        for (NnUint nodeIndex = 1; nodeIndex < nNodes; nodeIndex++)
             writeWeight(nodeIndex, opName, opIndex, nBytes, weight);
     }
     return nBytes;
 }
 
-NnSize NnRootWeightLoader::loadRowMatmulSlices(const char *opName, NnSize opIndex, NnRowMatmulSlice *slice, NnByte *weight) {
-    allocate(slice->sliceSize.nBytes);
-    for (NnSize nodeIndex = 0; nodeIndex < nNodes; nodeIndex++) {
-        splitRowMatmulWeight(slice, nodeIndex, weight, temp);
-        if (nodeIndex == 0)
-            executor->loadWeight(opName, opIndex, slice->sliceSize.nBytes, temp);
-        else
-            writeWeight(nodeIndex, opName, opIndex, slice->sliceSize.nBytes, temp);
+NnSize NnRootWeightLoader::loadRowMatmulSlices(const char *opName, NnUint opIndex, NnRowMatmulSlice *slice, NnByte *weight) {
+    if (nNodes == 1) {
+        executor->loadWeight(opName, opIndex, slice->sliceSize.nBytes, weight);
+    } else {
+        allocate(slice->sliceSize.nBytes);
+        for (NnUint nodeIndex = 0; nodeIndex < nNodes; nodeIndex++) {
+            splitRowMatmulWeight(slice, nodeIndex, weight, temp);
+            if (nodeIndex == 0)
+                executor->loadWeight(opName, opIndex, slice->sliceSize.nBytes, temp);
+            else
+                writeWeight(nodeIndex, opName, opIndex, slice->sliceSize.nBytes, temp);
+        }
     }
     return slice->size.nBytes;
 }
 
-NnSize NnRootWeightLoader::loadColMatmulSlices(const char *opName, NnSize opIndex, NnColMatmulSlice *slice, NnByte *weight) {
-    allocate(slice->sliceSize.nBytes);
-    for (NnSize nodeIndex = 0; nodeIndex < nNodes; nodeIndex++) {
-        splitColMatmulWeight(slice, nodeIndex, weight, temp);
-        if (nodeIndex == 0)
-            executor->loadWeight(opName, opIndex, slice->sliceSize.nBytes, temp);
-        else
-            writeWeight(nodeIndex, opName, opIndex, slice->sliceSize.nBytes, temp);
+NnSize NnRootWeightLoader::loadColMatmulSlices(const char *opName, NnUint opIndex, NnColMatmulSlice *slice, NnByte *weight) {
+    if (nNodes == 1) {
+        executor->loadWeight(opName, opIndex, slice->sliceSize.nBytes, weight);
+    } else {
+        allocate(slice->sliceSize.nBytes);
+        for (NnUint nodeIndex = 0; nodeIndex < nNodes; nodeIndex++) {
+            splitColMatmulWeight(slice, nodeIndex, weight, temp);
+            if (nodeIndex == 0)
+                executor->loadWeight(opName, opIndex, slice->sliceSize.nBytes, temp);
+            else
+                writeWeight(nodeIndex, opName, opIndex, slice->sliceSize.nBytes, temp);
+        }
     }
     return slice->size.nBytes;
 }
@@ -832,7 +845,7 @@ NnWorkerWeightReader::~NnWorkerWeightReader() {
         delete[] temp;
 }
 
-void NnWorkerWeightReader::allocate(NnSize size) {
+void NnWorkerWeightReader::allocate(NnUint size) {
     if (tempSize < size) {
         if (tempSize > 0)
             delete[] temp;
@@ -842,8 +855,8 @@ void NnWorkerWeightReader::allocate(NnSize size) {
 }
 
 void NnWorkerWeightReader::read() {
-    NnSize nameSize;
-    NnSize opIndex;
+    NnUint nameSize;
+    NnUint opIndex;
     NnSize nBytes;
     while (true) {
         network->read(0, &nameSize, sizeof(nameSize));
@@ -855,15 +868,15 @@ void NnWorkerWeightReader::read() {
             }
             break;
         }
-        char *opName = new char[nameSize];
+        std::unique_ptr<char[]> opNamePtr(new char[nameSize]);
+        char *opName = opNamePtr.get();
         network->read(ROOT_SOCKET_INDEX, opName, nameSize);
         network->read(ROOT_SOCKET_INDEX, &opIndex, sizeof(opIndex));
         network->read(ROOT_SOCKET_INDEX, &nBytes, sizeof(nBytes));
         allocate(nBytes);
         network->read(0, temp, nBytes);
         executor->loadWeight(opName, opIndex, nBytes, temp);
-        printf("💿 Loaded %22s %3d, %12d kB\n", opName, opIndex, nBytes / 1024);
-        delete[] opName;
+        printf("💿 Loaded %22s %3d, %12zu kB\n", opName, opIndex, nBytes / 1024);
     }
     printf("💿 Weights loaded\n");
 }

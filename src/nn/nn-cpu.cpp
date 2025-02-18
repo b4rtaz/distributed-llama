@@ -16,7 +16,7 @@
 
 #define BUFFER_ALIGNMENT 64
 
-static NnByte *allocAlignedBuffer(size_t size) {
+static NnByte *allocAlignedBuffer(NnSize size) {
     NnByte *buffer;
 #ifdef _WIN32
     buffer = (NnByte *)_aligned_malloc(size, BUFFER_ALIGNMENT);
@@ -47,7 +47,7 @@ NnCpuDevice::NnCpuDevice(NnNetConfig *netConfig, NnNodeConfig *nodeConfig, NnNet
 
     nBuffers = nodeConfig->nBuffers;
     buffers = new NnByte *[nBuffers];
-    for (NnSize bufferIndex = 0; bufferIndex < nBuffers; bufferIndex++) {
+    for (NnUint bufferIndex = 0; bufferIndex < nBuffers; bufferIndex++) {
         NnBufferConfig *config = &nodeConfig->buffers[bufferIndex];
         NnByte *buffer = allocAlignedBuffer(config->size.nBytes);
         buffers[bufferIndex] = buffer;
@@ -58,17 +58,17 @@ NnCpuDevice::NnCpuDevice(NnNetConfig *netConfig, NnNodeConfig *nodeConfig, NnNet
 }
 
 NnCpuDevice::~NnCpuDevice() {
-    for (NnSize bufferIndex = 0; bufferIndex < nBuffers; bufferIndex++)
+    for (NnUint bufferIndex = 0; bufferIndex < nBuffers; bufferIndex++)
         releaseAlignedBuffer(buffers[bufferIndex]);
     delete[] buffers;
     delete[] bufferFlags;
 }
 
-NnSize NnCpuDevice::maxNThreads() {
+NnUint NnCpuDevice::maxNThreads() {
     return std::thread::hardware_concurrency();
 }
 
-NnDeviceSegment *NnCpuDevice::createSegment(NnSize segmentIndex) {
+NnDeviceSegment *NnCpuDevice::createSegment(NnUint segmentIndex) {
     NnSegmentConfig *segmentConfig = &nodeConfig->segments[segmentIndex];
     assert(segmentConfig->nOps > 0);
 
@@ -82,7 +82,7 @@ NnDeviceSegment *NnCpuDevice::createSegment(NnSize segmentIndex) {
     NnByte **inputs = inputsPtr.get();
     NnByte **outputs = outputsPtr.get();
 
-    for (NnSize opIndex = 0; opIndex < segmentConfig->nOps; opIndex++) {
+    for (NnUint opIndex = 0; opIndex < segmentConfig->nOps; opIndex++) {
         NnOpConfig *opConfig = &segmentConfig->ops[opIndex];
         NnSize2D inputSize;
         NnSize2D outputSize;
@@ -92,9 +92,9 @@ NnDeviceSegment *NnCpuDevice::createSegment(NnSize segmentIndex) {
             inputSize.floatType,
             opConfig->weightSize.floatType,
             outputSize.floatType);
-        #if DEBUG_CPU_OP_QUANTS
+#if DEBUG_CPU_OP_QUANTS
             printf("%20s %2d: %s\n", opConfig->name, opConfig->index, opQuantTypeToString(opQuant));
-        #endif
+#endif
         NnCpuOpForward forward = getCpuOpForward(opConfig->code, opQuant);
         if (forward == nullptr) {
             throw std::invalid_argument(
@@ -114,7 +114,7 @@ NnDeviceSegment *NnCpuDevice::createSegment(NnSize segmentIndex) {
     NnCpuOpForward *opForward = new NnCpuOpForward[segmentConfig->nOps];
     NnCpuOpContext *opContexts = new NnCpuOpContext[segmentConfig->nOps];
 
-    for (NnSize opIndex = 0; opIndex < segmentConfig->nOps; opIndex++) {
+    for (NnUint opIndex = 0; opIndex < segmentConfig->nOps; opIndex++) {
         NnOpConfig *opConfig = &segmentConfig->ops[opIndex];
         NnCpuOpContext *opContext = &opContexts[opIndex];
         NnCpuOpForwardInit opInit = getCpuOpForwardInit(opConfig->code, opQuants[opIndex]);
@@ -136,10 +136,12 @@ NnDeviceSegment *NnCpuDevice::createSegment(NnSize segmentIndex) {
         opContext->outputSize = outputSizes[opIndex];
         opContext->hasOutputContinuousMemory = hasPointerContinuousMemory(&opConfig->output);
 
+#if not(DEBUG_USE_MMAP_FOR_WEIGHTS)
         if (opContext->weightSize.nBytes > 0)
             opContext->weight = allocAlignedBuffer(opContext->weightSize.nBytes);
         else
             opContext->weight = nullptr;
+#endif
 
         if (opInit != nullptr)
             opInit(opContext);
@@ -149,14 +151,16 @@ NnDeviceSegment *NnCpuDevice::createSegment(NnSize segmentIndex) {
 }
 
 NnCpuDeviceSegment::~NnCpuDeviceSegment() {
-    for (NnSize opIndex = 0; opIndex < nOps; opIndex++) {
+    for (NnUint opIndex = 0; opIndex < nOps; opIndex++) {
         NnCpuOpContext *context = &opContexts[opIndex];
         if (opIndex == 0) {
             delete[] context->input;
             delete[] context->output;
         }
+#if not(DEBUG_USE_MMAP_FOR_WEIGHTS)
         if (context->weightSize.nBytes > 0)
             releaseAlignedBuffer(context->weight);
+#endif
     }
     delete[] opForward;
     delete[] opContexts;
@@ -178,8 +182,8 @@ void NnCpuDevice::resolvePointer(NnByte **pntr, NnSize2D *pntrSize, NnPointerCon
     if (pointerConfig->batchType == PNTR_BATCH_DEFAULT) {
         ASSERT_EQ(sourceSize->y, netConfig->nBatches);
 
-        NnSize batchBytes = getBytes(sourceSize->floatType, sourceSize->x);
-        for (NnSize batchIndex = 0; batchIndex < netConfig->nBatches; batchIndex++)
+        NnUint batchBytes = getBytes(sourceSize->floatType, sourceSize->x);
+        for (NnUint batchIndex = 0; batchIndex < netConfig->nBatches; batchIndex++)
             pntr[batchIndex] = &source[batchIndex * batchBytes];
         *pntrSize = *sourceSize;
 
@@ -187,9 +191,9 @@ void NnCpuDevice::resolvePointer(NnByte **pntr, NnSize2D *pntrSize, NnPointerCon
             return;
         if (pointerConfig->sliceType == SLICE_NODE_PART) {
             assert(sourceSize->x % netConfig->nNodes == 0);
-            NnSize xSlice = sourceSize->x / netConfig->nNodes;
-            NnSize xSliceBytes = getBytes(sourceSize->floatType, xSlice);
-            for (NnSize batchIndex = 0; batchIndex < netConfig->nBatches; batchIndex++)
+            NnUint xSlice = sourceSize->x / netConfig->nNodes;
+            NnUint xSliceBytes = getBytes(sourceSize->floatType, xSlice);
+            for (NnUint batchIndex = 0; batchIndex < netConfig->nBatches; batchIndex++)
                 pntr[batchIndex] = &pntr[batchIndex][xSliceBytes * nodeConfig->nodeIndex];
             *pntrSize = size2D(sourceSize->floatType, sourceSize->y, xSlice);
             return;
@@ -206,30 +210,34 @@ void NnCpuDevice::resolvePointer(NnByte **pntr, NnSize2D *pntrSize, NnPointerCon
 }
 
 void NnCpuDevice::syncPointers() {
-    NnSize nDynamicPointers = dynamicPointers.size();
-    for (NnSize dynamicPointerIndex = 0; dynamicPointerIndex < nDynamicPointers; dynamicPointerIndex++) {
+    NnUint nDynamicPointers = dynamicPointers.size();
+    for (NnUint dynamicPointerIndex = 0; dynamicPointerIndex < nDynamicPointers; dynamicPointerIndex++) {
         NnCpuDynamicPointer *dp = &dynamicPointers[dynamicPointerIndex];
         assert(dp->pointerConfig->batchType == PNTR_BATCH_PIPE);
         float *pipe = (float *)netExecution->pipes[dp->pointerConfig->batchArg0];
 
-        for (NnSize batchIndex = 0; batchIndex < netExecution->batchSize; batchIndex++) {
-            NnSize index = (NnSize)pipe[batchIndex];
+        for (NnUint batchIndex = 0; batchIndex < netExecution->batchSize; batchIndex++) {
+            NnUint index = (NnUint)pipe[batchIndex];
             assert(index < dp->sourceSize->y);
-            NnSize nBytes = dp->sourceSize->nBytes / dp->sourceSize->y;
+            NnUint nBytes = dp->sourceSize->nBytes / dp->sourceSize->y;
             dp->pntr[batchIndex] = &dp->source[index * nBytes];
         }
     }
 }
 
-void NnCpuDeviceSegment::loadWeight(NnSize opIndex, NnSize nBytes, NnByte *weight) {
+void NnCpuDeviceSegment::loadWeight(NnUint opIndex, NnSize nBytes, NnByte *weight) {
     assert(opIndex >= 0);
     assert(opIndex < nOps);
     NnCpuOpContext *context = &opContexts[opIndex];
-    ASSERT_EQ(context->weightSize.nBytes, nBytes);
+    assert(context->weightSize.nBytes == nBytes);
+#if DEBUG_USE_MMAP_FOR_WEIGHTS
+    context->weight = weight;
+#else
     std::memcpy(context->weight, weight, nBytes);
+#endif
 }
 
-void NnCpuDeviceSegment::forward(NnSize opIndex, NnSize nThreads, NnSize threadIndex, NnSize batchSize) {
+void NnCpuDeviceSegment::forward(NnUint opIndex, NnUint nThreads, NnUint threadIndex, NnUint batchSize) {
     NnCpuOpContext *context = &opContexts[opIndex];
     // printf("forward: %d %s (%d/%d)\n", opIndex, context->name, threadIndex + 1, nThreads); fflush(stdout);
     opForward[opIndex](nThreads, threadIndex, batchSize, context);

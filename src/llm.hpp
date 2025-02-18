@@ -37,29 +37,29 @@ enum LlmArchType {
 };
 
 typedef struct {
-    size_t headerSize;
-    size_t fileSize;
+    NnSize headerSize;
+    NnSize fileSize;
     int version;
     LlmArchType archType;
-    NnSize dim;
-    NnSize nLayers;
-    NnSize nHeads;
-    NnSize headSize;
-    NnSize nKvHeads;
-    NnSize nExperts;
-    NnSize nActiveExperts;
-    NnSize origSeqLen; // Original model context length
-    NnSize seqLen; // Limited context length by the `--max-seq-len` argument
-    NnSize hiddenDim;
+    NnUint dim;
+    NnUint nLayers;
+    NnUint nHeads;
+    NnUint headSize;
+    NnUint nKvHeads;
+    NnUint nExperts;
+    NnUint nActiveExperts;
+    NnUint origSeqLen; // Original model context length
+    NnUint seqLen; // Limited context length by the `--max-seq-len` argument
+    NnUint hiddenDim;
     LlmHiddenAct hiddenAct;
-    NnSize kvDim;
-    NnSize vocabSize;
+    NnUint kvDim;
+    NnUint vocabSize;
     float ropeTheta;
     NnRopeType ropeType;
     float ropeScalingFactor;
     float ropeScalingLowFreqFactor;
     float ropeScalingHighFreqFactory;
-    NnSize ropeScalingOrigMaxSeqLen;
+    NnUint ropeScalingOrigMaxSeqLen;
     float normEpsilon;
 
     NnFloatType weightType;
@@ -78,17 +78,17 @@ typedef struct {
     NnColMatmulSlice w2Slice;
     NnRowMatmulSlice w3Slice;
     NnRowMatmulSlice wclsSlice;
-    NnSize positionPipeIndex;
-    NnSize tokenPipeIndex;
-    NnSize xPipeIndex;
-    NnSize logitsPipeIndex;
+    NnUint positionPipeIndex;
+    NnUint tokenPipeIndex;
+    NnUint xPipeIndex;
+    NnUint logitsPipeIndex;
     NnSize2D tokenEmbeddingSize;
     NnSize2D rmsNormSize;
 } LlmNet;
 
 LlmHeader loadLlmHeader(const char* path, const unsigned int maxSeqLen, NnFloatType syncType);
 void printLlmHeader(LlmHeader *header);
-LlmNet buildLlmNet(LlmHeader *h, NnSize nNodes, NnSize nBatches);
+LlmNet buildLlmNet(LlmHeader *h, NnUint nNodes, NnUint nBatches);
 void releaseLlmNet(LlmNet *net);
 void loadLlmNetWeight(const char* path, LlmNet *net, NnRootWeightLoader *loader);
 

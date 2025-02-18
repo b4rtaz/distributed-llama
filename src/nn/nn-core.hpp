@@ -11,8 +11,8 @@
 
 typedef struct {
     NnFloatType floatType;
-    NnSize y;
-    NnSize x;
+    NnUint y;
+    NnUint x;
     NnSize length;
     NnSize nBytes;
 } NnSize2D;
@@ -20,49 +20,49 @@ typedef struct {
 // slices
 
 typedef struct {
-    NnSize kvDim0;
+    NnUint kvDim0;
     NnSize2D keySize;
     NnSize2D valueSize;
 } NnKvCacheSlice;
 
 typedef struct {
     NnFloatType type;
-    NnSize nNodes;
-    NnSize d0;
-    NnSize n;
+    NnUint nNodes;
+    NnUint d0;
+    NnUint n;
     NnSize2D size;
     NnSize2D sliceSize;
 } NnRowMatmulSlice;
 
 typedef struct {
     NnFloatType type;
-    NnSize nNodes;
-    NnSize n;
-    NnSize n0;
-    NnSize d;
+    NnUint nNodes;
+    NnUint n;
+    NnUint n0;
+    NnUint d;
     NnSize2D size;
     NnSize2D sliceSize;
 } NnColMatmulSlice;
 
 typedef struct {
-    NnSize qDim0;
-    NnSize qDimStart;
-    NnSize qDimEnd;
-    NnSize qShift;
-    NnSize kvDim;
-    NnSize kvDim0;
-    NnSize kvDimStart;
-    NnSize sliceDim;
-    NnSize seqLen;
-    NnSize headSize;
-    NnSize nKvHeads;
+    NnUint qDim0;
+    NnUint qDimStart;
+    NnUint qDimEnd;
+    NnUint qShift;
+    NnUint kvDim;
+    NnUint kvDim0;
+    NnUint kvDimStart;
+    NnUint sliceDim;
+    NnUint seqLen;
+    NnUint headSize;
+    NnUint nKvHeads;
     float ropeTheta;
     NnSize2D cacheSize;
 } NnRopeSlice;
 
 typedef struct {
-    NnSize nHeads;
-    NnSize nHeads0;
+    NnUint nHeads;
+    NnUint nHeads0;
     NnSize2D attSize;
 } NnMultiHeadAttSlice;
 
@@ -138,48 +138,48 @@ typedef struct {
 
 typedef struct {
     NnPointerType pointerType;
-    NnSize pointerIndex;
+    NnUint pointerIndex;
     NnPointerSliceType sliceType;
     NnPointerBatchType batchType;
-    NnSize batchArg0;
+    NnUint batchArg0;
 } NnPointerConfig;
 
 typedef struct {
     NnOpCode code;
     char *name;
-    NnSize index;
+    NnUint index;
     NnPointerConfig input;
     NnPointerConfig output;
     NnSize2D weightSize;
     NnByte *config;
-    NnSize configSize;
+    NnUint configSize;
 } NnOpConfig;
 
 typedef struct {
-    NnSize pipeIndex;
+    NnUint pipeIndex;
     NnSyncType syncType;
 } NnSyncConfig;
 
 typedef struct  {
-    NnSize nOps;
+    NnUint nOps;
     NnOpConfig *ops;
-    NnSize nSyncs;
+    NnUint nSyncs;
     NnSyncConfig *syncs;
     bool syncPointers;
 } NnSegmentConfig;
 
 typedef struct {
-    NnSize nBatches;
-    NnSize nNodes;
-    NnSize nPipes;
+    NnUint nBatches;
+    NnUint nNodes;
+    NnUint nPipes;
     NnPipeConfig *pipes;
 } NnNetConfig;
 
 typedef struct {
-    NnSize nodeIndex;
-    NnSize nBuffers;
+    NnUint nodeIndex;
+    NnUint nBuffers;
     NnBufferConfig *buffers;
-    NnSize nSegments;
+    NnUint nSegments;
     NnSegmentConfig *segments;
 } NnNodeConfig;
 
@@ -194,7 +194,7 @@ typedef struct {
 } NnInvRmsOpConfig;
 
 typedef struct {
-    NnSize invRmsBufferIndex;
+    NnUint invRmsBufferIndex;
 } NnRmsNormOpConfig;
 
 typedef struct {
@@ -203,24 +203,24 @@ typedef struct {
 
 typedef struct {
     bool isQ;
-    NnSize positionPipeIndex;
-    NnSize ropeCacheBufferIndex;
+    NnUint positionPipeIndex;
+    NnUint ropeCacheBufferIndex;
     float ropeScalingFactor;
     float ropeScalingLowFreqFactor;
     float ropeScalingHighFreqFactory;
-    NnSize ropeScalingOrigMaxSeqLen;
+    NnUint ropeScalingOrigMaxSeqLen;
     NnRopeSlice slice;
 } NnRopeLlamaOpConfig;
 
 typedef struct {
-    NnSize nKvHeads;
-    NnSize headSize;
-    NnSize seqLen;
-    NnSize positionPipeIndex;
-    NnSize queryBufferIndex;
-    NnSize keyCacheBufferIndex;
-    NnSize valueCacheBufferIndex;
-    NnSize attBufferIndex;
+    NnUint nKvHeads;
+    NnUint headSize;
+    NnUint seqLen;
+    NnUint positionPipeIndex;
+    NnUint queryBufferIndex;
+    NnUint keyCacheBufferIndex;
+    NnUint valueCacheBufferIndex;
+    NnUint attBufferIndex;
     NnRowMatmulSlice qSlice;
     NnKvCacheSlice kvCacheSlice;
     NnMultiHeadAttSlice multiHeadAttSlice;
@@ -251,11 +251,11 @@ NnSize getBytes(NnFloatType floatType, NnSize n);
 NnSize getBlockSize(NnFloatType floatType);
 NnOpQuantType getOpQuantType(NnFloatType input, NnFloatType weight, NnFloatType output);
 NnSize2D size0();
-NnSize2D size1D(NnFloatType floatType, NnSize x);
-NnSize2D size2D(NnFloatType floatType, NnSize y, NnSize x);
-NnPointerConfig pointerConfig(NnPointerType type, NnSize index);
-NnPointerConfig pointerConfigWithPipedBatch(NnPointerType type, NnSize index, NnSize pipeIndex);
-NnPointerConfig slicedPointerConfig(NnPointerType type, NnSize index);
+NnSize2D size1D(NnFloatType floatType, NnUint x);
+NnSize2D size2D(NnFloatType floatType, NnUint y, NnUint x);
+NnPointerConfig pointerConfig(NnPointerType type, NnUint index);
+NnPointerConfig pointerConfigWithPipedBatch(NnPointerType type, NnUint index, NnUint pipeIndex);
+NnPointerConfig slicedPointerConfig(NnPointerType type, NnUint index);
 bool hasPointerContinuousMemory(NnPointerConfig *config);
 
 void releaseNetConfig(NnNetConfig *netConfig);
@@ -268,21 +268,21 @@ private:
     std::chrono::time_point<std::chrono::high_resolution_clock> startTime;
 public:
     Timer();
-    NnSize elapsedMiliseconds();
-    NnSize elapsedMicroseconds();
+    NnUint elapsedMiliseconds();
+    NnUint elapsedMicroseconds();
 };
 
 // slicers
 
-NnKvCacheSlice sliceKvCache(NnSize kvDim, NnSize seqLen, NnSize nNodes);
-NnRowMatmulSlice sliceRowMatmul(NnFloatType type, NnSize nNodes, NnSize n, NnSize d);
-NnColMatmulSlice sliceColMatmul(NnFloatType type, NnSize nNodes, NnSize n, NnSize d);
-NnRopeSlice sliceRope(NnSize dim, NnSize kvDim, NnSize nKvHeads, NnSize nNodes, NnSize seqLen, NnSize headSize, float ropeTheta, NnSize nodeIndex);
-NnMultiHeadAttSlice sliceMultiHeadAtt(NnSize nHeads, NnSize seqLen, NnSize nNodes);
+NnKvCacheSlice sliceKvCache(NnUint kvDim, NnUint seqLen, NnUint nNodes);
+NnRowMatmulSlice sliceRowMatmul(NnFloatType type, NnUint nNodes, NnUint n, NnUint d);
+NnColMatmulSlice sliceColMatmul(NnFloatType type, NnUint nNodes, NnUint n, NnUint d);
+NnRopeSlice sliceRope(NnUint dim, NnUint kvDim, NnUint nKvHeads, NnUint nNodes, NnUint seqLen, NnUint headSize, float ropeTheta, NnUint nodeIndex);
+NnMultiHeadAttSlice sliceMultiHeadAtt(NnUint nHeads, NnUint seqLen, NnUint nNodes);
 
 // splitters
 
-NnSize splitRowMatmulWeight(NnRowMatmulSlice *slice, NnSize nodeIndex, NnByte *weight, NnByte *weight0);
-NnSize splitColMatmulWeight(NnColMatmulSlice *slice, NnSize nodeIndex, NnByte *weight, NnByte *weight0);
+NnUint splitRowMatmulWeight(NnRowMatmulSlice *slice, NnUint nodeIndex, NnByte *weight, NnByte *weight0);
+NnUint splitColMatmulWeight(NnColMatmulSlice *slice, NnUint nodeIndex, NnByte *weight, NnByte *weight0);
 
 #endif

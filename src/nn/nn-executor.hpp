@@ -9,41 +9,41 @@
 class NnDeviceSegment {
 public:
     virtual ~NnDeviceSegment() {};
-    virtual void loadWeight(NnSize opIndex, NnSize nBytes, NnByte *weight) = 0;
-    virtual void forward(NnSize opIndex, NnSize nThreads, NnSize threadIndex, NnSize batchSize) = 0;
+    virtual void loadWeight(NnUint opIndex, NnSize nBytes, NnByte *weight) = 0;
+    virtual void forward(NnUint opIndex, NnUint nThreads, NnUint threadIndex, NnUint batchSize) = 0;
 };
 
 class NnDevice {
 public:
-    virtual NnSize maxNThreads() = 0;
-    virtual NnDeviceSegment *createSegment(NnSize segmentIndex) = 0;
+    virtual NnUint maxNThreads() = 0;
+    virtual NnDeviceSegment *createSegment(NnUint segmentIndex) = 0;
     virtual void syncPointers() = 0;
 };
 
 class NnNodeSynchronizer {
 public:
     virtual ~NnNodeSynchronizer() {};
-    virtual void sync(NnSize segmentIndex, NnSize nThreads, NnSize threadIndex) = 0;
+    virtual void sync(NnUint segmentIndex, NnUint nThreads, NnUint threadIndex) = 0;
 };
 
 class NnFakeNodeSynchronizer : public NnNodeSynchronizer {
 public:
     ~NnFakeNodeSynchronizer() override {};
-    void sync(NnSize segmentIndex, NnSize nThreads, NnSize threadIndex) override;
+    void sync(NnUint segmentIndex, NnUint nThreads, NnUint threadIndex) override;
 };
 
 class NnNetExecution {
 public:
-    NnSize nThreads;
+    NnUint nThreads;
     NnByte **pipes;
-    NnSize batchSize;
+    NnUint batchSize;
 private:
-    NnSize nBatches;
-    NnSize nPipes;
+    NnUint nBatches;
+    NnUint nPipes;
 public:
-    NnNetExecution(NnSize nThreads, NnNetConfig *netConfig);
+    NnNetExecution(NnUint nThreads, NnNetConfig *netConfig);
     ~NnNetExecution();
-    void setBatchSize(NnSize batchSize);
+    void setBatchSize(NnUint batchSize);
 };
 
 enum NnExecutorStepType {
@@ -55,23 +55,23 @@ enum NnExecutorStepType {
 typedef struct {
     NnExecutorStepType type;
     NnDeviceSegment *segment;
-    NnSize arg0;
+    NnUint arg0;
     NnOpConfig *opConfig;
 } NnExecutorStep;
 
 typedef struct {
-    NnSize nThreads;
-    NnSize nSteps;
+    NnUint nThreads;
+    NnUint nSteps;
     NnExecutorStep *steps;
     NnNodeSynchronizer *synchronizer;
     NnDevice *device;
     std::atomic_uint currentStepIndex;
     std::atomic_uint doneThreadCount;
-    NnSize batchSize;
+    NnUint batchSize;
 } NnExecutorContext;
 
 typedef struct {
-    NnSize threadIndex;
+    NnUint threadIndex;
     NnExecutorContext *context;
     PthreadHandler handler;
 } NnExecutorThread;
@@ -86,7 +86,7 @@ public:
     NnExecutorContext context;
     NnExecutor(NnNetConfig *netConfig, NnNodeConfig *nodeConfig, NnDevice *device, NnNetExecution *netExecution, NnNodeSynchronizer *synchronizer);
     ~NnExecutor();
-    void loadWeight(const char *name, NnSize index, NnSize nBytes, NnByte *weight);
+    void loadWeight(const char *name, NnUint index, NnSize nBytes, NnByte *weight);
     void forward();
 };
 

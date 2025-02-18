@@ -7,12 +7,12 @@
 #define N_BATCHES 2
 
 void buildConfig(NnNetConfig *netConfig, NnNodeConfig *nodeConfig) {
-    NnSize nNodes = 1;
+    NnUint nNodes = 1;
     NnNetConfigBuilder netBuilder(nNodes, N_BATCHES);
-    NnSize xPipeIndex = netBuilder.addPipe("X", size2D(F_32, N_BATCHES, DIM));
+    NnUint xPipeIndex = netBuilder.addPipe("X", size2D(F_32, N_BATCHES, DIM));
 
     NnNodeConfigBuilder nodeBuilder(0);
-    NnSize invRmsBufferIndex = nodeBuilder.addBuffer("inv_rms", size2D(F_32, N_BATCHES, 1));
+    NnUint invRmsBufferIndex = nodeBuilder.addBuffer("inv_rms", size2D(F_32, N_BATCHES, 1));
     NnSegmentConfigBuilder segmentBuilder;
     segmentBuilder.addSync(xPipeIndex, SYNC_NODE_SLICES_EXCEPT_ROOT);
 
@@ -34,10 +34,10 @@ void buildConfig(NnNetConfig *netConfig, NnNodeConfig *nodeConfig) {
     *nodeConfig = nodeBuilder.build();
 }
 
-void print2D(const char *name, NnSize x, NnSize y, float *w) {
-    for (NnSize i = 0; i < y; i++) {
+void print2D(const char *name, NnUint x, NnUint y, float *w) {
+    for (NnUint i = 0; i < y; i++) {
         printf("%s[%d] = ", name, i);
-        for (NnSize j = 0; j < x; j++)
+        for (NnUint j = 0; j < x; j++)
             printf("%f ", w[i * x + j]);
         printf("\n");
     }
@@ -46,22 +46,22 @@ void print2D(const char *name, NnSize x, NnSize y, float *w) {
 int main() {
     initQuants();
 
-    NnSize nThreads = 2;
+    NnUint nThreads = 2;
     NnNetConfig netConfig;
     NnNodeConfig nodeConfig;
     buildConfig(&netConfig, &nodeConfig);
 
     NnNetExecution execution(nThreads, &netConfig);
     float *x = (float *)execution.pipes[0];
-    for (NnSize b = 0; b < N_BATCHES; b++) {
-        for (NnSize i = 0; i < DIM; i++)
+    for (NnUint b = 0; b < N_BATCHES; b++) {
+        for (NnUint i = 0; i < DIM; i++)
             x[b * DIM + i] = i / (float)DIM + (float)b;
     }
 
     print2D("x", DIM, N_BATCHES, x);
 
     float rmsNormWeight[DIM];
-    for (NnSize i = 0; i < DIM; i++)
+    for (NnUint i = 0; i < DIM; i++)
         rmsNormWeight[i] = 0.5 + i / (float)DIM;
 
     NnCpuDevice device(&netConfig, &nodeConfig, &execution);

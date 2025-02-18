@@ -23,7 +23,7 @@ static const char *archTypeToString(LlmArchType type) {
     throw std::runtime_error("Unsupported architecture");
 }
 
-LlmHeader loadLlmHeader(const char *path, const NnSize maxSeqLen, NnFloatType syncType) {
+LlmHeader loadLlmHeader(const char *path, const NnUint maxSeqLen, NnFloatType syncType) {
     LlmHeader header;
     std::memset(&header, 0, sizeof(LlmHeader));
     header.weightType = F_UNK;
@@ -93,7 +93,7 @@ LlmHeader loadLlmHeader(const char *path, const NnSize maxSeqLen, NnFloatType sy
     header.headSize = header.dim / header.nHeads;
     header.kvDim = (header.dim  *header.nKvHeads) / header.nHeads;
     header.syncType = syncType;
-    header.fileSize = (size_t)seekToEnd(fd);
+    header.fileSize = (NnSize)seekToEnd(fd);
     return header;
 }
 
@@ -122,7 +122,7 @@ void printLlmHeader(LlmHeader *header) {
     }
 }
 
-LlmNet buildLlmNet(LlmHeader *h, NnSize nNodes, NnSize nBatches) {
+LlmNet buildLlmNet(LlmHeader *h, NnUint nNodes, NnUint nBatches) {
     LlmNet n;
     n.tokenEmbeddingSize = size2D(F_32, h->vocabSize, h->dim);
     n.rmsNormSize = size1D(F_32, h->dim);
@@ -146,37 +146,37 @@ LlmNet buildLlmNet(LlmHeader *h, NnSize nNodes, NnSize nBatches) {
     n.tokenPipeIndex = netBuilder.addPipe("TOK", size2D(F_32, nBatches, 1));
     n.xPipeIndex = netBuilder.addPipe("X", size2D(F_32, nBatches, h->dim));
     n.logitsPipeIndex = netBuilder.addPipe("LG", size2D(F_32, nBatches, h->vocabSize));
-    const NnSize zqPipeIndex = netBuilder.addPipe("ZQ", size2D(h->syncType, nBatches, h->dim * nNodes));
+    const NnUint zqPipeIndex = netBuilder.addPipe("ZQ", size2D(h->syncType, nBatches, h->dim * nNodes));
 
     n.header = h;
     n.netConfig = netBuilder.build();
     n.nodeConfigs = new NnNodeConfig[nNodes];
 
-    for (NnSize nodeIndex = 0; nodeIndex < nNodes; nodeIndex++) {
+    for (NnUint nodeIndex = 0; nodeIndex < nNodes; nodeIndex++) {
         NnRopeSlice ropeSlice = sliceRope(h->dim, h->kvDim, h->nKvHeads, nNodes, h->seqLen, h->headSize, h->ropeTheta, nodeIndex);
         NnNodeConfigBuilder nodeBuilder(nodeIndex);
 
-        const NnSize xBufferIndex = nodeBuilder.addBuffer("x", size2D(F_32, nBatches, h->dim));
+        const NnUint xBufferIndex = nodeBuilder.addBuffer("x", size2D(F_32, nBatches, h->dim));
         
-        const NnSize yBufferIndex = nodeBuilder.addBuffer("y", size2D(F_32, nBatches, h->dim));
-        const NnSize yqBufferIndex = h->syncType == F_32
+        const NnUint yBufferIndex = nodeBuilder.addBuffer("y", size2D(F_32, nBatches, h->dim));
+        const NnUint yqBufferIndex = h->syncType == F_32
             ? yBufferIndex
             : nodeBuilder.addBuffer("yq", size2D(h->syncType, nBatches, h->dim));
-        const NnSize yqSliceIndex = nodeBuilder.addBuffer("yq_slice", size2D(h->syncType, nBatches, h->dim / nNodes));
+        const NnUint yqSliceIndex = nodeBuilder.addBuffer("yq_slice", size2D(h->syncType, nBatches, h->dim / nNodes));
 
-        const NnSize qBufferIndex = nodeBuilder.addBuffer("q", size2D(F_32, nBatches, n.qSlice.d0));
-        const NnSize kTempBufferIndex = nodeBuilder.addBuffer("k_temp", size2D(F_32, nBatches, n.kSlice.d0));
-        const NnSize vTempBufferIndex = nodeBuilder.addBuffer("v_temp", size2D(F_32, nBatches, n.vSlice.d0));
+        const NnUint qBufferIndex = nodeBuilder.addBuffer("q", size2D(F_32, nBatches, n.qSlice.d0));
+        const NnUint kTempBufferIndex = nodeBuilder.addBuffer("k_temp", size2D(F_32, nBatches, n.kSlice.d0));
+        const NnUint vTempBufferIndex = nodeBuilder.addBuffer("v_temp", size2D(F_32, nBatches, n.vSlice.d0));
 
-        const NnSize dBufferIndex = nodeBuilder.addBuffer("d", size2D(F_32, nBatches, n.w1Slice.d0));
-        const NnSize dqBufferIndex = h->syncType == F_32
+        const NnUint dBufferIndex = nodeBuilder.addBuffer("d", size2D(F_32, nBatches, n.w1Slice.d0));
+        const NnUint dqBufferIndex = h->syncType == F_32
             ? dBufferIndex
             : nodeBuilder.addBuffer("d", size2D(h->syncType, nBatches, n.w1Slice.d0));
-        const NnSize lBufferIndex = nodeBuilder.addBuffer("l", size2D(F_32, nBatches, n.w3Slice.d0));
-        const NnSize invRmsBufferIndex = nodeBuilder.addBuffer("inv_rms", size2D(F_32, nBatches, 1));
-        const NnSize ropeCacheBufferIndex = nodeBuilder.addBuffer("rope_cache", ropeSlice.cacheSize);
-        const NnSize attBufferIndex = nodeBuilder.addBuffer("att", multiHeadAttSlice.attSize);
-        const NnSize logitsSliceBufferIndex = nodeBuilder.addBuffer("lg", size2D(F_32, nBatches, h->vocabSize / nNodes));
+        const NnUint lBufferIndex = nodeBuilder.addBuffer("l", size2D(F_32, nBatches, n.w3Slice.d0));
+        const NnUint invRmsBufferIndex = nodeBuilder.addBuffer("inv_rms", size2D(F_32, nBatches, 1));
+        const NnUint ropeCacheBufferIndex = nodeBuilder.addBuffer("rope_cache", ropeSlice.cacheSize);
+        const NnUint attBufferIndex = nodeBuilder.addBuffer("att", multiHeadAttSlice.attSize);
+        const NnUint logitsSliceBufferIndex = nodeBuilder.addBuffer("lg", size2D(F_32, nBatches, h->vocabSize / nNodes));
 
         NnSegmentConfigBuilder start;
         if (nodeIndex == 0) {
@@ -191,9 +191,9 @@ LlmNet buildLlmNet(LlmHeader *h, NnSize nNodes, NnSize nBatches) {
         start.setSyncPointers(true);
         nodeBuilder.addSegment(start.build());
 
-        for (NnSize layerIndex = 0; layerIndex < h->nLayers; layerIndex++) {
-            const NnSize kBufferIndex = nodeBuilder.addBuffer("k", kvCacheSlice.keySize);
-            const NnSize vBufferIndex = nodeBuilder.addBuffer("v", kvCacheSlice.valueSize);
+        for (NnUint layerIndex = 0; layerIndex < h->nLayers; layerIndex++) {
+            const NnUint kBufferIndex = nodeBuilder.addBuffer("k", kvCacheSlice.keySize);
+            const NnUint vBufferIndex = nodeBuilder.addBuffer("v", kvCacheSlice.valueSize);
 
             NnSegmentConfigBuilder att;
             NnSegmentConfigBuilder ff;
@@ -436,7 +436,7 @@ LlmNet buildLlmNet(LlmHeader *h, NnSize nNodes, NnSize nBatches) {
 }
 
 void releaseLlmNet(LlmNet *net) {
-    for (NnSize nodeIndex = 0; nodeIndex < net->netConfig.nNodes; nodeIndex++)
+    for (NnUint nodeIndex = 0; nodeIndex < net->netConfig.nNodes; nodeIndex++)
         releaseNodeConfig(&net->nodeConfigs[nodeIndex]);
     releaseNetConfig(&net->netConfig);
     delete[] net->nodeConfigs;
@@ -445,14 +445,19 @@ void releaseLlmNet(LlmNet *net) {
 void loadLlmNetWeight(const char *path, LlmNet *net, NnRootWeightLoader *loader) {
     MmapFile file;
     openMmapFile(&file, path, net->header->fileSize);
+#if DEBUG_USE_MMAP_FOR_WEIGHTS
+    assert(net->netConfig.nNodes == 1);
+#else
     std::unique_ptr<MmapFile, void(*)(MmapFile *)> fdPtr(&file, closeMmapFile);
+    printf("💿 Loading weights...\n");
+#endif
 
     NnByte *data = (NnByte *)file.data;
     NnByte *b = &data[net->header->headerSize];
-    NnSize nodeIndex = 0;
+    NnUint nodeIndex = 0;
     b += loader->loadRoot("embedding", 0, net->tokenEmbeddingSize.nBytes, b);
 
-    for (NnSize layerIndex = 0; layerIndex < net->header->nLayers; layerIndex++) {
+    for (NnUint layerIndex = 0; layerIndex < net->header->nLayers; layerIndex++) {
         b += loader->loadRowMatmulSlices("block_matmul_q", layerIndex, &net->qSlice, b);
         b += loader->loadRowMatmulSlices("block_matmul_k", layerIndex, &net->kSlice, b);
         b += loader->loadRowMatmulSlices("block_matmul_v", layerIndex, &net->vSlice, b);
@@ -467,8 +472,9 @@ void loadLlmNetWeight(const char *path, LlmNet *net, NnRootWeightLoader *loader)
     b += loader->loadAll("final_rms_norm", 0, net->rmsNormSize.nBytes, b);
     b += loader->loadRowMatmulSlices("final_matmul_logits", 0, &net->wclsSlice, b);
 
-    unsigned long missingBytes = (b - data) - net->header->fileSize;
-    assert(missingBytes == 0);
+    long long missingBytes = (long long)(b - data) - net->header->fileSize;
+    if (missingBytes != 0)
+        throw std::runtime_error("Missing bytes in weight file: " + std::to_string(missingBytes));
     printf("💿 Weights loaded\n");
 
     loader->finish();

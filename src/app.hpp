@@ -10,8 +10,8 @@
 class AppCliArgs {
 public:
     char *mode;
-    NnSize nThreads;
-    NnSize nBatches;
+    NnUint nThreads;
+    NnUint nBatches;
     bool help;
 
     // inference
@@ -19,27 +19,27 @@ public:
     char *tokenizerPath;
     char *prompt;
     NnFloatType syncType;
-    NnSize nWorkers;
+    NnUint nWorkers;
     char **workerHosts;
-    NnSize *workerPorts;
+    NnUint *workerPorts;
     float temperature;
     float topp;
-    NnSize steps;
+    NnUint steps;
     bool benchmark;
     unsigned long long seed;
     ChatTemplateType chatTemplateType;
-    NnSize maxSeqLen;
+    NnUint maxSeqLen;
 
     // worker
-    NnSize port;
+    NnUint port;
 
     static AppCliArgs parse(int argc, char **argv, bool hasMode);
     ~AppCliArgs();
 };
 
 typedef struct {
-    NnSize position;
-    NnSize batchSize; // 0 = stop signal
+    NnUint position;
+    NnUint batchSize; // 0 = stop signal
 } LlmControlPacket;
 
 class RootLlmInference {
@@ -56,9 +56,9 @@ private:
     LlmControlPacket controlPacket;
 public:
     RootLlmInference(LlmNet *net, NnDevice *device, NnNetExecution *execution, NnExecutor *executor, NnNetwork *network);
-    void setBatchSize(NnSize batchSize);
-    void setPosition(NnSize position);
-    void setToken(NnSize batchIndex, NnSize token);
+    void setBatchSize(NnUint batchSize);
+    void setPosition(NnUint position);
+    void setToken(NnUint batchIndex, NnUint token);
     void forward();
     void finish();
 };

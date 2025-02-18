@@ -97,24 +97,24 @@ NnSize2D size0() {
     return { F_UNK, 0, 0, 0, 0 };
 }
 
-NnSize2D size1D(NnFloatType floatType, NnSize x) {
+NnSize2D size1D(NnFloatType floatType, NnUint x) {
     return size2D(floatType, 1, x);
 }
 
-NnSize2D size2D(NnFloatType floatType, NnSize y, NnSize x) {
+NnSize2D size2D(NnFloatType floatType, NnUint y, NnUint x) {
     NnSize length = y * x;
     return { floatType, y, x, length, getBytes(floatType, length) };
 }
 
-NnPointerConfig pointerConfig(NnPointerType type, NnSize index) {
+NnPointerConfig pointerConfig(NnPointerType type, NnUint index) {
     return { type, index, SLICE_NONE, PNTR_BATCH_DEFAULT, 0 /* not used*/ };
 }
 
-NnPointerConfig pointerConfigWithPipedBatch(NnPointerType type, NnSize index, NnSize pipeIndex) {
+NnPointerConfig pointerConfigWithPipedBatch(NnPointerType type, NnUint index, NnUint pipeIndex) {
     return { type, index, SLICE_NONE, PNTR_BATCH_PIPE, pipeIndex };
 }
 
-NnPointerConfig slicedPointerConfig(NnPointerType type, NnSize index) {
+NnPointerConfig slicedPointerConfig(NnPointerType type, NnUint index) {
     return { type, index, SLICE_NODE_PART, PNTR_BATCH_DEFAULT, 0 /* not used*/ };
 }
 
@@ -123,17 +123,17 @@ bool hasPointerContinuousMemory(NnPointerConfig *config) {
 }
 
 void releaseNetConfig(NnNetConfig *netConfig) {
-    for (NnSize pipeIndex = 0; pipeIndex < netConfig->nPipes; pipeIndex++) {
+    for (NnUint pipeIndex = 0; pipeIndex < netConfig->nPipes; pipeIndex++) {
         delete[] netConfig->pipes[pipeIndex].name;
     }
     delete[] netConfig->pipes;
 }
 
 void releaseNodeConfig(NnNodeConfig *nodeConfig) {
-    for (NnSize segmentIndex = 0; segmentIndex < nodeConfig->nSegments; segmentIndex++) {
+    for (NnUint segmentIndex = 0; segmentIndex < nodeConfig->nSegments; segmentIndex++) {
         NnSegmentConfig *segment = &nodeConfig->segments[segmentIndex];
         if (segment->nOps > 0) {
-            for (NnSize opIndex = 0; opIndex < segment->nOps; opIndex++) {
+            for (NnUint opIndex = 0; opIndex < segment->nOps; opIndex++) {
                 NnOpConfig *op = &segment->ops[opIndex];
                 delete[] op->name;
                 delete[] op->config;
@@ -143,7 +143,7 @@ void releaseNodeConfig(NnNodeConfig *nodeConfig) {
         if (segment->nSyncs > 0)
             delete[] segment->syncs;
     }
-    for (NnSize bufferIndex = 0; bufferIndex < nodeConfig->nBuffers; bufferIndex++)
+    for (NnUint bufferIndex = 0; bufferIndex < nodeConfig->nBuffers; bufferIndex++)
         delete[] nodeConfig->buffers[bufferIndex].name;
     delete[] nodeConfig->buffers;
     delete[] nodeConfig->segments;
@@ -151,13 +151,13 @@ void releaseNodeConfig(NnNodeConfig *nodeConfig) {
 
 void printNodeRequiredMemory(NnNetConfig *netConfig, NnNodeConfig *nodeConfig) {
     unsigned long total = 0;
-    for (NnSize pipeIndex = 0; pipeIndex < netConfig->nPipes; pipeIndex++)
+    for (NnUint pipeIndex = 0; pipeIndex < netConfig->nPipes; pipeIndex++)
         total += netConfig->pipes[pipeIndex].size.nBytes;
-    for (NnSize bufferIndex = 0; bufferIndex < nodeConfig->nBuffers; bufferIndex++)
+    for (NnUint bufferIndex = 0; bufferIndex < nodeConfig->nBuffers; bufferIndex++)
         total += nodeConfig->buffers[bufferIndex].size.nBytes;
-    for (NnSize segmentIndex = 0; segmentIndex < nodeConfig->nSegments; segmentIndex++) {
+    for (NnUint segmentIndex = 0; segmentIndex < nodeConfig->nSegments; segmentIndex++) {
         NnSegmentConfig *segment = &nodeConfig->segments[segmentIndex];
-        for (NnSize opIndex = 0; opIndex < segment->nOps; opIndex++) {
+        for (NnUint opIndex = 0; opIndex < segment->nOps; opIndex++) {
             total += segment->ops[opIndex].weightSize.nBytes;
             total += segment->ops[opIndex].configSize;
         }
@@ -169,19 +169,19 @@ Timer::Timer() {
     startTime = std::chrono::high_resolution_clock::now();
 }
 
-NnSize Timer::elapsedMiliseconds() {
+NnUint Timer::elapsedMiliseconds() {
     auto endTime = std::chrono::high_resolution_clock::now();
-    return (NnSize)std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
+    return (NnUint)std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
 }
 
-NnSize Timer::elapsedMicroseconds() {
+NnUint Timer::elapsedMicroseconds() {
     auto endTime = std::chrono::high_resolution_clock::now();
-    return (NnSize)std::chrono::duration_cast<std::chrono::microseconds>(endTime - startTime).count();
+    return (NnUint)std::chrono::duration_cast<std::chrono::microseconds>(endTime - startTime).count();
 }
 
 // slicers
 
-NnKvCacheSlice sliceKvCache(NnSize kvDim, NnSize seqLen, NnSize nNodes) {
+NnKvCacheSlice sliceKvCache(NnUint kvDim, NnUint seqLen, NnUint nNodes) {
     NnKvCacheSlice s;
     assert(kvDim % nNodes == 0);
     s.kvDim0 = kvDim / nNodes;
@@ -190,7 +190,7 @@ NnKvCacheSlice sliceKvCache(NnSize kvDim, NnSize seqLen, NnSize nNodes) {
     return s;
 }
 
-NnRowMatmulSlice sliceRowMatmul(NnFloatType type, NnSize nNodes, NnSize n, NnSize d) {
+NnRowMatmulSlice sliceRowMatmul(NnFloatType type, NnUint nNodes, NnUint n, NnUint d) {
     NnRowMatmulSlice s;
     assert(d % nNodes == 0);
     s.type = type;
@@ -202,7 +202,7 @@ NnRowMatmulSlice sliceRowMatmul(NnFloatType type, NnSize nNodes, NnSize n, NnSiz
     return s;
 }
 
-NnColMatmulSlice sliceColMatmul(NnFloatType type, NnSize nNodes, NnSize n, NnSize d) {
+NnColMatmulSlice sliceColMatmul(NnFloatType type, NnUint nNodes, NnUint n, NnUint d) {
     NnColMatmulSlice s;
     assert(n % nNodes == 0);
     s.type = type;
@@ -215,7 +215,7 @@ NnColMatmulSlice sliceColMatmul(NnFloatType type, NnSize nNodes, NnSize n, NnSiz
     return s;
 }
 
-NnRopeSlice sliceRope(NnSize dim, NnSize kvDim, NnSize nKvHeads, NnSize nNodes, NnSize seqLen, NnSize headSize, float ropeTheta, NnSize nodeIndex) {
+NnRopeSlice sliceRope(NnUint dim, NnUint kvDim, NnUint nKvHeads, NnUint nNodes, NnUint seqLen, NnUint headSize, float ropeTheta, NnUint nodeIndex) {
     NnRopeSlice s;
     assert(dim >= kvDim);
     assert(dim % nNodes == 0);
@@ -242,7 +242,7 @@ NnRopeSlice sliceRope(NnSize dim, NnSize kvDim, NnSize nKvHeads, NnSize nNodes, 
     return s;
 }
 
-NnMultiHeadAttSlice sliceMultiHeadAtt(NnSize nHeads, NnSize seqLen, NnSize nNodes) {
+NnMultiHeadAttSlice sliceMultiHeadAtt(NnUint nHeads, NnUint seqLen, NnUint nNodes) {
     NnMultiHeadAttSlice s;
     assert(nHeads % nNodes == 0);
     s.nHeads = nHeads;
@@ -253,7 +253,7 @@ NnMultiHeadAttSlice sliceMultiHeadAtt(NnSize nHeads, NnSize seqLen, NnSize nNode
 
 // splitters
 
-NnSize splitRowMatmulWeight(NnRowMatmulSlice *slice, NnSize nodeIndex, NnByte *weight, NnByte *weight0) {
+NnUint splitRowMatmulWeight(NnRowMatmulSlice *slice, NnUint nodeIndex, NnByte *weight, NnByte *weight0) {
     NnSize blockSize = getBlockSize(slice->type);
     NnSize batchBytes = getBytes(slice->type, blockSize);
     assert(slice->n % blockSize == 0);
@@ -261,8 +261,8 @@ NnSize splitRowMatmulWeight(NnRowMatmulSlice *slice, NnSize nodeIndex, NnByte *w
     NnSize n = slice->n / blockSize;
     NnSize offset = slice->d0 * nodeIndex * n * batchBytes;
     NnSize copiedBytes = 0;
-    for (NnSize d = 0; d < slice->d0; d++) {
-        for (NnSize j = 0; j < n; j++) {
+    for (NnUint d = 0; d < slice->d0; d++) {
+        for (NnUint j = 0; j < n; j++) {
             NnSize o = (d * n + j) * batchBytes;
             std::memcpy(weight0 + o, weight + offset + o, batchBytes);
             copiedBytes += batchBytes;
@@ -271,7 +271,7 @@ NnSize splitRowMatmulWeight(NnRowMatmulSlice *slice, NnSize nodeIndex, NnByte *w
     return copiedBytes;
 }
 
-NnSize splitColMatmulWeight(NnColMatmulSlice *slice, NnSize nodeIndex, NnByte *weight, NnByte *weight0) {
+NnUint splitColMatmulWeight(NnColMatmulSlice *slice, NnUint nodeIndex, NnByte *weight, NnByte *weight0) {
     NnSize blockSize = getBlockSize(slice->type);
     NnSize batchBytes = getBytes(slice->type, blockSize);
     assert(slice->n0 % blockSize == 0);
@@ -281,7 +281,7 @@ NnSize splitColMatmulWeight(NnColMatmulSlice *slice, NnSize nodeIndex, NnByte *w
     NnSize row0Bytes = (slice->n0 / blockSize) * batchBytes;
     NnSize rowOffsetBytes = nodeIndex * row0Bytes;
     NnSize copiedBytes = 0;
-    for (NnSize d = 0; d < slice->d; d++) {
+    for (NnUint d = 0; d < slice->d; d++) {
         std::memcpy(&weight0[row0Bytes * d], &weight[rowBytes * d + rowOffsetBytes], row0Bytes);
         copiedBytes += row0Bytes;
     }

@@ -5,6 +5,8 @@
 #include "nn-executor.hpp"
 #include "nn-cpu-ops.hpp"
 
+#define DEBUG_USE_MMAP_FOR_WEIGHTS false
+
 typedef struct {
     NnByte *source;
     NnSize2D *sourceSize;
@@ -19,28 +21,28 @@ private:
     NnNetConfig *netConfig;
     NnNodeConfig *nodeConfig;
     NnNetExecution *netExecution;
-    NnSize nBuffers;
+    NnUint nBuffers;
     NnByte *bufferFlags;
     std::vector<NnCpuDynamicPointer> dynamicPointers;
 public:
     NnCpuDevice(NnNetConfig *netConfig, NnNodeConfig *nodeConfig, NnNetExecution *netExecution);
     ~NnCpuDevice();
-    NnSize maxNThreads() override;
-    NnDeviceSegment *createSegment(NnSize segmentIndex) override;
+    NnUint maxNThreads() override;
+    NnDeviceSegment *createSegment(NnUint segmentIndex) override;
     void syncPointers() override;
     void resolvePointer(NnByte **pntr, NnSize2D *pntrSize, NnPointerConfig *pointerConfig);
 };
 
 class NnCpuDeviceSegment : public NnDeviceSegment {
 public:
-    NnSize nOps;
+    NnUint nOps;
     NnCpuOpForward *opForward;
     NnCpuOpContext *opContexts;
-    NnCpuDeviceSegment(NnCpuOpForward *opForward, NnCpuOpContext *opContexts, NnSize nOps)
+    NnCpuDeviceSegment(NnCpuOpForward *opForward, NnCpuOpContext *opContexts, NnUint nOps)
         : opForward(opForward), opContexts(opContexts), nOps(nOps) {}
     ~NnCpuDeviceSegment() override;
-    void loadWeight(NnSize opIndex, NnSize nBytes, NnByte *weight) override;
-    void forward(NnSize opIndex, NnSize nThreads, NnSize threadIndex, NnSize batchSize) override;
+    void loadWeight(NnUint opIndex, NnSize nBytes, NnByte *weight) override;
+    void forward(NnUint opIndex, NnUint nThreads, NnUint threadIndex, NnUint batchSize) override;
 };
 
 #endif

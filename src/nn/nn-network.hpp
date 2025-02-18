@@ -9,8 +9,8 @@ void initSockets();
 void cleanupSockets();
 int acceptSocket(int serverSocket);
 void setReuseAddr(int socket);
-void writeSocket(int socket, const void* data, size_t size);
-void readSocket(int socket, void* data, size_t size);
+void writeSocket(int socket, const void* data, NnSize size);
+void readSocket(int socket, void* data, NnSize size);
 int createServerSocket(int port);
 void closeServerSocket(int serverSocket);
 
@@ -29,36 +29,36 @@ public:
 };
 
 struct NnSocketIo {
-    NnSize socketIndex;
+    NnUint socketIndex;
     const void *data;
-    size_t size;
+    NnSize size;
 };
 
 class NnNetwork {
 private:
     int *sockets;
-    std::atomic_uint sentBytes;
-    std::atomic_uint recvBytes;
+    NnSize *sentBytes;
+    NnSize *recvBytes;
 
 public:
     static std::unique_ptr<NnNetwork> serve(int port);
-    static std::unique_ptr<NnNetwork> connect(NnSize nSockets, char **hosts, NnSize *ports);
+    static std::unique_ptr<NnNetwork> connect(NnUint nSockets, char **hosts, NnUint *ports);
 
-    NnSize nSockets;
+    NnUint nSockets;
 
-    NnNetwork(NnSize nSockets, int *sockets);
+    NnNetwork(NnUint nSockets, int *sockets);
     ~NnNetwork();
 
     void setTurbo(bool enabled);
-    void write(NnSize socketIndex, const void *data, size_t size);
-    void read(NnSize socketIndex, void *data, size_t size);
-    void writeAck(NnSize socketIndex);
-    void readAck(NnSize socketIndex);
-    bool tryReadWithMaxAttempts(NnSize socketIndex, void *data, size_t size, unsigned long maxAttempts);
-    void writeMany(NnSize n, NnSocketIo *ios);
-    void writeAll(void *data, size_t size);
-    void readMany(NnSize n, NnSocketIo *ios);
-    void getStats(size_t *sentBytes, size_t *recvBytes);
+    void write(const NnUint socketIndex, const void *data, const NnSize size);
+    void read(const NnUint socketIndex, void *data, const NnSize size);
+    void writeAck(const NnUint socketIndex);
+    void readAck(const NnUint socketIndex);
+    bool tryReadWithMaxAttempts(NnUint socketIndex, void *data, NnSize size, unsigned long maxAttempts);
+    void writeMany(NnUint n, NnSocketIo *ios);
+    void writeAll(void *data, NnSize size);
+    void readMany(NnUint n, NnSocketIo *ios);
+    void getStats(NnSize *sentBytes, NnSize *recvBytes);
     void resetStats();
 };
 
@@ -71,7 +71,7 @@ private:
 public:
     NnNetworkNodeSynchronizer(NnNetwork *network, NnNetExecution *execution, NnNetConfig *netConfig, NnNodeConfig *nodeConfig);
     ~NnNetworkNodeSynchronizer() override {};
-    void sync(NnSize segmentIndex, NnSize nThreads, NnSize threadIndex) override;
+    void sync(NnUint segmentIndex, NnUint nThreads, NnUint threadIndex) override;
 };
 
 class NnRootConfigWriter {
@@ -79,8 +79,8 @@ private:
     NnNetwork *network;
 public:
     NnRootConfigWriter(NnNetwork *network);
-    void writeNet(NnSize socketIndex, NnNetConfig *config);
-    void writeNode(NnSize socketIndex, NnNodeConfig *config);
+    void writeNet(NnUint socketIndex, NnNetConfig *config);
+    void writeNode(NnUint socketIndex, NnNodeConfig *config);
     void writeToWorkers(NnNetConfig *netConfig, NnNodeConfig *nodeConfigs);
 };
 
@@ -97,17 +97,17 @@ class NnRootWeightLoader {
 private:
     NnExecutor *executor;
     NnNetwork *network;
-    NnSize nNodes;
+    NnUint nNodes;
     NnByte *temp;
     NnSize tempSize;
 public:
-    NnRootWeightLoader(NnExecutor *executor, NnNetwork *network, NnSize nNodes);
+    NnRootWeightLoader(NnExecutor *executor, NnNetwork *network, NnUint nNodes);
     ~NnRootWeightLoader();
-    void writeWeight(NnSize nodeIndex, const char *opName, NnSize opIndex, NnSize nBytes, NnByte *weight);
-    NnSize loadRoot(const char *opName, NnSize opIndex, NnSize nBytes, NnByte *weight);
-    NnSize loadAll(const char *opName, NnSize opIndex, NnSize nBytes, NnByte *weight);
-    NnSize loadRowMatmulSlices(const char *opName, NnSize opIndex, NnRowMatmulSlice *slice, NnByte *weight);
-    NnSize loadColMatmulSlices(const char *opName, NnSize opIndex, NnColMatmulSlice *slice, NnByte *weight);
+    void writeWeight(NnUint nodeIndex, const char *opName, NnUint opIndex, NnSize nBytes, NnByte *weight);
+    NnSize loadRoot(const char *opName, NnUint opIndex, NnSize nBytes, NnByte *weight);
+    NnSize loadAll(const char *opName, NnUint opIndex, NnSize nBytes, NnByte *weight);
+    NnSize loadRowMatmulSlices(const char *opName, NnUint opIndex, NnRowMatmulSlice *slice, NnByte *weight);
+    NnSize loadColMatmulSlices(const char *opName, NnUint opIndex, NnColMatmulSlice *slice, NnByte *weight);
     void finish();
 private:
     void allocate(NnSize size);};
@@ -117,13 +117,13 @@ private:
     NnExecutor *executor;
     NnNetwork *network;
     NnByte *temp;
-    NnSize tempSize;
+    NnUint tempSize;
 public:
     NnWorkerWeightReader(NnExecutor *executor, NnNetwork *network);
     ~NnWorkerWeightReader();
     void read();
 private:
-    void allocate(NnSize size);
+    void allocate(NnUint size);
 };
 
 #endif
