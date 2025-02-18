@@ -20,7 +20,7 @@ typedef SSIZE_T ssize_t;
 #define SOCKET_LAST_ERRCODE errno
 #define SOCKET_LAST_ERROR strerror(errno)
 
-#define ACK 23571113
+#define ACK 23571114
 #define MAX_CHUNK_SIZE 4096
 
 static inline bool isEagainError() {
@@ -81,7 +81,7 @@ void setReuseAddr(int socket) {
     #endif
 }
 
-void writeSocket(int socket, const void *data, size_t size) {
+void writeSocket(int socket, const void *data, NnSize size) {
     while (size > 0) {
         ssize_t s = send(socket, (const char*)data, size, 0);
         if (s < 0) {
@@ -97,9 +97,9 @@ void writeSocket(int socket, const void *data, size_t size) {
     }
 }
 
-static inline bool tryReadSocket(int socket, void *data, size_t size, unsigned long maxAttempts) {
+static inline bool tryReadSocket(int socket, void *data, NnSize size, unsigned long maxAttempts) {
     // maxAttempts = 0 means infinite attempts
-    size_t s = size;
+    NnSize s = size;
     while (s > 0) {
         ssize_t r = recv(socket, (char*)data, s, 0);
         if (r < 0) {
@@ -122,7 +122,7 @@ static inline bool tryReadSocket(int socket, void *data, size_t size, unsigned l
     return true;
 }
 
-void readSocket(int socket, void *data, size_t size) {
+void readSocket(int socket, void *data, NnSize size) {
     if (!tryReadSocket(socket, data, size, 0)) {
         throw std::runtime_error("Error reading from socket");
     }
@@ -271,7 +271,7 @@ std::unique_ptr<NnNetwork> NnNetwork::serve(int port) {
     int *ports = new int[nNodes];
     printf("⭕ Socket[0]: accepted root node\n");
 
-    size_t hostLen;
+    NnUint hostLen;
     for (NnUint i = 0; i < nNodes; i++) {
         readSocket(rootSocket, &hostLen, sizeof(hostLen));
         hosts[i] = new char[hostLen];
@@ -313,7 +313,6 @@ std::unique_ptr<NnNetwork> NnNetwork::connect(NnUint nSockets, char **hosts, NnU
 
     int *sockets = new int[nSockets];
     struct sockaddr_in addr;
-    NnUint confirmPacket;
     for (NnUint i = 0; i < nSockets; i++) {
         printf("⭕ Socket[%d]: connecting to %s:%d worker\n", i, hosts[i], ports[i]);
         int socket = connectSocket(hosts[i], ports[i]);
@@ -323,7 +322,7 @@ std::unique_ptr<NnNetwork> NnNetwork::connect(NnUint nSockets, char **hosts, NnU
         for (NnUint j = 0; j < nSockets; j++) {
             if (j == i)
                 continue;
-            size_t hostLen = strlen(hosts[j]) + 1;
+            NnUint hostLen = strlen(hosts[j]) + 1;
             writeSocket(socket, &hostLen, sizeof(hostLen));
             writeSocket(socket, hosts[j], hostLen);
             writeSocket(socket, &ports[j], sizeof(ports[j]));
@@ -360,27 +359,27 @@ void NnNetwork::setTurbo(bool enabled) {
     }
 }
 
-void NnNetwork::write(NnUint socketIndex, const void *data, size_t size) {
+void NnNetwork::write(NnUint socketIndex, const void *data, NnSize size) {
     assert(socketIndex >= 0 && socketIndex < nSockets);
     sentBytes.fetch_add(size);
 
     char *current = (char*)data;
     int s = sockets[socketIndex];
-    for (size_t chunk = 0; chunk < size; chunk += MAX_CHUNK_SIZE) {
-        size_t chunkSize = chunk + MAX_CHUNK_SIZE < size ? MAX_CHUNK_SIZE : size - chunk;
+    for (NnSize chunk = 0; chunk < size; chunk += MAX_CHUNK_SIZE) {
+        NnSize chunkSize = chunk + MAX_CHUNK_SIZE < size ? MAX_CHUNK_SIZE : size - chunk;
         writeSocket(s, current, chunkSize);
         current += chunkSize;
     }
 }
 
-void NnNetwork::read(NnUint socketIndex, void *data, size_t size) {
+void NnNetwork::read(NnUint socketIndex, void *data, NnSize size) {
     assert(socketIndex >= 0 && socketIndex < nSockets);
     recvBytes.fetch_add(size);
 
     char *current = (char*)data;
     int s = sockets[socketIndex];
-    for (size_t chunk = 0; chunk < size; chunk += MAX_CHUNK_SIZE) {
-        size_t chunkSize = chunk + MAX_CHUNK_SIZE < size ? MAX_CHUNK_SIZE : size - chunk;
+    for (NnSize chunk = 0; chunk < size; chunk += MAX_CHUNK_SIZE) {
+        NnSize chunkSize = chunk + MAX_CHUNK_SIZE < size ? MAX_CHUNK_SIZE : size - chunk;
         readSocket(s, current, chunkSize);
         current += chunkSize;
     }
@@ -396,7 +395,7 @@ void NnNetwork::readAck(NnUint socketIndex) {
     readAckPacket(sockets[socketIndex]);
 }
 
-bool NnNetwork::tryReadWithMaxAttempts(NnUint socketIndex, void *data, size_t size, unsigned long maxAttempts) {
+bool NnNetwork::tryReadWithMaxAttempts(NnUint socketIndex, void *data, NnSize size, unsigned long maxAttempts) {
     assert(socketIndex >= 0 && socketIndex < nSockets);
     if (tryReadSocket(sockets[socketIndex], data, size, maxAttempts)) {
         recvBytes.fetch_add(size);
@@ -407,7 +406,7 @@ bool NnNetwork::tryReadWithMaxAttempts(NnUint socketIndex, void *data, size_t si
 
 void NnNetwork::writeMany(NnUint n, NnSocketIo *ios) {
     bool isWriting;
-    size_t nBytes = 0;
+    NnSize nBytes = 0;
     for (NnUint i = 0; i < n; i++) {
         NnSocketIo *io = &ios[i];
         assert(io->socketIndex >= 0 && io->socketIndex < nSockets);
@@ -438,7 +437,7 @@ void NnNetwork::writeMany(NnUint n, NnSocketIo *ios) {
     sentBytes.fetch_add(nBytes);
 }
 
-void NnNetwork::writeAll(void *data, size_t size) {
+void NnNetwork::writeAll(void *data, NnSize size) {
     std::vector<NnSocketIo> ios(nSockets);
     for (NnUint i = 0; i < nSockets; i++) {
         NnSocketIo *io = &ios[i];
@@ -451,7 +450,7 @@ void NnNetwork::writeAll(void *data, size_t size) {
 
 void NnNetwork::readMany(NnUint n, NnSocketIo *ios) {
     bool isReading;
-    size_t nBytes = 0;
+    NnSize nBytes = 0;
     for (NnUint i = 0; i < n; i++) {
         NnSocketIo *io = &ios[i];
         assert(io->socketIndex >= 0 && io->socketIndex < nSockets);
@@ -481,7 +480,7 @@ void NnNetwork::readMany(NnUint n, NnSocketIo *ios) {
     recvBytes.fetch_add(nBytes);
 }
 
-void NnNetwork::getStats(size_t *sentBytes, size_t *recvBytes) {
+void NnNetwork::getStats(NnSize *sentBytes, NnSize *recvBytes) {
     *sentBytes = this->sentBytes.load();
     *recvBytes = this->recvBytes.load();
     resetStats();
@@ -852,7 +851,7 @@ void NnWorkerWeightReader::allocate(NnUint size) {
 void NnWorkerWeightReader::read() {
     NnUint nameSize;
     NnUint opIndex;
-    NnUint nBytes;
+    NnSize nBytes;
     while (true) {
         network->read(0, &nameSize, sizeof(nameSize));
         if (nameSize == 0) {
@@ -863,15 +862,15 @@ void NnWorkerWeightReader::read() {
             }
             break;
         }
-        char *opName = new char[nameSize];
+        std::unique_ptr<char[]> opNamePtr(new char[nameSize]);
+        char *opName = opNamePtr.get();
         network->read(ROOT_SOCKET_INDEX, opName, nameSize);
         network->read(ROOT_SOCKET_INDEX, &opIndex, sizeof(opIndex));
         network->read(ROOT_SOCKET_INDEX, &nBytes, sizeof(nBytes));
         allocate(nBytes);
         network->read(0, temp, nBytes);
         executor->loadWeight(opName, opIndex, nBytes, temp);
-        printf("💿 Loaded %22s %3d, %12d kB\n", opName, opIndex, nBytes / 1024);
-        delete[] opName;
+        printf("💿 Loaded %22s %3d, %12zu kB\n", opName, opIndex, nBytes / 1024);
     }
     printf("💿 Weights loaded\n");
 }

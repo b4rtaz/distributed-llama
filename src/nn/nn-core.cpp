@@ -21,7 +21,7 @@ NnSize getBytes(NnFloatType floatType, NnSize n) {
     throw std::invalid_argument("Unsupported float type: " + std::to_string(floatType));
 }
 
-NnUint getBlockSize(NnFloatType floatType) {
+NnSize getBlockSize(NnFloatType floatType) {
     if (floatType == F_32)
         return 1;
     if (floatType == F_16)
@@ -254,11 +254,11 @@ NnMultiHeadAttSlice sliceMultiHeadAtt(NnUint nHeads, NnUint seqLen, NnUint nNode
 // splitters
 
 NnUint splitRowMatmulWeight(NnRowMatmulSlice *slice, NnUint nodeIndex, NnByte *weight, NnByte *weight0) {
-    NnUint blockSize = getBlockSize(slice->type);
+    NnSize blockSize = getBlockSize(slice->type);
     NnSize batchBytes = getBytes(slice->type, blockSize);
     assert(slice->n % blockSize == 0);
 
-    NnUint n = slice->n / blockSize;
+    NnSize n = slice->n / blockSize;
     NnSize offset = slice->d0 * nodeIndex * n * batchBytes;
     NnSize copiedBytes = 0;
     for (NnUint d = 0; d < slice->d0; d++) {
@@ -272,11 +272,11 @@ NnUint splitRowMatmulWeight(NnRowMatmulSlice *slice, NnUint nodeIndex, NnByte *w
 }
 
 NnUint splitColMatmulWeight(NnColMatmulSlice *slice, NnUint nodeIndex, NnByte *weight, NnByte *weight0) {
-    NnUint blockSize = getBlockSize(slice->type);
+    NnSize blockSize = getBlockSize(slice->type);
     NnSize batchBytes = getBytes(slice->type, blockSize);
     assert(slice->n0 % blockSize == 0);
 
-    NnUint n = slice->n / blockSize;
+    NnSize n = slice->n / blockSize;
     NnSize rowBytes = n * batchBytes;
     NnSize row0Bytes = (slice->n0 / blockSize) * batchBytes;
     NnSize rowOffsetBytes = nodeIndex * row0Bytes;

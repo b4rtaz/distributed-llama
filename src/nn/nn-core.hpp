@@ -248,7 +248,7 @@ const char *opCodeToString(NnOpCode code);
 const char *opQuantTypeToString(NnOpQuantType type);
 
 NnSize getBytes(NnFloatType floatType, NnSize n);
-NnUint getBlockSize(NnFloatType floatType);
+NnSize getBlockSize(NnFloatType floatType);
 NnOpQuantType getOpQuantType(NnFloatType input, NnFloatType weight, NnFloatType output);
 NnSize2D size0();
 NnSize2D size1D(NnFloatType floatType, NnUint x);

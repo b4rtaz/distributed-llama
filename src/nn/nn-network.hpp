@@ -9,8 +9,8 @@ void initSockets();
 void cleanupSockets();
 int acceptSocket(int serverSocket);
 void setReuseAddr(int socket);
-void writeSocket(int socket, const void* data, size_t size);
-void readSocket(int socket, void* data, size_t size);
+void writeSocket(int socket, const void* data, NnSize size);
+void readSocket(int socket, void* data, NnSize size);
 int createServerSocket(int port);
 void closeServerSocket(int serverSocket);
 
@@ -31,7 +31,7 @@ public:
 struct NnSocketIo {
     NnUint socketIndex;
     const void *data;
-    size_t size;
+    NnSize size;
 };
 
 class NnNetwork {
@@ -50,15 +50,15 @@ public:
     ~NnNetwork();
 
     void setTurbo(bool enabled);
-    void write(NnUint socketIndex, const void *data, size_t size);
-    void read(NnUint socketIndex, void *data, size_t size);
+    void write(NnUint socketIndex, const void *data, NnSize size);
+    void read(NnUint socketIndex, void *data, NnSize size);
     void writeAck(NnUint socketIndex);
     void readAck(NnUint socketIndex);
-    bool tryReadWithMaxAttempts(NnUint socketIndex, void *data, size_t size, unsigned long maxAttempts);
+    bool tryReadWithMaxAttempts(NnUint socketIndex, void *data, NnSize size, unsigned long maxAttempts);
     void writeMany(NnUint n, NnSocketIo *ios);
-    void writeAll(void *data, size_t size);
+    void writeAll(void *data, NnSize size);
     void readMany(NnUint n, NnSocketIo *ios);
-    void getStats(size_t *sentBytes, size_t *recvBytes);
+    void getStats(NnSize *sentBytes, NnSize *recvBytes);
     void resetStats();
 };
 
