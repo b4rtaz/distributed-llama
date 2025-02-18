@@ -114,6 +114,7 @@ sudo apt install git build-essential
 2. Clone this repository and compile Distributed Llama on all computers:
 ```sh
 git clone https://github.com/b4rtaz/distributed-llama.git
+cd distributed-llama
 make dllama
 make dllama-api
 ```
@@ -129,6 +130,7 @@ choco install mingw
 2. Clone this repository and compile Distributed Llama on all computers:
 ```sh
 git clone https://github.com/b4rtaz/distributed-llama.git
+cd distributed-llama
 make dllama
 make dllama-api
 ```
@@ -175,6 +177,7 @@ sudo apt install git
 5. Clone this repository and compile Distributed Llama on all devices:
 ```sh
 git clone https://github.com/b4rtaz/distributed-llama.git
+cd distributed-llama
 make dllama
 make dllama-api
 ```
