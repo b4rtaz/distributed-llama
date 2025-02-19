@@ -26,7 +26,7 @@ private:
     std::vector<NnCpuDynamicPointer> dynamicPointers;
 public:
     NnCpuDevice(NnNetConfig *netConfig, NnNodeConfig *nodeConfig, NnNetExecution *netExecution);
-    ~NnCpuDevice();
+    ~NnCpuDevice() override;
     NnUint maxNThreads() override;
     NnDeviceSegment *createSegment(NnUint segmentIndex) override;
     void syncPointers() override;

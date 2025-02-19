@@ -2,6 +2,9 @@
 #include <cassert>
 #include <cstring>
 #include <stdexcept>
+#if defined(DLLAMA_VULKAN)
+    #include "nn/nn-vulkan.hpp"
+#endif
 
 static NnFloatType parseFloatType(char *val) {
     if (std::strcmp(val, "f32") == 0) return F_32;
@@ -119,6 +122,10 @@ AppCliArgs::~AppCliArgs() {
         delete[] workerPorts;
 }
 
+static NnDevice *createDevice(NnNetConfig *netConfig, NnNodeConfig *nodeConfig, NnNetExecution *netExecution) {
+    return new NnCpuDevice(netConfig, nodeConfig, netExecution);
+}
+
 RootLlmInference::RootLlmInference(LlmNet *net, NnDevice *device, NnNetExecution *execution, NnExecutor *executor, NnNetwork *network) {
     this->header = net->header;
     this->tokenPipe = (float *)execution->pipes[net->tokenPipeIndex];
@@ -226,13 +233,13 @@ void runInferenceApp(AppCliArgs *args, void (*handler)(AppInferenceContext *cont
         configWriter.writeToWorkers(&net.netConfig, net.nodeConfigs);
     }
 
-    NnCpuDevice cpu(&net.netConfig, rootNodeConfig, &execution);
-    NnExecutor executor(&net.netConfig, rootNodeConfig, &cpu, &execution, synchronizer.get());
+    std::unique_ptr<NnDevice> device(createDevice(&net.netConfig, rootNodeConfig, &execution));
+    NnExecutor executor(&net.netConfig, rootNodeConfig, device.get(), &execution, synchronizer.get());
 
     NnRootWeightLoader weightLoader(&executor, network, nNodes);
     loadLlmNetWeight(args->modelPath, &net, &weightLoader);
 
-    RootLlmInference inference(&net, &cpu, &execution, &executor, network);
+    RootLlmInference inference(&net, device.get(), &execution, &executor, network);
 
     if (network != nullptr) {
         network->resetStats();
@@ -267,9 +274,10 @@ void runWorkerApp(AppCliArgs *args) {
 
         NnNetExecution execution(args->nThreads, &netConfig);
 
+        std::unique_ptr<NnDevice> device(createDevice(&netConfig, &nodeConfig, &execution));
+
         NnNetworkNodeSynchronizer synchronizer(network, &execution, &netConfig, &nodeConfig);
-        NnCpuDevice cpu(&netConfig, &nodeConfig, &execution);
-        NnExecutor executor(&netConfig, &nodeConfig, &cpu, &execution, &synchronizer);
+        NnExecutor executor(&netConfig, &nodeConfig, device.get(), &execution, &synchronizer);
 
         NnWorkerWeightReader weightReader(&executor, network);
         weightReader.read();
