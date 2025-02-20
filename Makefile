@@ -30,10 +30,10 @@ endif
 endif
 
 ifeq ($(OS),Windows_NT)
-    LIBS = -lws2_32
+    LIBS += -lws2_32
 	DELETE_CMD = del /f
 else
-    LIBS = -lpthread
+    LIBS += -lpthread
     DELETE_CMD = rm -fv
 endif
 

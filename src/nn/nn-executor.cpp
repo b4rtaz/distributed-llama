@@ -40,7 +40,7 @@ NnExecutor::NnExecutor(NnNetConfig *netConfig, NnNodeConfig *nodeConfig, NnDevic
 {
     NnUint maxNThreads = device->maxNThreads();
     if (netExecution->nThreads > maxNThreads)
-        throw std::invalid_argument("This CPU supports max " + std::to_string(maxNThreads) + " threads");
+        throw std::invalid_argument("This device supports max " + std::to_string(maxNThreads) + " threads");
     this->netExecution = netExecution;
     this->nodeConfig = nodeConfig;
 
