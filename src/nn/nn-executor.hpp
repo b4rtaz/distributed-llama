@@ -16,6 +16,7 @@ public:
 class NnDevice {
 public:
     virtual NnUint maxNThreads() = 0;
+    virtual ~NnDevice() {}
     virtual NnDeviceSegment *createSegment(NnUint segmentIndex) = 0;
     virtual void syncPointers() = 0;
 };
