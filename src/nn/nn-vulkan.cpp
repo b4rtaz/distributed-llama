@@ -67,9 +67,48 @@ NnVulkanDevice::NnVulkanDevice(NnNetConfig *netConfig, NnNodeConfig *nodeConfig,
         if (memoryProperties.memoryHeaps[h].flags & vk::MemoryHeapFlagBits::eDeviceLocal)
             printf("🌋 Heap[%u]: %lu MB\n", h, ((unsigned long)memoryProperties.memoryHeaps[h].size) / (1024 * 1024));
     }
+
+    vk::PhysicalDeviceFeatures deviceFeatures = context.physicalDevice.getFeatures();
+
+    VkPhysicalDeviceFeatures2 deviceFeatures2;
+    deviceFeatures2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+    deviceFeatures2.pNext = nullptr;
+    deviceFeatures2.features = (VkPhysicalDeviceFeatures)deviceFeatures;
+
+    VkPhysicalDeviceVulkan11Features vk11Features;
+    vk11Features.pNext = nullptr;
+    vk11Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
+    deviceFeatures2.pNext = &vk11Features;
+
+    VkPhysicalDeviceVulkan12Features vk12Features;
+    vk12Features.pNext = nullptr;
+    vk12Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
+    vk11Features.pNext = &vk12Features;
+    vkGetPhysicalDeviceFeatures2(context.physicalDevice, &deviceFeatures2);
+
+    std::vector<vk::QueueFamilyProperties> queueFamilyProps = context.physicalDevice.getQueueFamilyProperties();
+    auto propIt = std::find_if(queueFamilyProps.begin(), queueFamilyProps.end(), [](const vk::QueueFamilyProperties& Prop) {
+        return Prop.queueFlags & vk::QueueFlagBits::eCompute;
+    });
+    context.queueFamilyIndex = std::distance(queueFamilyProps.begin(), propIt);
+
+    const float queuePriority = 1.0f;
+    vk::DeviceQueueCreateInfo deviceQueueCreateInfo(vk::DeviceQueueCreateFlags(), context.queueFamilyIndex, 1, &queuePriority);
+
+    vk::DeviceCreateInfo deviceCreateInfo(vk::DeviceCreateFlags(), deviceQueueCreateInfo);
+    deviceCreateInfo.enabledExtensionCount = deviceExtension.size();
+    deviceCreateInfo.ppEnabledExtensionNames = deviceExtension.data();
+    deviceCreateInfo.setPNext(&deviceFeatures2);
+    context.device = context.physicalDevice.createDevice(deviceCreateInfo);
+
+    vk::CommandPoolCreateInfo commandPoolCreateInfo(vk::CommandPoolCreateFlags(vk::CommandPoolCreateFlagBits::eTransient), context.queueFamilyIndex);
+    context.commandPool = context.device.createCommandPool(commandPoolCreateInfo);
+
+    context.queue = context.device.getQueue(context.queueFamilyIndex, 0);
 }
 
 NnVulkanDevice::~NnVulkanDevice() {
+    context.device.destroyCommandPool(context.commandPool);
     context.device.destroy();
     context.instance.destroy();
 }

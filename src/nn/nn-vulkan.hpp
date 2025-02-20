@@ -9,6 +9,9 @@ typedef struct {
     vk::Instance instance;
     vk::PhysicalDevice physicalDevice;
     vk::Device device;
+    uint32_t queueFamilyIndex;
+    vk::CommandPool commandPool;
+    vk::Queue queue;
 } NnVulkanContext;
 
 class NnVulkanDevice : public NnDevice {
