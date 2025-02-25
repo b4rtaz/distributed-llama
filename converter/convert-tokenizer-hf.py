@@ -27,7 +27,7 @@ class TokensResolver:
         self.dirPath = dirPath
         self.tokenizerConfig = tokenizerConfig
         self.bosId = None
-        self.eosId = None
+        self.eosIds = None
         self.tokens = []
         self.scores = []
 
@@ -47,13 +47,18 @@ class TokensResolver:
             self.scores.append(-float(i))
 
         self.bosId = tokenizer.bos_token_id
-        self.eosId = tokenizer.eos_token_id
+        if (tokenizer.eos_token_id):
+            self.eosIds = [tokenizer.eos_token_id]
         if (self.bosId is None or self.eosId is None):
             config = openJson(os.path.join(self.dirPath, 'config.json'))
             if (self.bosId is None):
                 self.bosId = config['bos_token_id']
-            if (self.eosId is None):
-                self.eosId = config['eos_token_id']
+            if (self.eosIds is None):
+                self.eosIds = config['eos_token_id']
+                if isinstance(self.eosIds, list):
+                    self.eosIds = self.eosIds[:2] # TODO: add support more than 2 eos ids
+                else:
+                    self.eosIds = [self.eosIds]
 
     def resolveLlamaTokenizer(self):
         modelPath = os.path.join(self.dirPath, 'tokenizer.model')
@@ -100,10 +105,11 @@ if __name__ == '__main__':
     resolver = TokensResolver(dirPath, tokenizerConfig)
     resolver.resolve()
 
-    if (resolver.bosId is None or resolver.eosId is None):
-        raise Exception('Cannot resolve bosId or eosId')
+    if (resolver.bosId is None or resolver.eosIds is None):
+        raise Exception('Cannot resolve bosId or eosIds')
     print(f'bosId: {resolver.bosId} ({resolver.tokens[resolver.bosId]})')
-    print(f'eosId: {resolver.eosId} ({resolver.tokens[resolver.eosId]})')
+    for eosId in resolver.eosIds:
+        print(f'eosId: {eosId} ({resolver.tokens[eosId]})')
 
     chatTemplate = None
     chatExtraStop = None
@@ -117,7 +123,7 @@ if __name__ == '__main__':
     with open(outputFileName, 'wb') as outputFile:
         writer.writeTokenizer(outputFile, {
             'bos_id': resolver.bosId,
-            'eos_id': resolver.eosId,
-            'chat_eos_id': resolver.eosId,
+            'eos_id': resolver.eosIds[0],
+            'chat_eos_id': resolver.eosIds[1 if len(resolver.eosIds) > 1 else 0],
         }, resolver.tokens, resolver.scores, chatTemplate, chatExtraStop)
     print(f'✅ Created {outputFileName}')

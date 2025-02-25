@@ -86,7 +86,7 @@ class Processor:
         p.append([FloatType.F32,
             'model.norm.weight'])
         p.append([wt,
-            'lm_head.weight'])
+            'lm_head.weight', 'model.embed_tokens.weight'])
 
     def write(self, outputFile: str):
         self.__preparePlan()

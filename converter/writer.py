@@ -135,9 +135,11 @@ def writeHeader(file, params):
         if key in headerKeys:
             data += struct.pack('ii', headerKeys[key], params[key])
         else:
-            print(f'Unknown header key: {key}')
+            print(f'Warning: Unknown header key: {key}')
 
     header += struct.pack('i', len(header) * 2 + len(data))
     file.write(header)
     file.write(data)
-    print(params)
+    for key in params:
+        print(f'🎓 {key}: {params[key]}')
+    print()
