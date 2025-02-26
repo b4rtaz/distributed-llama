@@ -4,9 +4,17 @@
 #extension GL_EXT_shader_explicit_arithmetic_types_float16 : require
 #extension GL_EXT_shader_explicit_arithmetic_types_int8 : require
 
-layout(binding = 0) readonly uniform inputBuffer { float inpt[]; };
-layout(binding = 1) writeonly uniform outputBuffer { float outp[]; };
-layout(binding = 2) readonly uniform configBuffer { float config[]; };
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+
+layout(binding = 0) readonly buffer inputBuffer { float inpt[]; };
+layout(binding = 1) writeonly buffer outputBuffer { float outp[]; };
+layout(binding = 2) readonly buffer weightBuffer { float weight[]; };
+layout(binding = 3) readonly uniform configBuffer { uint invRmsBufferIndex; };
 
 void main() {
+    const uint x = uint(gl_LocalInvocationID.x);
+
+    for (uint i = 0; i < 32; i++) {
+        outp[x * 32 + i] = inpt[x * 32 + i] * weight[x * 32 + i];
+    }
 }

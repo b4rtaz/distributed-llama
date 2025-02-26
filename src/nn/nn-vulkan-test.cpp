@@ -50,12 +50,17 @@ int main() {
 
     float rmsNormWeight[DIM];
     for (NnUint i = 0; i < DIM; i++)
-        rmsNormWeight[i] = 0.5 + i / (float)DIM;
+        rmsNormWeight[i] = i / (float)DIM;
 
     NnExecutor executor(&netConfig, &nodeConfig, &device, &execution, &synchronizer);
     executor.loadWeight("rms_norm", 0, sizeof(rmsNormWeight), (NnByte *)rmsNormWeight);
 
     execution.setBatchSize(N_BATCHES);
     executor.forward();
+
+    printf("output: ");
+    for (NnUint i = 0; i < DIM; i++)
+        printf("%.2f ", x[i]);
+    printf("\n");
     return 0;
 }

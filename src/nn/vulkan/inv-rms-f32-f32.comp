@@ -6,9 +6,10 @@
 
 layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
 
-layout(binding = 0) readonly uniform inputBuffer { float inpt[]; };
-layout(binding = 1) writeonly uniform outputBuffer { float outp[]; };
-layout(binding = 2) readonly uniform configBuffer { float config[]; };
+layout(binding = 0) readonly buffer inputBuffer { float x[]; };
+layout(binding = 1) writeonly buffer outputBuffer { float y[]; };
+layout(binding = 2) readonly uniform configBuffer { float epsilon; };
 
 void main() {
+    y[0] = epsilon;
 }

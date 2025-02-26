@@ -35,7 +35,7 @@ public:
     NnVulkanStagingCopy(const NnVulkanContext *context, vk::Buffer& deviceBuffer, const vk::DeviceSize bufferSize, const NnStagingVulkanCopyDirection direction);
     ~NnVulkanStagingCopy();
     void copy(NnByte *data);
-    void addCopyCommand(vk::CommandBuffer commandBuffer);
+    void addCopyCommand(vk::CommandBuffer& commandBuffer);
 };
 
 class NnVulkanBuffer {
@@ -47,9 +47,11 @@ private:
 public:
     vk::DeviceSize bufferSize;
     vk::Buffer deviceBuffer;
+    vk::BufferUsageFlags usageFlags;
     NnVulkanBuffer(NnVulkanContext *context, const vk::DeviceSize bufferSize, vk::BufferUsageFlags usageFlags, bool fastAccess);
     ~NnVulkanBuffer();
     void write(const NnByte *data);
+    void read(NnByte *data);
 };
 
 class NnVulkanShader {
@@ -92,6 +94,7 @@ private:
     NnVulkanContext *context;
     NnVulkanData *data;
     NnSegmentConfig *segmentConfig;
+    NnNetExecution *netExecution;
     std::vector<NnUint> weightBufferIndex;
     std::vector<NnUint> configBufferIndex;
 
@@ -103,8 +106,9 @@ private:
     std::vector<vk::Pipeline> pipelines;
     vk::PipelineCache pipelineCache;
     vk::PipelineLayout pipelineLayout;
+    std::vector<NnUint> groupCountX;
 public:
-    NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanData *data, NnSegmentConfig *segmentConfig);
+    NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanData *data, NnSegmentConfig *segmentConfig, NnNetExecution *netExecution);
     ~NnVulkanDeviceSegment() override;
     void loadWeight(NnUint opIndex, NnSize nBytes, NnByte *weight) override;
     void forward(NnUint opIndex, NnUint nThreads, NnUint threadIndex, NnUint batchSize) override;
