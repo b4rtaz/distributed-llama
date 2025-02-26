@@ -1,5 +1,5 @@
 CXX = g++
-CXXFLAGS = -std=c++11 -Werror -Wformat -Werror=format-security
+CXXFLAGS = -std=c++11 -Werror -Wformat -Werror=format-security 
 
 ifndef TERMUX_VERSION
 	CXXFLAGS += -march=native -mtune=native
@@ -65,7 +65,7 @@ nn-vulkan.o: src/nn/nn-vulkan.cpp
 	$(CXX) $(CXXFLAGS) -c $^ -o $@
 
 ifdef DLLAMA_VULKAN
-VULKAN_SHADER_SRCS := src/nn/vulkan/matmul-q40-q80.comp
+VULKAN_SHADER_SRCS := $(wildcard src/nn/vulkan/*.comp)
 VULKAN_SHADER_BINS := $(VULKAN_SHADER_SRCS:.comp=.spv)
 DEPS += $(VULKAN_SHADER_BINS)
 

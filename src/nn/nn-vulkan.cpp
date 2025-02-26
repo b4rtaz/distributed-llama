@@ -157,14 +157,44 @@ void NnVulkanBuffer::write(const NnByte *data) {
         context->device.destroyFence(fence);
         context->device.freeCommandBuffers(context->commandPool, 1, &commandBuffer);
     }
+    VULKAN_TRACE("Wrote %lld bytes to buffer", bufferSize);
 }
 
-NnVulkanData::NnVulkanData(const NnUint nPipes, const NnUint nBuffers)
-    : pipes(nPipes), buffers(nBuffers) {}
-
-NnVulkanDevice::NnVulkanDevice(NnNetConfig *netConfig, NnNodeConfig *nodeConfig, NnNetExecution *netExecution)
-    : data(netConfig->nPipes, nodeConfig->nBuffers)
+NnVulkanData::NnVulkanData(NnVulkanContext *context, NnNetConfig *netConfig, NnNodeConfig *nodeConfig)
+    : pipes(netConfig->nPipes), buffers(nodeConfig->nBuffers), internalBuffers()
 {
+    this->netConfig = netConfig;
+    this->nodeConfig = nodeConfig;
+
+    for (NnUint i = 0; i < netConfig->nPipes; i++)
+        pipes[i].reset(new NnVulkanBuffer(context, netConfig->pipes[i].size.nBytes, vk::BufferUsageFlagBits::eUniformBuffer, true));
+    for (NnUint i = 0; i < nodeConfig->nBuffers; i++)
+        buffers[i].reset(new NnVulkanBuffer(context, nodeConfig->buffers[i].size.nBytes, vk::BufferUsageFlagBits::eUniformBuffer, false));
+}
+
+NnVulkanData::~NnVulkanData() {
+    pipes.clear();
+    buffers.clear();
+    internalBuffers.clear();
+}
+
+NnSize2D NnVulkanData::resolvePointerSize(NnPointerConfig *config) {
+    if (config->pointerType == PNTR_BUFFER)
+        return nodeConfig->buffers[config->pointerIndex].size;
+    if (config->pointerType == PNTR_PIPE)
+        return netConfig->pipes[config->pointerIndex].size;
+    throw std::invalid_argument("Unsupported pointer config");
+}
+
+NnVulkanBuffer *NnVulkanData::resolveBuffer(NnPointerConfig *config) {
+    if (config->pointerType == PNTR_BUFFER)
+        return buffers[config->pointerIndex].get();
+    if (config->pointerType == PNTR_PIPE)
+        return pipes[config->pointerIndex].get();
+    throw std::invalid_argument("Unsupported pointer config");
+}
+
+NnVulkanDevice::NnVulkanDevice(NnNetConfig *netConfig, NnNodeConfig *nodeConfig, NnNetExecution *netExecution) {
     this->netConfig = netConfig;
     this->nodeConfig = nodeConfig;
     this->netExecution = netExecution;
@@ -240,15 +270,12 @@ NnVulkanDevice::NnVulkanDevice(NnNetConfig *netConfig, NnNodeConfig *nodeConfig,
     context.commandPool = context.device.createCommandPool(commandPoolCreateInfo);
     context.queue = context.device.getQueue(context.queueFamilyIndex, 0);
 
-    for (NnUint i = 0; i < netConfig->nPipes; i++)
-        data.pipes[i].reset(new NnVulkanBuffer(&context, netConfig->pipes[i].size.nBytes, vk::BufferUsageFlagBits::eUniformBuffer, true));
-    for (NnUint i = 0; i < nodeConfig->nBuffers; i++)
-        data.buffers[i].reset(new NnVulkanBuffer(&context, nodeConfig->buffers[i].size.nBytes, vk::BufferUsageFlagBits::eUniformBuffer, false));
+    data = new NnVulkanData(&context, netConfig, nodeConfig);
 }
 
 NnVulkanDevice::~NnVulkanDevice() {
-    data.pipes.clear();
-    data.buffers.clear();
+    delete data;
+
     context.device.destroyCommandPool(context.commandPool);
     context.device.destroy();
     context.instance.destroy();
@@ -260,14 +287,49 @@ NnUint NnVulkanDevice::maxNThreads() {
 
 NnDeviceSegment *NnVulkanDevice::createSegment(NnUint segmentIndex) {
     NnSegmentConfig *segmentConfig = &nodeConfig->segments[segmentIndex];
-    return new NnVulkanDeviceSegment(&context, &data, segmentConfig);
+    return new NnVulkanDeviceSegment(&context, data, segmentConfig);
 };
 
 void NnVulkanDevice::syncPointers() {
 }
 
+static const char *getShaderFileName(const NnOpCode opCode, const NnOpQuantType quantType) {
+    if (opCode == OP_INV_RMS) {
+        if (quantType == F32_F32_F32) return "inv-rms-f32-f32.spv";
+    }
+    if (opCode == OP_RMS_NORM) {
+        if (quantType == F32_F32_F32) return "rms-norm-f32-f32-f32.spv";
+    }
+    return nullptr;
+}
+
+NnVulkanShader::NnVulkanShader(const char *fileName) {
+    std::string path = std::string("./src/nn/vulkan/") + fileName;
+    FILE* file = fopen(path.c_str(), "rb");
+    if (!file)
+        throw std::runtime_error("Failed to open shader file: " + path);
+    constexpr size_t chunkSize = 4096;
+    uint32_t chunk[chunkSize];
+    size_t bytesRead;
+    while ((bytesRead = fread(chunk, 1, chunkSize, file)) > 0) {
+        code.insert(code.end(), chunk, chunk + bytesRead);
+    }
+    if (ferror(file)) {
+        fclose(file);
+        throw std::runtime_error("Failed to read shader file: " + path);
+    }
+    fclose(file);
+}
+
 NnVulkanDeviceSegment::NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanData *data, NnSegmentConfig *segmentConfig)
-    : weightBufferIndex(segmentConfig->nOps) {
+    :
+    weightBufferIndex(segmentConfig->nOps),
+    configBufferIndex(segmentConfig->nOps),
+    shaderModules(segmentConfig->nOps),
+    descriptorSets(segmentConfig->nOps),
+    descriptorPools(segmentConfig->nOps),
+    descriptorSetLayouts(segmentConfig->nOps)
+{
     this->context = context;
     this->data = data;
     this->segmentConfig = segmentConfig;
@@ -275,24 +337,165 @@ NnVulkanDeviceSegment::NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanD
     for (NnUint opIndex = 0; opIndex < segmentConfig->nOps; opIndex++) {
         NnOpConfig *opConfig = &segmentConfig->ops[opIndex];
         if (opConfig->weightSize.nBytes > 0) {
-            data->buffers.push_back(std::unique_ptr<NnVulkanBuffer>(
-                new NnVulkanBuffer(context, opConfig->weightSize.nBytes, vk::BufferUsageFlagBits::eStorageBuffer, false)));
-            weightBufferIndex[opIndex] = data->buffers.size() - 1;
+            NnVulkanBuffer *buffer = new NnVulkanBuffer(context, opConfig->weightSize.nBytes, vk::BufferUsageFlagBits::eStorageBuffer, false);
+            data->internalBuffers.push_back(std::unique_ptr<NnVulkanBuffer>(buffer));
+            weightBufferIndex[opIndex] = data->internalBuffers.size() - 1;
+        }
+        if (opConfig->configSize > 0) {
+            NnVulkanBuffer *buffer = new NnVulkanBuffer(context, opConfig->configSize, vk::BufferUsageFlagBits::eUniformBuffer, false);
+            data->internalBuffers.push_back(std::unique_ptr<NnVulkanBuffer>(buffer));
+            buffer->write(opConfig->config);
+            configBufferIndex[opIndex] = data->internalBuffers.size() - 1;
         }
     }
+
+    std::vector<vk::PipelineShaderStageCreateInfo> shaderCreateInfos(segmentConfig->nOps);
+
+    for (NnUint opIndex = 0; opIndex < segmentConfig->nOps; opIndex++) {
+        NnOpConfig *opConfig = &segmentConfig->ops[opIndex];
+        NnSize2D inputSize = data->resolvePointerSize(&opConfig->input);
+        NnSize2D outputSize = data->resolvePointerSize(&opConfig->output);
+        NnOpQuantType opQuant = getOpQuantType(
+            inputSize.floatType,
+            opConfig->weightSize.floatType,
+            outputSize.floatType);
+        const char *shaderFileName = getShaderFileName(opConfig->code, opQuant);
+        assert(shaderFileName != nullptr);
+        NnVulkanShader shader(shaderFileName);
+
+        vk::ShaderModuleCreateInfo shaderModuleCreateInfo(vk::ShaderModuleCreateFlags(), shader.code.size(), shader.code.data());
+        vk::ShaderModule shaderModule = context->device.createShaderModule(shaderModuleCreateInfo);
+
+        vk::PipelineShaderStageCreateInfo shaderCreateInfo(vk::PipelineShaderStageCreateFlags(), vk::ShaderStageFlagBits::eCompute, shaderModule, "main");
+
+        std::vector<vk::DescriptorType> descriptorTypes;
+        std::vector<NnVulkanBuffer *> buffers;
+
+        {
+            // input
+            descriptorTypes.push_back(vk::DescriptorType::eUniformBuffer);
+            buffers.push_back(data->resolveBuffer(&opConfig->input));
+
+            // output
+            descriptorTypes.push_back(vk::DescriptorType::eUniformBuffer);
+            buffers.push_back(data->resolveBuffer(&opConfig->output));
+
+            // weight
+            /*if (opConfig->weightSize.nBytes > 0) {
+                descriptorTypes.push_back(vk::DescriptorType::eStorageBuffer);
+                buffers.push_back(data->internalBuffers[weightBufferIndex[opIndex]].get());
+            }*/
+
+            // config
+            if (opConfig->configSize > 0) {
+                descriptorTypes.push_back(vk::DescriptorType::eUniformBuffer);
+                buffers.push_back(data->internalBuffers[configBufferIndex[opIndex]].get());
+            }
+        }
+
+        std::vector<vk::DescriptorSetLayoutBinding> descriptorSetLayoutBindings;
+        for (NnUint i = 0; i < descriptorTypes.size(); i++) {
+            vk::DescriptorSetLayoutBinding binding(i, descriptorTypes[i], 1, vk::ShaderStageFlagBits::eCompute);
+            descriptorSetLayoutBindings.push_back(binding);
+        }
+
+        vk::DescriptorSetLayoutCreateInfo descriptorSetLayoutCreateInfo(vk::DescriptorSetLayoutCreateFlags(), descriptorSetLayoutBindings.size(), descriptorSetLayoutBindings.data());
+        vk::DescriptorSetLayout descriptorSetLayout = context->device.createDescriptorSetLayout(descriptorSetLayoutCreateInfo);
+
+        NnUint nUniformBuffers = 0;
+        NnUint nStorageBuffers = 0;
+        for (NnUint i = 0; i < descriptorTypes.size(); i++) {
+            if (descriptorTypes[i] == vk::DescriptorType::eUniformBuffer)
+                nUniformBuffers++;
+            if (descriptorTypes[i] == vk::DescriptorType::eStorageBuffer)
+                nStorageBuffers++;
+        }
+        std::vector<vk::DescriptorPoolSize> descriptorPoolSizes;
+        if (nUniformBuffers > 0)
+            descriptorPoolSizes.push_back(vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, nUniformBuffers));
+        if (nStorageBuffers > 0)
+            descriptorPoolSizes.push_back(vk::DescriptorPoolSize(vk::DescriptorType::eStorageBuffer, nStorageBuffers));
+
+        vk::DescriptorPoolCreateInfo descriptorPoolCreateInfo(vk::DescriptorPoolCreateFlags(), 1, descriptorPoolSizes.size(), descriptorPoolSizes.data());
+        vk::DescriptorPool descriptorPool = context->device.createDescriptorPool(descriptorPoolCreateInfo);
+        vk::DescriptorSetAllocateInfo descriptorSetAllocInfo(descriptorPool, 1, &descriptorSetLayout);
+        const std::vector<vk::DescriptorSet> allocatedDescriptorSets = context->device.allocateDescriptorSets(descriptorSetAllocInfo);
+        vk::DescriptorSet descriptorSet = allocatedDescriptorSets[0];
+        std::vector<vk::WriteDescriptorSet> writeDescriptorSets;
+        for (NnUint i = 0; i < descriptorTypes.size(); i++) {
+            vk::DescriptorBufferInfo bufferInfo(buffers[i]->deviceBuffer, 0, buffers[i]->bufferSize);
+            vk::WriteDescriptorSet writeDescriptorSet(descriptorSet, i, 0, 1, descriptorTypes[i], nullptr, &bufferInfo, nullptr);
+            writeDescriptorSets.push_back(writeDescriptorSet);
+        }
+
+        context->device.updateDescriptorSets(writeDescriptorSets, nullptr);
+
+        shaderModules[opIndex] = shaderModule;
+        shaderCreateInfos[opIndex] = shaderCreateInfo;
+        descriptorSets[opIndex] = descriptorSet;
+        descriptorPools[opIndex] = descriptorPool;
+        descriptorSetLayouts[opIndex] = descriptorSetLayout;
+    }
+
+    vk::PipelineLayoutCreateInfo pipelineLayoutCreateInfo(vk::PipelineLayoutCreateFlags(), descriptorSetLayouts.size(), descriptorSetLayouts.data());
+    pipelineLayout = context->device.createPipelineLayout(pipelineLayoutCreateInfo);
+    pipelineCache = context->device.createPipelineCache(vk::PipelineCacheCreateInfo());
+
+    std::vector<vk::ComputePipelineCreateInfo> pipelineInfos(segmentConfig->nOps);
+    for (NnUint opIndex = 0; opIndex < segmentConfig->nOps; opIndex++) {
+        vk::ComputePipelineCreateInfo pipelineInfo(vk::PipelineCreateFlags(), shaderCreateInfos[opIndex], pipelineLayout);
+        pipelineInfos[opIndex] = pipelineInfo;
+    }
+
+    pipelines = context->device.createComputePipelines(pipelineCache, pipelineInfos).value;
+    fence = context->device.createFence(vk::FenceCreateInfo());
 }
 
 NnVulkanDeviceSegment::~NnVulkanDeviceSegment() {
+    for (NnUint opIndex = 0; opIndex < segmentConfig->nOps; opIndex++)
+        context->device.destroyPipeline(pipelines[opIndex]);
+    context->device.destroyFence(fence);
+    context->device.destroyPipelineLayout(pipelineLayout);
+    context->device.destroyPipelineCache(pipelineCache);
+    for (NnUint opIndex = 0; opIndex < segmentConfig->nOps; opIndex++) {
+        context->device.destroyDescriptorPool(descriptorPools[opIndex]);
+        context->device.destroyDescriptorSetLayout(descriptorSetLayouts[opIndex]);
+        context->device.destroyShaderModule(shaderModules[opIndex]);
+    }
 }
 
 void NnVulkanDeviceSegment::loadWeight(NnUint opIndex, NnSize nBytes, NnByte *weight) {
     assert(segmentConfig->nOps > opIndex);
     assert(segmentConfig->ops[opIndex].weightSize.nBytes == nBytes);
     NnUint dataBufferIndex = weightBufferIndex[opIndex];
-    data->buffers[dataBufferIndex]->write(weight);
-    VULKAN_TRACE("Loaded %ld bytes to weight buffer %d", nBytes, dataBufferIndex);
+    data->internalBuffers[dataBufferIndex]->write(weight);
 }
 
 void NnVulkanDeviceSegment::forward(NnUint opIndex, NnUint nThreads, NnUint threadIndex, NnUint batchSize)  {
-    
+    assert(threadIndex == 0);
+    if (opIndex != 0) {
+        // TODO: this is a design problem, executor tries to forward all ops in a segment
+        return;
+    }
+
+    vk::CommandBufferAllocateInfo commandBufferAllocInfo(context->commandPool, vk::CommandBufferLevel::ePrimary, 1);
+    const std::vector<vk::CommandBuffer> cmdBuffers = context->device.allocateCommandBuffers(commandBufferAllocInfo);
+    vk::CommandBuffer commandBuffer = cmdBuffers.front();
+
+    vk::CommandBufferBeginInfo commandBufferBeginInfo(vk::CommandBufferUsageFlagBits::eOneTimeSubmit);
+    commandBuffer.begin(commandBufferBeginInfo);
+    for (NnUint opIndex = 0; opIndex < segmentConfig->nOps; opIndex++) {
+        commandBuffer.bindPipeline(vk::PipelineBindPoint::eCompute, pipelines[opIndex]);
+        commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eCompute, pipelineLayout, opIndex, { descriptorSets[opIndex] }, {});
+        commandBuffer.dispatch(1, 1, 1);
+    }
+    commandBuffer.end();
+
+    context->device.resetFences({ fence });
+    vk::SubmitInfo submitInfo(0, nullptr, nullptr, 1, &commandBuffer);
+    context->queue.submit({ submitInfo }, fence);
+    assert(context->device.waitForFences({ fence }, true, uint64_t(-1)) == vk::Result::eSuccess);
+    VULKAN_TRACE("Forwarded");
+
+    context->device.freeCommandBuffers(context->commandPool, 1, &commandBuffer);
 }

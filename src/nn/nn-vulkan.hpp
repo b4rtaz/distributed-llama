@@ -42,27 +42,40 @@ class NnVulkanBuffer {
 private:
     bool isHostVisible;
     NnVulkanContext *context;
-    vk::DeviceSize bufferSize;
-    vk::Buffer deviceBuffer;
     vk::DeviceMemory deviceMemory;
     void *hostPointer;
 public:
+    vk::DeviceSize bufferSize;
+    vk::Buffer deviceBuffer;
     NnVulkanBuffer(NnVulkanContext *context, const vk::DeviceSize bufferSize, vk::BufferUsageFlags usageFlags, bool fastAccess);
     ~NnVulkanBuffer();
     void write(const NnByte *data);
 };
 
+class NnVulkanShader {
+public:
+    std::vector<uint32_t> code;
+    NnVulkanShader(const char *fileName);
+};
+
 class NnVulkanData {
 public:
+    NnNetConfig *netConfig;
+    NnNodeConfig *nodeConfig;
     std::vector<std::unique_ptr<NnVulkanBuffer>> pipes;
     std::vector<std::unique_ptr<NnVulkanBuffer>> buffers;
-    NnVulkanData(const NnUint nPipes, const NnUint nBuffers);
+    std::vector<std::unique_ptr<NnVulkanBuffer>> internalBuffers;
+    NnVulkanData(NnVulkanContext *context, NnNetConfig *netConfig, NnNodeConfig *nodeConfig);
+    ~NnVulkanData();
+
+    NnSize2D resolvePointerSize(NnPointerConfig *config);
+    NnVulkanBuffer *resolveBuffer(NnPointerConfig *config);
 };
 
 class NnVulkanDevice : public NnDevice {
 private:
     NnVulkanContext context;
-    NnVulkanData data;
+    NnVulkanData *data;
     NnNetConfig *netConfig;
     NnNodeConfig *nodeConfig;
     NnNetExecution *netExecution;
@@ -80,6 +93,16 @@ private:
     NnVulkanData *data;
     NnSegmentConfig *segmentConfig;
     std::vector<NnUint> weightBufferIndex;
+    std::vector<NnUint> configBufferIndex;
+
+    std::vector<vk::ShaderModule> shaderModules;
+    std::vector<vk::DescriptorSet> descriptorSets;
+    std::vector<vk::DescriptorPool> descriptorPools;
+    std::vector<vk::DescriptorSetLayout> descriptorSetLayouts;
+    vk::Fence fence;
+    std::vector<vk::Pipeline> pipelines;
+    vk::PipelineCache pipelineCache;
+    vk::PipelineLayout pipelineLayout;
 public:
     NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanData *data, NnSegmentConfig *segmentConfig);
     ~NnVulkanDeviceSegment() override;
