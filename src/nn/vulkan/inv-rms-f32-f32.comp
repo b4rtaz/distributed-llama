@@ -4,12 +4,42 @@
 #extension GL_EXT_shader_explicit_arithmetic_types_float16 : require
 #extension GL_EXT_shader_explicit_arithmetic_types_int8 : require
 
-layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+#define N_THREADS 32
+
+layout(local_size_x = N_THREADS, local_size_y = 1, local_size_z = 1) in;
 
 layout(binding = 0) readonly buffer inputBuffer { float x[]; };
 layout(binding = 1) writeonly buffer outputBuffer { float y[]; };
-layout(binding = 2) readonly uniform configBuffer { float epsilon; };
+layout(binding = 2) readonly uniform configBuffer {
+    uint inputSizeX;
+    uint inputSizeY;
+    uint outputSizeX;
+    uint outputSizeY;
+    float epsilon;
+};
+
+shared float sums[N_THREADS];
 
 void main() {
-    y[0] = epsilon;
+    uint threadIndex = uint(gl_LocalInvocationID.x);
+
+    uint slice = inputSizeX / N_THREADS;
+    uint offset = threadIndex * slice;
+
+    float sum = 0.0;
+    for (uint i = 0; i < slice; i++) {
+        uint j = offset + i;
+        sum += x[j] * x[j];
+    }
+    sums[threadIndex] = sum;
+
+    barrier();
+
+    if (threadIndex == 0) {
+        sum = 0.0;
+        for (uint i = 0; i < N_THREADS; i++) {
+            sum += sums[i];
+        }
+        y[0] = 1.0 / sqrt((sum / float(inputSizeX)) + epsilon);
+    }
 }

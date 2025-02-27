@@ -35,6 +35,7 @@ public:
     NnVulkanStagingCopy(const NnVulkanContext *context, vk::Buffer& deviceBuffer, const vk::DeviceSize bufferSize, const NnStagingVulkanCopyDirection direction);
     ~NnVulkanStagingCopy();
     void copy(NnByte *data);
+    void executeCopyCommand();
     void addCopyCommand(vk::CommandBuffer& commandBuffer);
 };
 
@@ -54,34 +55,28 @@ public:
     void read(NnByte *data);
 };
 
-class NnVulkanShader {
-public:
-    std::vector<uint32_t> code;
-    NnVulkanShader(const char *fileName);
-};
-
-class NnVulkanData {
+class NnVulkanDeviceData {
 public:
     NnNetConfig *netConfig;
     NnNodeConfig *nodeConfig;
     std::vector<std::unique_ptr<NnVulkanBuffer>> pipes;
     std::vector<std::unique_ptr<NnVulkanBuffer>> buffers;
     std::vector<std::unique_ptr<NnVulkanBuffer>> internalBuffers;
-    NnVulkanData(NnVulkanContext *context, NnNetConfig *netConfig, NnNodeConfig *nodeConfig);
-    ~NnVulkanData();
+    NnVulkanDeviceData(NnVulkanContext *context, NnNetConfig *netConfig, NnNodeConfig *nodeConfig);
+    ~NnVulkanDeviceData();
 
     NnSize2D resolvePointerSize(NnPointerConfig *config);
-    NnVulkanBuffer *resolveBuffer(NnPointerConfig *config);
+    NnVulkanBuffer *resolveVulkanBuffer(NnPointerConfig *config);
 };
 
 class NnVulkanDevice : public NnDevice {
 private:
     NnVulkanContext context;
-    NnVulkanData *data;
     NnNetConfig *netConfig;
     NnNodeConfig *nodeConfig;
     NnNetExecution *netExecution;
 public:
+    NnVulkanDeviceData *data;
     NnVulkanDevice(NnNetConfig *netConfig, NnNodeConfig *nodeConfig, NnNetExecution *netExecution);
     ~NnVulkanDevice() override;
     NnUint maxNThreads() override;
@@ -89,14 +84,24 @@ public:
     void syncPointers() override;
 };
 
+class NnVulkanDeviceSegmentData {
+private:
+    NnVulkanDeviceData *data;
+    std::vector<NnUint> weightBufferIndex;
+    std::vector<NnUint> configBufferIndex;
+public:
+    NnVulkanDeviceSegmentData(NnVulkanContext *context, NnVulkanDeviceData *data, NnSegmentConfig *segmentConfig);
+    NnVulkanBuffer *resolveWeightVulkanBuffer(NnUint opIndex);
+    NnVulkanBuffer *resolveConfigVulkanBuffer(NnUint opIndex);
+};
+
 class NnVulkanDeviceSegment : public NnDeviceSegment {
 private:
     NnVulkanContext *context;
-    NnVulkanData *data;
+    NnVulkanDeviceData *data;
     NnSegmentConfig *segmentConfig;
     NnNetExecution *netExecution;
-    std::vector<NnUint> weightBufferIndex;
-    std::vector<NnUint> configBufferIndex;
+    std::unique_ptr<NnVulkanDeviceSegmentData> segmentData;
 
     std::vector<vk::ShaderModule> shaderModules;
     std::vector<vk::DescriptorSet> descriptorSets;
@@ -106,9 +111,9 @@ private:
     std::vector<vk::Pipeline> pipelines;
     vk::PipelineCache pipelineCache;
     vk::PipelineLayout pipelineLayout;
-    std::vector<NnUint> groupCountX;
+    std::vector<NnUint> groupCount;
 public:
-    NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanData *data, NnSegmentConfig *segmentConfig, NnNetExecution *netExecution);
+    NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanDeviceData *data, NnSegmentConfig *segmentConfig, NnNetExecution *netExecution);
     ~NnVulkanDeviceSegment() override;
     void loadWeight(NnUint opIndex, NnSize nBytes, NnByte *weight) override;
     void forward(NnUint opIndex, NnUint nThreads, NnUint threadIndex, NnUint batchSize) override;

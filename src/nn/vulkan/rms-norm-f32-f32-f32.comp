@@ -10,6 +10,7 @@ layout(binding = 0) readonly buffer inputBuffer { float inpt[]; };
 layout(binding = 1) writeonly buffer outputBuffer { float outp[]; };
 layout(binding = 2) readonly buffer weightBuffer { float weight[]; };
 layout(binding = 3) readonly uniform configBuffer { uint invRmsBufferIndex; };
+layout(binding = 4) readonly buffer invRmsBuffer { float invRms; };
 
 void main() {
     const uint x = uint(gl_LocalInvocationID.x);
