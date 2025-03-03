@@ -288,7 +288,7 @@ NnVulkanDevice::NnVulkanDevice(NnNetConfig *netConfig, NnNodeConfig *nodeConfig,
     deviceCreateInfo.setPNext(&deviceFeatures2);
     context.device = context.physicalDevice.createDevice(deviceCreateInfo);
 
-    vk::CommandPoolCreateInfo commandPoolCreateInfo(vk::CommandPoolCreateFlags(vk::CommandPoolCreateFlagBits::eTransient), context.queueFamilyIndex);
+    vk::CommandPoolCreateInfo commandPoolCreateInfo(vk::CommandPoolCreateFlags(vk::CommandPoolCreateFlagBits::eTransient | vk::CommandPoolCreateFlagBits::eResetCommandBuffer), context.queueFamilyIndex);
     context.commandPool = context.device.createCommandPool(commandPoolCreateInfo);
     context.queue = context.device.getQueue(context.queueFamilyIndex, 0);
 
@@ -417,7 +417,7 @@ static std::vector<NnByte> buildShaderConfig(NnVulkanDeviceData *data, NnOpConfi
     std::memcpy(d, &oututSize.y, sizeof(oututSize.y));
     d += sizeof(oututSize.y);
     if (opConfig->configSize > 0)
-        std::memcpy(d, &opConfig->config, opConfig->configSize);
+        std::memcpy(d, opConfig->config, opConfig->configSize);
     return finalConfig;
 }
 
@@ -548,9 +548,15 @@ NnVulkanDeviceSegment::NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanD
 
     pipelines = context->device.createComputePipelines(pipelineCache, pipelineInfos).value;
     fence = context->device.createFence(vk::FenceCreateInfo());
+
+    vk::CommandBufferAllocateInfo commandBufferAllocInfo(context->commandPool, vk::CommandBufferLevel::ePrimary, 1);
+    const std::vector<vk::CommandBuffer> cmdBuffers = context->device.allocateCommandBuffers(commandBufferAllocInfo);
+    commandBuffer = cmdBuffers.front();
 }
 
 NnVulkanDeviceSegment::~NnVulkanDeviceSegment() {
+    context->device.freeCommandBuffers(context->commandPool, 1, &commandBuffer);
+
     for (NnUint opIndex = 0; opIndex < segmentConfig->nOps; opIndex++)
         context->device.destroyPipeline(pipelines[opIndex]);
     context->device.destroyFence(fence);
@@ -579,6 +585,7 @@ void NnVulkanDeviceSegment::forward(NnUint opIndex, NnUint nThreads, NnUint thre
     }
 
     context->device.resetFences({ fence });
+    commandBuffer.reset(vk::CommandBufferResetFlags());
 
     {
         // TODO
@@ -589,9 +596,7 @@ void NnVulkanDeviceSegment::forward(NnUint opIndex, NnUint nThreads, NnUint thre
         }
     }
 
-    vk::CommandBufferAllocateInfo commandBufferAllocInfo(context->commandPool, vk::CommandBufferLevel::ePrimary, 1);
-    const std::vector<vk::CommandBuffer> cmdBuffers = context->device.allocateCommandBuffers(commandBufferAllocInfo);
-    vk::CommandBuffer commandBuffer = cmdBuffers.front();
+
     commandBuffer.begin({ vk::CommandBufferUsageFlags{ vk::CommandBufferUsageFlagBits::eOneTimeSubmit } });
 
     for (NnUint opIndex = 0; opIndex < segmentConfig->nOps; opIndex++) {
@@ -605,7 +610,6 @@ void NnVulkanDeviceSegment::forward(NnUint opIndex, NnUint nThreads, NnUint thre
     vk::SubmitInfo submitInfo(0, nullptr, nullptr, 1, &commandBuffer);
     context->queue.submit({ submitInfo }, fence);
     assert(context->device.waitForFences({ fence }, true, uint64_t(-1)) == vk::Result::eSuccess);
-    context->device.freeCommandBuffers(context->commandPool, 1, &commandBuffer);
 
     VULKAN_TRACE("Forwarded");
 

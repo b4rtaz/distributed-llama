@@ -34,6 +34,7 @@ void main() {
     sums[threadIndex] = sum;
 
     barrier();
+    memoryBarrierShared();
 
     if (threadIndex == 0) {
         sum = 0.0;
