@@ -29,7 +29,7 @@ NnNetExecution::~NnNetExecution() {
 }
 
 void NnNetExecution::setBatchSize(NnUint batchSize) {
-    assert(batchSize > 0 && batchSize <= nBatches);
+    assert(batchSize <= nBatches);
     this->batchSize = batchSize;
 }
 

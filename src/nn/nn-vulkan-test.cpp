@@ -8,6 +8,14 @@ void printOk(const char *name) {
     printf("✅ %24s passed\n", name);
 }
 
+void assertFloat(const float value, const float expectedValue, const float tolerance) {
+    float diff = fabs(expectedValue - value);
+    if (diff > tolerance) {
+        printf("❌ failed: value=%f, expectedValue=%f, diff=%f\n", value, expectedValue, diff);
+        exit(1);
+    }
+}
+
 void execute(
     void (*build)(NnNetConfigBuilder *netBuilder, NnNodeConfigBuilder *nodeBuilder, NnSegmentConfigBuilder *segmentBuilder),
     void (*execute)(NnExecutor *executor, NnNetExecution *execution, NnVulkanDevice *device)
@@ -29,39 +37,9 @@ void execute(
 
     NnVulkanDevice device(&netConfig, &nodeConfig, &execution);
     NnFakeNodeSynchronizer synchronizer;
-    NnExecutor executor(&netConfig, &nodeConfig, &device, &execution, &synchronizer);
+    NnExecutor executor(&netConfig, &nodeConfig, &device, &execution, &synchronizer, false);
 
     execute(&executor, &execution, &device);
-}
-
-void testInvRms_F32_F32() {
-    #define INV_RMS_DIM 256
-    execute(
-        [](NnNetConfigBuilder *netBuilder, NnNodeConfigBuilder *nodeBuilder, NnSegmentConfigBuilder *segmentBuilder) {
-            NnUint xPipeIndex = netBuilder->addPipe("X", size2D(F_32, N_BATCHES, INV_RMS_DIM));
-            NnUint invRmsBufferIndex = nodeBuilder->addBuffer("inv_rms", size2D(F_32, N_BATCHES, 1));
-            segmentBuilder->addOp(OP_INV_RMS, "inv_rms", 0,
-                pointerConfig(PNTR_PIPE, xPipeIndex),
-                pointerConfig(PNTR_BUFFER, invRmsBufferIndex),
-                size0(),
-                NnInvRmsOpConfig{1e-5f});
-        },
-        [](NnExecutor *executor, NnNetExecution *execution, NnVulkanDevice *device) {
-            float *xPipe = (float *)execution->pipes[0];
-            for (NnUint i = 0; i < INV_RMS_DIM; i++)
-                xPipe[i] = i / (float)INV_RMS_DIM;
-
-            executor->forward();
-
-            float result[N_BATCHES];
-            device->data->buffers[0].get()->read((NnByte *)result);
-
-            float expectedValue = 1.737115f;
-            float diff = fabs(expectedValue - result[0]);
-            printf("expectedValue: %f, result: %f, diff: %f\n", expectedValue, result[0], diff);
-            assert(diff < 0.0001f);
-            printOk("testInvRms_F32_F32");
-        });
 }
 
 void testRmsNorm_F32_F32_F32() {
@@ -82,21 +60,42 @@ void testRmsNorm_F32_F32_F32() {
                 NnRmsNormOpConfig{invRmsBufferIndex});
         },
         [](NnExecutor *executor, NnNetExecution *execution, NnVulkanDevice *device) {
+            // arrange
             std::vector<float> normWeight(RMS_NORM_DIM);
             for (NnUint i = 0; i < RMS_NORM_DIM; i++)
-                normWeight[i] = 0.25f + i / (float)RMS_NORM_DIM;
+                normWeight[i] = (0.25f + (float)i) / (float)RMS_NORM_DIM;
             executor->loadWeight("rms_norm", 0, normWeight.size() * sizeof(float), (NnByte *)normWeight.data());
 
             float *xPipe = (float *)execution->pipes[0];
             for (NnUint i = 0; i < RMS_NORM_DIM; i++)
-                xPipe[i] = i / (float)RMS_NORM_DIM;
+                xPipe[i] = (float)(RMS_NORM_DIM - i) / (float)(RMS_NORM_DIM / 2);
 
+            // act
             executor->forward();
+
+            // assert
+            float invRmsBuffer[N_BATCHES];
+            device->data->buffers[0].get()->read((NnByte *)invRmsBuffer);
+
+            float t = 0.000001f;
+            assertFloat(invRmsBuffer[0], 0.863493f, t);
+            assertFloat(xPipe[0], 0.001687f, t);
+            assertFloat(xPipe[1], 0.008400f, t);
+            assertFloat(xPipe[2], 0.015060f, t);
+            assertFloat(xPipe[35], 0.205286f, t);
+            assertFloat(xPipe[36], 0.210155f, t);
+            assertFloat(xPipe[119], 0.430514f, t);
+            assertFloat(xPipe[123], 0.431964f, t);
+            assertFloat(xPipe[234], 0.135804f, t);
+            assertFloat(xPipe[242], 0.089372f, t);
+            assertFloat(xPipe[249], 0.045977f, t);
+            assertFloat(xPipe[255], 0.006726f, t);
+
+            printOk("testRmsNorm_F32_F32_F32");
         });
 }
 
 int main() {
-    testInvRms_F32_F32();
     testRmsNorm_F32_F32_F32();
     return 0;
 }
