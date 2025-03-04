@@ -268,6 +268,7 @@ private:
     std::chrono::time_point<std::chrono::high_resolution_clock> startTime;
 public:
     Timer();
+    void reset();
     NnUint elapsedMiliseconds();
     NnUint elapsedMicroseconds();
 };
