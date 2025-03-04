@@ -83,6 +83,7 @@ typedef struct {
     Tokenizer *tokenizer;
     Sampler *sampler;
     NnNetwork *network;
+    NnExecutor *executor;
 } AppInferenceContext;
 
 void runInferenceApp(AppCliArgs *args, void (*handler)(AppInferenceContext *context));

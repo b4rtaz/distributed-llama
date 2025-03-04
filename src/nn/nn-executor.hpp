@@ -52,6 +52,8 @@ enum NnExecutorStepType {
     STEP_SYNC_POINTERS
 };
 
+#define N_STEP_TYPES STEP_SYNC_POINTERS + 1
+
 typedef struct {
     NnExecutorStepType type;
     NnDeviceSegment *segment;
@@ -68,6 +70,8 @@ typedef struct {
     std::atomic_uint currentStepIndex;
     std::atomic_uint doneThreadCount;
     NnUint batchSize;
+    Timer *timer;
+    NnUint totalTime[N_STEP_TYPES];
 } NnExecutorContext;
 
 typedef struct {
@@ -77,17 +81,19 @@ typedef struct {
 } NnExecutorThread;
 
 class NnExecutor {
-public:
+private:
     NnNetExecution *netExecution;
     NnNodeConfig *nodeConfig;
     std::vector<std::unique_ptr<NnDeviceSegment>> segments;
     std::vector<NnExecutorStep> steps;
     NnExecutorThread *threads;
     NnExecutorContext context;
-    NnExecutor(NnNetConfig *netConfig, NnNodeConfig *nodeConfig, NnDevice *device, NnNetExecution *netExecution, NnNodeSynchronizer *synchronizer);
+public:
+    NnExecutor(NnNetConfig *netConfig, NnNodeConfig *nodeConfig, NnDevice *device, NnNetExecution *netExecution, NnNodeSynchronizer *synchronizer, bool benchmark);
     ~NnExecutor();
     void loadWeight(const char *name, NnUint index, NnSize nBytes, NnByte *weight);
     void forward();
+    NnUint getTotalTime(NnExecutorStepType type);
 };
 
 #endif

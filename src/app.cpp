@@ -227,7 +227,7 @@ void runInferenceApp(AppCliArgs *args, void (*handler)(AppInferenceContext *cont
     }
 
     NnCpuDevice cpu(&net.netConfig, rootNodeConfig, &execution);
-    NnExecutor executor(&net.netConfig, rootNodeConfig, &cpu, &execution, synchronizer.get());
+    NnExecutor executor(&net.netConfig, rootNodeConfig, &cpu, &execution, synchronizer.get(), args->benchmark);
 
     NnRootWeightLoader weightLoader(&executor, network, nNodes);
     loadLlmNetWeight(args->modelPath, &net, &weightLoader);
@@ -246,6 +246,7 @@ void runInferenceApp(AppCliArgs *args, void (*handler)(AppInferenceContext *cont
     context.sampler = &sampler;
     context.tokenizer = &tokenizer;
     context.network = network;
+    context.executor = &executor;
 
     handler(&context);
 
@@ -269,7 +270,7 @@ void runWorkerApp(AppCliArgs *args) {
 
         NnNetworkNodeSynchronizer synchronizer(network, &execution, &netConfig, &nodeConfig);
         NnCpuDevice cpu(&netConfig, &nodeConfig, &execution);
-        NnExecutor executor(&netConfig, &nodeConfig, &cpu, &execution, &synchronizer);
+        NnExecutor executor(&netConfig, &nodeConfig, &cpu, &execution, &synchronizer, false);
 
         NnWorkerWeightReader weightReader(&executor, network);
         weightReader.read();
