@@ -55,18 +55,25 @@ public:
     void read(NnByte *data);
 };
 
+typedef struct {
+    NnUint batchSize;
+} NnVulkanGlobalConfig;
+
 class NnVulkanDeviceData {
-public:
+private:
     NnNetConfig *netConfig;
     NnNodeConfig *nodeConfig;
+    NnUint globalConfigBufferIndex;
+public:
     std::vector<std::unique_ptr<NnVulkanBuffer>> pipes;
     std::vector<std::unique_ptr<NnVulkanBuffer>> buffers;
     std::vector<std::unique_ptr<NnVulkanBuffer>> internalBuffers;
     NnVulkanDeviceData(NnVulkanContext *context, NnNetConfig *netConfig, NnNodeConfig *nodeConfig);
     ~NnVulkanDeviceData();
 
-    NnSize2D resolvePointerSize(NnPointerConfig *config);
+    NnSize2D resolveBufferSize(NnPointerConfig *config);
     NnVulkanBuffer *resolveVulkanBuffer(NnPointerConfig *config);
+    NnVulkanBuffer *getGlobalConfigBuffer();
 };
 
 class NnVulkanDevice : public NnDevice {
@@ -91,8 +98,8 @@ private:
     std::vector<NnUint> configBufferIndex;
 public:
     NnVulkanDeviceSegmentData(NnVulkanContext *context, NnVulkanDeviceData *data, NnSegmentConfig *segmentConfig);
-    NnVulkanBuffer *resolveWeightVulkanBuffer(NnUint opIndex);
-    NnVulkanBuffer *resolveConfigVulkanBuffer(NnUint opIndex);
+    NnVulkanBuffer *resolveOpWeightVulkanBuffer(NnUint opIndex);
+    NnVulkanBuffer *resolveOpConfigVulkanBuffer(NnUint opIndex);
 };
 
 class NnVulkanDeviceSegment : public NnDeviceSegment {

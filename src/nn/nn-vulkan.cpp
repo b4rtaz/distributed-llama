@@ -192,6 +192,11 @@ NnVulkanDeviceData::NnVulkanDeviceData(NnVulkanContext *context, NnNetConfig *ne
         pipes[i].reset(new NnVulkanBuffer(context, netConfig->pipes[i].size.nBytes, vk::BufferUsageFlagBits::eStorageBuffer, true));
     for (NnUint i = 0; i < nodeConfig->nBuffers; i++)
         buffers[i].reset(new NnVulkanBuffer(context, nodeConfig->buffers[i].size.nBytes, vk::BufferUsageFlagBits::eStorageBuffer, false));
+
+    internalBuffers.push_back(std::unique_ptr<NnVulkanBuffer>(
+        new NnVulkanBuffer(context, sizeof(NnVulkanGlobalConfig), vk::BufferUsageFlagBits::eUniformBuffer, true)
+    ));
+    this->globalConfigBufferIndex = internalBuffers.size() - 1;
 }
 
 NnVulkanDeviceData::~NnVulkanDeviceData() {
@@ -200,7 +205,7 @@ NnVulkanDeviceData::~NnVulkanDeviceData() {
     internalBuffers.clear();
 }
 
-NnSize2D NnVulkanDeviceData::resolvePointerSize(NnPointerConfig *config) {
+NnSize2D NnVulkanDeviceData::resolveBufferSize(NnPointerConfig *config) {
     if (config->pointerType == PNTR_BUFFER)
         return nodeConfig->buffers[config->pointerIndex].size;
     if (config->pointerType == PNTR_PIPE)
@@ -214,6 +219,10 @@ NnVulkanBuffer *NnVulkanDeviceData::resolveVulkanBuffer(NnPointerConfig *config)
     if (config->pointerType == PNTR_PIPE)
         return pipes[config->pointerIndex].get();
     throw std::invalid_argument("Unsupported pointer config");
+}
+
+NnVulkanBuffer *NnVulkanDeviceData::getGlobalConfigBuffer() {
+    return internalBuffers[globalConfigBufferIndex].get();
 }
 
 NnVulkanDevice::NnVulkanDevice(NnNetConfig *netConfig, NnNodeConfig *nodeConfig, NnNetExecution *netExecution) {
@@ -331,18 +340,40 @@ static void buildShaderLayout(std::vector<NnVulkanBuffer *> &buffers, NnVulkanDe
     buffers.push_back(data->resolveVulkanBuffer(&opConfig->input));
     // output
     buffers.push_back(data->resolveVulkanBuffer(&opConfig->output));
+    // global config
+    buffers.push_back(data->getGlobalConfigBuffer());
     // weight
     if (opConfig->weightSize.nBytes > 0)
-        buffers.push_back(segmentData->resolveWeightVulkanBuffer(opIndex));
+        buffers.push_back(segmentData->resolveOpWeightVulkanBuffer(opIndex));
     // config
     if (opConfig->configSize > 0)
-        buffers.push_back(segmentData->resolveConfigVulkanBuffer(opIndex));
+        buffers.push_back(segmentData->resolveOpConfigVulkanBuffer(opIndex));
 
     if (opConfig->code == OP_RMS_NORM) {
         assert(opConfig->configSize > 0);
         NnRmsNormOpConfig *config = (NnRmsNormOpConfig *)opConfig->config;
         buffers.push_back(data->buffers[config->invRmsBufferIndex].get());
     }
+}
+
+static std::vector<NnByte> buildShaderOpConfig(NnVulkanDeviceData *data, NnOpConfig *opConfig) {
+    NnSize2D inputSize = data->resolveBufferSize(&opConfig->input);
+    NnSize2D oututSize = data->resolveBufferSize(&opConfig->output);
+    NnSize configSize = sizeof(NnUint) * 4 + opConfig->configSize;
+
+    std::vector<NnByte> finalConfig(configSize);
+    NnByte *d = finalConfig.data();
+    std::memcpy(d, &inputSize.x, sizeof(inputSize.x));
+    d += sizeof(inputSize.x);
+    std::memcpy(d, &inputSize.y, sizeof(inputSize.y));
+    d += sizeof(inputSize.y);
+    std::memcpy(d, &oututSize.x, sizeof(oututSize.x));
+    d += sizeof(oututSize.x);
+    std::memcpy(d, &oututSize.y, sizeof(oututSize.y));
+    d += sizeof(oututSize.y);
+    if (opConfig->configSize > 0)
+        std::memcpy(d, opConfig->config, opConfig->configSize);
+    return finalConfig;
 }
 
 static void resolveShaderGroups(const NnOpCode opCode, NnSize2D inputSize, NnSize2D outputSize, NnUint *groupCount) {
@@ -379,26 +410,6 @@ static vk::DescriptorType toDescriptorType(NnVulkanBuffer *buffer) {
     throw std::invalid_argument("Unsupported buffer usage");
 }
 
-static std::vector<NnByte> buildShaderConfig(NnVulkanDeviceData *data, NnOpConfig *opConfig) {
-    NnSize2D inputSize = data->resolvePointerSize(&opConfig->input);
-    NnSize2D oututSize = data->resolvePointerSize(&opConfig->output);
-    NnSize configSize = sizeof(NnUint) * 4 + opConfig->configSize;
-
-    std::vector<NnByte> finalConfig(configSize);
-    NnByte *d = finalConfig.data();
-    std::memcpy(d, &inputSize.x, sizeof(inputSize.x));
-    d += sizeof(inputSize.x);
-    std::memcpy(d, &inputSize.y, sizeof(inputSize.y));
-    d += sizeof(inputSize.y);
-    std::memcpy(d, &oututSize.x, sizeof(oututSize.x));
-    d += sizeof(oututSize.x);
-    std::memcpy(d, &oututSize.y, sizeof(oututSize.y));
-    d += sizeof(oututSize.y);
-    if (opConfig->configSize > 0)
-        std::memcpy(d, opConfig->config, opConfig->configSize);
-    return finalConfig;
-}
-
 NnVulkanDeviceSegmentData::NnVulkanDeviceSegmentData(NnVulkanContext *context, NnVulkanDeviceData *data, NnSegmentConfig *segmentConfig)
 : weightBufferIndex(segmentConfig->nOps, UINT32_MAX), configBufferIndex(segmentConfig->nOps, UINT32_MAX) {
     this->data = data;
@@ -411,7 +422,7 @@ NnVulkanDeviceSegmentData::NnVulkanDeviceSegmentData(NnVulkanContext *context, N
             weightBufferIndex[opIndex] = data->internalBuffers.size() - 1;
         }
 
-        std::vector<NnByte> shaderConfig = buildShaderConfig(data, opConfig);
+        std::vector<NnByte> shaderConfig = buildShaderOpConfig(data, opConfig);
         NnVulkanBuffer *buffer = new NnVulkanBuffer(context, shaderConfig.size(), vk::BufferUsageFlagBits::eUniformBuffer, false);
         data->internalBuffers.push_back(std::unique_ptr<NnVulkanBuffer>(buffer));
         buffer->write(shaderConfig.data());
@@ -419,12 +430,12 @@ NnVulkanDeviceSegmentData::NnVulkanDeviceSegmentData(NnVulkanContext *context, N
     }
 }
 
-NnVulkanBuffer *NnVulkanDeviceSegmentData::resolveConfigVulkanBuffer(NnUint opIndex) {
+NnVulkanBuffer *NnVulkanDeviceSegmentData::resolveOpConfigVulkanBuffer(NnUint opIndex) {
     assert(configBufferIndex[opIndex] != UINT32_MAX);
     return data->internalBuffers[configBufferIndex[opIndex]].get();
 }
 
-NnVulkanBuffer *NnVulkanDeviceSegmentData::resolveWeightVulkanBuffer(NnUint opIndex) {
+NnVulkanBuffer *NnVulkanDeviceSegmentData::resolveOpWeightVulkanBuffer(NnUint opIndex) {
     assert(weightBufferIndex[opIndex] != UINT32_MAX);
     return data->internalBuffers[weightBufferIndex[opIndex]].get();
 }
@@ -448,8 +459,8 @@ NnVulkanDeviceSegment::NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanD
 
     for (NnUint opIndex = 0; opIndex < segmentConfig->nOps; opIndex++) {
         NnOpConfig *opConfig = &segmentConfig->ops[opIndex];
-        NnSize2D inputSize = data->resolvePointerSize(&opConfig->input);
-        NnSize2D outputSize = data->resolvePointerSize(&opConfig->output);
+        NnSize2D inputSize = data->resolveBufferSize(&opConfig->input);
+        NnSize2D outputSize = data->resolveBufferSize(&opConfig->output);
         NnOpQuantType opQuant = getOpQuantType(
             inputSize.floatType,
             opConfig->weightSize.floatType,
@@ -598,7 +609,7 @@ NnVulkanDeviceSegment::~NnVulkanDeviceSegment() {
 void NnVulkanDeviceSegment::loadWeight(NnUint opIndex, NnSize nBytes, NnByte *weight) {
     assert(segmentConfig->nOps > opIndex);
     assert(segmentConfig->ops[opIndex].weightSize.nBytes == nBytes);
-    NnVulkanBuffer *buffer = segmentData->resolveWeightVulkanBuffer(opIndex);
+    NnVulkanBuffer *buffer = segmentData->resolveOpWeightVulkanBuffer(opIndex);
     buffer->write(weight);
 }
 
@@ -614,6 +625,11 @@ void NnVulkanDeviceSegment::forward(NnUint opIndex, NnUint nThreads, NnUint thre
 
     {
         // TODO
+
+        NnVulkanGlobalConfig globalConfig;
+        globalConfig.batchSize = netExecution->batchSize;
+        data->getGlobalConfigBuffer()->write((NnByte *)&globalConfig);
+
         for (NnUint opIndex = 0; opIndex < segmentConfig->nOps; opIndex++) {
             NnOpConfig *opConfig = &segmentConfig->ops[opIndex];
             if (opConfig->input.pointerType == PNTR_PIPE)

@@ -10,7 +10,10 @@ layout(local_size_x = N_THREADS, local_size_y = 1, local_size_z = 1) in;
 
 layout(binding = 0) readonly buffer inputBuffer { float x[]; };
 layout(binding = 1) writeonly buffer outputBuffer { float y[]; };
-layout(binding = 2) readonly uniform configBuffer {
+layout(binding = 2) readonly uniform globalConfigBuffer {
+    uint batchSize;
+};
+layout(binding = 3) readonly uniform opConfigBuffer {
     uint inputSizeX;
     uint inputSizeY;
     uint outputSizeX;
@@ -21,10 +24,10 @@ layout(binding = 2) readonly uniform configBuffer {
 shared float sums[N_THREADS];
 
 void main() {
-    uint threadIndex = uint(gl_LocalInvocationID.x);
+    const uint threadIndex = uint(gl_LocalInvocationID.x);
 
-    uint slice = inputSizeX / N_THREADS;
-    uint offset = threadIndex * slice;
+    const uint slice = inputSizeX / N_THREADS;
+    const uint offset = threadIndex * slice;
 
     float sum = 0.0;
     for (uint i = 0; i < slice; i++) {
