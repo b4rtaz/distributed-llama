@@ -339,6 +339,7 @@ static void buildShaderLayout(std::vector<NnVulkanBuffer *> &buffers, NnVulkanDe
         buffers.push_back(segmentData->resolveConfigVulkanBuffer(opIndex));
 
     if (opConfig->code == OP_RMS_NORM) {
+        assert(opConfig->configSize > 0);
         NnRmsNormOpConfig *config = (NnRmsNormOpConfig *)opConfig->config;
         buffers.push_back(data->buffers[config->invRmsBufferIndex].get());
     }
@@ -376,29 +377,6 @@ static vk::DescriptorType toDescriptorType(NnVulkanBuffer *buffer) {
     if (buffer->usageFlags & vk::BufferUsageFlagBits::eStorageBuffer)
         return vk::DescriptorType::eStorageBuffer;
     throw std::invalid_argument("Unsupported buffer usage");
-}
-
-static void modifySpvSet(std::vector<uint32_t>& binary, uint32_t new_set) {
-    if (binary.size() < 5)
-        throw std::runtime_error("Invalid SPIR-V binary: too short");
-
-    uint32_t magic = binary[0];
-    if (magic != 0x07230203)
-        throw std::runtime_error("Unsupported endianness or not a SPIR-V binary");
-
-    size_t index = 5;
-    while (index < binary.size()) {
-        uint32_t firstWord = binary[index];
-        uint16_t opcode = firstWord & 0xFFFF;
-        uint16_t wordCount = firstWord >> 16;
-        if (wordCount == 0) break;
-        if (opcode == 71 && wordCount >= 4) {
-            uint32_t decoration = binary[index + 2];
-            if (decoration == 34)
-                binary[index + 3] = new_set;
-        }
-        index += wordCount;
-    }
 }
 
 static std::vector<NnByte> buildShaderConfig(NnVulkanDeviceData *data, NnOpConfig *opConfig) {
@@ -454,9 +432,10 @@ NnVulkanBuffer *NnVulkanDeviceSegmentData::resolveWeightVulkanBuffer(NnUint opIn
 NnVulkanDeviceSegment::NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanDeviceData *data, NnSegmentConfig *segmentConfig, NnNetExecution *netExecution) :
     shaderModules(segmentConfig->nOps),
     descriptorSets(segmentConfig->nOps),
-    descriptorPools(segmentConfig->nOps),
     descriptorSetLayouts(segmentConfig->nOps),
-    groupCount(segmentConfig->nOps * 3)
+    groupCount(segmentConfig->nOps * 3),
+    pipelineLayouts(segmentConfig->nOps),
+    pipelines(segmentConfig->nOps)
 {
     this->context = context;
     this->data = data;
@@ -465,6 +444,7 @@ NnVulkanDeviceSegment::NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanD
     this->segmentData.reset(new NnVulkanDeviceSegmentData(context, data, segmentConfig));
 
     std::vector<vk::PipelineShaderStageCreateInfo> shaderCreateInfos(segmentConfig->nOps);
+    std::vector<std::vector<NnVulkanBuffer *>> opBuffers(segmentConfig->nOps);
 
     for (NnUint opIndex = 0; opIndex < segmentConfig->nOps; opIndex++) {
         NnOpConfig *opConfig = &segmentConfig->ops[opIndex];
@@ -473,80 +453,124 @@ NnVulkanDeviceSegment::NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanD
         NnOpQuantType opQuant = getOpQuantType(
             inputSize.floatType,
             opConfig->weightSize.floatType,
-            outputSize.floatType);
+            outputSize.floatType
+        );
         const char *shaderFileName = getShaderFileName(opConfig->code, opQuant);
         assert(shaderFileName != nullptr);
         std::vector<uint32_t> code = readShader(shaderFileName);
-        modifySpvSet(code, opIndex);
 
-        vk::ShaderModuleCreateInfo shaderModuleCreateInfo(vk::ShaderModuleCreateFlags(), code.size(), code.data());
-        vk::ShaderModule shaderModule = context->device.createShaderModule(shaderModuleCreateInfo);
-
-        vk::PipelineShaderStageCreateInfo shaderCreateInfo(vk::PipelineShaderStageCreateFlags(), vk::ShaderStageFlagBits::eCompute, shaderModule, "main");
-
-        std::vector<NnVulkanBuffer *> buffers;
+        std::vector<NnVulkanBuffer *> &buffers = opBuffers[opIndex];
         NnUint *opGroupCount = &groupCount[opIndex * 3];
         buildShaderLayout(buffers, data, segmentData.get(), opIndex, opConfig);
         resolveShaderGroups(opConfig->code, inputSize, outputSize, opGroupCount);
 
-        std::vector<vk::DescriptorSetLayoutBinding> descriptorSetLayoutBindings(buffers.size());
-        for (NnUint i = 0; i < buffers.size(); i++)
-            descriptorSetLayoutBindings[i] = vk::DescriptorSetLayoutBinding(i, toDescriptorType(buffers[i]), 1, vk::ShaderStageFlagBits::eCompute);
-
-        vk::DescriptorSetLayoutCreateInfo descriptorSetLayoutCreateInfo(vk::DescriptorSetLayoutCreateFlags(), descriptorSetLayoutBindings.size(), descriptorSetLayoutBindings.data());
-        vk::DescriptorSetLayout descriptorSetLayout = context->device.createDescriptorSetLayout(descriptorSetLayoutCreateInfo);
-
-        NnUint nUniformBuffers = 0;
-        NnUint nStorageBuffers = 0;
-        for (NnUint i = 0; i < buffers.size(); i++) {
-            vk::DescriptorType descriptorType = toDescriptorType(buffers[i]);
-            if (descriptorType == vk::DescriptorType::eUniformBuffer)
-                nUniformBuffers++;
-            if (descriptorType == vk::DescriptorType::eStorageBuffer)
-                nStorageBuffers++;
-        }
-
-        std::vector<vk::DescriptorPoolSize> descriptorPoolSizes;
-        if (nStorageBuffers > 0)
-            descriptorPoolSizes.push_back(vk::DescriptorPoolSize(vk::DescriptorType::eStorageBuffer, nStorageBuffers));
-        if (nUniformBuffers > 0)
-            descriptorPoolSizes.push_back(vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, nUniformBuffers));
-
-        vk::DescriptorPoolCreateInfo descriptorPoolCreateInfo(vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet, 1, descriptorPoolSizes.size(), descriptorPoolSizes.data());
-        vk::DescriptorPool descriptorPool = context->device.createDescriptorPool(descriptorPoolCreateInfo);
-        vk::DescriptorSetAllocateInfo descriptorSetAllocInfo(descriptorPool, 1, &descriptorSetLayout);
-        const std::vector<vk::DescriptorSet> allocatedDescriptorSets = context->device.allocateDescriptorSets(descriptorSetAllocInfo);
-        assert(allocatedDescriptorSets.size() == 1);
-
-        vk::DescriptorSet descriptorSet = allocatedDescriptorSets[0];
-        std::vector<vk::DescriptorBufferInfo> bufferInfos(buffers.size());
-        std::vector<vk::WriteDescriptorSet> writeDescriptorSets(buffers.size());
-        for (NnUint i = 0; i < buffers.size(); i++) {
-            bufferInfos[i] = vk::DescriptorBufferInfo(buffers[i]->deviceBuffer, 0, buffers[i]->bufferSize);
-            writeDescriptorSets[i] = vk::WriteDescriptorSet(descriptorSet, i, 0, 1, toDescriptorType(buffers[i]), nullptr, &bufferInfos[i], nullptr);
-        }
-
-        context->device.updateDescriptorSets(writeDescriptorSets, nullptr);
+        vk::ShaderModuleCreateInfo shaderModuleCreateInfo(
+            vk::ShaderModuleCreateFlags(),
+            code.size(),
+            code.data()
+        );
+        vk::ShaderModule shaderModule = context->device.createShaderModule(shaderModuleCreateInfo);
+        vk::PipelineShaderStageCreateInfo shaderCreateInfo(
+            vk::PipelineShaderStageCreateFlags(),
+            vk::ShaderStageFlagBits::eCompute,
+            shaderModule,
+            "main"
+        );
 
         shaderModules[opIndex] = shaderModule;
         shaderCreateInfos[opIndex] = shaderCreateInfo;
-        descriptorSets[opIndex] = descriptorSet;
-        descriptorPools[opIndex] = descriptorPool;
-        descriptorSetLayouts[opIndex] = descriptorSetLayout;
-        VULKAN_TRACE("Shader %d %s groupCount=%d,%d,%d", opIndex, shaderFileName, opGroupCount[0], opGroupCount[1], opGroupCount[2]);
+        VULKAN_TRACE("Segment %d, buffers: %zu, dispatch: %d, %d, %d",
+            opIndex,
+            buffers.size(),
+            opGroupCount[0],
+            opGroupCount[1],
+            opGroupCount[2]);
     }
 
-    vk::PipelineLayoutCreateInfo pipelineLayoutCreateInfo(vk::PipelineLayoutCreateFlags(), descriptorSetLayouts.size(), descriptorSetLayouts.data());
-    pipelineLayout = context->device.createPipelineLayout(pipelineLayoutCreateInfo);
+    NnUint nUniformBuffers = 0;
+    NnUint nStorageBuffers = 0;
+    for (NnUint opIndex = 0; opIndex < segmentConfig->nOps; opIndex++) {
+        std::vector<NnVulkanBuffer *> &buffers = opBuffers[opIndex];
+        std::vector<vk::DescriptorSetLayoutBinding> descriptorSetLayoutBindings(buffers.size());
+        for (NnUint i = 0; i < buffers.size(); i++) {
+            vk::DescriptorType descriptorType = toDescriptorType(buffers.data()[i]);
+            descriptorSetLayoutBindings[i] = vk::DescriptorSetLayoutBinding(
+                i,
+                descriptorType,
+                1,
+                vk::ShaderStageFlagBits::eCompute
+            );
+            if (descriptorType == vk::DescriptorType::eUniformBuffer)
+                nUniformBuffers++;
+            else if (descriptorType == vk::DescriptorType::eStorageBuffer)
+                nStorageBuffers++;
+        }
+
+        vk::DescriptorSetLayoutCreateInfo descriptorSetLayoutCreateInfo(
+            vk::DescriptorSetLayoutCreateFlags(),
+            descriptorSetLayoutBindings.size(),
+            descriptorSetLayoutBindings.data()
+        );
+        vk::DescriptorSetLayout descriptorSetLayout = context->device.createDescriptorSetLayout(descriptorSetLayoutCreateInfo);
+
+        descriptorSetLayouts[opIndex] = descriptorSetLayout;
+    }
+
+    std::vector<vk::DescriptorPoolSize> descriptorPoolSizes;
+    if (nStorageBuffers > 0)
+        descriptorPoolSizes.push_back(vk::DescriptorPoolSize(vk::DescriptorType::eStorageBuffer, nStorageBuffers));
+    if (nUniformBuffers > 0)
+        descriptorPoolSizes.push_back(vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, nUniformBuffers));
+
+    vk::DescriptorPoolCreateInfo descriptorPoolCreateInfo(
+        vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet, 
+        segmentConfig->nOps,
+        descriptorPoolSizes.size(),
+        descriptorPoolSizes.data());
+    descriptorPool = context->device.createDescriptorPool(descriptorPoolCreateInfo);
+
+    vk::DescriptorSetAllocateInfo descriptorSetAllocInfo(descriptorPool, descriptorSetLayouts.size(), descriptorSetLayouts.data());
+    descriptorSets = context->device.allocateDescriptorSets(descriptorSetAllocInfo);
+
+    std::vector<vk::WriteDescriptorSet> writeDescriptorSets(nUniformBuffers + nStorageBuffers);
+    std::vector<vk::DescriptorBufferInfo> bufferInfos(nUniformBuffers + nStorageBuffers);
+    NnUint writeDescriptorSetIndex = 0;
+    for (NnUint opIndex = 0; opIndex < segmentConfig->nOps; opIndex++) {
+        std::vector<NnVulkanBuffer *> &buffers = opBuffers[opIndex];
+        for (NnUint i = 0; i < buffers.size(); i++) {
+            NnVulkanBuffer *buffer = buffers.data()[i];
+            bufferInfos[writeDescriptorSetIndex] = vk::DescriptorBufferInfo(
+                buffer->deviceBuffer,
+                0,
+                buffer->bufferSize
+            );
+            vk::DescriptorType descriptorType = toDescriptorType(buffer);
+            writeDescriptorSets[writeDescriptorSetIndex] = vk::WriteDescriptorSet(
+                descriptorSets[opIndex],
+                i,
+                0,
+                1,
+                descriptorType,
+                nullptr,
+                &bufferInfos.data()[writeDescriptorSetIndex],
+                nullptr
+            );
+            writeDescriptorSetIndex++;
+        }
+    }
+
+    context->device.updateDescriptorSets(writeDescriptorSets, nullptr);
+
     pipelineCache = context->device.createPipelineCache(vk::PipelineCacheCreateInfo());
 
-    std::vector<vk::ComputePipelineCreateInfo> pipelineInfos(segmentConfig->nOps);
     for (NnUint opIndex = 0; opIndex < segmentConfig->nOps; opIndex++) {
-        vk::ComputePipelineCreateInfo pipelineInfo(vk::PipelineCreateFlags(), shaderCreateInfos[opIndex], pipelineLayout);
-        pipelineInfos[opIndex] = pipelineInfo;
+        vk::PipelineLayoutCreateInfo pipelineLayoutCreateInfo(vk::PipelineLayoutCreateFlags(), 1, &descriptorSetLayouts[opIndex]);
+        pipelineLayouts[opIndex] = context->device.createPipelineLayout(pipelineLayoutCreateInfo);
+
+        vk::ComputePipelineCreateInfo pipelineInfo(vk::PipelineCreateFlags(), shaderCreateInfos[opIndex], pipelineLayouts[opIndex], vk::Pipeline(), 0);
+        pipelines[opIndex] = context->device.createComputePipelines(pipelineCache, pipelineInfo).value.front();
     }
 
-    pipelines = context->device.createComputePipelines(pipelineCache, pipelineInfos).value;
     fence = context->device.createFence(vk::FenceCreateInfo());
 
     vk::CommandBufferAllocateInfo commandBufferAllocInfo(context->commandPool, vk::CommandBufferLevel::ePrimary, 1);
@@ -556,14 +580,15 @@ NnVulkanDeviceSegment::NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanD
 
 NnVulkanDeviceSegment::~NnVulkanDeviceSegment() {
     context->device.freeCommandBuffers(context->commandPool, 1, &commandBuffer);
+    context->device.destroyDescriptorPool(descriptorPool);
 
-    for (NnUint opIndex = 0; opIndex < segmentConfig->nOps; opIndex++)
+    for (NnUint opIndex = 0; opIndex < segmentConfig->nOps; opIndex++) {
         context->device.destroyPipeline(pipelines[opIndex]);
+        context->device.destroyPipelineLayout(pipelineLayouts[opIndex]);
+    }
     context->device.destroyFence(fence);
-    context->device.destroyPipelineLayout(pipelineLayout);
     context->device.destroyPipelineCache(pipelineCache);
     for (NnUint opIndex = 0; opIndex < segmentConfig->nOps; opIndex++) {
-        context->device.destroyDescriptorPool(descriptorPools[opIndex]);
         context->device.destroyDescriptorSetLayout(descriptorSetLayouts[opIndex]);
         context->device.destroyShaderModule(shaderModules[opIndex]);
     }
@@ -596,13 +621,36 @@ void NnVulkanDeviceSegment::forward(NnUint opIndex, NnUint nThreads, NnUint thre
         }
     }
 
-
     commandBuffer.begin({ vk::CommandBufferUsageFlags{ vk::CommandBufferUsageFlagBits::eOneTimeSubmit } });
 
     for (NnUint opIndex = 0; opIndex < segmentConfig->nOps; opIndex++) {
+        if (opIndex > 0) {
+            vk::MemoryBarrier memoryBarrier(
+                vk::AccessFlagBits::eShaderWrite,
+                vk::AccessFlagBits::eShaderRead
+            );
+            commandBuffer.pipelineBarrier(
+                vk::PipelineStageFlagBits::eComputeShader,
+                vk::PipelineStageFlagBits::eFragmentShader,
+                vk::DependencyFlags(),
+                memoryBarrier,
+                nullptr,
+                nullptr
+            );
+        }
+
         NnUint *opGroupCount = &groupCount[opIndex * 3];
-        commandBuffer.bindPipeline(vk::PipelineBindPoint::eCompute, pipelines[opIndex]);
-        commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eCompute, pipelineLayout, opIndex, { descriptorSets[opIndex] }, {});
+        commandBuffer.bindPipeline(
+            vk::PipelineBindPoint::eCompute,
+            pipelines[opIndex]
+        );
+        commandBuffer.bindDescriptorSets(
+            vk::PipelineBindPoint::eCompute,
+            pipelineLayouts[opIndex],
+            0, 
+            { descriptorSets[opIndex] },
+            {}
+        );
         commandBuffer.dispatch(opGroupCount[0], opGroupCount[1], opGroupCount[2]);
     }
     commandBuffer.end();

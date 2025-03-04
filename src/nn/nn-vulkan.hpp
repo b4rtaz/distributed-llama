@@ -104,13 +104,13 @@ private:
     std::unique_ptr<NnVulkanDeviceSegmentData> segmentData;
 
     std::vector<vk::ShaderModule> shaderModules;
-    std::vector<vk::DescriptorSet> descriptorSets;
-    std::vector<vk::DescriptorPool> descriptorPools;
     std::vector<vk::DescriptorSetLayout> descriptorSetLayouts;
+    vk::DescriptorPool descriptorPool;
+    std::vector<vk::DescriptorSet> descriptorSets;
     vk::Fence fence;
+    std::vector<vk::PipelineLayout> pipelineLayouts;
     std::vector<vk::Pipeline> pipelines;
     vk::PipelineCache pipelineCache;
-    vk::PipelineLayout pipelineLayout;
     std::vector<NnUint> groupCount;
     vk::CommandBuffer commandBuffer;
 public:

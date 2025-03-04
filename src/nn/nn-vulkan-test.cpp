@@ -64,7 +64,39 @@ void testInvRms_F32_F32() {
         });
 }
 
+void testRmsNorm_F32_F32_F32() {
+    #define RMS_NORM_DIM 256
+    execute(
+        [](NnNetConfigBuilder *netBuilder, NnNodeConfigBuilder *nodeBuilder, NnSegmentConfigBuilder *segmentBuilder) {
+            NnUint xPipeIndex = netBuilder->addPipe("X", size2D(F_32, N_BATCHES, RMS_NORM_DIM));
+            NnUint invRmsBufferIndex = nodeBuilder->addBuffer("inv_rms", size2D(F_32, N_BATCHES, 1));
+            segmentBuilder->addOp(OP_INV_RMS, "inv_rms", 0,
+                pointerConfig(PNTR_PIPE, xPipeIndex),
+                pointerConfig(PNTR_BUFFER, invRmsBufferIndex),
+                size0(),
+                NnInvRmsOpConfig{1e-5f});
+            segmentBuilder->addOp(OP_RMS_NORM, "rms_norm", 0,
+                pointerConfig(PNTR_PIPE, xPipeIndex),
+                pointerConfig(PNTR_PIPE, xPipeIndex),
+                size1D(F_32, RMS_NORM_DIM),
+                NnRmsNormOpConfig{invRmsBufferIndex});
+        },
+        [](NnExecutor *executor, NnNetExecution *execution, NnVulkanDevice *device) {
+            std::vector<float> normWeight(RMS_NORM_DIM);
+            for (NnUint i = 0; i < RMS_NORM_DIM; i++)
+                normWeight[i] = 0.25f + i / (float)RMS_NORM_DIM;
+            executor->loadWeight("rms_norm", 0, normWeight.size() * sizeof(float), (NnByte *)normWeight.data());
+
+            float *xPipe = (float *)execution->pipes[0];
+            for (NnUint i = 0; i < RMS_NORM_DIM; i++)
+                xPipe[i] = i / (float)RMS_NORM_DIM;
+
+            executor->forward();
+        });
+}
+
 int main() {
     testInvRms_F32_F32();
+    testRmsNorm_F32_F32_F32();
     return 0;
 }
