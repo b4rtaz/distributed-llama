@@ -3,8 +3,6 @@
 #include <stdexcept>
 #include "nn-executor.hpp"
 
-#define DEBUG_EXECUTOR_BENCHMARK false
-
 void NnFakeNodeSynchronizer::sync(NnUint segmentIndex, NnUint nThreads, NnUint threadIndex) {
     // Nothing
 }
@@ -35,7 +33,7 @@ void NnNetExecution::setBatchSize(NnUint batchSize) {
     this->batchSize = batchSize;
 }
 
-NnExecutor::NnExecutor(NnNetConfig *netConfig, NnNodeConfig *nodeConfig, NnDevice *device, NnNetExecution *netExecution, NnNodeSynchronizer *synchronizer)
+NnExecutor::NnExecutor(NnNetConfig *netConfig, NnNodeConfig *nodeConfig, NnDevice *device, NnNetExecution *netExecution, NnNodeSynchronizer *synchronizer, bool benchmark)
     : segments(nodeConfig->nSegments), steps()
 {
     NnUint maxNThreads = device->maxNThreads();
@@ -50,7 +48,7 @@ NnExecutor::NnExecutor(NnNetConfig *netConfig, NnNodeConfig *nodeConfig, NnDevic
         if (segmentConfig->nOps > 0) {
             NnDeviceSegment *segment = device->createSegment(segmentIndex);
             segments[segmentIndex] = std::unique_ptr<NnDeviceSegment>(segment);
-    
+
             for (NnUint opIndex = 0; opIndex < segmentConfig->nOps; opIndex++)
                 steps.push_back(NnExecutorStep{ STEP_EXECUTE_OP, segment, opIndex, &segmentConfig->ops[opIndex] });
         }
@@ -67,6 +65,10 @@ NnExecutor::NnExecutor(NnNetConfig *netConfig, NnNodeConfig *nodeConfig, NnDevic
     context.device = device;
     context.nSteps = (NnUint)steps.size();
     context.steps = steps.data();
+    if (benchmark)
+        context.timer = new Timer();
+    else
+        context.timer = nullptr;
 
     threads = new NnExecutorThread[netExecution->nThreads];
     for (NnUint threadIndex = 0; threadIndex < netExecution->nThreads; threadIndex++) {
@@ -77,6 +79,8 @@ NnExecutor::NnExecutor(NnNetConfig *netConfig, NnNodeConfig *nodeConfig, NnDevic
 }
 
 NnExecutor::~NnExecutor() {
+    if (context.timer != nullptr)
+        delete context.timer;
     delete[] threads;
 }
 
@@ -97,11 +101,6 @@ void NnExecutor::loadWeight(const char *name, NnUint index, NnSize nBytes, NnByt
 }
 
 inline void executeStep(NnExecutorStep *step, NnUint nThreads, NnExecutorThread *thread, NnExecutorContext *context) {
-#if DEBUG_EXECUTOR_BENCHMARK
-    assert(nThreads == 1);
-    Timer startTime;
-#endif
-
     if (step->type == STEP_EXECUTE_OP) {
         step->segment->forward(step->arg0, nThreads, thread->threadIndex, context->batchSize);
     } else if (step->type == STEP_SYNC_NODES) {
@@ -112,14 +111,6 @@ inline void executeStep(NnExecutorStep *step, NnUint nThreads, NnExecutorThread 
     } else {
         throw std::invalid_argument("Unsupported step type");
     }
-
-#if DEBUG_EXECUTOR_BENCHMARK
-    NnUint duration = startTime.elapsedMicroseconds();
-    if (step->type == STEP_EXECUTE_OP)
-        printf("🕒 [OP %16s %2d] %u μs\n", opCodeToString(step->opConfig->code), step->opConfig->index, duration);
-    else if (step->type == STEP_SYNC_NODES)
-        printf("🕒 [SYNC %17d] %u μs\n", step->arg0, duration);
-#endif
 }
 
 static inline void *executorThreadHandler(void *arg) {
@@ -138,6 +129,12 @@ static inline void *executorThreadHandler(void *arg) {
 
         NnUint currentCount = context->doneThreadCount.fetch_add(1);
         if (currentCount == doneCount) {
+            if (context->timer != nullptr) {
+                NnUint time = context->timer->elapsedMicroseconds();
+                context->totalTime[step->type] += time;
+                context->timer->reset();
+            }
+
             context->doneThreadCount.store(0);
             context->currentStepIndex.fetch_add(1);
         } else {
@@ -155,6 +152,11 @@ void NnExecutor::forward() {
     context.doneThreadCount.exchange(0);
     context.batchSize = netExecution->batchSize;
 
+    if (context.timer != nullptr) {
+        std::memset(context.totalTime, 0, sizeof(context.totalTime));
+        context.timer->reset();
+    }
+
     NnUint threadIndex;
     for (threadIndex = 1; threadIndex < nThreads; threadIndex++) {
         int result = pthread_create(&threads[threadIndex].handler, NULL, (PthreadFunc)executorThreadHandler, (void *)&threads[threadIndex]);
@@ -164,4 +166,9 @@ void NnExecutor::forward() {
     executorThreadHandler((void *)&threads[0]);
     for (threadIndex = 1; threadIndex < nThreads; threadIndex++)
         pthread_join(threads[threadIndex].handler, NULL);
+}
+
+NnUint NnExecutor::getTotalTime(NnExecutorStepType type) {
+    assert(type < N_STEP_TYPES);
+    return context.totalTime[type];
 }

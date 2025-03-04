@@ -67,7 +67,7 @@ int main() {
     NnCpuDevice device(&netConfig, &nodeConfig, &execution);
     NnFakeNodeSynchronizer synchronizer;
     float *rms = (float *)device.buffers[0];
-    NnExecutor executor(&netConfig, &nodeConfig, &device, &execution, &synchronizer);
+    NnExecutor executor(&netConfig, &nodeConfig, &device, &execution, &synchronizer, false);
     executor.loadWeight("rms_norm", 0, sizeof(rmsNormWeight), (NnByte *)rmsNormWeight);
 
     execution.setBatchSize(2);

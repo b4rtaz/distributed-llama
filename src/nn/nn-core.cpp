@@ -166,6 +166,10 @@ void printNodeRequiredMemory(NnNetConfig *netConfig, NnNodeConfig *nodeConfig) {
 }
 
 Timer::Timer() {
+    reset();
+}
+
+void Timer::reset() {
     startTime = std::chrono::high_resolution_clock::now();
 }
 

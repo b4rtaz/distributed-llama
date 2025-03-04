@@ -2,6 +2,7 @@
 #include "nn/nn-config-builder.hpp"
 #include "nn/nn-cpu.hpp"
 #include "nn/nn-network.hpp"
+#include "nn/nn-executor.hpp"
 #include "llm.hpp"
 #include "tokenizer.hpp"
 #include "app.hpp"
@@ -26,12 +27,13 @@ static void inference(AppInferenceContext *context) {
     if (nInputTokens > context->args->steps)
         throw std::runtime_error("The number of prompt tokens is greater than the number of steps");
 
-    Timer evalTimer;
     NnSize sentBytes = 0;
     NnSize recvBytes = 0;
+    NnUint evalTotalTime = 0;
+    NnUint predTotalTime = 0;
+
     printf("%s\n", context->args->prompt);
     for (;;) {
-        Timer batchTimer;
         long remainingTokens = nInputTokens - 1 - (long)pos;
         if (remainingTokens <= 0)
             break;
@@ -51,23 +53,25 @@ static void inference(AppInferenceContext *context) {
 
         if (context->network != nullptr)
             context->network->getStats(&sentBytes, &recvBytes);
-        printf("🔷️ E%5u ms S%6zu kB R%6zu kB (%d tokens)\n",
-            batchTimer.elapsedMiliseconds(),
+
+        NnUint evalTime = context->executor->getTotalTime(STEP_EXECUTE_OP) + context->executor->getTotalTime(STEP_SYNC_POINTERS);
+        NnUint syncTime = context->executor->getTotalTime(STEP_SYNC_NODES);
+        printf("🔷️ Eval%5u ms Sync%5u ms | Sent%6zu kB Recv%6zu kB | (%d tokens)\n",
+            evalTime / 1000,
+            syncTime / 1000,
             sentBytes / 1024,
             recvBytes / 1024,
             batchSize);
+        evalTotalTime += evalTime + syncTime;
     }
-    NnUint evalTime = evalTimer.elapsedMiliseconds();
 
     fflush(stdout);
 
     context->inference->setBatchSize(1);
     context->tokenizer->resetDecoder();
 
-    Timer predTimer;
     const NnUint maxPos = std::min(context->header->seqLen, context->args->steps);
     for (; pos < maxPos; pos++) {
-        Timer tokenTimer;
         context->inference->setPosition(pos);
         context->inference->setToken(0, token);
         context->inference->forward();
@@ -79,29 +83,34 @@ static void inference(AppInferenceContext *context) {
         if (context->network != nullptr)
             context->network->getStats(&sentBytes, &recvBytes);
 
-        printf("🔶 P%5u ms S%6zu kB R%6zu kB %s\n",
-            tokenTimer.elapsedMiliseconds(),
+        NnUint predTime = context->executor->getTotalTime(STEP_EXECUTE_OP) + context->executor->getTotalTime(STEP_SYNC_POINTERS);
+        NnUint syncTime = context->executor->getTotalTime(STEP_SYNC_NODES);
+        printf("🔶 Pred%5u ms Sync%5u ms | Sent%6zu kB Recv%6zu kB | %s\n",
+            predTime / 1000,
+            syncTime / 1000,
             sentBytes / 1024,
             recvBytes / 1024,
             piece == nullptr ? "~" : piece);
         fflush(stdout);
+        predTotalTime += predTime + syncTime;
     }
-    NnUint predTime = predTimer.elapsedMiliseconds();
 
     NnUint nEvalTokens = nInputTokens - 1;
     NnUint nPredTokens = pos - nEvalTokens;
+    float evalTotalTimeMs = evalTotalTime / 1000.0;
+    float predTotalTimeMs = predTotalTime / 1000.0;
     printf("\n");
     printf("Evaluation\n");
     printf("   nBatches: %d\n", context->args->nBatches);
     printf("    nTokens: %d\n", nEvalTokens);
     printf("   tokens/s: %3.2f (%3.2f ms/tok)\n",
-        nEvalTokens / (evalTime / 1000.0),
-        evalTime / ((float) nEvalTokens));
+        (nEvalTokens * 1000) / evalTotalTimeMs,
+        evalTotalTimeMs / ((float) nEvalTokens));
     printf("Prediction\n");
     printf("    nTokens: %d\n", nPredTokens);
     printf("   tokens/s: %3.2f (%3.2f ms/tok)\n",
-        nPredTokens / (predTime / 1000.0),
-        predTime / ((float) nPredTokens));
+        (nPredTokens * 1000) / predTotalTimeMs,
+        predTotalTimeMs / ((float) nPredTokens));
 }
 
 static NnUint readStdin(const char *guide, char *buffer, NnUint size) {
@@ -211,9 +220,10 @@ int main(int argc, char **argv) {
     int returnCode = EXIT_SUCCESS;
     try {
         AppCliArgs args = AppCliArgs::parse(argc, argv, true);
-        if (std::strcmp(args.mode, "inference") == 0)
+        if (std::strcmp(args.mode, "inference") == 0) {
+            args.benchmark = true;
             runInferenceApp(&args, &inference);
-        else if (std::strcmp(args.mode, "chat") == 0)
+        } else if (std::strcmp(args.mode, "chat") == 0)
             runInferenceApp(&args, &chat);
         else if (std::strcmp(args.mode, "worker") == 0)
             runWorkerApp(&args);

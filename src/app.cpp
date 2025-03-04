@@ -234,7 +234,7 @@ void runInferenceApp(AppCliArgs *args, void (*handler)(AppInferenceContext *cont
     }
 
     std::unique_ptr<NnDevice> device(createDevice(&net.netConfig, rootNodeConfig, &execution));
-    NnExecutor executor(&net.netConfig, rootNodeConfig, device.get(), &execution, synchronizer.get());
+    NnExecutor executor(&net.netConfig, rootNodeConfig, device.get(), &execution, synchronizer.get(), args->benchmark);
 
     NnRootWeightLoader weightLoader(&executor, network, nNodes);
     loadLlmNetWeight(args->modelPath, &net, &weightLoader);
@@ -253,6 +253,7 @@ void runInferenceApp(AppCliArgs *args, void (*handler)(AppInferenceContext *cont
     context.sampler = &sampler;
     context.tokenizer = &tokenizer;
     context.network = network;
+    context.executor = &executor;
 
     handler(&context);
 
@@ -277,7 +278,7 @@ void runWorkerApp(AppCliArgs *args) {
         std::unique_ptr<NnDevice> device(createDevice(&netConfig, &nodeConfig, &execution));
 
         NnNetworkNodeSynchronizer synchronizer(network, &execution, &netConfig, &nodeConfig);
-        NnExecutor executor(&netConfig, &nodeConfig, device.get(), &execution, &synchronizer);
+        NnExecutor executor(&netConfig, &nodeConfig, device.get(), &execution, &synchronizer, false);
 
         NnWorkerWeightReader weightReader(&executor, network);
         weightReader.read();
