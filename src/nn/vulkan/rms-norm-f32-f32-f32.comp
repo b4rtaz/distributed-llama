@@ -1,0 +1,33 @@
+#version 450
+
+#define N_THREADS 32
+
+layout(local_size_x = N_THREADS, local_size_y = 1, local_size_z = 1) in;
+
+layout(binding = 0) readonly buffer inputBuffer { float x[]; };
+layout(binding = 1) writeonly buffer outputBuffer { float y[]; };
+layout(binding = 2) readonly uniform globalConfigBuffer {
+    uint batchSize;
+};
+layout(binding = 3) readonly buffer weightBuffer { float weight[]; };
+layout(binding = 4) readonly uniform configBuffer {
+    uint inputSizeX;
+    uint outputSizeX;
+    uint invRmsBufferIndex;
+};
+layout(binding = 5) readonly buffer invRmsBuffer { float invRms[]; };
+
+void main() {
+    const uint threadIndex = uint(gl_LocalInvocationID.x);
+    const uint batchIndex = uint(gl_GlobalInvocationID.y);
+
+    const uint slice = inputSizeX / N_THREADS;
+    const uint wOffset = threadIndex * slice;
+    const uint iOffset = wOffset + batchIndex * inputSizeX;
+    const float ir = invRms[batchIndex];
+
+    for (uint i = 0; i < slice; i++) {
+        uint j = iOffset + i;
+        y[j] = (x[j] * ir) * weight[wOffset + i];
+    }
+}

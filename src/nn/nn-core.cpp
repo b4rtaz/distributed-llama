@@ -143,9 +143,11 @@ void releaseNodeConfig(NnNodeConfig *nodeConfig) {
         if (segment->nSyncs > 0)
             delete[] segment->syncs;
     }
-    for (NnUint bufferIndex = 0; bufferIndex < nodeConfig->nBuffers; bufferIndex++)
-        delete[] nodeConfig->buffers[bufferIndex].name;
-    delete[] nodeConfig->buffers;
+    if (nodeConfig->nBuffers > 0) {
+        for (NnUint bufferIndex = 0; bufferIndex < nodeConfig->nBuffers; bufferIndex++)
+            delete[] nodeConfig->buffers[bufferIndex].name;
+        delete[] nodeConfig->buffers;
+    }
     delete[] nodeConfig->segments;
 }
 
