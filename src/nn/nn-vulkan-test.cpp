@@ -103,7 +103,44 @@ void testRmsNorm_F32_F32_F32() {
         });
 }
 
+
+void testSilu_F32_F32() {
+    #define SILU_DIM 32
+    execute(
+        [](NnNetConfigBuilder *netBuilder, NnNodeConfigBuilder *nodeBuilder, NnSegmentConfigBuilder *segmentBuilder) {
+            NnUint xPipeIndex = netBuilder->addPipe("X", size2D(F_32, N_BATCHES, SILU_DIM));
+            segmentBuilder->addOp(OP_SILU, "silu", 0,
+                pointerConfig(PNTR_PIPE, xPipeIndex),
+                pointerConfig(PNTR_PIPE, xPipeIndex),
+                size0(),
+                NnSiluOpCodeConfig{});
+        },
+        [](NnExecutor *executor, NnNetExecution *execution, NnVulkanDevice *device) {
+            // arrange
+            execution->setBatchSize(1);
+
+            float *xPipe = (float *)execution->pipes[0];
+            for (NnUint i = 0; i < SILU_DIM; i++)
+                xPipe[i] = i / (float)SILU_DIM;
+
+            // act
+            executor->forward();
+
+            // assert
+            float t = 0.0006f;
+            assertFloat(xPipe[0], 0.0f, t);
+            assertFloat(xPipe[2], 0.032226f, t);
+            assertFloat(xPipe[6], 0.102513f, t);
+            assertFloat(xPipe[17], 0.334573f, t);
+            assertFloat(xPipe[28], 0.617802f, t);
+            assertFloat(xPipe[31], 0.702729f, t);
+
+            printOk("testSilu_F32_F32");
+        });
+}
+
 int main() {
     testRmsNorm_F32_F32_F32();
+    testSilu_F32_F32();
     return 0;
 }

@@ -64,9 +64,12 @@ public:
         NnNodeConfig config;
         config.nodeIndex = nodeIndex;
         config.nBuffers = buffers.size();
-        assert(config.nBuffers > 0);
-        config.buffers = new NnBufferConfig[config.nBuffers];
-        std::copy(buffers.begin(), buffers.end(), config.buffers);
+        if (config.nBuffers > 0) {
+            config.buffers = new NnBufferConfig[config.nBuffers];
+            std::copy(buffers.begin(), buffers.end(), config.buffers);
+        } else {
+            config.buffers = nullptr;
+        }
 
         config.nSegments = segments.size();
         assert(config.nSegments > 0);

@@ -12,10 +12,7 @@ layout(binding = 2) readonly uniform globalConfigBuffer {
 layout(binding = 3) readonly uniform opConfigBuffer {
     uint inputSizeX;
     uint outputSizeX;
-    float epsilon;
 };
-
-shared float sums[N_THREADS];
 
 void main() {
     const uint threadIndex = uint(gl_LocalInvocationID.x);
@@ -27,18 +24,7 @@ void main() {
     float sum = 0.0;
     for (uint i = 0; i < slice; i++) {
         uint j = offset + i;
-        sum += x[j] * x[j];
-    }
-    sums[threadIndex] = sum;
-
-    barrier();
-    memoryBarrierShared();
-
-    if (threadIndex == 0) {
-        sum = 0.0;
-        for (uint i = 0; i < N_THREADS; i++) {
-            sum += sums[i];
-        }
-        y[batchIndex] = 1.0 / sqrt((sum / float(inputSizeX)) + epsilon);
+        float xj = x[j];
+        y[j] = xj / (1.0 + exp(-xj));
     }
 }

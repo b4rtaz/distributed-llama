@@ -332,6 +332,9 @@ static const char *getShaderFileName(const NnOpCode opCode, const NnOpQuantType 
     if (opCode == OP_RMS_NORM) {
         if (quantType == F32_F32_F32) return "rms-norm-f32-f32-f32.spv";
     }
+    if (opCode == OP_SILU) {
+        if (quantType == F32_F32_F32) return "silu-f32-f32.spv";
+    }
     return nullptr;
 }
 
@@ -359,18 +362,14 @@ static void buildShaderLayout(std::vector<NnVulkanBuffer *> &buffers, NnVulkanDe
 static std::vector<NnByte> buildShaderOpConfig(NnVulkanDeviceData *data, NnOpConfig *opConfig) {
     NnSize2D inputSize = data->resolveBufferSize(&opConfig->input);
     NnSize2D oututSize = data->resolveBufferSize(&opConfig->output);
-    NnSize configSize = sizeof(NnUint) * 4 + opConfig->configSize;
+    NnSize configSize = sizeof(NnUint) * 2 + opConfig->configSize;
 
     std::vector<NnByte> finalConfig(configSize);
     NnByte *d = finalConfig.data();
     std::memcpy(d, &inputSize.x, sizeof(inputSize.x));
     d += sizeof(inputSize.x);
-    std::memcpy(d, &inputSize.y, sizeof(inputSize.y));
-    d += sizeof(inputSize.y);
     std::memcpy(d, &oututSize.x, sizeof(oututSize.x));
     d += sizeof(oututSize.x);
-    std::memcpy(d, &oututSize.y, sizeof(oututSize.y));
-    d += sizeof(oututSize.y);
     if (opConfig->configSize > 0)
         std::memcpy(d, opConfig->config, opConfig->configSize);
     return finalConfig;

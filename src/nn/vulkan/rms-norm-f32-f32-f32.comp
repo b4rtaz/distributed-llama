@@ -12,9 +12,7 @@ layout(binding = 2) readonly uniform globalConfigBuffer {
 layout(binding = 3) readonly buffer weightBuffer { float weight[]; };
 layout(binding = 4) readonly uniform configBuffer {
     uint inputSizeX;
-    uint inputSizeY;
     uint outputSizeX;
-    uint outputSizeY;
     uint invRmsBufferIndex;
 };
 layout(binding = 5) readonly buffer invRmsBuffer { float invRms[]; };
