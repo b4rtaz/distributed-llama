@@ -33,7 +33,6 @@ void execute(
     std::unique_ptr<NnNodeConfig, void(*)(NnNodeConfig *)> nodeConfigPtr(&nodeConfig, releaseNodeConfig);
 
     NnNetExecution execution(1, &netConfig);
-    execution.setBatchSize(1);
 
     NnVulkanDevice device(&netConfig, &nodeConfig, &execution);
     NnFakeNodeSynchronizer synchronizer;
@@ -61,14 +60,20 @@ void testRmsNorm_F32_F32_F32() {
         },
         [](NnExecutor *executor, NnNetExecution *execution, NnVulkanDevice *device) {
             // arrange
+            const NnUint batchSize = 2;
+            execution->setBatchSize(batchSize);
+
             std::vector<float> normWeight(RMS_NORM_DIM);
             for (NnUint i = 0; i < RMS_NORM_DIM; i++)
                 normWeight[i] = (0.25f + (float)i) / (float)RMS_NORM_DIM;
             executor->loadWeight("rms_norm", 0, normWeight.size() * sizeof(float), (NnByte *)normWeight.data());
 
             float *xPipe = (float *)execution->pipes[0];
-            for (NnUint i = 0; i < RMS_NORM_DIM; i++)
-                xPipe[i] = (float)(RMS_NORM_DIM - i) / (float)(RMS_NORM_DIM / 2);
+            for (NnUint b = 0; b < batchSize; b++) {
+                float *xBatchPipe = &xPipe[b * RMS_NORM_DIM];
+                for (NnUint i = 0; i < RMS_NORM_DIM; i++)
+                    xBatchPipe[i] = (float)(RMS_NORM_DIM - i) / (float)(RMS_NORM_DIM / 2);
+            }
 
             // act
             executor->forward();
@@ -77,20 +82,23 @@ void testRmsNorm_F32_F32_F32() {
             float invRmsBuffer[N_BATCHES];
             device->data->buffers[0].get()->read((NnByte *)invRmsBuffer);
 
-            float t = 0.000001f;
-            assertFloat(invRmsBuffer[0], 0.863493f, t);
-            assertFloat(xPipe[0], 0.001687f, t);
-            assertFloat(xPipe[1], 0.008400f, t);
-            assertFloat(xPipe[2], 0.015060f, t);
-            assertFloat(xPipe[35], 0.205286f, t);
-            assertFloat(xPipe[36], 0.210155f, t);
-            assertFloat(xPipe[119], 0.430514f, t);
-            assertFloat(xPipe[123], 0.431964f, t);
-            assertFloat(xPipe[234], 0.135804f, t);
-            assertFloat(xPipe[242], 0.089372f, t);
-            assertFloat(xPipe[249], 0.045977f, t);
-            assertFloat(xPipe[255], 0.006726f, t);
+            for (NnUint b = 0; b < batchSize; b++) {
+                float *xBatchPipe = &xPipe[b * RMS_NORM_DIM];
 
+                float t = 0.000001f;
+                assertFloat(invRmsBuffer[b], 0.863493f, t);
+                assertFloat(xBatchPipe[0], 0.001687f, t);
+                assertFloat(xBatchPipe[1], 0.008400f, t);
+                assertFloat(xBatchPipe[2], 0.015060f, t);
+                assertFloat(xBatchPipe[35], 0.205286f, t);
+                assertFloat(xBatchPipe[36], 0.210155f, t);
+                assertFloat(xBatchPipe[119], 0.430514f, t);
+                assertFloat(xBatchPipe[123], 0.431964f, t);
+                assertFloat(xBatchPipe[234], 0.135804f, t);
+                assertFloat(xBatchPipe[242], 0.089372f, t);
+                assertFloat(xBatchPipe[249], 0.045977f, t);
+                assertFloat(xBatchPipe[255], 0.006726f, t);
+            }
             printOk("testRmsNorm_F32_F32_F32");
         });
 }

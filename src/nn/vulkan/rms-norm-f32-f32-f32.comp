@@ -21,13 +21,15 @@ layout(binding = 5) readonly buffer invRmsBuffer { float invRms[]; };
 
 void main() {
     const uint threadIndex = uint(gl_LocalInvocationID.x);
+    const uint batchIndex = uint(gl_GlobalInvocationID.y);
 
     const uint slice = inputSizeX / N_THREADS;
-    const uint offset = threadIndex * slice;
-    const float ir = invRms[0];
+    const uint wOffset = threadIndex * slice;
+    const uint iOffset = wOffset + batchIndex * inputSizeX;
+    const float ir = invRms[batchIndex];
 
     for (uint i = 0; i < slice; i++) {
-        uint j = offset + i;
-        y[j] = (x[j] * ir) * weight[j];
+        uint j = iOffset + i;
+        y[j] = (x[j] * ir) * weight[wOffset + i];
     }
 }

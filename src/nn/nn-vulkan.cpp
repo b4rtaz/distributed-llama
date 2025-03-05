@@ -376,9 +376,9 @@ static std::vector<NnByte> buildShaderOpConfig(NnVulkanDeviceData *data, NnOpCon
     return finalConfig;
 }
 
-static void resolveShaderGroups(const NnOpCode opCode, NnSize2D inputSize, NnSize2D outputSize, NnUint *groupCount) {
+static void resolveShaderGroups(const NnOpCode opCode, const NnUint batchSize, NnUint *groupCount) {
     groupCount[0] = 1;
-    groupCount[1] = 1;
+    groupCount[1] = batchSize;
     groupCount[2] = 1;
 }
 
@@ -444,7 +444,6 @@ NnVulkanDeviceSegment::NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanD
     shaderModules(segmentConfig->nOps),
     descriptorSets(segmentConfig->nOps),
     descriptorSetLayouts(segmentConfig->nOps),
-    groupCount(segmentConfig->nOps * 3),
     pipelineLayouts(segmentConfig->nOps),
     pipelines(segmentConfig->nOps)
 {
@@ -471,9 +470,7 @@ NnVulkanDeviceSegment::NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanD
         std::vector<uint32_t> code = readShader(shaderFileName);
 
         std::vector<NnVulkanBuffer *> &buffers = opBuffers[opIndex];
-        NnUint *opGroupCount = &groupCount[opIndex * 3];
         buildShaderLayout(buffers, data, segmentData.get(), opIndex, opConfig);
-        resolveShaderGroups(opConfig->code, inputSize, outputSize, opGroupCount);
 
         vk::ShaderModuleCreateInfo shaderModuleCreateInfo(
             vk::ShaderModuleCreateFlags(),
@@ -490,12 +487,7 @@ NnVulkanDeviceSegment::NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanD
 
         shaderModules[opIndex] = shaderModule;
         shaderCreateInfos[opIndex] = shaderCreateInfo;
-        VULKAN_TRACE("Segment %d, buffers: %zu, dispatch: %d, %d, %d",
-            opIndex,
-            buffers.size(),
-            opGroupCount[0],
-            opGroupCount[1],
-            opGroupCount[2]);
+        VULKAN_TRACE("Segment %d, buffers: %zu", opIndex, buffers.size());
     }
 
     NnUint nUniformBuffers = 0;
@@ -537,7 +529,8 @@ NnVulkanDeviceSegment::NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanD
         vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet, 
         segmentConfig->nOps,
         descriptorPoolSizes.size(),
-        descriptorPoolSizes.data());
+        descriptorPoolSizes.data()
+    );
     descriptorPool = context->device.createDescriptorPool(descriptorPoolCreateInfo);
 
     vk::DescriptorSetAllocateInfo descriptorSetAllocInfo(descriptorPool, descriptorSetLayouts.size(), descriptorSetLayouts.data());
@@ -639,7 +632,10 @@ void NnVulkanDeviceSegment::forward(NnUint opIndex, NnUint nThreads, NnUint thre
 
     commandBuffer.begin({ vk::CommandBufferUsageFlags{ vk::CommandBufferUsageFlagBits::eOneTimeSubmit } });
 
+    NnUint opGroupCount[3];
     for (NnUint opIndex = 0; opIndex < segmentConfig->nOps; opIndex++) {
+        resolveShaderGroups(segmentConfig->ops[opIndex].code, batchSize, opGroupCount);
+
         if (opIndex > 0) {
             vk::MemoryBarrier memoryBarrier(
                 vk::AccessFlagBits::eShaderWrite,
@@ -655,7 +651,6 @@ void NnVulkanDeviceSegment::forward(NnUint opIndex, NnUint nThreads, NnUint thre
             );
         }
 
-        NnUint *opGroupCount = &groupCount[opIndex * 3];
         commandBuffer.bindPipeline(
             vk::PipelineBindPoint::eCompute,
             pipelines[opIndex]
@@ -668,6 +663,7 @@ void NnVulkanDeviceSegment::forward(NnUint opIndex, NnUint nThreads, NnUint thre
             {}
         );
         commandBuffer.dispatch(opGroupCount[0], opGroupCount[1], opGroupCount[2]);
+        VULKAN_TRACE("Dispatched %d %d %d", opGroupCount[0], opGroupCount[1], opGroupCount[2]);
     }
     commandBuffer.end();
 

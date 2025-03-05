@@ -25,9 +25,10 @@ shared float sums[N_THREADS];
 
 void main() {
     const uint threadIndex = uint(gl_LocalInvocationID.x);
+    const uint batchIndex = uint(gl_GlobalInvocationID.y);
 
     const uint slice = inputSizeX / N_THREADS;
-    const uint offset = threadIndex * slice;
+    const uint offset = threadIndex * slice + batchIndex * inputSizeX;
 
     float sum = 0.0;
     for (uint i = 0; i < slice; i++) {
@@ -44,6 +45,6 @@ void main() {
         for (uint i = 0; i < N_THREADS; i++) {
             sum += sums[i];
         }
-        y[0] = 1.0 / sqrt((sum / float(inputSizeX)) + epsilon);
+        y[batchIndex] = 1.0 / sqrt((sum / float(inputSizeX)) + epsilon);
     }
 }

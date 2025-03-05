@@ -118,7 +118,6 @@ private:
     std::vector<vk::PipelineLayout> pipelineLayouts;
     std::vector<vk::Pipeline> pipelines;
     vk::PipelineCache pipelineCache;
-    std::vector<NnUint> groupCount;
     vk::CommandBuffer commandBuffer;
 public:
     NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanDeviceData *data, NnSegmentConfig *segmentConfig, NnNetExecution *netExecution);
