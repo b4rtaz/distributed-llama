@@ -55,15 +55,10 @@ public:
     void read(NnByte *data);
 };
 
-typedef struct {
-    NnUint batchSize;
-} NnVulkanGlobalConfig;
-
 class NnVulkanDeviceData {
 private:
     NnNetConfig *netConfig;
     NnNodeConfig *nodeConfig;
-    NnUint globalConfigBufferIndex;
 public:
     std::vector<std::unique_ptr<NnVulkanBuffer>> pipes;
     std::vector<std::unique_ptr<NnVulkanBuffer>> buffers;
@@ -73,7 +68,6 @@ public:
 
     NnSize2D resolveBufferSize(NnPointerConfig *config);
     NnVulkanBuffer *resolveVulkanBuffer(NnPointerConfig *config);
-    NnVulkanBuffer *getGlobalConfigBuffer();
 };
 
 class NnVulkanDevice : public NnDevice {

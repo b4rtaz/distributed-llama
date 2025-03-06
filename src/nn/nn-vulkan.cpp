@@ -192,11 +192,6 @@ NnVulkanDeviceData::NnVulkanDeviceData(NnVulkanContext *context, NnNetConfig *ne
         pipes[i].reset(new NnVulkanBuffer(context, netConfig->pipes[i].size.nBytes, vk::BufferUsageFlagBits::eStorageBuffer, true));
     for (NnUint i = 0; i < nodeConfig->nBuffers; i++)
         buffers[i].reset(new NnVulkanBuffer(context, nodeConfig->buffers[i].size.nBytes, vk::BufferUsageFlagBits::eStorageBuffer, false));
-
-    internalBuffers.push_back(std::unique_ptr<NnVulkanBuffer>(
-        new NnVulkanBuffer(context, sizeof(NnVulkanGlobalConfig), vk::BufferUsageFlagBits::eUniformBuffer, true)
-    ));
-    this->globalConfigBufferIndex = internalBuffers.size() - 1;
 }
 
 NnVulkanDeviceData::~NnVulkanDeviceData() {
@@ -219,10 +214,6 @@ NnVulkanBuffer *NnVulkanDeviceData::resolveVulkanBuffer(NnPointerConfig *config)
     if (config->pointerType == PNTR_PIPE)
         return pipes[config->pointerIndex].get();
     throw std::invalid_argument("Unsupported pointer config");
-}
-
-NnVulkanBuffer *NnVulkanDeviceData::getGlobalConfigBuffer() {
-    return internalBuffers[globalConfigBufferIndex].get();
 }
 
 NnVulkanDevice::NnVulkanDevice(NnNetConfig *netConfig, NnNodeConfig *nodeConfig, NnNetExecution *netExecution) {
@@ -346,8 +337,6 @@ static void buildShaderLayout(std::vector<NnVulkanBuffer *> &buffers, NnVulkanDe
     buffers.push_back(data->resolveVulkanBuffer(&opConfig->input));
     // output
     buffers.push_back(data->resolveVulkanBuffer(&opConfig->output));
-    // global config
-    buffers.push_back(data->getGlobalConfigBuffer());
     // weight
     if (opConfig->weightSize.nBytes > 0)
         buffers.push_back(segmentData->resolveOpWeightVulkanBuffer(opIndex));
@@ -624,10 +613,6 @@ void NnVulkanDeviceSegment::forward(NnUint opIndex, NnUint nThreads, NnUint thre
 
     {
         // TODO
-
-        NnVulkanGlobalConfig globalConfig;
-        globalConfig.batchSize = netExecution->batchSize;
-        data->getGlobalConfigBuffer()->write((NnByte *)&globalConfig);
 
         for (NnUint opIndex = 0; opIndex < segmentConfig->nOps; opIndex++) {
             NnOpConfig *opConfig = &segmentConfig->ops[opIndex];

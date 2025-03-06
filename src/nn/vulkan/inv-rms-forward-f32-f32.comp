@@ -8,10 +8,7 @@ layout(local_size_x = N_THREADS, local_size_y = 1, local_size_z = 1) in;
 
 layout(binding = 0) readonly buffer inputBuffer { float x[]; };
 layout(binding = 1) writeonly buffer outputBuffer { float y[]; };
-layout(binding = 2) readonly uniform globalConfigBuffer {
-    uint batchSize;
-};
-layout(binding = 3) readonly uniform opConfigBuffer {
+layout(binding = 2) readonly uniform opConfigBuffer {
     uint inputSizeX;
     uint outputSizeX;
     float epsilon;
