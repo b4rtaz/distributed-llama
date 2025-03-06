@@ -327,13 +327,13 @@ void NnVulkanDevice::syncPointers() {
 
 static const char *getShaderFileName(const NnOpCode opCode, const NnOpQuantType quantType) {
     if (opCode == OP_INV_RMS) {
-        if (quantType == F32_F32_F32) return "inv-rms-f32-f32.spv";
+        if (quantType == F32_F32_F32) return "inv-rms-forward-f32-f32.spv";
     }
     if (opCode == OP_RMS_NORM) {
-        if (quantType == F32_F32_F32) return "rms-norm-f32-f32-f32.spv";
+        if (quantType == F32_F32_F32) return "rms-norm-forward-f32-f32-f32.spv";
     }
     if (opCode == OP_SILU) {
-        if (quantType == F32_F32_F32) return "silu-f32-f32.spv";
+        if (quantType == F32_F32_F32) return "silu-forward-f32-f32.spv";
     }
     if (opCode == OP_MUL) {
         if (quantType == F32_F32_F32) return "mul-forward-f32-f32.spv";
