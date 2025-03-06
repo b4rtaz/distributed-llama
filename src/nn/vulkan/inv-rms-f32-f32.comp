@@ -1,5 +1,7 @@
 #version 450
 
+#extension GL_EXT_control_flow_attributes : enable
+
 #define N_THREADS 32
 
 layout(local_size_x = N_THREADS, local_size_y = 1, local_size_z = 1) in;
@@ -21,13 +23,15 @@ void main() {
     const uint threadIndex = uint(gl_LocalInvocationID.x);
     const uint batchIndex = uint(gl_GlobalInvocationID.y);
 
+    const uint offset = batchIndex * inputSizeX;
     const uint slice = inputSizeX / N_THREADS;
-    const uint offset = threadIndex * slice + batchIndex * inputSizeX;
+    const uint rest = inputSizeX % N_THREADS;
+    const uint start = offset + threadIndex * slice + (threadIndex < rest ? threadIndex : rest);
+    const uint end = start + slice + (threadIndex < rest ? 1 : 0);
 
     float sum = 0.0;
-    for (uint i = 0; i < slice; i++) {
-        uint j = offset + i;
-        sum += x[j] * x[j];
+    for (uint i = start; i < end; i++) {
+        sum += x[i] * x[i];
     }
     sums[threadIndex] = sum;
 
@@ -36,7 +40,7 @@ void main() {
 
     if (threadIndex == 0) {
         sum = 0.0;
-        for (uint i = 0; i < N_THREADS; i++) {
+        [[unroll]] for (uint i = 0; i < N_THREADS; i++) {
             sum += sums[i];
         }
         y[batchIndex] = 1.0 / sqrt((sum / float(inputSizeX)) + epsilon);

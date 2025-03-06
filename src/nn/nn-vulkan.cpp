@@ -335,6 +335,9 @@ static const char *getShaderFileName(const NnOpCode opCode, const NnOpQuantType 
     if (opCode == OP_SILU) {
         if (quantType == F32_F32_F32) return "silu-f32-f32.spv";
     }
+    if (opCode == OP_MUL) {
+        if (quantType == F32_F32_F32) return "mul-forward-f32-f32.spv";
+    }
     return nullptr;
 }
 
@@ -356,6 +359,10 @@ static void buildShaderLayout(std::vector<NnVulkanBuffer *> &buffers, NnVulkanDe
         assert(opConfig->configSize > 0);
         NnRmsNormOpConfig *config = (NnRmsNormOpConfig *)opConfig->config;
         buffers.push_back(data->buffers[config->invRmsBufferIndex].get());
+    } else if (opConfig->code == OP_MUL) {
+        assert(opConfig->configSize > 0);
+        NnMulOpCodeConfig *config = (NnMulOpCodeConfig *)opConfig->config;
+        buffers.push_back(data->buffers[config->multiplierBufferIndex].get());
     }
 }
 

@@ -139,8 +139,44 @@ void testSilu_F32_F32() {
         });
 }
 
+void testMul_F32_F32() {
+    #define MUL_DIM 32
+    execute(
+        [](NnNetConfigBuilder *netBuilder, NnNodeConfigBuilder *nodeBuilder, NnSegmentConfigBuilder *segmentBuilder) {
+            NnUint xPipeIndex = netBuilder->addPipe("X", size2D(F_32, N_BATCHES, MUL_DIM));
+            NnUint sBufferIndex = nodeBuilder->addBuffer("s", size2D(F_32, N_BATCHES, MUL_DIM));
+            segmentBuilder->addOp(OP_MUL, "mul", 0,
+                pointerConfig(PNTR_PIPE, xPipeIndex),
+                pointerConfig(PNTR_PIPE, xPipeIndex),
+                size0(),
+                NnMulOpCodeConfig{sBufferIndex});
+        },
+        [](NnExecutor *executor, NnNetExecution *execution, NnVulkanDevice *device) {
+            // arrange
+            execution->setBatchSize(N_BATCHES);
+
+            float *xPipe = (float *)execution->pipes[0];
+            float sBuffer[MUL_DIM * N_BATCHES];
+            for (NnUint i = 0; i < MUL_DIM * N_BATCHES; i++) {
+                xPipe[i] = (float)i;
+                sBuffer[i] = cosf((float)i);
+            }
+
+            device->data->buffers[0].get()->write((NnByte *)sBuffer);
+
+            // act
+            executor->forward();
+
+            // assert
+            for (NnUint i = 0; i < MUL_DIM * N_BATCHES; i++)
+                assertFloat(xPipe[i], i * cosf((float)i), 0.00001f);
+            printOk("testMul_F32_F32");
+        });
+}
+
 int main() {
     testRmsNorm_F32_F32_F32();
     testSilu_F32_F32();
+    testMul_F32_F32();
     return 0;
 }

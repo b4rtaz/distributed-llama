@@ -786,7 +786,7 @@ static void multiheadAtt_F32(
     }
 }
 
-static void mul_F32(float *output, const float *x, const NnUint n, const NnUint nThreads, const NnUint threadIndex) {
+static void mul_F32(float *y, const float *x, const float *m, const NnUint n, const NnUint nThreads, const NnUint threadIndex) {
     SPLIT_THREADS(start, end, n, nThreads, threadIndex);
     unsigned int i = start;
 
@@ -794,34 +794,34 @@ static void mul_F32(float *output, const float *x, const NnUint n, const NnUint 
     const unsigned int count = end - start;
     const unsigned int neonEnd = end - (count % 8);
     for (; i < neonEnd; i += 4) {
-        float32x4_t out_vec = vld1q_f32(&output[i]);
-        float32x4_t x_vec = vld1q_f32(&x[i]);
+        float32x4_t out_vec = vld1q_f32(&x[i]);
+        float32x4_t x_vec = vld1q_f32(&m[i]);
         float32x4_t res_vec = vmulq_f32(out_vec, x_vec);
-        vst1q_f32(&output[i], res_vec);
+        vst1q_f32(&y[i], res_vec);
     }
 #elif defined(__AVX2__)
     const unsigned int count = end - start;
     const unsigned int avxEnd = end - (count % 8);
     for (; i < avxEnd; i += 8) {
-        __m256 out_vec = _mm256_loadu_ps(&output[i]);
-        __m256 x_vec = _mm256_loadu_ps(&x[i]);
+        __m256 out_vec = _mm256_loadu_ps(&x[i]);
+        __m256 x_vec = _mm256_loadu_ps(&m[i]);
         __m256 res_vec = _mm256_mul_ps(out_vec, x_vec);
-        _mm256_storeu_ps(&output[i], res_vec);
+        _mm256_storeu_ps(&y[i], res_vec);
     }
 #endif
     for (; i < end; i++)
-        output[i] *= x[i];
+        y[i] = x[i] * m[i];
 }
 
-static void mul_Q80_F32(float *output, const NnBlockQ80 *x, const NnUint n, const NnUint nThreads, const NnUint threadIndex) {
+static void mul_Q80_F32(float *y, const float *x, const NnBlockQ80 *m, const NnUint n, const NnUint nThreads, const NnUint threadIndex) {
     const NnUint nBlocks = n / Q80_BLOCK_SIZE;
     SPLIT_THREADS(start, end, nBlocks, nThreads, threadIndex);
     for (NnUint i = start; i < end; i++) {
-        const NnBlockQ80 *b = &x[i];
+        const NnBlockQ80 *b = &m[i];
         float d = CONVERT_F16_TO_F32(b->d);
         for (NnUint j = 0; j < Q80_BLOCK_SIZE; j++) {
             NnUint k = i * Q80_BLOCK_SIZE + j;
-            output[k] *= d * b->qs[j];
+            y[k] = x[k] * d * b->qs[j];
         }
     }
 }
@@ -1196,12 +1196,17 @@ static void mulForward_F32_F32(NnUint nThreads, NnUint threadIndex, NnUint batch
     ASSERT_EQ(context->inputSize.x, context->outputSize.x);
     ASSERT_EQ(context->inputSize.y, context->outputSize.y);
 
+    const NnMulOpCodeConfig *config = (NnMulOpCodeConfig *)context->opConfig;
+    const float *multiplier = (float *)context->buffers[config->multiplierBufferIndex];
+
     for (NnUint batchIndex = 0; batchIndex < batchSize; batchIndex++) {
         float *input = (float *)context->input[batchIndex];
         float *output = (float *)context->output[batchIndex];
+        const float *m = &multiplier[context->inputSize.x * batchIndex];
         mul_F32(
             output,
             input,
+            m,
             context->outputSize.x,
             nThreads,
             threadIndex);
@@ -1209,12 +1214,17 @@ static void mulForward_F32_F32(NnUint nThreads, NnUint threadIndex, NnUint batch
 }
 
 static void mulForward_Q80_F32(NnUint nThreads, NnUint threadIndex, NnUint batchSize, NnCpuOpContext *context) {
+    const NnMulOpCodeConfig *config = (NnMulOpCodeConfig *)context->opConfig;
+    const NnBlockQ80 *multiplier = (NnBlockQ80 *)context->buffers[config->multiplierBufferIndex];
+
     for (NnUint batchIndex = 0; batchIndex < batchSize; batchIndex++) {
-        NnBlockQ80 *input = (NnBlockQ80 *)context->input[batchIndex];
+        float *input = (float *)context->input[batchIndex];
         float *output = (float *)context->output[batchIndex];
+        const NnBlockQ80 *m = &multiplier[batchIndex * context->inputSize.x / Q80_BLOCK_SIZE];
         mul_Q80_F32(
             output,
             input,
+            m,
             context->outputSize.x,
             nThreads,
             threadIndex);

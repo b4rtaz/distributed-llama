@@ -5,32 +5,27 @@
 layout(local_size_x = N_THREADS, local_size_y = 1, local_size_z = 1) in;
 
 layout(binding = 0) readonly buffer inputBuffer { float x[]; };
-layout(binding = 1) writeonly buffer outputBuffer { float y[]; };
+layout(binding = 1) buffer outputBuffer { float y[]; };
 layout(binding = 2) readonly uniform globalConfigBuffer {
     uint batchSize;
 };
-layout(binding = 3) readonly buffer weightBuffer { float weight[]; };
-layout(binding = 4) readonly uniform configBuffer {
+layout(binding = 3) readonly uniform opConfigBuffer {
     uint inputSizeX;
     uint outputSizeX;
-    uint invRmsBufferIndex;
 };
-layout(binding = 5) readonly buffer invRmsBuffer { float invRms[]; };
+layout(binding = 4) readonly buffer multiplierBuffer { float m[]; };
 
 void main() {
     const uint threadIndex = uint(gl_LocalInvocationID.x);
     const uint batchIndex = uint(gl_GlobalInvocationID.y);
 
+    const uint offset = batchIndex * inputSizeX;
     const uint slice = inputSizeX / N_THREADS;
     const uint rest = inputSizeX % N_THREADS;
-    const uint start = threadIndex * slice + (threadIndex < rest ? threadIndex : rest);
+    const uint start = offset + threadIndex * slice + (threadIndex < rest ? threadIndex : rest);
     const uint end = start + slice + (threadIndex < rest ? 1 : 0);
 
-    const float s = invRms[batchIndex];
-    const uint offset = batchIndex * inputSizeX;
-
     for (uint i = start; i < end; i++) {
-        uint j = offset + i;
-        y[j] = (x[j] * s) * weight[i];
+        y[i] = x[i] * m[i];
     }
 }

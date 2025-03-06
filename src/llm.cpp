@@ -358,10 +358,10 @@ LlmNet buildLlmNet(LlmHeader *h, NnUint nNodes, NnUint nBatches) {
                 NnSiluOpCodeConfig{});
             ff.addOp(
                 OP_MUL, "block_mul", layerIndex,
-                pointerConfig(PNTR_BUFFER, lBufferIndex),
+                pointerConfig(PNTR_BUFFER, dBufferIndex),
                 pointerConfig(PNTR_BUFFER, dBufferIndex),
                 size0(),
-                NMulOpCodeConfig{});
+                NnMulOpCodeConfig{lBufferIndex});
             if (dBufferIndex != dqBufferIndex) {
                 ff.addOp(
                     OP_CAST, "block_cast_d2", layerIndex,

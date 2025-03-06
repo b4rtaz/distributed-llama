@@ -235,8 +235,8 @@ typedef struct {
 } NnSiluOpCodeConfig;
 
 typedef struct {
-    // empty
-} NMulOpCodeConfig;
+    NnUint multiplierBufferIndex;
+} NnMulOpCodeConfig;
 
 typedef struct {
     // empty
