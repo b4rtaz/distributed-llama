@@ -38,6 +38,9 @@ Supported architectures: Llama.
 
 * You can run Distributed Llama only on 1, 2, 4... 2^n nodes.
 * The maximum number of nodes is equal to the number of KV heads in the model [#70](https://github.com/b4rtaz/distributed-llama/issues/70).
+* Only the following quantizations are supported [#183](https://github.com/b4rtaz/distributed-llama/issues/183):
+  * `q40` model with `q80` `buffer-float-type`
+  * `f32` model with `f32` `buffer-float-type`
 
 ### 👷 Architecture
 
