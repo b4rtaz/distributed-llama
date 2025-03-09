@@ -66,8 +66,7 @@ class TokensResolver:
 
         assert processor.vocab_size() == processor.get_piece_size()
         self.bosId = processor.bos_id()
-        self.eosId = processor.eos_id()
-
+        self.eosIds = [processor.eos_id()]
         vocabSize = processor.vocab_size()
         for i in range(vocabSize):
             t = processor.id_to_piece(i)
