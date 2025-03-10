@@ -6,11 +6,17 @@
 
 layout(local_size_x = N_THREADS, local_size_y = 1, local_size_z = 1) in;
 
+struct BatchInfo {
+    uint inputOffset;
+    uint inputSizeX;
+    uint outputOffset;
+    uint outputSizeX;
+};
+
 layout(binding = 0) readonly buffer inputBuffer { float x[]; };
 layout(binding = 1) writeonly buffer outputBuffer { float y[]; };
-layout(binding = 2) readonly uniform opConfigBuffer {
-    uint inputSizeX;
-    uint outputSizeX;
+layout(binding = 2) readonly buffer batchInfoBuffer { BatchInfo info[]; };
+layout(binding = 3) readonly uniform opConfigBuffer {
     float epsilon;
 };
 
@@ -20,6 +26,7 @@ void main() {
     const uint threadIndex = uint(gl_LocalInvocationID.x);
     const uint batchIndex = uint(gl_GlobalInvocationID.y);
 
+    const uint inputSizeX = info[batchIndex].inputSizeX;
     const uint offset = batchIndex * inputSizeX;
     const uint slice = inputSizeX / N_THREADS;
     const uint rest = inputSizeX % N_THREADS;

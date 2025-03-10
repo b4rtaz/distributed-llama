@@ -36,12 +36,10 @@ public:
 class NnNetExecution {
 public:
     NnUint nThreads;
+    NnUint nPipes;
     NnByte **pipes;
     NnUint batchSize;
-private:
     NnUint nBatches;
-    NnUint nPipes;
-public:
     NnNetExecution(NnUint nThreads, NnNetConfig *netConfig);
     ~NnNetExecution();
     void setBatchSize(NnUint batchSize);

@@ -55,6 +55,13 @@ public:
     void read(NnByte *data);
 };
 
+typedef struct {
+    NnUint inputOffset;
+    NnUint inputSizeX;
+    NnUint outputOffset;
+    NnUint outputSizeX;
+} NnVulkanBatchInfo;
+
 class NnVulkanDeviceData {
 private:
     NnNetConfig *netConfig;
@@ -68,6 +75,8 @@ public:
 
     NnSize2D resolveBufferSize(NnPointerConfig *config);
     NnVulkanBuffer *resolveVulkanBuffer(NnPointerConfig *config);
+    NnUint resolveBufferBatchOffset(NnPointerConfig *config, NnUint batchIndex);
+    NnUint resolveBufferBatchWidth(NnPointerConfig *config, NnUint batchIndex);
 };
 
 class NnVulkanDevice : public NnDevice {
@@ -88,10 +97,12 @@ public:
 class NnVulkanDeviceSegmentData {
 private:
     NnVulkanDeviceData *data;
+    std::vector<NnUint> batchInfoBufferIndex;
     std::vector<NnUint> weightBufferIndex;
     std::vector<NnUint> configBufferIndex;
 public:
-    NnVulkanDeviceSegmentData(NnVulkanContext *context, NnVulkanDeviceData *data, NnSegmentConfig *segmentConfig);
+    NnVulkanDeviceSegmentData(NnVulkanContext *context, NnVulkanDeviceData *data, NnSegmentConfig *segmentConfig, NnUint nBatches);
+    NnVulkanBuffer *resolveOpBatchInfoVulkanBuffer(NnUint opIndex);
     NnVulkanBuffer *resolveOpWeightVulkanBuffer(NnUint opIndex);
     NnVulkanBuffer *resolveOpConfigVulkanBuffer(NnUint opIndex);
 };

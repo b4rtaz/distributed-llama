@@ -216,6 +216,30 @@ NnVulkanBuffer *NnVulkanDeviceData::resolveVulkanBuffer(NnPointerConfig *config)
     throw std::invalid_argument("Unsupported pointer config");
 }
 
+NnUint NnVulkanDeviceData::resolveBufferBatchOffset(NnPointerConfig *config, NnUint batchIndex) {
+    assert(batchIndex < netConfig->nBatches);
+    if (config->type == PNTR_RAW)
+        return 0;
+    NnSize2D bufferSize = resolveBufferSize(config);
+    if (config->type == PNTR_BATCH)
+        return bufferSize.x * batchIndex;
+    if (config->type == PNTR_BATCHED_SLICE)
+        return bufferSize.x * batchIndex + (bufferSize.x / netConfig->nNodes) * nodeConfig->nodeIndex;
+    throw std::runtime_error("Cannot determine buffer offset");
+}
+
+NnUint NnVulkanDeviceData::resolveBufferBatchWidth(NnPointerConfig *config, NnUint batchIndex) {
+    assert(batchIndex < netConfig->nBatches);
+    NnSize2D bufferSize = resolveBufferSize(config);
+    if (config->type == PNTR_RAW)
+        return bufferSize.x;
+    if (config->type == PNTR_BATCH)
+        return bufferSize.x;
+    if (config->type == PNTR_BATCHED_SLICE)
+        return bufferSize.x / netConfig->nNodes;
+    throw std::runtime_error("Cannot determine buffer width");
+}
+
 NnVulkanDevice::NnVulkanDevice(NnNetConfig *netConfig, NnNodeConfig *nodeConfig, NnNetExecution *netExecution) {
     this->netConfig = netConfig;
     this->nodeConfig = nodeConfig;
@@ -337,6 +361,8 @@ static void buildShaderLayout(std::vector<NnVulkanBuffer *> &buffers, NnVulkanDe
     buffers.push_back(data->resolveVulkanBuffer(&opConfig->input));
     // output
     buffers.push_back(data->resolveVulkanBuffer(&opConfig->output));
+    // batch info
+    buffers.push_back(segmentData->resolveOpBatchInfoVulkanBuffer(opIndex));
     // weight
     if (opConfig->weightSize.nBytes > 0)
         buffers.push_back(segmentData->resolveOpWeightVulkanBuffer(opIndex));
@@ -355,20 +381,15 @@ static void buildShaderLayout(std::vector<NnVulkanBuffer *> &buffers, NnVulkanDe
     }
 }
 
-static std::vector<NnByte> buildShaderOpConfig(NnVulkanDeviceData *data, NnOpConfig *opConfig) {
-    NnSize2D inputSize = data->resolveBufferSize(&opConfig->input);
-    NnSize2D oututSize = data->resolveBufferSize(&opConfig->output);
-    NnSize configSize = sizeof(NnUint) * 2 + opConfig->configSize;
-
-    std::vector<NnByte> finalConfig(configSize);
-    NnByte *d = finalConfig.data();
-    std::memcpy(d, &inputSize.x, sizeof(inputSize.x));
-    d += sizeof(inputSize.x);
-    std::memcpy(d, &oututSize.x, sizeof(oututSize.x));
-    d += sizeof(oututSize.x);
-    if (opConfig->configSize > 0)
-        std::memcpy(d, opConfig->config, opConfig->configSize);
-    return finalConfig;
+static std::vector<NnVulkanBatchInfo> buildBatchInfo(NnOpConfig *opConfig, NnVulkanDeviceData *data, NnUint nBatches) {
+    std::vector<NnVulkanBatchInfo> offset(nBatches);
+    for (NnUint batchIndex = 0; batchIndex < nBatches; batchIndex++) {
+        offset[batchIndex].inputOffset = data->resolveBufferBatchOffset(&opConfig->input, batchIndex);
+        offset[batchIndex].inputSizeX = data->resolveBufferBatchWidth(&opConfig->input, batchIndex);
+        offset[batchIndex].outputOffset = data->resolveBufferBatchOffset(&opConfig->output, batchIndex);
+        offset[batchIndex].outputSizeX = data->resolveBufferBatchWidth(&opConfig->output, batchIndex);
+    }
+    return offset;
 }
 
 static void resolveShaderGroups(const NnOpCode opCode, const NnUint batchSize, NnUint *groupCount) {
@@ -383,7 +404,7 @@ static std::vector<uint32_t> readShader(const char *fileName) {
     FILE *file = fopen(path.c_str(), "rb");
     if (!file)
         throw std::runtime_error("Failed to open shader file: " + path);
-    constexpr size_t chunkSize = 4096;
+    constexpr size_t chunkSize = 8192;
     uint32_t chunk[chunkSize];
     size_t bytesRead;
     while ((bytesRead = fread(chunk, 1, chunkSize, file)) > 0) {
@@ -405,24 +426,40 @@ static vk::DescriptorType toDescriptorType(NnVulkanBuffer *buffer) {
     throw std::invalid_argument("Unsupported buffer usage");
 }
 
-NnVulkanDeviceSegmentData::NnVulkanDeviceSegmentData(NnVulkanContext *context, NnVulkanDeviceData *data, NnSegmentConfig *segmentConfig)
-: weightBufferIndex(segmentConfig->nOps, UINT32_MAX), configBufferIndex(segmentConfig->nOps, UINT32_MAX) {
+NnVulkanDeviceSegmentData::NnVulkanDeviceSegmentData(NnVulkanContext *context, NnVulkanDeviceData *data, NnSegmentConfig *segmentConfig, NnUint nBatches) :
+    batchInfoBufferIndex(segmentConfig->nOps, UINT32_MAX),
+    weightBufferIndex(segmentConfig->nOps, UINT32_MAX),
+    configBufferIndex(segmentConfig->nOps, UINT32_MAX)
+{
     this->data = data;
 
     for (NnUint opIndex = 0; opIndex < segmentConfig->nOps; opIndex++) {
         NnOpConfig *opConfig = &segmentConfig->ops[opIndex];
+
+        std::vector<NnVulkanBatchInfo> batchInfo = buildBatchInfo(opConfig, data, nBatches);
+        NnSize batchInfoSize = sizeof(NnVulkanBatchInfo) * batchInfo.size();
+        NnVulkanBuffer *batchInfoBuffer = new NnVulkanBuffer(context, batchInfoSize, vk::BufferUsageFlagBits::eStorageBuffer, false);
+        data->internalBuffers.push_back(std::unique_ptr<NnVulkanBuffer>(batchInfoBuffer));
+        batchInfoBuffer->write((NnByte *)batchInfo.data());
+        batchInfoBufferIndex[opIndex] = data->internalBuffers.size() - 1;
+
         if (opConfig->weightSize.nBytes > 0) {
             NnVulkanBuffer *buffer = new NnVulkanBuffer(context, opConfig->weightSize.nBytes, vk::BufferUsageFlagBits::eStorageBuffer, false);
             data->internalBuffers.push_back(std::unique_ptr<NnVulkanBuffer>(buffer));
             weightBufferIndex[opIndex] = data->internalBuffers.size() - 1;
         }
-
-        std::vector<NnByte> shaderConfig = buildShaderOpConfig(data, opConfig);
-        NnVulkanBuffer *buffer = new NnVulkanBuffer(context, shaderConfig.size(), vk::BufferUsageFlagBits::eUniformBuffer, false);
-        data->internalBuffers.push_back(std::unique_ptr<NnVulkanBuffer>(buffer));
-        buffer->write(shaderConfig.data());
-        configBufferIndex[opIndex] = data->internalBuffers.size() - 1;
+        if (opConfig->configSize > 0) {
+            NnVulkanBuffer *configBuffer = new NnVulkanBuffer(context, opConfig->configSize, vk::BufferUsageFlagBits::eUniformBuffer, false);
+            data->internalBuffers.push_back(std::unique_ptr<NnVulkanBuffer>(configBuffer));
+            configBuffer->write(opConfig->config);
+            configBufferIndex[opIndex] = data->internalBuffers.size() - 1;
+        }
     }
+}
+
+NnVulkanBuffer *NnVulkanDeviceSegmentData::resolveOpBatchInfoVulkanBuffer(NnUint opIndex) {
+    assert(batchInfoBufferIndex[opIndex] != UINT32_MAX);
+    return data->internalBuffers[batchInfoBufferIndex[opIndex]].get();
 }
 
 NnVulkanBuffer *NnVulkanDeviceSegmentData::resolveOpConfigVulkanBuffer(NnUint opIndex) {
@@ -446,7 +483,7 @@ NnVulkanDeviceSegment::NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanD
     this->data = data;
     this->segmentConfig = segmentConfig;
     this->netExecution = netExecution;
-    this->segmentData.reset(new NnVulkanDeviceSegmentData(context, data, segmentConfig));
+    this->segmentData.reset(new NnVulkanDeviceSegmentData(context, data, segmentConfig, netExecution->nBatches));
 
     std::vector<vk::PipelineShaderStageCreateInfo> shaderCreateInfos(segmentConfig->nOps);
     std::vector<std::vector<NnVulkanBuffer *>> opBuffers(segmentConfig->nOps);
@@ -467,6 +504,7 @@ NnVulkanDeviceSegment::NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanD
         std::vector<NnVulkanBuffer *> &buffers = opBuffers[opIndex];
         buildShaderLayout(buffers, data, segmentData.get(), opIndex, opConfig);
 
+        VULKAN_TRACE("Loading shader: %s", shaderFileName);
         vk::ShaderModuleCreateInfo shaderModuleCreateInfo(
             vk::ShaderModuleCreateFlags(),
             code.size(),
