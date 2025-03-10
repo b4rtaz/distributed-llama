@@ -50,10 +50,9 @@ public:
 enum NnExecutorStepType {
     STEP_EXECUTE_OP,
     STEP_SYNC_NODES,
-    STEP_SYNC_POINTERS
 };
 
-#define N_STEP_TYPES STEP_SYNC_POINTERS + 1
+#define N_STEP_TYPES STEP_SYNC_NODES + 1
 
 typedef struct {
     NnExecutorStepType type;

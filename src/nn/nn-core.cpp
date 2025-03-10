@@ -106,20 +106,24 @@ NnSize2D size2D(NnFloatType floatType, NnUint y, NnUint x) {
     return { floatType, y, x, length, getBytes(floatType, length) };
 }
 
-NnPointerConfig pointerConfig(NnPointerType type, NnUint index) {
-    return { type, index, SLICE_NONE, PNTR_BATCH_DEFAULT, 0 /* not used*/ };
+NnPointerConfig pointerBatchConfig(NnPointerSource source, NnUint index) {
+    return { source, index, PNTR_BATCH };
 }
 
-NnPointerConfig pointerConfigWithPipedBatch(NnPointerType type, NnUint index, NnUint pipeIndex) {
-    return { type, index, SLICE_NONE, PNTR_BATCH_PIPE, pipeIndex };
+NnPointerConfig pointerBatchedSliceConfig(NnPointerSource source, NnUint index) {
+    return { source, index, PNTR_BATCHED_SLICE };
 }
 
-NnPointerConfig slicedPointerConfig(NnPointerType type, NnUint index) {
-    return { type, index, SLICE_NODE_PART, PNTR_BATCH_DEFAULT, 0 /* not used*/ };
+NnPointerConfig pointerRawConfig(NnPointerSource source, NnUint index) {
+    return { source, index, PNTR_RAW };
 }
 
 bool hasPointerContinuousMemory(NnPointerConfig *config) {
-    return config->batchType == PNTR_BATCH_DEFAULT && config->sliceType == SLICE_NONE;
+    if (config->type == PNTR_RAW)
+        return true;
+    if (config->type == PNTR_BATCH)
+        return true;
+    return false;
 }
 
 void releaseNetConfig(NnNetConfig *netConfig) {

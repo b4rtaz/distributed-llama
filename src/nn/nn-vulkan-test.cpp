@@ -48,13 +48,13 @@ void testRmsNorm_F32_F32_F32() {
             NnUint xPipeIndex = netBuilder->addPipe("X", size2D(F_32, N_BATCHES, RMS_NORM_DIM));
             NnUint invRmsBufferIndex = nodeBuilder->addBuffer("inv_rms", size2D(F_32, N_BATCHES, 1));
             segmentBuilder->addOp(OP_INV_RMS, "inv_rms", 0,
-                pointerConfig(PNTR_PIPE, xPipeIndex),
-                pointerConfig(PNTR_BUFFER, invRmsBufferIndex),
+                pointerBatchConfig(SRC_PIPE, xPipeIndex),
+                pointerBatchConfig(SRC_BUFFER, invRmsBufferIndex),
                 size0(),
                 NnInvRmsOpConfig{1e-5f});
             segmentBuilder->addOp(OP_RMS_NORM, "rms_norm", 0,
-                pointerConfig(PNTR_PIPE, xPipeIndex),
-                pointerConfig(PNTR_PIPE, xPipeIndex),
+                pointerBatchConfig(SRC_PIPE, xPipeIndex),
+                pointerBatchConfig(SRC_PIPE, xPipeIndex),
                 size1D(F_32, RMS_NORM_DIM),
                 NnRmsNormOpConfig{invRmsBufferIndex});
         },
@@ -110,8 +110,8 @@ void testSilu_F32_F32() {
         [](NnNetConfigBuilder *netBuilder, NnNodeConfigBuilder *nodeBuilder, NnSegmentConfigBuilder *segmentBuilder) {
             NnUint xPipeIndex = netBuilder->addPipe("X", size2D(F_32, N_BATCHES, SILU_DIM));
             segmentBuilder->addOp(OP_SILU, "silu", 0,
-                pointerConfig(PNTR_PIPE, xPipeIndex),
-                pointerConfig(PNTR_PIPE, xPipeIndex),
+                pointerBatchConfig(SRC_PIPE, xPipeIndex),
+                pointerBatchConfig(SRC_PIPE, xPipeIndex),
                 size0(),
                 NnSiluOpCodeConfig{});
         },
@@ -146,8 +146,8 @@ void testMul_F32_F32() {
             NnUint xPipeIndex = netBuilder->addPipe("X", size2D(F_32, N_BATCHES, MUL_DIM));
             NnUint sBufferIndex = nodeBuilder->addBuffer("s", size2D(F_32, N_BATCHES, MUL_DIM));
             segmentBuilder->addOp(OP_MUL, "mul", 0,
-                pointerConfig(PNTR_PIPE, xPipeIndex),
-                pointerConfig(PNTR_PIPE, xPipeIndex),
+                pointerBatchConfig(SRC_PIPE, xPipeIndex),
+                pointerBatchConfig(SRC_PIPE, xPipeIndex),
                 size0(),
                 NnMulOpCodeConfig{sBufferIndex});
         },

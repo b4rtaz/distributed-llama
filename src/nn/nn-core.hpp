@@ -80,6 +80,7 @@ enum NnOpCode {
     OP_SILU,
     OP_MUL,
     OP_CAST,
+    OP_SHIFT,
 };
 
 enum NnOpQuantType {
@@ -94,22 +95,18 @@ enum NnOpQuantType {
     Q80_F32_F32,
 };
 
-#define N_OP_CODES (OP_CAST + 1)
+#define N_OP_CODES (OP_SHIFT + 1)
 #define N_OP_QUANTS (Q80_F32_F32 + 1)
 
+enum NnPointerSource {
+    SRC_PIPE,
+    SRC_BUFFER,
+};
+
 enum NnPointerType {
-    PNTR_PIPE,
-    PNTR_BUFFER,
-};
-
-enum NnPointerSliceType {
-    SLICE_NONE,
-    SLICE_NODE_PART,
-};
-
-enum NnPointerBatchType {
-    PNTR_BATCH_DEFAULT,
-    PNTR_BATCH_PIPE,
+    PNTR_RAW,
+    PNTR_BATCH,
+    PNTR_BATCHED_SLICE
 };
 
 enum NnSyncType {
@@ -137,11 +134,9 @@ typedef struct {
 } NnBufferConfig;
 
 typedef struct {
-    NnPointerType pointerType;
+    NnPointerSource source;
     NnUint pointerIndex;
-    NnPointerSliceType sliceType;
-    NnPointerBatchType batchType;
-    NnUint batchArg0;
+    NnPointerType type;
 } NnPointerConfig;
 
 typedef struct {
@@ -165,7 +160,6 @@ typedef struct  {
     NnOpConfig *ops;
     NnUint nSyncs;
     NnSyncConfig *syncs;
-    bool syncPointers;
 } NnSegmentConfig;
 
 typedef struct {
@@ -242,6 +236,10 @@ typedef struct {
     // empty
 } NnCastOpCodeConfig;
 
+typedef struct {
+    NnUint indexPipeIndex;
+} NnShiftOpCodeConfig;
+
 // utility functions
 
 const char *opCodeToString(NnOpCode code);
@@ -253,9 +251,9 @@ NnOpQuantType getOpQuantType(NnFloatType input, NnFloatType weight, NnFloatType 
 NnSize2D size0();
 NnSize2D size1D(NnFloatType floatType, NnUint x);
 NnSize2D size2D(NnFloatType floatType, NnUint y, NnUint x);
-NnPointerConfig pointerConfig(NnPointerType type, NnUint index);
-NnPointerConfig pointerConfigWithPipedBatch(NnPointerType type, NnUint index, NnUint pipeIndex);
-NnPointerConfig slicedPointerConfig(NnPointerType type, NnUint index);
+NnPointerConfig pointerBatchConfig(NnPointerSource source, NnUint index);
+NnPointerConfig pointerBatchedSliceConfig(NnPointerSource source, NnUint index);
+NnPointerConfig pointerRawConfig(NnPointerSource source, NnUint index);
 bool hasPointerContinuousMemory(NnPointerConfig *config);
 
 void releaseNetConfig(NnNetConfig *netConfig);

@@ -826,7 +826,7 @@ static void mul_Q80_F32(float *y, const float *x, const NnBlockQ80 *m, const NnU
     }
 }
 
-static void copy_UNK(NnByte *output, const NnByte *x, NnUint size, const NnUint nThreads, const NnUint threadIndex) {
+static void copy_UNK(NnByte *output, const NnByte *x, NnSize size, const NnUint nThreads, const NnUint threadIndex) {
     SPLIT_THREADS(start, end, size, nThreads, threadIndex);
     NnUint s = end - start;
     if (s != 0)
@@ -881,7 +881,7 @@ static void initEmbeddingForward(NnCpuOpContext *context) {
 }
 
 static void embeddingForward_F32_F32_F32(NnUint nThreads, NnUint threadIndex, NnUint batchSize, NnCpuOpContext *context) {
-    NnUint dimSize = getBytes(F_32, context->outputSize.x);
+    NnSize dimSize = getBytes(F_32, context->outputSize.x);
 
     for (NnUint batchIndex = 0; batchIndex < batchSize; batchIndex++) {
         NnUint token = (NnUint)*((float *)context->input[batchIndex]);
@@ -895,7 +895,7 @@ static void embeddingForward_F32_F32_F32(NnUint nThreads, NnUint threadIndex, Nn
 }
 
 static void embeddingForward_F32_F32_Q80(NnUint nThreads, NnUint threadIndex, NnUint batchSize, NnCpuOpContext *context) {
-    NnUint dimSize = getBytes(F_32, context->outputSize.x);
+    NnSize dimSize = getBytes(F_32, context->outputSize.x);
 
     for (NnUint batchIndex = 0; batchIndex < batchSize; batchIndex++) {
         NnUint token = (NnUint)*((float *)context->input[batchIndex]);
@@ -1281,6 +1281,30 @@ static void castForward_Q80_F32(NnUint nThreads, NnUint threadIndex, NnUint batc
     }
 }
 
+static void shiftForward_F32_F32(NnUint nThreads, NnUint threadIndex, NnUint batchSize, NnCpuOpContext *context) {
+    ASSERT_EQ(context->hasInputContinuousMemory, true);
+    ASSERT_EQ(context->hasOutputContinuousMemory, true);
+    ASSERT_EQ(context->inputSize.floatType, F_32);
+    ASSERT_EQ(context->outputSize.floatType, F_32);
+    ASSERT_EQ(context->outputSize.y, 1);
+
+    const NnShiftOpCodeConfig *config = (NnShiftOpCodeConfig *)context->opConfig;
+    const float *indexes = (float *)context->pipes[config->indexPipeIndex];
+    const NnSize dimBytes = getBytes(F_32, context->inputSize.x);
+    NnByte *output = context->output[0];
+
+    for (NnUint batchIndex = 0; batchIndex < batchSize; batchIndex++) {
+        const NnSize index = (NnSize)indexes[batchIndex];
+        assert((index + 1) * context->inputSize.x < context->outputSize.x);
+        copy_UNK(
+            &output[index * dimBytes],
+            context->input[batchIndex],
+            dimBytes,
+            nThreads,
+            threadIndex);
+    }
+}
+
 // device
 
 void printCpuInstructionSet() {
@@ -1360,6 +1384,9 @@ NnCpuOpForward getCpuOpForward(NnOpCode code, NnOpQuantType quantType) {
         if (quantType == F32_F32_Q80) return castForward_F32_Q80;
         if (quantType == Q80_Q80_Q80) return castForward_ANY;
         if (quantType == Q80_Q80_F32) return castForward_Q80_F32;
+    }
+    if (code == OP_SHIFT) {
+        if (quantType == F32_F32_F32) return shiftForward_F32_F32;
     }
     return nullptr;
 }

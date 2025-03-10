@@ -7,13 +7,6 @@
 
 #define DEBUG_USE_MMAP_FOR_WEIGHTS false
 
-typedef struct {
-    NnByte *source;
-    NnSize2D *sourceSize;
-    NnByte **pntr;
-    NnPointerConfig *pointerConfig;
-} NnCpuDynamicPointer;
-
 class NnCpuDevice : public NnDevice {
 public:
     NnByte **buffers;
@@ -23,7 +16,6 @@ private:
     NnNetExecution *netExecution;
     NnUint nBuffers;
     NnByte *bufferFlags;
-    std::vector<NnCpuDynamicPointer> dynamicPointers;
 public:
     NnCpuDevice(NnNetConfig *netConfig, NnNodeConfig *nodeConfig, NnNetExecution *netExecution);
     ~NnCpuDevice() override;

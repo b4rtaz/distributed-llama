@@ -201,17 +201,17 @@ NnVulkanDeviceData::~NnVulkanDeviceData() {
 }
 
 NnSize2D NnVulkanDeviceData::resolveBufferSize(NnPointerConfig *config) {
-    if (config->pointerType == PNTR_BUFFER)
+    if (config->source == SRC_BUFFER)
         return nodeConfig->buffers[config->pointerIndex].size;
-    if (config->pointerType == PNTR_PIPE)
+    if (config->source == SRC_PIPE)
         return netConfig->pipes[config->pointerIndex].size;
     throw std::invalid_argument("Unsupported pointer config");
 }
 
 NnVulkanBuffer *NnVulkanDeviceData::resolveVulkanBuffer(NnPointerConfig *config) {
-    if (config->pointerType == PNTR_BUFFER)
+    if (config->source == SRC_BUFFER)
         return buffers[config->pointerIndex].get();
-    if (config->pointerType == PNTR_PIPE)
+    if (config->source == SRC_PIPE)
         return pipes[config->pointerIndex].get();
     throw std::invalid_argument("Unsupported pointer config");
 }
@@ -616,7 +616,7 @@ void NnVulkanDeviceSegment::forward(NnUint opIndex, NnUint nThreads, NnUint thre
 
         for (NnUint opIndex = 0; opIndex < segmentConfig->nOps; opIndex++) {
             NnOpConfig *opConfig = &segmentConfig->ops[opIndex];
-            if (opConfig->input.pointerType == PNTR_PIPE)
+            if (opConfig->input.source == SRC_PIPE)
                 data->pipes[opConfig->input.pointerIndex]->write(netExecution->pipes[opConfig->input.pointerIndex]);
         }
     }
@@ -668,7 +668,7 @@ void NnVulkanDeviceSegment::forward(NnUint opIndex, NnUint nThreads, NnUint thre
         // TODO
         for (NnUint opIndex = 0; opIndex < segmentConfig->nOps; opIndex++) {
             NnOpConfig *opConfig = &segmentConfig->ops[opIndex];
-            if (opConfig->output.pointerType == PNTR_PIPE)
+            if (opConfig->output.source == SRC_PIPE)
                 data->pipes[opConfig->output.pointerIndex]->read(netExecution->pipes[opConfig->output.pointerIndex]);
         }
     }

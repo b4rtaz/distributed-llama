@@ -54,7 +54,7 @@ static void inference(AppInferenceContext *context) {
         if (context->network != nullptr)
             context->network->getStats(&sentBytes, &recvBytes);
 
-        NnUint evalTime = context->executor->getTotalTime(STEP_EXECUTE_OP) + context->executor->getTotalTime(STEP_SYNC_POINTERS);
+        NnUint evalTime = context->executor->getTotalTime(STEP_EXECUTE_OP);
         NnUint syncTime = context->executor->getTotalTime(STEP_SYNC_NODES);
         printf("🔷️ Eval%5u ms Sync%5u ms | Sent%6zu kB Recv%6zu kB | (%d tokens)\n",
             evalTime / 1000,
@@ -83,7 +83,7 @@ static void inference(AppInferenceContext *context) {
         if (context->network != nullptr)
             context->network->getStats(&sentBytes, &recvBytes);
 
-        NnUint predTime = context->executor->getTotalTime(STEP_EXECUTE_OP) + context->executor->getTotalTime(STEP_SYNC_POINTERS);
+        NnUint predTime = context->executor->getTotalTime(STEP_EXECUTE_OP);
         NnUint syncTime = context->executor->getTotalTime(STEP_SYNC_NODES);
         printf("🔶 Pred%5u ms Sync%5u ms | Sent%6zu kB Recv%6zu kB | %s\n",
             predTime / 1000,
