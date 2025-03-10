@@ -29,7 +29,7 @@ NnNetExecution::~NnNetExecution() {
 }
 
 void NnNetExecution::setBatchSize(NnUint batchSize) {
-    assert(batchSize > 0 && batchSize <= nBatches);
+    assert(batchSize <= nBatches);
     this->batchSize = batchSize;
 }
 
@@ -38,7 +38,7 @@ NnExecutor::NnExecutor(NnNetConfig *netConfig, NnNodeConfig *nodeConfig, NnDevic
 {
     NnUint maxNThreads = device->maxNThreads();
     if (netExecution->nThreads > maxNThreads)
-        throw std::invalid_argument("This CPU supports max " + std::to_string(maxNThreads) + " threads");
+        throw std::invalid_argument("This device supports max " + std::to_string(maxNThreads) + " threads");
     this->netExecution = netExecution;
     this->nodeConfig = nodeConfig;
 
@@ -54,8 +54,6 @@ NnExecutor::NnExecutor(NnNetConfig *netConfig, NnNodeConfig *nodeConfig, NnDevic
         }
         if (useSynchronizer && segmentConfig->nSyncs > 0)
             steps.push_back(NnExecutorStep{ STEP_SYNC_NODES, nullptr, segmentIndex, nullptr });
-        if (segmentConfig->syncPointers)
-            steps.push_back(NnExecutorStep{ STEP_SYNC_POINTERS, nullptr, 0, nullptr });
     }
 
     steps.shrink_to_fit();
@@ -105,9 +103,6 @@ inline void executeStep(NnExecutorStep *step, NnUint nThreads, NnExecutorThread 
         step->segment->forward(step->arg0, nThreads, thread->threadIndex, context->batchSize);
     } else if (step->type == STEP_SYNC_NODES) {
         context->synchronizer->sync(step->arg0, nThreads, thread->threadIndex);
-    } else if (step->type == STEP_SYNC_POINTERS) {
-        if (thread->threadIndex == 0)
-            context->device->syncPointers();
     } else {
         throw std::invalid_argument("Unsupported step type");
     }
@@ -169,6 +164,6 @@ void NnExecutor::forward() {
 }
 
 NnUint NnExecutor::getTotalTime(NnExecutorStepType type) {
-    assert(type < N_STEP_TYPES);
+    assert((NnUint)type < N_STEP_TYPES);
     return context.totalTime[type];
 }

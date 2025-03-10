@@ -637,7 +637,6 @@ void NnRootConfigWriter::writeNode(NnUint socketIndex, NnNodeConfig *config) {
         NnSegmentConfig *segmentConfig = &config->segments[segmentIndex];
         network->write(socketIndex, &segmentConfig->nSyncs, sizeof(segmentConfig->nSyncs));
         network->write(socketIndex, &segmentConfig->nOps, sizeof(segmentConfig->nOps));
-        network->write(socketIndex, &segmentConfig->syncPointers, sizeof(segmentConfig->syncPointers));
 
         for (NnUint syncIndex = 0; syncIndex < segmentConfig->nSyncs; syncIndex++) {
             NnSyncConfig *syncConfig = &segmentConfig->syncs[syncIndex];
@@ -709,7 +708,6 @@ NnNodeConfig NnWorkerConfigReader::readNode() {
         NnSegmentConfig *segmentConfig = &config.segments[segmentIndex];
         network->read(ROOT_SOCKET_INDEX, &segmentConfig->nSyncs, sizeof(segmentConfig->nSyncs));
         network->read(ROOT_SOCKET_INDEX, &segmentConfig->nOps, sizeof(segmentConfig->nOps));
-        network->read(ROOT_SOCKET_INDEX, &segmentConfig->syncPointers, sizeof(segmentConfig->syncPointers));
 
         if (segmentConfig->nSyncs > 0) {
             segmentConfig->syncs = new NnSyncConfig[segmentConfig->nSyncs];

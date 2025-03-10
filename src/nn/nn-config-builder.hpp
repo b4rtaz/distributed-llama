@@ -64,9 +64,12 @@ public:
         NnNodeConfig config;
         config.nodeIndex = nodeIndex;
         config.nBuffers = buffers.size();
-        assert(config.nBuffers > 0);
-        config.buffers = new NnBufferConfig[config.nBuffers];
-        std::copy(buffers.begin(), buffers.end(), config.buffers);
+        if (config.nBuffers > 0) {
+            config.buffers = new NnBufferConfig[config.nBuffers];
+            std::copy(buffers.begin(), buffers.end(), config.buffers);
+        } else {
+            config.buffers = nullptr;
+        }
 
         config.nSegments = segments.size();
         assert(config.nSegments > 0);
@@ -80,7 +83,6 @@ class NnSegmentConfigBuilder {
 private:
     std::list<NnOpConfig> ops;
     std::list<NnSyncConfig> syncs;
-    bool syncPointers = false;
 
 public:
     template <typename T>
@@ -104,10 +106,6 @@ public:
         syncs.push_back({ pipeIndex, syncType });
     }
 
-    void setSyncPointers(bool syncPointers) {
-        this->syncPointers = syncPointers;
-    }
-
     NnSegmentConfig build() {
         NnSegmentConfig segment;
         segment.nOps = ops.size();
@@ -120,7 +118,6 @@ public:
             segment.syncs = new NnSyncConfig[segment.nSyncs];
             std::copy(syncs.begin(), syncs.end(), segment.syncs);
         }
-        segment.syncPointers = syncPointers;
         return segment;
     }
 };
