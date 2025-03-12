@@ -341,6 +341,9 @@ void NnVulkanDevice::syncPointers() {
 }
 
 static const char *getShaderFileName(const NnOpCode opCode, const NnOpQuantType quantType) {
+    if (opCode == OP_MERGE_ADD) {
+        if (quantType == F32_F32_F32) return "merge-add-forward-f32-f32.spv";
+    }
     if (opCode == OP_INV_RMS) {
         if (quantType == F32_F32_F32) return "inv-rms-forward-f32-f32.spv";
     }

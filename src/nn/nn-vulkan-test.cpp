@@ -8,10 +8,10 @@ void printOk(const char *name) {
     printf("✅ %24s passed\n", name);
 }
 
-void assertFloat(const float value, const float expectedValue, const float tolerance) {
+void assertFloat(NnUint position, const float value, const float expectedValue, const float tolerance) {
     float diff = fabs(expectedValue - value);
     if (diff > tolerance) {
-        printf("❌ failed: value=%f, expectedValue=%f, diff=%f\n", value, expectedValue, diff);
+        printf("❌ [%d] failed: value=%f, expectedValue=%f, diff=%f\n", position, value, expectedValue, diff);
         exit(1);
     }
 }
@@ -86,18 +86,18 @@ void testRmsNorm_F32_F32_F32() {
                 float *xBatchPipe = &xPipe[b * RMS_NORM_DIM];
 
                 float t = 0.000001f;
-                assertFloat(invRmsBuffer[b], 0.863493f, t);
-                assertFloat(xBatchPipe[0], 0.001687f, t);
-                assertFloat(xBatchPipe[1], 0.008400f, t);
-                assertFloat(xBatchPipe[2], 0.015060f, t);
-                assertFloat(xBatchPipe[35], 0.205286f, t);
-                assertFloat(xBatchPipe[36], 0.210155f, t);
-                assertFloat(xBatchPipe[119], 0.430514f, t);
-                assertFloat(xBatchPipe[123], 0.431964f, t);
-                assertFloat(xBatchPipe[234], 0.135804f, t);
-                assertFloat(xBatchPipe[242], 0.089372f, t);
-                assertFloat(xBatchPipe[249], 0.045977f, t);
-                assertFloat(xBatchPipe[255], 0.006726f, t);
+                assertFloat(b, invRmsBuffer[b], 0.863493f, t);
+                assertFloat(0, xBatchPipe[0], 0.001687f, t);
+                assertFloat(1, xBatchPipe[1], 0.008400f, t);
+                assertFloat(2, xBatchPipe[2], 0.015060f, t);
+                assertFloat(35, xBatchPipe[35], 0.205286f, t);
+                assertFloat(36, xBatchPipe[36], 0.210155f, t);
+                assertFloat(119, xBatchPipe[119], 0.430514f, t);
+                assertFloat(123, xBatchPipe[123], 0.431964f, t);
+                assertFloat(234, xBatchPipe[234], 0.135804f, t);
+                assertFloat(242, xBatchPipe[242], 0.089372f, t);
+                assertFloat(249, xBatchPipe[249], 0.045977f, t);
+                assertFloat(255, xBatchPipe[255], 0.006726f, t);
             }
             printOk("testRmsNorm_F32_F32_F32");
         });
@@ -128,12 +128,12 @@ void testSilu_F32_F32() {
 
             // assert
             float t = 0.0006f;
-            assertFloat(xPipe[0], 0.0f, t);
-            assertFloat(xPipe[2], 0.032226f, t);
-            assertFloat(xPipe[6], 0.102513f, t);
-            assertFloat(xPipe[17], 0.334573f, t);
-            assertFloat(xPipe[28], 0.617802f, t);
-            assertFloat(xPipe[31], 0.702729f, t);
+            assertFloat(0, xPipe[0], 0.0f, t);
+            assertFloat(2, xPipe[2], 0.032226f, t);
+            assertFloat(6, xPipe[6], 0.102513f, t);
+            assertFloat(17, xPipe[17], 0.334573f, t);
+            assertFloat(28, xPipe[28], 0.617802f, t);
+            assertFloat(31, xPipe[31], 0.702729f, t);
 
             printOk("testSilu_F32_F32");
         });
@@ -169,8 +169,48 @@ void testMul_F32_F32() {
 
             // assert
             for (NnUint i = 0; i < MUL_DIM * N_BATCHES; i++)
-                assertFloat(xPipe[i], i * cosf((float)i), 0.00001f);
+                assertFloat(i, xPipe[i], i * cosf((float)i), 0.00001f);
             printOk("testMul_F32_F32");
+        });
+}
+
+void testMergeAdd_F32_F32() {
+    #define MERGE_ADD_NODES 2
+    #define MERGE_ADD_DIM 64
+    execute(
+        [](NnNetConfigBuilder *netBuilder, NnNodeConfigBuilder *nodeBuilder, NnSegmentConfigBuilder *segmentBuilder) {
+            NnUint zPipeIndex = netBuilder->addPipe("Z", size2D(F_32, N_BATCHES, MERGE_ADD_DIM * MERGE_ADD_NODES));
+            NnUint xPipeIndex = netBuilder->addPipe("X", size2D(F_32, N_BATCHES, MERGE_ADD_DIM));
+            segmentBuilder->addOp(OP_MERGE_ADD, "mergeAdd", 0,
+                pointerBatchConfig(SRC_PIPE, zPipeIndex),
+                pointerBatchConfig(SRC_PIPE, xPipeIndex),
+                size0(),
+                NnMergeAddOpCodeConfig{});
+        },
+        [](NnExecutor *executor, NnNetExecution *execution, NnVulkanDevice *device) {
+            // arrange
+            execution->setBatchSize(N_BATCHES);
+
+            float *zPipe = (float *)execution->pipes[0];
+            float *xPipe = (float *)execution->pipes[1];
+            for (NnUint b = 0; b < N_BATCHES; b++) {
+                for (NnUint n = 0; n < MERGE_ADD_NODES; n++) {
+                    for (NnUint i = 0; i < MERGE_ADD_DIM; i++)
+                        zPipe[b * MERGE_ADD_NODES * MERGE_ADD_DIM + n * MERGE_ADD_DIM + i] = (float)(b + 1);
+                }
+            }
+
+            // act
+            executor->forward();
+
+            // assert
+            for (NnUint b = 0; b < N_BATCHES; b++) {
+                for (NnUint i = 0; i < MERGE_ADD_DIM; i++) {
+                    NnUint pos = b * MERGE_ADD_DIM + i;
+                    assertFloat(pos, xPipe[pos], (float)(2 * b + 2), 0.00001f);
+                }
+            }
+            printOk("testMergeAdd_F32_F32");
         });
 }
 
@@ -178,5 +218,6 @@ int main() {
     testRmsNorm_F32_F32_F32();
     testSilu_F32_F32();
     testMul_F32_F32();
+    testMergeAdd_F32_F32();
     return 0;
 }

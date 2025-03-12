@@ -1,5 +1,7 @@
 #version 450
 
+#extension GL_EXT_control_flow_attributes : enable
+
 #define N_THREADS 32
 
 layout(local_size_x = N_THREADS, local_size_y = 1, local_size_z = 1) in;
@@ -20,15 +22,23 @@ void main() {
     const uint batchIndex = uint(gl_GlobalInvocationID.y);
 
     const uint inputSizeX = infos[batchIndex].inputSizeX;
-    const uint offset = infos[batchIndex].inputOffset;
-    const uint slice = inputSizeX / N_THREADS;
-    const uint rest = inputSizeX % N_THREADS;
-    const uint start = offset + threadIndex * slice + (threadIndex < rest ? threadIndex : rest);
+    const uint inputOffset = infos[batchIndex].inputOffset;
+    const uint outputOffset = infos[batchIndex].outputOffset;
+    const uint outputSizeX = infos[batchIndex].outputSizeX;
+    const uint nNodes = inputSizeX / outputSizeX;
+
+    const uint slice = outputSizeX / N_THREADS;
+    const uint rest = outputSizeX % N_THREADS;
+    const uint start = threadIndex * slice + (threadIndex < rest ? threadIndex : rest);
     const uint end = start + slice + (threadIndex < rest ? 1 : 0);
 
-    float sum = 0.0;
     for (uint i = start; i < end; i++) {
-        float v = x[i];
-        y[i] = v / (1.0 + exp(-v));
+        float sum = 0.0;
+        const uint iOffset = inputOffset + i;
+        const uint oOffset = outputOffset + i;
+        for (uint n = 0; n < nNodes; n++) {
+            sum += x[n * outputSizeX + iOffset];
+        }
+        y[oOffset] += sum;
     }
 }

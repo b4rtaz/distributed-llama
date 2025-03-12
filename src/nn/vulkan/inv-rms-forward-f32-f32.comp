@@ -15,7 +15,7 @@ struct BatchInfo {
 
 layout(binding = 0) readonly buffer inputBuffer { float x[]; };
 layout(binding = 1) writeonly buffer outputBuffer { float y[]; };
-layout(binding = 2) readonly buffer batchInfoBuffer { BatchInfo info[]; };
+layout(binding = 2) readonly buffer batchInfosBuffer { BatchInfo infos[]; };
 layout(binding = 3) readonly uniform opConfigBuffer {
     float epsilon;
 };
@@ -26,8 +26,8 @@ void main() {
     const uint threadIndex = uint(gl_LocalInvocationID.x);
     const uint batchIndex = uint(gl_GlobalInvocationID.y);
 
-    const uint inputSizeX = info[batchIndex].inputSizeX;
-    const uint offset = batchIndex * inputSizeX;
+    const uint inputSizeX = infos[batchIndex].inputSizeX;
+    const uint offset = infos[batchIndex].inputOffset;
     const uint slice = inputSizeX / N_THREADS;
     const uint rest = inputSizeX % N_THREADS;
     const uint start = offset + threadIndex * slice + (threadIndex < rest ? threadIndex : rest);
