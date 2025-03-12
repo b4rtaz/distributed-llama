@@ -17,22 +17,25 @@ layout(binding = 0) readonly buffer inputBuffer { float x[]; };
 layout(binding = 1) writeonly buffer outputBuffer { float y[]; };
 layout(binding = 2) readonly buffer batchInfosBuffer { BatchInfo infos[]; };
 
-void main() {
-    const uint threadIndex = uint(gl_LocalInvocationID.x);
-    const uint batchIndex = uint(gl_GlobalInvocationID.y);
+shared BatchInfo sharedInfo;
 
-    const uint inputSizeX = infos[batchIndex].inputSizeX;
-    const uint inputOffset = infos[batchIndex].inputOffset;
-    const uint outputOffset = infos[batchIndex].outputOffset;
-    const uint outputSizeX = infos[batchIndex].outputSizeX;
+void main() {
+    const uint threadIndex = gl_LocalInvocationID.x;
+    const uint batchIndex = gl_GlobalInvocationID.y;
+
+    if (threadIndex == 0) {
+        sharedInfo = infos[batchIndex];
+    }
+    memoryBarrierShared();
+    barrier();
+
+    const uint inputSizeX = sharedInfo.inputSizeX;
+    const uint inputOffset = sharedInfo.inputOffset;
+    const uint outputOffset = sharedInfo.outputOffset;
+    const uint outputSizeX = sharedInfo.outputSizeX;
     const uint nNodes = inputSizeX / outputSizeX;
 
-    const uint slice = outputSizeX / N_THREADS;
-    const uint rest = outputSizeX % N_THREADS;
-    const uint start = threadIndex * slice + (threadIndex < rest ? threadIndex : rest);
-    const uint end = start + slice + (threadIndex < rest ? 1 : 0);
-
-    for (uint i = start; i < end; i++) {
+    for (uint i = threadIndex; i < outputSizeX; i += N_THREADS) {
         float sum = 0.0;
         const uint iOffset = inputOffset + i;
         const uint oOffset = outputOffset + i;

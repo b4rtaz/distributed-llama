@@ -20,14 +20,21 @@ layout(binding = 3) readonly uniform opConfigBuffer {
     float epsilon;
 };
 
+shared BatchInfo sharedInfo;
 shared float sums[N_THREADS];
 
 void main() {
-    const uint threadIndex = uint(gl_LocalInvocationID.x);
-    const uint batchIndex = uint(gl_GlobalInvocationID.y);
+    const uint threadIndex = gl_LocalInvocationID.x;
+    const uint batchIndex = gl_GlobalInvocationID.y;
 
-    const uint inputSizeX = infos[batchIndex].inputSizeX;
-    const uint offset = infos[batchIndex].inputOffset;
+    if (threadIndex == 0) {
+        sharedInfo = infos[batchIndex];
+    }
+    memoryBarrierShared();
+    barrier();
+
+    const uint inputSizeX = sharedInfo.inputSizeX;
+    const uint offset = sharedInfo.inputOffset;
     const uint slice = inputSizeX / N_THREADS;
     const uint rest = inputSizeX % N_THREADS;
     const uint start = offset + threadIndex * slice + (threadIndex < rest ? threadIndex : rest);
@@ -39,14 +46,14 @@ void main() {
     }
     sums[threadIndex] = sum;
 
-    barrier();
     memoryBarrierShared();
+    barrier();
 
     if (threadIndex == 0) {
         sum = 0.0;
         [[unroll]] for (uint i = 0; i < N_THREADS; i++) {
             sum += sums[i];
         }
-        y[batchIndex] = 1.0 / sqrt((sum / float(inputSizeX)) + epsilon);
+        y[batchIndex] = inversesqrt((sum / float(inputSizeX)) + epsilon);
     }
 }

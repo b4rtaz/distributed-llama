@@ -19,18 +19,22 @@ layout(binding = 3) readonly uniform configBuffer {
 };
 layout(binding = 4) readonly buffer multiplierBuffer { float m[]; };
 
+shared BatchInfo sharedInfo;
+
 void main() {
-    const uint threadIndex = uint(gl_LocalInvocationID.x);
-    const uint batchIndex = uint(gl_GlobalInvocationID.y);
+    const uint threadIndex = gl_LocalInvocationID.x;
+    const uint batchIndex = gl_GlobalInvocationID.y;
 
-    const uint inputSizeX = infos[batchIndex].inputSizeX;
-    const uint offset = infos[batchIndex].inputOffset;
-    const uint slice = inputSizeX / N_THREADS;
-    const uint rest = inputSizeX % N_THREADS;
-    const uint start = offset + threadIndex * slice + (threadIndex < rest ? threadIndex : rest);
-    const uint end = start + slice + (threadIndex < rest ? 1 : 0);
+    if (threadIndex == 0) {
+        sharedInfo = infos[batchIndex];
+    }
+    memoryBarrierShared();
+    barrier();
 
-    for (uint i = start; i < end; i++) {
+    const uint start = sharedInfo.inputOffset + threadIndex;
+    const uint end = sharedInfo.inputOffset + sharedInfo.inputSizeX;
+
+    for (uint i = threadIndex; i < end; i += N_THREADS) {
         y[i] = x[i] * m[i];
     }
 }
