@@ -12,8 +12,9 @@ struct BatchInfo {
 };
 
 layout(binding = 0) readonly buffer inputBuffer { float x[]; };
-layout(binding = 1) writeonly buffer outputBuffer { float y[]; };
+layout(binding = 1) buffer outputBuffer { float y[]; };
 layout(binding = 2) readonly buffer batchInfosBuffer { BatchInfo infos[]; };
+layout(binding = 3) readonly buffer weightBuffer { float weight[]; };
 
 shared uint sharedPosition;
 shared BatchInfo sharedInfo;
@@ -30,12 +31,11 @@ void main() {
     barrier();
     memoryBarrierShared();
 
-    const uint inputSizeX = sharedInfo.inputSizeX;
-    const uint xOffset = sharedInfo.inputOffset;
+    const uint outputSizeX = sharedInfo.outputSizeX;
     const uint yOffset = sharedInfo.outputOffset;
+    const uint wOffset = sharedPosition * outputSizeX;
 
-    for (uint i = threadIndex; i < inputSizeX; i += N_THREADS) {
-        float v = x[xOffset + i];
-        y[yOffset + i] = v / (1.0 + exp(-v));
+    for (uint i = threadIndex; i < outputSizeX; i += N_THREADS) {
+        y[yOffset + i] = weight[wOffset + i];
     }
 }

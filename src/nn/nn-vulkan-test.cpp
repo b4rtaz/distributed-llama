@@ -206,11 +206,56 @@ void testMergeAdd_F32_F32() {
             // assert
             for (NnUint b = 0; b < N_BATCHES; b++) {
                 for (NnUint i = 0; i < MERGE_ADD_DIM; i++) {
-                    NnUint pos = b * MERGE_ADD_DIM + i;
-                    assertFloat(pos, xPipe[pos], (float)(2 * b + 2), 0.00001f);
+                    NnUint j = b * MERGE_ADD_DIM + i;
+                    assertFloat(j, xPipe[j], (float)(2 * b + 2), 0.00001f);
                 }
             }
             printOk("testMergeAdd_F32_F32");
+        });
+}
+
+void testEmbedding_F32_F32() {
+    #define EMBEDDING_DIM 16
+    #define EMBEDDING_LEN 8
+    assert(EMBEDDING_LEN > N_BATCHES);
+    execute(
+        [](NnNetConfigBuilder *netBuilder, NnNodeConfigBuilder *nodeBuilder, NnSegmentConfigBuilder *segmentBuilder) {
+            NnUint posPipeIndex = netBuilder->addPipe("POS", size2D(F_32, N_BATCHES, 1));
+            NnUint xPipeIndex = netBuilder->addPipe("X", size2D(F_32, N_BATCHES, EMBEDDING_DIM));
+            segmentBuilder->addOp(OP_EMBEDDING, "embedding", 0,
+                pointerBatchConfig(SRC_PIPE, posPipeIndex),
+                pointerBatchConfig(SRC_PIPE, xPipeIndex),
+                size2D(F_32, EMBEDDING_LEN, EMBEDDING_DIM),
+                NnEmbeddingOpConfig{});
+        },
+        [](NnExecutor *executor, NnNetExecution *execution, NnVulkanDevice *device) {
+            // arrange
+            execution->setBatchSize(N_BATCHES);
+
+            float embedding[EMBEDDING_DIM * EMBEDDING_LEN];
+            for (NnUint l = 0; l < EMBEDDING_LEN; l++) {
+                for (NnUint i = 0; i < EMBEDDING_DIM; i++)
+                    embedding[l * EMBEDDING_DIM + i] = (float)(l + 4);
+            }
+            float *posPipe = (float *)execution->pipes[0];
+            for (NnUint b = 0; b < N_BATCHES; b++)
+                posPipe[b] = (float)b;
+
+            executor->loadWeight("embedding", 0, EMBEDDING_DIM * EMBEDDING_LEN * sizeof(float), (NnByte *)embedding);
+
+            // act
+            executor->forward();
+
+            // assert
+            float *xPipe = (float *)execution->pipes[1];
+            for (NnUint b = 0; b < N_BATCHES; b++) {
+                for (NnUint i = 0; i < EMBEDDING_DIM; i++) {
+                    NnUint j = b * EMBEDDING_DIM + i;
+                    assertFloat(j, xPipe[j], (float)(b + 4), 0.00001f);
+                }
+            }
+
+            printOk("testEmbedding_F32_F32");
         });
 }
 
@@ -219,5 +264,6 @@ int main() {
     testSilu_F32_F32();
     testMul_F32_F32();
     testMergeAdd_F32_F32();
+    testEmbedding_F32_F32();
     return 0;
 }
