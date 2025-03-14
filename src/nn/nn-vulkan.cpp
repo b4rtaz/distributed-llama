@@ -359,6 +359,9 @@ static const char *getShaderFileName(const NnOpCode opCode, const NnOpQuantType 
     if (opCode == OP_MUL) {
         if (quantType == F32_F32_F32) return "mul-forward-f32-f32.spv";
     }
+    if (opCode == OP_CAST) {
+        if (quantType == F32_F32_F32) return "cast-forward-f32-f32.spv";
+    }
     if (opCode == OP_SHIFT) {
         if (quantType == F32_F32_F32) return "shift-forward-f32-f32.spv";
     }

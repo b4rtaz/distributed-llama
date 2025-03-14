@@ -302,6 +302,44 @@ void testShift_F32_F32() {
         });
 }
 
+void testCast_F32_F32() {
+    #define CAST_DIM 48
+    execute(
+        [](NnNetConfigBuilder *netBuilder, NnNodeConfigBuilder *nodeBuilder, NnSegmentConfigBuilder *segmentBuilder) {
+            NnUint xPipeIndex = netBuilder->addPipe("X", size2D(F_32, N_BATCHES, CAST_DIM));
+            NnUint yPipeIndex = netBuilder->addPipe("Y", size2D(F_32, N_BATCHES, CAST_DIM));
+            segmentBuilder->addOp(
+                OP_CAST, "cast", 0,
+                pointerBatchConfig(SRC_PIPE, xPipeIndex),
+                pointerBatchConfig(SRC_PIPE, yPipeIndex),
+                size0(),
+                NnCastOpCodeConfig{});
+        },
+        [](NnExecutor *executor, NnNetExecution *execution, NnVulkanDevice *device) {
+            // arrange
+            execution->setBatchSize(N_BATCHES);
+            float *xPipe = (float *)execution->pipes[0];
+            float *yPipe = (float *)execution->pipes[1];
+
+            for (NnUint b = 0; b < N_BATCHES; b++) {
+                for (NnUint i = 0; i < CAST_DIM; i++)
+                    xPipe[b * CAST_DIM + i] = (float)b;
+            }
+
+            // act
+            executor->forward();
+
+            // assert
+            for (NnUint b = 0; b < N_BATCHES; b++) {
+                for (NnUint i = 0; i < CAST_DIM; i++) {
+                    NnUint j = b * CAST_DIM + i;
+                    assertFloat(j, yPipe[j], (float)b, 0.00001f);
+                }
+            }
+            printOk("testCast_F32_F32");
+        });
+}
+
 int main() {
     testRmsNorm_F32_F32_F32();
     testSilu_F32_F32();
@@ -309,5 +347,6 @@ int main() {
     testMergeAdd_F32_F32();
     testEmbedding_F32_F32();
     testShift_F32_F32();
+    testCast_F32_F32();
     return 0;
 }
