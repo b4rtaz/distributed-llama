@@ -259,11 +259,55 @@ void testEmbedding_F32_F32() {
         });
 }
 
+void testShift_F32_F32() {
+    #define SHIFT_DIM 48
+    execute(
+        [](NnNetConfigBuilder *netBuilder, NnNodeConfigBuilder *nodeBuilder, NnSegmentConfigBuilder *segmentBuilder) {
+            NnUint posPipeIndex = netBuilder->addPipe("POS", size2D(F_32, N_BATCHES, 1));
+            NnUint xPipeIndex = netBuilder->addPipe("X", size2D(F_32, N_BATCHES, SHIFT_DIM));
+            NnUint yPipeIndex = netBuilder->addPipe("Y", size2D(F_32, 1, N_BATCHES * SHIFT_DIM));
+            segmentBuilder->addOp(
+                OP_SHIFT, "shift", 0,
+                pointerBatchConfig(SRC_PIPE, xPipeIndex),
+                pointerRawConfig(SRC_PIPE, yPipeIndex),
+                size0(),
+                NnShiftOpCodeConfig{posPipeIndex});
+        },
+        [](NnExecutor *executor, NnNetExecution *execution, NnVulkanDevice *device) {
+            // arrange
+            execution->setBatchSize(N_BATCHES);
+            float *xPipe = (float *)execution->pipes[1];
+            float *yPipe = (float *)execution->pipes[2];
+
+            float pos[N_BATCHES];
+            for (NnUint b = 0; b < N_BATCHES; b++) {
+                pos[b] = (float)b;
+                for (NnUint i = 0; i < SHIFT_DIM; i++)
+                    xPipe[b * SHIFT_DIM + i] = (float)(b * 100 + i);
+            }
+
+            device->data->pipes[0].get()->write((NnByte *)pos);
+
+            // act
+            executor->forward();
+
+            // assert
+            for (NnUint b = 0; b < N_BATCHES; b++) {
+                for (NnUint i = 0; i < SHIFT_DIM; i++) {
+                    NnUint j = b * SHIFT_DIM + i;
+                    assertFloat(j, yPipe[j], (float)(b * 100 + i), 0.00001f);
+                }
+            }
+            printOk("testShift_F32_F32");
+        });
+}
+
 int main() {
     testRmsNorm_F32_F32_F32();
     testSilu_F32_F32();
     testMul_F32_F32();
     testMergeAdd_F32_F32();
     testEmbedding_F32_F32();
+    testShift_F32_F32();
     return 0;
 }
