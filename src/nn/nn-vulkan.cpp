@@ -375,6 +375,9 @@ static const char *getShaderFileName(const NnOpCode opCode, const NnOpQuantType 
     if (opCode == OP_INV_RMS) {
         if (quantType == F32_F32_F32) return "inv-rms-forward-f32-f32.spv";
     }
+    if (opCode == OP_MATMUL) {
+        if (quantType == F32_F32_F32) return "matmul-forward-f32-f32-f32.spv";
+    }
     if (opCode == OP_RMS_NORM) {
         if (quantType == F32_F32_F32) return "rms-norm-forward-f32-f32-f32.spv";
     }

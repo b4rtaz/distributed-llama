@@ -402,6 +402,51 @@ void testRope_F32_F32() {
         });
 }
 
+void matmul_F32_F32_F32() {
+    #define MATMUL_N 64
+    #define MATMUL_D 96
+    execute(
+        [](NnNetConfigBuilder *netBuilder, NnNodeConfigBuilder *nodeBuilder, NnSegmentConfigBuilder *segmentBuilder) {
+            NnUint xPipeIndex = netBuilder->addPipe("X", size2D(F_32, N_BATCHES, MATMUL_N));
+            NnUint yPipeIndex = netBuilder->addPipe("Y", size2D(F_32, N_BATCHES, MATMUL_D));
+            segmentBuilder->addOp(
+                OP_MATMUL, "matmul", 0,
+                pointerBatchConfig(SRC_PIPE, xPipeIndex),
+                pointerBatchConfig(SRC_PIPE, yPipeIndex),
+                size2D(F_32, MATMUL_N, MATMUL_D),
+                NnMatmulOpConfig{});
+        },
+        [](NnExecutor *executor, NnNetExecution *execution, NnVulkanDevice *device) {
+            // arrange
+            execution->setBatchSize(N_BATCHES);
+            float *xPipe = (float *)execution->pipes[0];
+            float *yPipe = (float *)execution->pipes[1];
+
+            float weight[MATMUL_N * MATMUL_D];
+            for (NnUint i = 0; i < N_BATCHES * MATMUL_N; i++)
+                xPipe[i] = i * 0.01f;
+            for (NnUint i = 0; i < MATMUL_N * MATMUL_D; i++)
+                weight[i] = i * 0.001f;
+            executor->loadWeight("matmul", 0, MATMUL_N * MATMUL_D * sizeof(float), (NnByte *)weight);
+
+            // act
+            executor->forward();
+
+            // assert
+            for (NnUint b = 0; b < N_BATCHES; b++) {
+                for (NnUint d = 0; d < MATMUL_D; d++) {
+                    float sum = 0.0f;
+                    for (NnUint n = 0; n < MATMUL_N; n++)
+                        sum += xPipe[b * MATMUL_N + n] * weight[d * MATMUL_N + n];
+
+                    const NnUint p = b * MATMUL_D + d;
+                    assertFloat(p, yPipe[p], sum, 0.0002f);
+                }
+            }
+            printOk("matmul_F32_F32_F32");
+        });
+}
+
 int main() {
     testRmsNorm_F32_F32_F32();
     testSilu_F32_F32();
@@ -411,5 +456,6 @@ int main() {
     testShift_F32_F32();
     testCast_F32_F32();
     testRope_F32_F32();
+    matmul_F32_F32_F32();
     return 0;
 }
