@@ -34,7 +34,8 @@ void execute(
 
     NnNetExecution execution(1, &netConfig);
 
-    NnVulkanDevice device(&netConfig, &nodeConfig, &execution);
+    NnUint gpuIndex = 0;
+    NnVulkanDevice device(gpuIndex, &netConfig, &nodeConfig, &execution);
     NnFakeNodeSynchronizer synchronizer;
     NnExecutor executor(&netConfig, &nodeConfig, &device, &execution, &synchronizer, false);
 
@@ -447,6 +448,10 @@ void matmul_F32_F32_F32() {
         });
 }
 
+void multiheadAtt_F32_F32_F32() {
+
+}
+
 int main() {
     testRmsNorm_F32_F32_F32();
     testSilu_F32_F32();
@@ -457,5 +462,6 @@ int main() {
     testCast_F32_F32();
     testRope_F32_F32();
     matmul_F32_F32_F32();
+    multiheadAtt_F32_F32_F32();
     return 0;
 }

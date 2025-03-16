@@ -262,7 +262,7 @@ NnUint NnVulkanDeviceData::resolveBufferBatchWidth(NnPointerConfig *config, NnUi
     throw std::runtime_error("Cannot determine buffer width");
 }
 
-NnVulkanDevice::NnVulkanDevice(NnNetConfig *netConfig, NnNodeConfig *nodeConfig, NnNetExecution *netExecution) {
+NnVulkanDevice::NnVulkanDevice(NnUint gpuIndex, NnNetConfig *netConfig, NnNodeConfig *nodeConfig, NnNetExecution *netExecution) {
     this->netConfig = netConfig;
     this->nodeConfig = nodeConfig;
     this->netExecution = netExecution;
@@ -377,6 +377,9 @@ static const char *getShaderFileName(const NnOpCode opCode, const NnOpQuantType 
     }
     if (opCode == OP_MATMUL) {
         if (quantType == F32_F32_F32) return "matmul-forward-f32-f32-f32.spv";
+    }
+    if (opCode == OP_MULTIHEAD_ATT) {
+        if (quantType == F32_F32_F32) return "multi-head-att-forward-f32-f32.spv";
     }
     if (opCode == OP_RMS_NORM) {
         if (quantType == F32_F32_F32) return "rms-norm-forward-f32-f32-f32.spv";

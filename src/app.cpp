@@ -41,6 +41,7 @@ AppCliArgs AppCliArgs::parse(int argc, char* *argv, bool requireMode) {
     args.seed = (unsigned long long)time(nullptr);
     args.chatTemplateType = TEMPLATE_UNKNOWN;
     args.maxSeqLen = 0;
+    args.gpuIndex = -1;
     int i = 1;
     if (requireMode && argc > 1) {
         args.mode = argv[1];
@@ -105,6 +106,8 @@ AppCliArgs AppCliArgs::parse(int argc, char* *argv, bool requireMode) {
             args.chatTemplateType = parseChatTemplateType(value);
         } else if (std::strcmp(name, "--max-seq-len") == 0) {
             args.maxSeqLen = (unsigned int)atoi(value);
+        } else if (std::strcmp(name, "--gpu-index") == 0) {
+            args.gpuIndex = atoi(value);
         } else {
             throw std::runtime_error("Unknown option: " + std::string(name));
         }
@@ -122,7 +125,14 @@ AppCliArgs::~AppCliArgs() {
         delete[] workerPorts;
 }
 
-static NnDevice *createDevice(NnNetConfig *netConfig, NnNodeConfig *nodeConfig, NnNetExecution *netExecution) {
+static NnDevice *createDevice(AppCliArgs *args, NnNetConfig *netConfig, NnNodeConfig *nodeConfig, NnNetExecution *netExecution) {
+    if (args->gpuIndex >= 0) {
+#if defined(DLLAMA_VULKAN)
+        return new NnVulkanDevice(args->gpuIndex, netConfig, nodeConfig, netExecution);
+#else
+        throw std::runtime_error("This build does not support GPU");
+#endif
+    }
     return new NnCpuDevice(netConfig, nodeConfig, netExecution);
 }
 
@@ -233,7 +243,7 @@ void runInferenceApp(AppCliArgs *args, void (*handler)(AppInferenceContext *cont
         configWriter.writeToWorkers(&net.netConfig, net.nodeConfigs);
     }
 
-    std::unique_ptr<NnDevice> device(createDevice(&net.netConfig, rootNodeConfig, &execution));
+    std::unique_ptr<NnDevice> device(createDevice(args, &net.netConfig, rootNodeConfig, &execution));
     NnExecutor executor(&net.netConfig, rootNodeConfig, device.get(), &execution, synchronizer.get(), args->benchmark);
 
     NnRootWeightLoader weightLoader(&executor, network, nNodes);
@@ -275,7 +285,7 @@ void runWorkerApp(AppCliArgs *args) {
 
         NnNetExecution execution(args->nThreads, &netConfig);
 
-        std::unique_ptr<NnDevice> device(createDevice(&netConfig, &nodeConfig, &execution));
+        std::unique_ptr<NnDevice> device(createDevice(args, &netConfig, &nodeConfig, &execution));
 
         NnNetworkNodeSynchronizer synchronizer(network, &execution, &netConfig, &nodeConfig);
         NnExecutor executor(&netConfig, &nodeConfig, device.get(), &execution, &synchronizer, false);
