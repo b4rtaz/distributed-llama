@@ -1079,7 +1079,7 @@ static void geluForward_F32_F32_F32(NnUint nThreads, NnUint threadIndex, NnUint 
     }
 }
 
-static void initRopeLlama31Forward(NnCpuOpContext *context) {
+static void initRopeLlama3Forward(NnCpuOpContext *context) {
     const NnRopeLlamaOpConfig *config = (NnRopeLlamaOpConfig *)context->opConfig;
     if (context->bufferFlags[config->ropeCacheBufferIndex] == 1)
         return;
@@ -1087,18 +1087,7 @@ static void initRopeLlama31Forward(NnCpuOpContext *context) {
 
     const NnRopeSlice *slice = &config->slice;
     float *cache = (float *)context->buffers[config->ropeCacheBufferIndex];
-
-    for (NnUint pos = 0; pos < slice->seqLen; pos++) {
-        for (NnUint i = slice->kvDimStart; i < slice->qDimEnd; i += 2) {
-            const NnUint headDim = i % slice->headSize;
-            const float freq = 1.0f / powf(slice->ropeTheta, headDim / (float)slice->headSize);
-            const float val = pos * freq;
-            const float fcr = cosf(val);
-            const float fci = sinf(val);
-            cache[pos * slice->sliceDim + (i - slice->kvDimStart)] = fcr;
-            cache[pos * slice->sliceDim + (i - slice->kvDimStart) + 1] = fci;
-        }
-    }
+    fullfillRopeLlama3Cache(slice, cache);
 }
 
 static inline float ropeLlama31Scale(const float freq, const NnRopeLlamaOpConfig *config) {
@@ -1333,7 +1322,7 @@ NnCpuOpForwardInit getCpuOpForwardInit(NnOpCode code, NnOpQuantType quantType) {
     if (code == OP_RMS_NORM)
         return initRmsNormForward_ANY_F32_F32;
     if (code == OP_ROPE_LLAMA)
-        return initRopeLlama31Forward;
+        return initRopeLlama3Forward;
     if (code == OP_MULTIHEAD_ATT)
         return initMultiHeadAttForward;
     if (code == OP_MATMUL)

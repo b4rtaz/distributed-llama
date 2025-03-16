@@ -284,4 +284,8 @@ NnMultiHeadAttSlice sliceMultiHeadAtt(NnUint nHeads, NnUint seqLen, NnUint nNode
 NnUint splitRowMatmulWeight(NnRowMatmulSlice *slice, NnUint nodeIndex, NnByte *weight, NnByte *weight0);
 NnUint splitColMatmulWeight(NnColMatmulSlice *slice, NnUint nodeIndex, NnByte *weight, NnByte *weight0);
 
+// rope
+
+void fullfillRopeLlama3Cache(const NnRopeSlice *slice, float *cache);
+
 #endif

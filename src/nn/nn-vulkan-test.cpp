@@ -340,6 +340,68 @@ void testCast_F32_F32() {
         });
 }
 
+void testRope_F32_F32() {
+    #define ROPE_DIM 2048
+    #define ROPE_KV_DIM 512
+    execute(
+        [](NnNetConfigBuilder *netBuilder, NnNodeConfigBuilder *nodeBuilder, NnSegmentConfigBuilder *segmentBuilder) {
+            const NnUint nHeads = 32;
+            const NnUint seqLen = 4096;
+            const NnRopeSlice slice = sliceRope(ROPE_DIM, ROPE_KV_DIM, 8, 1, seqLen, ROPE_DIM / nHeads, 500000.0f, 0);
+
+            NnUint xPipeIndex = netBuilder->addPipe("X", size2D(F_32, N_BATCHES, ROPE_DIM));
+            NnUint posPipeIndex = netBuilder->addPipe("POS", size2D(F_32, N_BATCHES, 1));
+            NnUint ropeCacheBufferIndex = nodeBuilder->addBuffer("ropeCache", slice.cacheSize);
+            bool isQ = true;
+
+            segmentBuilder->addOp(
+                OP_ROPE_LLAMA, "rope_llama", 0,
+                pointerBatchConfig(SRC_PIPE, xPipeIndex),
+                pointerBatchConfig(SRC_PIPE, xPipeIndex),
+                size0(),
+                NnRopeLlamaOpConfig{isQ, posPipeIndex, ropeCacheBufferIndex, 32.0f, 1.0f, 4.0f, 8192, slice});
+        },
+        [](NnExecutor *executor, NnNetExecution *execution, NnVulkanDevice *device) {
+            // arrange
+            execution->setBatchSize(2);
+
+            float *xPipe = (float *)execution->pipes[0];
+            float pos[N_BATCHES];
+            pos[0] = (float)6;
+            pos[1] = (float)31;
+
+            for (NnUint b = 0; b < N_BATCHES; b++) {
+                for (NnUint i = 0; i < ROPE_DIM; i++)
+                    xPipe[b * ROPE_DIM + i] = 1.0f;
+            }
+
+            device->data->pipes[1].get()->write((NnByte *)pos);
+
+            // act
+            executor->forward();
+
+            // assert
+            float t = 0.000001f;
+
+            float *x0 = &xPipe[0 * ROPE_DIM];
+            assertFloat(0, x0[0], 1.239586f, t);
+            assertFloat(1, x0[1], 0.680755f, t);
+            assertFloat(2, x0[2], 0.077202f, t);
+            assertFloat(3, x0[3], -1.412105f, t);
+            assertFloat(1988, x0[1988], -1.356766f, t);
+            assertFloat(2022, x0[2022], 0.997517, t);
+            assertFloat(2022, x0[2023], 1.002477, t);
+
+            float *x1 = &xPipe[1 * ROPE_DIM];
+            assertFloat(0, x1[0], 1.318780f, t);
+            assertFloat(1, x1[1], 0.510705f, t);
+            assertFloat(1078, x1[1078], 0.999518f, t);
+            assertFloat(1078, x1[1079], 1.000482f, t);
+
+            printOk("testRope_F32_F32");
+        });
+}
+
 int main() {
     testRmsNorm_F32_F32_F32();
     testSilu_F32_F32();
@@ -348,5 +410,6 @@ int main() {
     testEmbedding_F32_F32();
     testShift_F32_F32();
     testCast_F32_F32();
+    testRope_F32_F32();
     return 0;
 }

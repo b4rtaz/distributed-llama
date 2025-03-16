@@ -182,8 +182,21 @@ void NnVulkanBuffer::read(NnByte *data) {
     }
 }
 
-NnVulkanDeviceData::NnVulkanDeviceData(NnVulkanContext *context, NnNetConfig *netConfig, NnNodeConfig *nodeConfig)
-    : pipes(netConfig->nPipes), buffers(nodeConfig->nBuffers), internalBuffers()
+static NnByte *findFirstOpConfig(NnNodeConfig *nodeConfig, NnOpCode opCode) {
+    for (NnUint i = 0; i < nodeConfig->nSegments; i++) {
+        NnSegmentConfig *segmentConfig = &nodeConfig->segments[i];
+        for (NnUint j = 0; j < segmentConfig->nOps; j++) {
+            if (segmentConfig->ops[j].code == opCode)
+                return segmentConfig->ops[j].config;
+        }
+    }
+    return nullptr;
+}
+
+NnVulkanDeviceData::NnVulkanDeviceData(NnVulkanContext *context, NnNetConfig *netConfig, NnNodeConfig *nodeConfig) :
+    pipes(netConfig->nPipes),
+    buffers(nodeConfig->nBuffers),
+    internalBuffers()
 {
     this->netConfig = netConfig;
     this->nodeConfig = nodeConfig;
@@ -192,6 +205,15 @@ NnVulkanDeviceData::NnVulkanDeviceData(NnVulkanContext *context, NnNetConfig *ne
         pipes[i].reset(new NnVulkanBuffer(context, netConfig->pipes[i].size.nBytes, vk::BufferUsageFlagBits::eStorageBuffer, true));
     for (NnUint i = 0; i < nodeConfig->nBuffers; i++)
         buffers[i].reset(new NnVulkanBuffer(context, nodeConfig->buffers[i].size.nBytes, vk::BufferUsageFlagBits::eStorageBuffer, false));
+
+    NnRopeLlamaOpConfig *ropeLlamaOpConfig = (NnRopeLlamaOpConfig *)findFirstOpConfig(nodeConfig, OP_ROPE_LLAMA);
+    if (ropeLlamaOpConfig != nullptr) {
+        assert(ropeLlamaOpConfig->ropeCacheBufferIndex < nodeConfig->nBuffers);
+        NnVulkanBuffer *buffer = buffers[ropeLlamaOpConfig->ropeCacheBufferIndex].get();
+        std::vector<NnByte> ropeCache(ropeLlamaOpConfig->slice.cacheSize.nBytes);
+        fullfillRopeLlama3Cache(&ropeLlamaOpConfig->slice, (float *)ropeCache.data());
+        buffer->write(ropeCache.data());
+    }
 }
 
 NnVulkanDeviceData::~NnVulkanDeviceData() {
@@ -208,7 +230,7 @@ NnSize2D NnVulkanDeviceData::resolveBufferSize(NnPointerConfig *config) {
     throw std::invalid_argument("Unsupported pointer config");
 }
 
-NnVulkanBuffer *NnVulkanDeviceData::resolveVulkanBuffer(NnPointerConfig *config) {
+NnVulkanBuffer *NnVulkanDeviceData::resolvePointerVulkanBuffer(NnPointerConfig *config) {
     if (config->source == SRC_BUFFER)
         return buffers[config->pointerIndex].get();
     if (config->source == SRC_PIPE)
@@ -347,6 +369,9 @@ static const char *getShaderFileName(const NnOpCode opCode, const NnOpQuantType 
     if (opCode == OP_EMBEDDING) {
         if (quantType == F32_F32_F32) return "embedding-forward-f32-f32.spv";
     }
+    if (opCode == OP_ROPE_LLAMA) {
+        if (quantType == F32_F32_F32) return "rope-forward-f32-f32.spv";
+    }
     if (opCode == OP_INV_RMS) {
         if (quantType == F32_F32_F32) return "inv-rms-forward-f32-f32.spv";
     }
@@ -370,9 +395,9 @@ static const char *getShaderFileName(const NnOpCode opCode, const NnOpQuantType 
 
 static void buildShaderLayout(std::vector<NnVulkanBuffer *> &buffers, NnVulkanDeviceData *data, NnVulkanDeviceSegmentData *segmentData, NnUint opIndex, NnOpConfig *opConfig) {
     // input
-    buffers.push_back(data->resolveVulkanBuffer(&opConfig->input));
+    buffers.push_back(data->resolvePointerVulkanBuffer(&opConfig->input));
     // output
-    buffers.push_back(data->resolveVulkanBuffer(&opConfig->output));
+    buffers.push_back(data->resolvePointerVulkanBuffer(&opConfig->output));
     // batch info
     buffers.push_back(segmentData->resolveOpBatchInfoVulkanBuffer(opIndex));
     // weight
@@ -397,6 +422,12 @@ static void buildShaderLayout(std::vector<NnVulkanBuffer *> &buffers, NnVulkanDe
         assert(opConfig->configSize > 0);
         NnShiftOpCodeConfig *config = (NnShiftOpCodeConfig *)opConfig->config;
         buffers.push_back(data->pipes[config->indexPipeIndex].get());
+    } break;
+    case OP_ROPE_LLAMA: {
+        assert(opConfig->configSize > 0);
+        NnRopeLlamaOpConfig *config = (NnRopeLlamaOpConfig *)opConfig->config;
+        buffers.push_back(data->pipes[config->positionPipeIndex].get());
+        buffers.push_back(data->buffers[config->ropeCacheBufferIndex].get());
     } break;
     default:
         break;

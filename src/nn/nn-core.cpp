@@ -297,3 +297,19 @@ NnUint splitColMatmulWeight(NnColMatmulSlice *slice, NnUint nodeIndex, NnByte *w
     }
     return copiedBytes;
 }
+
+// helper
+
+void fullfillRopeLlama3Cache(const NnRopeSlice *slice, float *cache) {
+    for (NnUint pos = 0; pos < slice->seqLen; pos++) {
+        for (NnUint i = slice->kvDimStart; i < slice->qDimEnd; i += 2) {
+            const NnUint headDim = i % slice->headSize;
+            const float freq = 1.0f / powf(slice->ropeTheta, headDim / (float)slice->headSize);
+            const float val = pos * freq;
+            const float fcr = cosf(val);
+            const float fci = sinf(val);
+            cache[pos * slice->sliceDim + (i - slice->kvDimStart)] = fcr;
+            cache[pos * slice->sliceDim + (i - slice->kvDimStart) + 1] = fci;
+        }
+    }
+}

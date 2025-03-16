@@ -74,7 +74,7 @@ public:
     ~NnVulkanDeviceData();
 
     NnSize2D resolveBufferSize(NnPointerConfig *config);
-    NnVulkanBuffer *resolveVulkanBuffer(NnPointerConfig *config);
+    NnVulkanBuffer *resolvePointerVulkanBuffer(NnPointerConfig *config);
     NnUint resolveBufferBatchOffset(NnPointerConfig *config, NnUint batchIndex);
     NnUint resolveBufferBatchWidth(NnPointerConfig *config, NnUint batchIndex);
 };
