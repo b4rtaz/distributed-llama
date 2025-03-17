@@ -543,6 +543,7 @@ NnVulkanDeviceSegment::NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanD
     this->segmentConfig = segmentConfig;
     this->netExecution = netExecution;
     this->segmentData.reset(new NnVulkanDeviceSegmentData(context, data, segmentConfig, netExecution->nBatches));
+    this->lastBatchSize = 0;
 
     std::vector<vk::PipelineShaderStageCreateInfo> shaderCreateInfos(segmentConfig->nOps);
     std::vector<std::vector<NnVulkanBuffer *>> opBuffers(segmentConfig->nOps);
@@ -706,7 +707,6 @@ void NnVulkanDeviceSegment::forward(NnUint opIndex, NnUint nThreads, NnUint thre
     }
 
     context->device.resetFences({ fence });
-    commandBuffer.reset(vk::CommandBufferResetFlags());
 
     {
         // TODO
@@ -718,42 +718,45 @@ void NnVulkanDeviceSegment::forward(NnUint opIndex, NnUint nThreads, NnUint thre
         }
     }
 
-    commandBuffer.begin({ vk::CommandBufferUsageFlags{ vk::CommandBufferUsageFlagBits::eOneTimeSubmit } });
+    if (lastBatchSize != batchSize) {
+        lastBatchSize = batchSize;
+        commandBuffer.begin({ vk::CommandBufferUsageFlags{ vk::CommandBufferUsageFlagBits::eSimultaneousUse } });
 
-    NnUint opGroupCount[3];
-    for (NnUint opIndex = 0; opIndex < segmentConfig->nOps; opIndex++) {
-        resolveShaderGroups(segmentConfig->ops[opIndex].code, batchSize, opGroupCount);
-
-        if (opIndex > 0) {
-            vk::MemoryBarrier memoryBarrier(
-                vk::AccessFlagBits::eShaderWrite,
-                vk::AccessFlagBits::eShaderRead
+        NnUint opGroupCount[3];
+        for (NnUint opIndex = 0; opIndex < segmentConfig->nOps; opIndex++) {
+            resolveShaderGroups(segmentConfig->ops[opIndex].code, batchSize, opGroupCount);
+    
+            if (opIndex > 0) {
+                vk::MemoryBarrier memoryBarrier(
+                    vk::AccessFlagBits::eShaderWrite,
+                    vk::AccessFlagBits::eShaderRead
+                );
+                commandBuffer.pipelineBarrier(
+                    vk::PipelineStageFlagBits::eComputeShader,
+                    vk::PipelineStageFlagBits::eComputeShader,
+                    vk::DependencyFlags(),
+                    memoryBarrier,
+                    nullptr,
+                    nullptr
+                );
+            }
+    
+            commandBuffer.bindPipeline(
+                vk::PipelineBindPoint::eCompute,
+                pipelines[opIndex]
             );
-            commandBuffer.pipelineBarrier(
-                vk::PipelineStageFlagBits::eComputeShader,
-                vk::PipelineStageFlagBits::eFragmentShader,
-                vk::DependencyFlags(),
-                memoryBarrier,
-                nullptr,
-                nullptr
+            commandBuffer.bindDescriptorSets(
+                vk::PipelineBindPoint::eCompute,
+                pipelineLayouts[opIndex],
+                0, 
+                { descriptorSets[opIndex] },
+                {}
             );
+            commandBuffer.dispatch(opGroupCount[0], opGroupCount[1], opGroupCount[2]);
+            VULKAN_TRACE("Dispatched %d %d %d", opGroupCount[0], opGroupCount[1], opGroupCount[2]);
         }
-
-        commandBuffer.bindPipeline(
-            vk::PipelineBindPoint::eCompute,
-            pipelines[opIndex]
-        );
-        commandBuffer.bindDescriptorSets(
-            vk::PipelineBindPoint::eCompute,
-            pipelineLayouts[opIndex],
-            0, 
-            { descriptorSets[opIndex] },
-            {}
-        );
-        commandBuffer.dispatch(opGroupCount[0], opGroupCount[1], opGroupCount[2]);
-        VULKAN_TRACE("Dispatched %d %d %d", opGroupCount[0], opGroupCount[1], opGroupCount[2]);
+        commandBuffer.end();
     }
-    commandBuffer.end();
 
     vk::SubmitInfo submitInfo(0, nullptr, nullptr, 1, &commandBuffer);
     context->queue.submit({ submitInfo }, fence);

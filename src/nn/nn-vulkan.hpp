@@ -124,6 +124,7 @@ private:
     std::vector<vk::Pipeline> pipelines;
     vk::PipelineCache pipelineCache;
     vk::CommandBuffer commandBuffer;
+    NnUint lastBatchSize;
 public:
     NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanDeviceData *data, NnSegmentConfig *segmentConfig, NnNetExecution *netExecution);
     ~NnVulkanDeviceSegment() override;
