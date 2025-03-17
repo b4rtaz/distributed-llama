@@ -11,13 +11,6 @@ struct BatchInfo {
     uint outputSizeX;
 };
 
-struct NnSize2D {
-    uint floatType;
-    uint y;
-    uint x;
-    uint __ignore[4];
-};
-
 struct RopeSlice {
     uint qDim0;
     uint qDimStart;
@@ -31,7 +24,7 @@ struct RopeSlice {
     uint headSize;
     uint nKvHeads;
     float ropeTheta;
-    NnSize2D cacheSize;
+    // NnSize2D cacheSize;
 };
 
 layout(binding = 0) readonly buffer inputBuffer { float x[]; };
