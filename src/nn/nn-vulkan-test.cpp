@@ -104,7 +104,6 @@ void testRmsNorm_F32_F32_F32() {
         });
 }
 
-
 void testSilu_F32_F32() {
     #define SILU_DIM 32
     execute(
@@ -118,23 +117,29 @@ void testSilu_F32_F32() {
         },
         [](NnExecutor *executor, NnNetExecution *execution, NnVulkanDevice *device) {
             // arrange
-            execution->setBatchSize(1);
+            execution->setBatchSize(N_BATCHES);
 
             float *xPipe = (float *)execution->pipes[0];
-            for (NnUint i = 0; i < SILU_DIM; i++)
-                xPipe[i] = i / (float)SILU_DIM;
+            for (NnUint b = 0; b < N_BATCHES; b++) {
+                float *x = &xPipe[b * SILU_DIM];
+                for (NnUint i = 0; i < SILU_DIM; i++)
+                    x[i] = i / (float)SILU_DIM;
+            }
 
             // act
             executor->forward();
 
             // assert
             float t = 0.0006f;
-            assertFloat(0, xPipe[0], 0.0f, t);
-            assertFloat(2, xPipe[2], 0.032226f, t);
-            assertFloat(6, xPipe[6], 0.102513f, t);
-            assertFloat(17, xPipe[17], 0.334573f, t);
-            assertFloat(28, xPipe[28], 0.617802f, t);
-            assertFloat(31, xPipe[31], 0.702729f, t);
+            for (NnUint b = 0; b < N_BATCHES; b++) {
+                float *x = &xPipe[b * SILU_DIM];
+                assertFloat(0, x[0], 0.0f, t);
+                assertFloat(2, x[2], 0.032226f, t);
+                assertFloat(6, x[6], 0.102513f, t);
+                assertFloat(17, x[17], 0.334573f, t);
+                assertFloat(28, x[28], 0.617802f, t);
+                assertFloat(31, x[31], 0.702729f, t);
+            }
 
             printOk("testSilu_F32_F32");
         });

@@ -60,8 +60,9 @@ void main() {
 
         for (uint p = 0; p <= position; p++) {
             float score = 0.0;
+            const uint kOffset = kvOffset + p * kvDim0;
             for (uint i = 0; i < headSize; i++) {
-                score += query[qOffset + i] * keyCache[kvOffset + p * kvDim0 + i];
+                score += query[qOffset + i] * keyCache[kOffset + i];
             }
             att[attOffset + p] = score / headSizeRoot;
         }
@@ -89,10 +90,10 @@ void main() {
         }
 
         for (uint p = 0; p <= position; p++) {
-            float a = att[attOffset + p];
-            const uint vOffset = kvOffset + p;
+            const float a = att[attOffset + p];
+            const uint vOffset = kvOffset + p * kvDim0;
             for (uint i = 0; i < headSize; i++) {
-                float v = valueCache[vOffset * kvDim0 + i];
+                float v = valueCache[vOffset + i];
                 y[yOffset + i] += v * a;
             }
         }
