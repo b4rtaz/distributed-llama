@@ -288,9 +288,9 @@ LlmNet buildLlmNet(LlmHeader *h, NnUint nNodes, NnUint nBatches) {
                 pointerBatchedSliceConfig(SRC_BUFFER, yBufferIndex),
                 size0(),
                 NnMultiHeadAttOpConfig{
-                    h->nKvHeads, h->headSize, h->seqLen,
-                    n.positionPipeIndex, qBufferIndex, kBufferIndex, vBufferIndex, attBufferIndex,
-                    n.qSlice, kvCacheSlice, multiHeadAttSlice});
+                    multiHeadAttSlice.nHeads, multiHeadAttSlice.nHeads0,
+                    h->nKvHeads, h->headSize, h->seqLen, n.qSlice.d0, kvCacheSlice.kvDim0,
+                    n.positionPipeIndex, qBufferIndex, kBufferIndex, vBufferIndex, attBufferIndex});
             att.addOp(
                 OP_CAST, "block_cast_y2", layerIndex,
                 pointerBatchedSliceConfig(SRC_BUFFER, yBufferIndex),

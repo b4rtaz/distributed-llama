@@ -6,7 +6,7 @@
 #include "nn-executor.hpp"
 #include "nn-cpu-ops.hpp"
 
-#define DEBUG_VULKAN_TRACE true
+#define DEBUG_VULKAN_TRACE false
 
 typedef struct {
     vk::Instance instance;

@@ -448,8 +448,40 @@ void matmul_F32_F32_F32() {
         });
 }
 
-void multiheadAtt_F32_F32_F32() {
+void multiheadAtt_F32_F32() {
+    #define MULTIHEAD_ATT_DIM 128
+    execute(
+        [](NnNetConfigBuilder *netBuilder, NnNodeConfigBuilder *nodeBuilder, NnSegmentConfigBuilder *segmentBuilder) {
+            const NnUint nHeads = 32;
+            const NnUint nKvHeads = 8;
+            const NnUint headSize = MULTIHEAD_ATT_DIM / nHeads;
+            const NnUint seqLen = 4096;
+            const NnUint qSliceD0 = 2048;
+            const NnUint kvDim0 = 512;
+            const NnKvCacheSlice kvCacheSlice = sliceKvCache(kvDim0, seqLen, 1);
+            const NnMultiHeadAttSlice multiHeadAttSlice = sliceMultiHeadAtt(nHeads, seqLen, 1);
 
+            NnUint xPipeIndex = netBuilder->addPipe("X", size2D(F_32, N_BATCHES, MULTIHEAD_ATT_DIM));
+            NnUint posPipeIndex = netBuilder->addPipe("POS", size2D(F_32, N_BATCHES, 1));
+            NnUint qBufferIndex = nodeBuilder->addBuffer("POS", size2D(F_32, N_BATCHES, qSliceD0));
+            NnUint kCacheBufferIndex = nodeBuilder->addBuffer("kCache", kvCacheSlice.keySize);
+            NnUint vCacheBufferIndex = nodeBuilder->addBuffer("vCache", kvCacheSlice.valueSize);
+            NnUint attCacheBufferIndex = nodeBuilder->addBuffer("vCache", multiHeadAttSlice.attSize);
+
+            segmentBuilder->addOp(
+                OP_MULTIHEAD_ATT, "multihead_att", 0,
+                pointerBatchConfig(SRC_PIPE, xPipeIndex),
+                pointerBatchConfig(SRC_PIPE, xPipeIndex),
+                size0(),
+                NnMultiHeadAttOpConfig{nHeads, nHeads, nKvHeads, headSize, seqLen, qSliceD0, kvDim0,
+                    posPipeIndex, qBufferIndex, kCacheBufferIndex, vCacheBufferIndex, attCacheBufferIndex});
+        },
+        [](NnExecutor *executor, NnNetExecution *execution, NnVulkanDevice *device) {
+            // TODO: for now this is a smoke test
+            execution->setBatchSize(N_BATCHES);
+            executor->forward();
+            printOk("multiheadAtt_F32_F32");
+        });
 }
 
 int main() {
@@ -462,6 +494,6 @@ int main() {
     testCast_F32_F32();
     testRope_F32_F32();
     matmul_F32_F32_F32();
-    multiheadAtt_F32_F32_F32();
+    multiheadAtt_F32_F32();
     return 0;
 }

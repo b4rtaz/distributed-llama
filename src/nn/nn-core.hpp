@@ -207,17 +207,18 @@ typedef struct {
 } NnRopeLlamaOpConfig;
 
 typedef struct {
+    NnUint nHeads;
+    NnUint nHeads0;
     NnUint nKvHeads;
     NnUint headSize;
     NnUint seqLen;
+    NnUint qSliceD0;
+    NnUint kvDim0;
     NnUint positionPipeIndex;
     NnUint queryBufferIndex;
     NnUint keyCacheBufferIndex;
     NnUint valueCacheBufferIndex;
     NnUint attBufferIndex;
-    NnRowMatmulSlice qSlice;
-    NnKvCacheSlice kvCacheSlice;
-    NnMultiHeadAttSlice multiHeadAttSlice;
 } NnMultiHeadAttOpConfig;
 
 typedef struct {

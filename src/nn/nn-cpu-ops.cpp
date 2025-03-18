@@ -1147,10 +1147,10 @@ static void initMultiHeadAttForward(NnCpuOpContext *context) {
     const NnMultiHeadAttOpConfig *config = (NnMultiHeadAttOpConfig *)context->opConfig;
 
     assert(context->weightSize.nBytes == 0);
-    ASSERT_EQ(context->inputSize.x, config->qSlice.d0);
+    ASSERT_EQ(context->inputSize.x, config->qSliceD0);
     ASSERT_EQ(context->inputSize.y, context->nBatches);
     NnSize2D *querySize = &context->bufferConfigs[config->queryBufferIndex].size;
-    ASSERT_EQ(querySize->x, config->qSlice.d0);
+    ASSERT_EQ(querySize->x, config->qSliceD0);
     NnSize2D *posSize = &context->pipeConfigs[config->positionPipeIndex].size;
     ASSERT_EQ(posSize->x, 1);
     ASSERT_EQ(posSize->y, context->nBatches);
@@ -1167,7 +1167,7 @@ static void multiHeadAttForward_F32_F32(NnUint nThreads, NnUint threadIndex, NnU
 
     for (NnUint batchIndex = 0; batchIndex < batchSize; batchIndex++) {
         float *i = (float *)context->input[batchIndex];
-        float *q = &query[batchIndex * config->qSlice.d0];
+        float *q = &query[batchIndex * config->qSliceD0];
         NnUint pos = (NnUint)positions[batchIndex];
         assert(pos < config->seqLen);
 
@@ -1175,8 +1175,8 @@ static void multiHeadAttForward_F32_F32(NnUint nThreads, NnUint threadIndex, NnU
         DEBUG_VECTOR(context, "q", q);
 
         multiheadAtt_F32(i, q, att, keyCache, valueCache, pos,
-            config->multiHeadAttSlice.nHeads, config->multiHeadAttSlice.nHeads0,
-            config->nKvHeads, config->kvCacheSlice.kvDim0, config->headSize, config->seqLen, nThreads, threadIndex);
+            config->nHeads, config->nHeads0,
+            config->nKvHeads, config->kvDim0, config->headSize, config->seqLen, nThreads, threadIndex);
     }
 }
 

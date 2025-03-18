@@ -410,33 +410,38 @@ static void buildShaderLayout(std::vector<NnVulkanBuffer *> &buffers, NnVulkanDe
     if (opConfig->weightSize.nBytes > 0)
         buffers.push_back(segmentData->resolveOpWeightVulkanBuffer(opIndex));
     // config
-    if (opConfig->configSize > 0)
+    if (opConfig->configSize > 0) {
         buffers.push_back(segmentData->resolveOpConfigVulkanBuffer(opIndex));
 
-    switch (opConfig->code) {
-    case OP_RMS_NORM: {
-        assert(opConfig->configSize > 0);
-        NnRmsNormOpConfig *config = (NnRmsNormOpConfig *)opConfig->config;
-        buffers.push_back(data->buffers[config->invRmsBufferIndex].get());
-    } break;
-    case OP_MUL: {
-        assert(opConfig->configSize > 0);
-        NnMulOpCodeConfig *config = (NnMulOpCodeConfig *)opConfig->config;
-        buffers.push_back(data->buffers[config->multiplierBufferIndex].get());
-    } break;
-    case OP_SHIFT: {
-        assert(opConfig->configSize > 0);
-        NnShiftOpCodeConfig *config = (NnShiftOpCodeConfig *)opConfig->config;
-        buffers.push_back(data->pipes[config->indexPipeIndex].get());
-    } break;
-    case OP_ROPE_LLAMA: {
-        assert(opConfig->configSize > 0);
-        NnRopeLlamaOpConfig *config = (NnRopeLlamaOpConfig *)opConfig->config;
-        buffers.push_back(data->pipes[config->positionPipeIndex].get());
-        buffers.push_back(data->buffers[config->ropeCacheBufferIndex].get());
-    } break;
-    default:
-        break;
+        switch (opConfig->code) {
+        case OP_RMS_NORM: {
+            const NnRmsNormOpConfig *config = (NnRmsNormOpConfig *)opConfig->config;
+            buffers.push_back(data->buffers[config->invRmsBufferIndex].get());
+        } break;
+        case OP_MUL: {
+            const NnMulOpCodeConfig *config = (NnMulOpCodeConfig *)opConfig->config;
+            buffers.push_back(data->buffers[config->multiplierBufferIndex].get());
+        } break;
+        case OP_SHIFT: {
+            const NnShiftOpCodeConfig *config = (NnShiftOpCodeConfig *)opConfig->config;
+            buffers.push_back(data->pipes[config->indexPipeIndex].get());
+        } break;
+        case OP_ROPE_LLAMA: {
+            const NnRopeLlamaOpConfig *config = (NnRopeLlamaOpConfig *)opConfig->config;
+            buffers.push_back(data->pipes[config->positionPipeIndex].get());
+            buffers.push_back(data->buffers[config->ropeCacheBufferIndex].get());
+        } break;
+        case OP_MULTIHEAD_ATT: {
+            const NnMultiHeadAttOpConfig *config = (NnMultiHeadAttOpConfig *)opConfig->config;
+            buffers.push_back(data->pipes[config->positionPipeIndex].get());
+            buffers.push_back(data->buffers[config->queryBufferIndex].get());
+            buffers.push_back(data->buffers[config->keyCacheBufferIndex].get());
+            buffers.push_back(data->buffers[config->valueCacheBufferIndex].get());
+            buffers.push_back(data->buffers[config->attBufferIndex].get());
+        } break;
+        default:
+            break;
+        }
     }
 }
 
@@ -466,12 +471,11 @@ static std::vector<uint32_t> readShader(const char *fileName) {
     FILE *file = fopen(path.c_str(), "rb");
     if (!file)
         throw std::runtime_error("Failed to open shader file: " + path);
-    constexpr size_t chunkSize = 8192;
-    uint32_t chunk[chunkSize];
-    size_t bytesRead;
-    while ((bytesRead = fread(chunk, 1, chunkSize, file)) > 0) {
+    constexpr size_t maxSize = 16384;
+    uint32_t chunk[maxSize];
+    size_t bytesRead = fread(chunk, 1, maxSize, file);
+    if (bytesRead > 0)
         code.insert(code.end(), chunk, chunk + bytesRead);
-    }
     if (ferror(file)) {
         fclose(file);
         throw std::runtime_error("Failed to read shader file: " + path);
