@@ -1,5 +1,6 @@
 #version 450
 
+#define N_WORK_GROUPS 32
 #define N_THREADS 256
 
 layout(local_size_x = N_THREADS, local_size_y = 1, local_size_z = 1) in;
@@ -20,6 +21,7 @@ shared BatchInfo sharedInfo;
 
 void main() {
     const uint threadIndex = gl_LocalInvocationID.x;
+    const uint workGroupIndex = gl_GlobalInvocationID.z;
     const uint batchIndex = gl_GlobalInvocationID.y;
 
     if (threadIndex == 0) {
@@ -29,16 +31,19 @@ void main() {
     barrier();
     memoryBarrierShared();
 
-    const uint outputSizeX = sharedInfo.outputSizeX;
+    const uint inputSizeX = sharedInfo.inputSizeX;
+    const uint dim = sharedInfo.outputSizeX / N_WORK_GROUPS;
     const uint xOffset = sharedInfo.inputOffset;
     const uint yOffset = sharedInfo.outputOffset;
 
-    for (uint i = threadIndex; i < outputSizeX; i += N_THREADS) {
+    for (uint i = threadIndex; i < dim; i += N_THREADS) {
+        const uint d = (workGroupIndex * dim) + i;
+        const uint wOffset = d * inputSizeX;
+
         float sum = 0.0;
-        const uint wOffset = i * sharedInfo.inputSizeX;
-        for (uint j = 0; j < sharedInfo.inputSizeX; j++) {
+        for (uint j = 0; j < inputSizeX; j++) {
             sum += x[xOffset + j] * weight[wOffset + j];
         }
-        y[yOffset + i] = sum;
+        y[yOffset + d] = sum;
     }
 }

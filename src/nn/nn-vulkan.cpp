@@ -455,6 +455,9 @@ static void resolveShaderGroups(const NnOpCode opCode, const NnUint batchSize, N
     groupCount[0] = 1;
     groupCount[1] = batchSize;
     groupCount[2] = 1;
+
+    if (opCode == OP_MATMUL)
+        groupCount[2] = 32;
 }
 
 static std::vector<uint32_t> readShader(const char *fileName) {
@@ -740,7 +743,7 @@ void NnVulkanDeviceSegment::forward(NnUint opIndex, NnUint nThreads, NnUint thre
                     nullptr
                 );
             }
-    
+
             commandBuffer.bindPipeline(
                 vk::PipelineBindPoint::eCompute,
                 pipelines[opIndex]
