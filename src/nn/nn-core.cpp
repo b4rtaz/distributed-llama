@@ -1,3 +1,6 @@
+#ifdef _WIN32
+    #define _USE_MATH_DEFINES
+#endif
 #include "nn-core.hpp"
 #include <cassert>
 #include <cstring>
