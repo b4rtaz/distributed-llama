@@ -301,16 +301,37 @@ NnUint splitColMatmulWeight(NnColMatmulSlice *slice, NnUint nodeIndex, NnByte *w
 
 // helper
 
-void fullfillRopeLlama3Cache(const NnRopeSlice *slice, float *cache) {
-    for (NnUint pos = 0; pos < slice->seqLen; pos++) {
-        for (NnUint i = slice->kvDimStart; i < slice->qDimEnd; i += 2) {
-            const NnUint headDim = i % slice->headSize;
-            const float freq = 1.0f / powf(slice->ropeTheta, headDim / (float)slice->headSize);
+static inline float scaleFrequencyLlama3(const float freq, const NnRopeLlamaOpConfig *config) {
+    // https://github.com/meta-llama/llama-models/blob/4269717b2ea587627903bacbb75ccce1427ad914/models/llama3/reference_impl/model.py#L55
+    const float waveLen = 2.0f * M_PI / freq;
+    const float highFreqWavelen = config->ropeScalingOrigMaxSeqLen / config->ropeScalingHighFreqFactor;
+    if (waveLen < highFreqWavelen) {
+        return freq;
+    }
+    const float lowFreqWavelen = config->ropeScalingOrigMaxSeqLen / config->ropeScalingLowFreqFactor;
+    if (waveLen > lowFreqWavelen) {
+        return freq / config->ropeScalingFactor;
+    }
+    const float smooth = (config->ropeScalingOrigMaxSeqLen / waveLen - config->ropeScalingLowFreqFactor) /
+        (config->ropeScalingHighFreqFactor - config->ropeScalingLowFreqFactor);
+    return (1 - smooth) * freq / config->ropeScalingFactor + smooth * freq;
+}
+
+void fullfillRopeLlama3Cache(const NnRopeLlamaOpConfig *config, float *cache) {
+    assert((config->slice.qDimEnd - config->slice.kvDimStart) % 2 == 0);
+
+    const bool applyScaling = config->ropeScalingFactor != 1.0f;
+    for (NnUint pos = 0; pos < config->slice.seqLen; pos++) {
+        for (NnUint i = config->slice.kvDimStart; i < config->slice.qDimEnd; i += 2) {
+            const NnUint headDim = i % config->slice.headSize;
+            float freq = 1.0f / powf(config->slice.ropeTheta, headDim / (float)config->slice.headSize);
+            if (applyScaling)
+                freq = scaleFrequencyLlama3(freq, config);
             const float val = pos * freq;
             const float fcr = cosf(val);
             const float fci = sinf(val);
-            cache[pos * slice->sliceDim + (i - slice->kvDimStart)] = fcr;
-            cache[pos * slice->sliceDim + (i - slice->kvDimStart) + 1] = fci;
+            cache[pos * config->slice.sliceDim + (i - config->slice.kvDimStart)] = fcr;
+            cache[pos * config->slice.sliceDim + (i - config->slice.kvDimStart) + 1] = fci;
         }
     }
 }

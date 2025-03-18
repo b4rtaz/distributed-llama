@@ -395,14 +395,14 @@ void testRope_F32_F32() {
             assertFloat(2, x0[2], 0.077202f, t);
             assertFloat(3, x0[3], -1.412105f, t);
             assertFloat(1988, x0[1988], -1.356766f, t);
-            assertFloat(2022, x0[2022], 0.997517, t);
-            assertFloat(2022, x0[2023], 1.002477, t);
+            assertFloat(2022, x0[2022], 0.999923, t);
+            assertFloat(2023, x0[2023], 1.000077, t);
 
             float *x1 = &xPipe[1 * ROPE_DIM];
             assertFloat(0, x1[0], 1.318780f, t);
             assertFloat(1, x1[1], 0.510705f, t);
-            assertFloat(1078, x1[1078], 0.999518f, t);
-            assertFloat(1078, x1[1079], 1.000482f, t);
+            assertFloat(1078, x1[1078], 0.999985f, t);
+            assertFloat(1078, x1[1079], 1.000015f, t);
 
             printOk("testRope_F32_F32");
         });

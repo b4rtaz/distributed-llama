@@ -211,7 +211,7 @@ NnVulkanDeviceData::NnVulkanDeviceData(NnVulkanContext *context, NnNetConfig *ne
         assert(ropeLlamaOpConfig->ropeCacheBufferIndex < nodeConfig->nBuffers);
         NnVulkanBuffer *buffer = buffers[ropeLlamaOpConfig->ropeCacheBufferIndex].get();
         std::vector<NnByte> ropeCache(ropeLlamaOpConfig->slice.cacheSize.nBytes);
-        fullfillRopeLlama3Cache(&ropeLlamaOpConfig->slice, (float *)ropeCache.data());
+        fullfillRopeLlama3Cache(ropeLlamaOpConfig, (float *)ropeCache.data());
         buffer->write(ropeCache.data());
     }
 }

@@ -201,7 +201,7 @@ typedef struct {
     NnUint ropeCacheBufferIndex;
     float ropeScalingFactor;
     float ropeScalingLowFreqFactor;
-    float ropeScalingHighFreqFactory;
+    float ropeScalingHighFreqFactor;
     NnUint ropeScalingOrigMaxSeqLen;
     NnRopeSlice slice;
 } NnRopeLlamaOpConfig;
@@ -287,6 +287,6 @@ NnUint splitColMatmulWeight(NnColMatmulSlice *slice, NnUint nodeIndex, NnByte *w
 
 // rope
 
-void fullfillRopeLlama3Cache(const NnRopeSlice *slice, float *cache);
+void fullfillRopeLlama3Cache(const NnRopeLlamaOpConfig *config, float *cache);
 
 #endif

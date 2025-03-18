@@ -1085,25 +1085,8 @@ static void initRopeLlama3Forward(NnCpuOpContext *context) {
         return;
     context->bufferFlags[config->ropeCacheBufferIndex] = 1;
 
-    const NnRopeSlice *slice = &config->slice;
     float *cache = (float *)context->buffers[config->ropeCacheBufferIndex];
-    fullfillRopeLlama3Cache(slice, cache);
-}
-
-static inline float ropeLlama31Scale(const float freq, const NnRopeLlamaOpConfig *config) {
-    // https://github.com/meta-llama/llama-models/blob/4269717b2ea587627903bacbb75ccce1427ad914/models/llama3/reference_impl/model.py#L55
-    const float waveLen = 2.0f * M_PI / freq;
-    const float highFreqWavelen = config->ropeScalingOrigMaxSeqLen / config->ropeScalingHighFreqFactory;
-    if (waveLen < highFreqWavelen) {
-        return freq;
-    }
-    const float lowFreqWavelen = config->ropeScalingOrigMaxSeqLen / config->ropeScalingLowFreqFactor;
-    if (waveLen > lowFreqWavelen) {
-        return freq / config->ropeScalingFactor;
-    }
-    const float smooth = (config->ropeScalingOrigMaxSeqLen / waveLen - config->ropeScalingLowFreqFactor) /
-        (config->ropeScalingHighFreqFactory - config->ropeScalingLowFreqFactor);
-    return (1 - smooth) * freq / config->ropeScalingFactor + smooth * freq;
+    fullfillRopeLlama3Cache(config, cache);
 }
 
 static void ropeLlamaForward_F32_F32(NnUint nThreads, NnUint threadIndex, NnUint batchSize, NnCpuOpContext *context) {
@@ -1115,7 +1098,6 @@ static void ropeLlamaForward_F32_F32(NnUint nThreads, NnUint threadIndex, NnUint
     SPLIT_THREADS(s, e, dim0Half, nThreads, threadIndex);
     const NnUint iStart = s * 2;
     const NnUint iEnd = e * 2;
-    const bool applyScale = config->ropeScalingFactor != 1.0f;
 
     const float *cache = (float *)context->buffers[config->ropeCacheBufferIndex];
     const float *positions = (float *)context->pipes[config->positionPipeIndex];
@@ -1133,10 +1115,6 @@ static void ropeLlamaForward_F32_F32(NnUint nThreads, NnUint threadIndex, NnUint
 
             float x0 = v0 * fcr - v1 * fci;
             float x1 = v0 * fci + v1 * fcr;
-            if (applyScale) {
-                x0 = ropeLlama31Scale(x0, config);
-                x1 = ropeLlama31Scale(x1, config);
-            }
             x[i] = x0;
             x[i + 1] = x1;
         }
