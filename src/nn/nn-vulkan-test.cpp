@@ -72,8 +72,10 @@ void testRmsNorm_F32_F32_F32() {
             float *xPipe = (float *)execution->pipes[0];
             for (NnUint b = 0; b < batchSize; b++) {
                 float *xBatchPipe = &xPipe[b * RMS_NORM_DIM];
-                for (NnUint i = 0; i < RMS_NORM_DIM; i++)
-                    xBatchPipe[i] = (float)(RMS_NORM_DIM - i) / (float)(RMS_NORM_DIM / 2);
+                for (NnUint i = 0; i < RMS_NORM_DIM; i++) {
+                    float u = (float)(RMS_NORM_DIM - i + b) / (float)(RMS_NORM_DIM / 2);
+                    xBatchPipe[i] = u;
+                }
             }
 
             // act
@@ -83,22 +85,20 @@ void testRmsNorm_F32_F32_F32() {
             float invRmsBuffer[N_BATCHES];
             device->data->buffers[0].get()->read((NnByte *)invRmsBuffer);
 
+            float expectedS[N_BATCHES];
+            expectedS[0] = 0.863493f;
+            expectedS[1] = 0.858468f;
+
             for (NnUint b = 0; b < batchSize; b++) {
                 float *xBatchPipe = &xPipe[b * RMS_NORM_DIM];
 
-                float t = 0.000001f;
-                assertFloat(b, invRmsBuffer[b], 0.863493f, t);
-                assertFloat(0, xBatchPipe[0], 0.001687f, t);
-                assertFloat(1, xBatchPipe[1], 0.008400f, t);
-                assertFloat(2, xBatchPipe[2], 0.015060f, t);
-                assertFloat(35, xBatchPipe[35], 0.205286f, t);
-                assertFloat(36, xBatchPipe[36], 0.210155f, t);
-                assertFloat(119, xBatchPipe[119], 0.430514f, t);
-                assertFloat(123, xBatchPipe[123], 0.431964f, t);
-                assertFloat(234, xBatchPipe[234], 0.135804f, t);
-                assertFloat(242, xBatchPipe[242], 0.089372f, t);
-                assertFloat(249, xBatchPipe[249], 0.045977f, t);
-                assertFloat(255, xBatchPipe[255], 0.006726f, t);
+                const float t = 0.000001f;
+                const float s = expectedS[b];
+                assertFloat(b, invRmsBuffer[b], s, t);
+                for (NnUint i = 0; i < RMS_NORM_DIM; i++) {
+                    float u = (float)(RMS_NORM_DIM - i + b) / (float)(RMS_NORM_DIM / 2);
+                    assertFloat(b * RMS_NORM_DIM + i, xBatchPipe[i], (u * s) * normWeight[i], t);
+                }
             }
             printOk("testRmsNorm_F32_F32_F32");
         });
@@ -165,7 +165,7 @@ void testMul_F32_F32() {
             float sBuffer[MUL_DIM * N_BATCHES];
             for (NnUint i = 0; i < MUL_DIM * N_BATCHES; i++) {
                 xPipe[i] = (float)i;
-                sBuffer[i] = cosf((float)i);
+                sBuffer[i] = (i % 8) / 10.0f;
             }
 
             device->data->buffers[0].get()->write((NnByte *)sBuffer);
@@ -175,7 +175,7 @@ void testMul_F32_F32() {
 
             // assert
             for (NnUint i = 0; i < MUL_DIM * N_BATCHES; i++)
-                assertFloat(i, xPipe[i], i * cosf((float)i), 0.00001f);
+                assertFloat(i, xPipe[i], i * ((i % 8) / 10.0f), 0.000001f);
             printOk("testMul_F32_F32");
         });
 }
