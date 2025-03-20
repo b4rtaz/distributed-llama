@@ -15,7 +15,6 @@ layout(binding = 0) readonly buffer inputBuffer { float x[]; };
 layout(binding = 1) writeonly buffer outputBuffer { float y[]; };
 layout(binding = 2) readonly buffer batchInfosBuffer { BatchInfo infos[]; };
 
-shared uint sharedPosition;
 shared BatchInfo sharedInfo;
 
 void main() {
@@ -23,7 +22,6 @@ void main() {
     const uint batchIndex = gl_GlobalInvocationID.y;
 
     if (threadIndex == 0) {
-        sharedPosition = uint(x[batchIndex]);
         sharedInfo = infos[batchIndex];
     }
 

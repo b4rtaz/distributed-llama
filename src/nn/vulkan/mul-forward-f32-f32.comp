@@ -31,10 +31,11 @@ void main() {
     memoryBarrierShared();
     barrier();
 
-    const uint start = sharedInfo.inputOffset + threadIndex;
-    const uint end = sharedInfo.inputOffset + sharedInfo.inputSizeX;
+    const uint inputSizeX = sharedInfo.inputSizeX;
+    const uint xyOffset = sharedInfo.inputOffset;
+    const uint mOffset = inputSizeX * batchIndex;
 
-    for (uint i = threadIndex; i < end; i += N_THREADS) {
-        y[i] = x[i] * m[i];
+    for (uint i = threadIndex; i < inputSizeX; i += N_THREADS) {
+        y[xyOffset + i] = x[xyOffset + i] * m[mOffset + i];
     }
 }
