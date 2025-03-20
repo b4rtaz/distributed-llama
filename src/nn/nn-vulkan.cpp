@@ -718,10 +718,15 @@ void NnVulkanDeviceSegment::forward(NnUint opIndex, NnUint nThreads, NnUint thre
     {
         // TODO
 
+        const NnUint positionPipeIndex = 0;
+        data->pipes[positionPipeIndex]->write(netExecution->pipes[positionPipeIndex]);
+
         for (NnUint opIndex = 0; opIndex < segmentConfig->nOps; opIndex++) {
             NnOpConfig *opConfig = &segmentConfig->ops[opIndex];
-            if (opConfig->input.source == SRC_PIPE)
-                data->pipes[opConfig->input.pointerIndex]->write(netExecution->pipes[opConfig->input.pointerIndex]);
+            if (opConfig->input.source == SRC_PIPE) {
+                NnByte *pipeData = netExecution->pipes[opConfig->input.pointerIndex];
+                data->pipes[opConfig->input.pointerIndex]->write(pipeData);
+            }
         }
     }
 
@@ -775,8 +780,10 @@ void NnVulkanDeviceSegment::forward(NnUint opIndex, NnUint nThreads, NnUint thre
         // TODO
         for (NnUint opIndex = 0; opIndex < segmentConfig->nOps; opIndex++) {
             NnOpConfig *opConfig = &segmentConfig->ops[opIndex];
-            if (opConfig->output.source == SRC_PIPE)
-                data->pipes[opConfig->output.pointerIndex]->read(netExecution->pipes[opConfig->output.pointerIndex]);
+            if (opConfig->output.source == SRC_PIPE) {
+                NnByte *pipeData = netExecution->pipes[opConfig->output.pointerIndex];
+                data->pipes[opConfig->output.pointerIndex]->read(pipeData);
+            }
         }
     }
 }

@@ -1032,6 +1032,7 @@ static void matmulForward_F32_F32_F32(NnUint nThreads, NnUint threadIndex, NnUin
             context->weightSize.x,
             nThreads,
             threadIndex);
+        DEBUG_VECTOR(context, "output", output);
     }
 }
 
@@ -1152,6 +1153,8 @@ static void multiHeadAttForward_F32_F32(NnUint nThreads, NnUint threadIndex, NnU
         multiheadAtt_F32(i, q, att, keyCache, valueCache, pos,
             config->nHeads, config->nHeads0,
             config->nKvHeads, config->kvDim0, config->headSize, config->seqLen, nThreads, threadIndex);
+
+        DEBUG_VECTOR(context, "output", i);
     }
 }
 
