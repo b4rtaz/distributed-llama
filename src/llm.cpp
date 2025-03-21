@@ -149,6 +149,8 @@ LlmNet buildLlmNet(LlmHeader *h, NnUint nNodes, NnUint nBatches) {
     n.logitsPipeIndex = netBuilder.addPipe("LG", size2D(F_32, nBatches, h->vocabSize));
     const NnUint zqPipeIndex = netBuilder.addPipe("ZQ", size2D(h->syncType, nBatches, h->dim * nNodes));
 
+    netBuilder.addPreSync(n.positionPipeIndex);
+
     n.header = h;
     n.netConfig = netBuilder.build();
     n.nodeConfigs = new NnNodeConfig[nNodes];

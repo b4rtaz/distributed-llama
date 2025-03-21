@@ -213,10 +213,6 @@ void NnCpuDevice::resolvePointer(NnByte **pntr, NnSize2D *pntrSize, NnPointerCon
     }
 }
 
-void NnCpuDevice::syncPointers() {
-    // remove
-}
-
 void NnCpuDeviceSegment::loadWeight(NnUint opIndex, NnSize nBytes, NnByte *weight) {
     assert(opIndex >= 0);
     assert(opIndex < nOps);

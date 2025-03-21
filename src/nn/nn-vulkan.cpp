@@ -356,11 +356,8 @@ NnUint NnVulkanDevice::maxNThreads() {
 
 NnDeviceSegment *NnVulkanDevice::createSegment(NnUint segmentIndex) {
     NnSegmentConfig *segmentConfig = &nodeConfig->segments[segmentIndex];
-    return new NnVulkanDeviceSegment(&context, data, segmentConfig, netExecution);
+    return new NnVulkanDeviceSegment(&context, data, netConfig, segmentIndex, segmentConfig, netExecution);
 };
-
-void NnVulkanDevice::syncPointers() {
-}
 
 static const char *getShaderFileName(const NnOpCode opCode, const NnOpQuantType quantType) {
     if (opCode == OP_MERGE_ADD) {
@@ -396,7 +393,7 @@ static const char *getShaderFileName(const NnOpCode opCode, const NnOpQuantType 
     if (opCode == OP_SHIFT) {
         if (quantType == F32_F32_F32) return "shift-forward-f32-f32.spv";
     }
-    return nullptr;
+    throw std::invalid_argument(std::string("Unsupported shader: ") + opCodeToString(opCode) + "/" + opQuantTypeToString(quantType));
 }
 
 static void buildShaderLayout(std::vector<NnVulkanBuffer *> &buffers, NnVulkanDeviceData *data, NnVulkanDeviceSegmentData *segmentData, NnUint opIndex, NnOpConfig *opConfig) {
@@ -538,7 +535,7 @@ NnVulkanBuffer *NnVulkanDeviceSegmentData::resolveOpWeightVulkanBuffer(NnUint op
     return data->internalBuffers[weightBufferIndex[opIndex]].get();
 }
 
-NnVulkanDeviceSegment::NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanDeviceData *data, NnSegmentConfig *segmentConfig, NnNetExecution *netExecution) :
+NnVulkanDeviceSegment::NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanDeviceData *data, NnNetConfig *netConfig, NnUint segmentIndex, NnSegmentConfig *segmentConfig, NnNetExecution *netExecution) :
     shaderModules(segmentConfig->nOps),
     descriptorSets(segmentConfig->nOps),
     descriptorSetLayouts(segmentConfig->nOps),
@@ -547,6 +544,8 @@ NnVulkanDeviceSegment::NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanD
 {
     this->context = context;
     this->data = data;
+    this->netConfig = netConfig;
+    this->segmentIndex = segmentIndex;
     this->segmentConfig = segmentConfig;
     this->netExecution = netExecution;
     this->segmentData.reset(new NnVulkanDeviceSegmentData(context, data, segmentConfig, netExecution->nBatches));
@@ -565,7 +564,6 @@ NnVulkanDeviceSegment::NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanD
             outputSize.floatType
         );
         const char *shaderFileName = getShaderFileName(opConfig->code, opQuant);
-        assert(shaderFileName != nullptr);
         std::vector<uint32_t> code = readShader(shaderFileName);
 
         std::vector<NnVulkanBuffer *> &buffers = opBuffers[opIndex];
@@ -717,9 +715,13 @@ void NnVulkanDeviceSegment::forward(NnUint opIndex, NnUint nThreads, NnUint thre
 
     {
         // TODO
-
-        const NnUint positionPipeIndex = 0;
-        data->pipes[positionPipeIndex]->write(netExecution->pipes[positionPipeIndex]);
+        if (segmentIndex == 0) {
+            for (NnUint i = 0; i < netConfig->nPreSyncs; i++) {
+                NnPreSyncConfig *preSyncConfig = &netConfig->preSyncs[i];
+                NnByte *pipeData = netExecution->pipes[preSyncConfig->pipeIndex];
+                data->pipes[preSyncConfig->pipeIndex]->write(pipeData);
+            }
+        }
 
         for (NnUint opIndex = 0; opIndex < segmentConfig->nOps; opIndex++) {
             NnOpConfig *opConfig = &segmentConfig->ops[opIndex];

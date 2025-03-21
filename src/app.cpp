@@ -170,7 +170,6 @@ void RootLlmInference::setToken(NnUint batchIndex, NnUint token) {
 void RootLlmInference::forward() {
     if (network != nullptr) 
         network->writeAll(&controlPacket, sizeof(LlmControlPacket));
-    device->syncPointers();
     executor->forward();
 }
 

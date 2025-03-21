@@ -91,7 +91,6 @@ public:
     ~NnVulkanDevice() override;
     NnUint maxNThreads() override;
     NnDeviceSegment *createSegment(NnUint segmentIndex) override;
-    void syncPointers() override;
 };
 
 class NnVulkanDeviceSegmentData {
@@ -111,6 +110,8 @@ class NnVulkanDeviceSegment : public NnDeviceSegment {
 private:
     NnVulkanContext *context;
     NnVulkanDeviceData *data;
+    NnNetConfig *netConfig;
+    NnUint segmentIndex;
     NnSegmentConfig *segmentConfig;
     NnNetExecution *netExecution;
     std::unique_ptr<NnVulkanDeviceSegmentData> segmentData;
@@ -126,7 +127,7 @@ private:
     vk::CommandBuffer commandBuffer;
     NnUint lastBatchSize;
 public:
-    NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanDeviceData *data, NnSegmentConfig *segmentConfig, NnNetExecution *netExecution);
+    NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanDeviceData *data, NnNetConfig *netConfig, NnUint segmentIndex, NnSegmentConfig *segmentConfig, NnNetExecution *netExecution);
     ~NnVulkanDeviceSegment() override;
     void loadWeight(NnUint opIndex, NnSize nBytes, NnByte *weight) override;
     void forward(NnUint opIndex, NnUint nThreads, NnUint threadIndex, NnUint batchSize) override;

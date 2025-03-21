@@ -152,6 +152,10 @@ typedef struct {
 
 typedef struct {
     NnUint pipeIndex;
+} NnPreSyncConfig;
+
+typedef struct {
+    NnUint pipeIndex;
     NnSyncType syncType;
 } NnSyncConfig;
 
@@ -167,6 +171,8 @@ typedef struct {
     NnUint nNodes;
     NnUint nPipes;
     NnPipeConfig *pipes;
+    NnUint nPreSyncs;
+    NnPreSyncConfig *preSyncs;
 } NnNetConfig;
 
 typedef struct {

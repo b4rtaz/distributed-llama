@@ -17,6 +17,7 @@ public:
     NnUint nNodes;
     NnUint nBatches;
     std::list<NnPipeConfig> pipes;
+    std::list<NnPreSyncConfig> preSyncs;
 
     NnNetConfigBuilder(NnUint nNodes, NnUint nBatches) {
         this->nNodes = nNodes;
@@ -29,6 +30,10 @@ public:
         return pipeIndex;
     }
 
+    void addPreSync(NnUint pipeIndex) {
+        preSyncs.push_back({ pipeIndex });
+    }
+
     NnNetConfig build() {
         NnNetConfig config;
         config.nNodes = nNodes;
@@ -36,6 +41,13 @@ public:
         config.nPipes = pipes.size();
         config.pipes = new NnPipeConfig[config.nPipes];
         std::copy(pipes.begin(), pipes.end(), config.pipes);
+        config.nPreSyncs = preSyncs.size();
+        if (config.nPreSyncs > 0) {
+            config.preSyncs = new NnPreSyncConfig[config.nPreSyncs];
+            std::copy(preSyncs.begin(), preSyncs.end(), config.preSyncs);
+        } else {
+            config.preSyncs = nullptr;
+        }
         return config;
     }
 };
