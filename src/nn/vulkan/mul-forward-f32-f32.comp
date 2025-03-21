@@ -1,6 +1,6 @@
 #version 450
 
-#define N_THREADS 256
+#define N_THREADS 64
 
 layout(local_size_x = N_THREADS, local_size_y = 1, local_size_z = 1) in;
 
@@ -19,23 +19,32 @@ layout(binding = 3) readonly uniform configBuffer {
 };
 layout(binding = 4) readonly buffer multiplierBuffer { float m[]; };
 
-shared BatchInfo sharedInfo;
+shared uint sharedDim;
+shared uint sharedXyOffset;
+shared uint sharedMOffset;
 
 void main() {
     const uint threadIndex = gl_LocalInvocationID.x;
-    const uint batchIndex = gl_GlobalInvocationID.y;
 
     if (threadIndex == 0) {
-        sharedInfo = infos[batchIndex];
+        const uint nWorkGroups = gl_NumWorkGroups.z;
+        const uint batchIndex = gl_WorkGroupID.y;
+        const uint workGroupIndex = gl_WorkGroupID.z;
+
+        const BatchInfo info = infos[batchIndex];
+        sharedDim = info.inputSizeX / nWorkGroups;
+        sharedXyOffset = info.inputOffset + sharedDim * workGroupIndex;
+        sharedMOffset = info.inputSizeX * batchIndex + sharedDim * workGroupIndex;
     }
-    memoryBarrierShared();
+
     barrier();
+    memoryBarrierShared();
 
-    const uint inputSizeX = sharedInfo.inputSizeX;
-    const uint xyOffset = sharedInfo.inputOffset;
-    const uint mOffset = inputSizeX * batchIndex;
+    const uint dim = sharedDim;
+    const uint xyOffset = sharedXyOffset;
+    const uint mOffset = sharedMOffset;
 
-    for (uint i = threadIndex; i < inputSizeX; i += N_THREADS) {
+    for (uint i = threadIndex; i < dim; i += N_THREADS) {
         y[xyOffset + i] = x[xyOffset + i] * m[mOffset + i];
     }
 }

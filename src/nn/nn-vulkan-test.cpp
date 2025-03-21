@@ -309,7 +309,7 @@ void testShift_F32_F32() {
 }
 
 void testCast_F32_F32() {
-    #define CAST_DIM 48
+    #define CAST_DIM 64
     execute(
         [](NnNetConfigBuilder *netBuilder, NnNodeConfigBuilder *nodeBuilder, NnSegmentConfigBuilder *segmentBuilder) {
             NnUint xPipeIndex = netBuilder->addPipe("X", size2D(F_32, N_BATCHES, CAST_DIM));
