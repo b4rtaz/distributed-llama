@@ -456,12 +456,12 @@ static std::vector<NnVulkanBatchInfo> buildBatchInfo(NnOpConfig *opConfig, NnVul
     return offset;
 }
 
-static void resolveShaderGroups(const NnOpCode opCode, const NnUint batchSize, NnUint *groupCount) {
+static void resolveShaderGroups(const NnOpConfig *opConfig, const NnUint batchSize, NnUint *groupCount) {
     groupCount[0] = 1;
     groupCount[1] = batchSize;
     groupCount[2] = 1;
 
-    if (opCode == OP_MATMUL)
+    if (opConfig->code == OP_MATMUL)
         groupCount[2] = 32;
 }
 
@@ -732,11 +732,11 @@ void NnVulkanDeviceSegment::forward(NnUint opIndex, NnUint nThreads, NnUint thre
 
     if (lastBatchSize != batchSize) {
         lastBatchSize = batchSize;
-        commandBuffer.begin({ vk::CommandBufferUsageFlags{ vk::CommandBufferUsageFlagBits::eSimultaneousUse } });
+        commandBuffer.begin({ vk::CommandBufferUsageFlags{} });
 
         NnUint opGroupCount[3];
         for (NnUint opIndex = 0; opIndex < segmentConfig->nOps; opIndex++) {
-            resolveShaderGroups(segmentConfig->ops[opIndex].code, batchSize, opGroupCount);
+            resolveShaderGroups(&segmentConfig->ops[opIndex], batchSize, opGroupCount);
     
             if (opIndex > 0) {
                 vk::MemoryBarrier memoryBarrier(
