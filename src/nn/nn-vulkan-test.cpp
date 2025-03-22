@@ -266,7 +266,7 @@ void testEmbedding_F32_F32() {
 }
 
 void testShift_F32_F32() {
-    #define SHIFT_DIM 48
+    #define SHIFT_DIM 64
     execute(
         [](NnNetConfigBuilder *netBuilder, NnNodeConfigBuilder *nodeBuilder, NnSegmentConfigBuilder *segmentBuilder) {
             NnUint posPipeIndex = netBuilder->addPipe("POS", size2D(F_32, N_BATCHES, 1));

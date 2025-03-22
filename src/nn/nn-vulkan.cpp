@@ -459,8 +459,10 @@ static void resolveShaderGroups(const NnOpConfig *opConfig, const NnUint batchSi
     groupCount[2] = 1;
 
     if (opConfig->code == OP_CAST ||
+        opConfig->code == OP_RMS_NORM ||
         opConfig->code == OP_MUL ||
         opConfig->code == OP_SILU ||
+        opConfig->code == OP_SHIFT ||
         opConfig->code == OP_MERGE_ADD ||
         opConfig->code == OP_MATMUL)
         groupCount[2] = 32;
