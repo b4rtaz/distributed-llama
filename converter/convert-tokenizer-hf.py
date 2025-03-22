@@ -72,7 +72,12 @@ class TokensResolver:
             t = processor.id_to_piece(i)
             s = processor.get_score(i)
             t = t.replace('▁', ' ') # sentencepiece uses this character as whitespace
-            b = t.encode('utf-8')
+            # Check for byte characters
+            if len(t) == 6 and t.startswith('<0x') and t.endswith('>'):
+                # For example, "<0x0A>"" is a newline character
+                b = bytearray.fromhex(t[3:-1])
+            else:
+                b = t.encode('utf-8')
             self.tokens.append(b)
             self.scores.append(s)
 
