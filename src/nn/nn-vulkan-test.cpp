@@ -464,7 +464,7 @@ void multiheadAtt_F32_F32() {
             const NnUint qSliceD0 = 2048;
             const NnUint kvDim0 = 512;
             const NnKvCacheSlice kvCacheSlice = sliceKvCache(kvDim0, seqLen, 1);
-            const NnMultiHeadAttSlice multiHeadAttSlice = sliceMultiHeadAtt(nHeads, seqLen, 1);
+            const NnMultiHeadAttSlice multiHeadAttSlice = sliceMultiHeadAtt(nHeads, seqLen, 1, N_BATCHES);
 
             NnUint xPipeIndex = netBuilder->addPipe("X", size2D(F_32, N_BATCHES, MULTIHEAD_ATT_DIM));
             NnUint posPipeIndex = netBuilder->addPipe("POS", size2D(F_32, N_BATCHES, 1));

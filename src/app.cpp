@@ -128,7 +128,6 @@ AppCliArgs::~AppCliArgs() {
 static NnDevice *createDevice(AppCliArgs *args, NnNetConfig *netConfig, NnNodeConfig *nodeConfig, NnNetExecution *netExecution) {
     if (args->gpuIndex >= 0) {
 #if defined(DLLAMA_VULKAN)
-        args->nBatches = 1; // TODO: this should be fixed
         return new NnVulkanDevice(args->gpuIndex, netConfig, nodeConfig, netExecution);
 #else
         throw std::runtime_error("This build does not support GPU");

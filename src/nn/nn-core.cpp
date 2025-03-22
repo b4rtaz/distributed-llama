@@ -256,12 +256,12 @@ NnRopeSlice sliceRope(NnUint dim, NnUint kvDim, NnUint nKvHeads, NnUint nNodes, 
     return s;
 }
 
-NnMultiHeadAttSlice sliceMultiHeadAtt(NnUint nHeads, NnUint seqLen, NnUint nNodes) {
+NnMultiHeadAttSlice sliceMultiHeadAtt(NnUint nHeads, NnUint seqLen, NnUint nNodes, NnUint nBatches) {
     NnMultiHeadAttSlice s;
     assert(nHeads % nNodes == 0);
     s.nHeads = nHeads;
     s.nHeads0 = nHeads / nNodes;
-    s.attSize = size2D(F_32, seqLen, s.nHeads0);
+    s.attSize = size2D(F_32, nBatches, s.nHeads0 * nBatches);
     return s;
 }
 

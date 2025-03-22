@@ -129,7 +129,7 @@ LlmNet buildLlmNet(LlmHeader *h, NnUint nNodes, NnUint nBatches) {
     n.rmsNormSize = size1D(F_32, h->dim);
 
     NnKvCacheSlice kvCacheSlice = sliceKvCache(h->kvDim, h->seqLen, nNodes);
-    NnMultiHeadAttSlice multiHeadAttSlice = sliceMultiHeadAtt(h->nHeads, h->seqLen, nNodes);
+    NnMultiHeadAttSlice multiHeadAttSlice = sliceMultiHeadAtt(h->nHeads, h->seqLen, nNodes, nBatches);
 
     n.qSlice = sliceRowMatmul(h->weightType, nNodes, h->dim, h->dim);
     n.kSlice = sliceRowMatmul(h->weightType, nNodes, h->dim, h->kvDim);

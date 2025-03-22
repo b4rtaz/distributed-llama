@@ -42,6 +42,7 @@ void main() {
     const uint batchIndex = gl_GlobalInvocationID.y;
     const uint kvMul = nHeads / nKvHeads;
     const float headSizeRoot = sqrt(float(headSize));
+    const uint attBatchOffset = batchIndex * nHeads0 * seqLen;
 
     if (threadIndex == 0) {
         sharedInfo = infos[batchIndex];
@@ -55,7 +56,7 @@ void main() {
         const uint qOffset = batchIndex * qSliceD0 + h * headSize;
         const uint headIndex = h / kvMul;
         const uint kvOffset = headIndex * headSize;
-        const uint attOffset = h * seqLen;
+        const uint attOffset = attBatchOffset + h * seqLen;
         const uint yOffset = sharedInfo.outputOffset + h * headSize;
 
         for (uint p = 0; p <= position; p++) {
