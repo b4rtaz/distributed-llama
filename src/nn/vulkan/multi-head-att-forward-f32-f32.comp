@@ -1,6 +1,6 @@
 #version 450
 
-#define N_THREADS 256
+#define N_THREADS 64
 
 layout(local_size_x = N_THREADS, local_size_y = 1, local_size_z = 1) in;
 
@@ -36,13 +36,17 @@ layout(binding = 8) buffer attBufferBuffer { float att[]; };
 
 shared BatchInfo sharedInfo;
 shared uint position;
+shared float sharedSum;
 
 void main() {
     const uint threadIndex = gl_LocalInvocationID.x;
-    const uint batchIndex = gl_GlobalInvocationID.y;
+    const uint batchIndex = gl_WorkGroupID.y;
+    const uint h = gl_WorkGroupID.z;
+
     const uint kvMul = nHeads / nKvHeads;
+    const uint headIndex = h / kvMul;
     const float headSizeRoot = sqrt(float(headSize));
-    const uint attBatchOffset = batchIndex * nHeads0 * seqLen;
+
 
     if (threadIndex == 0) {
         sharedInfo = infos[batchIndex];
@@ -52,23 +56,25 @@ void main() {
     barrier();
     memoryBarrierShared();
 
-    for (uint h = threadIndex; h < nHeads0; h += N_THREADS) {
-        const uint qOffset = batchIndex * qSliceD0 + h * headSize;
-        const uint headIndex = h / kvMul;
-        const uint kvOffset = headIndex * headSize;
-        const uint attOffset = attBatchOffset + h * seqLen;
-        const uint yOffset = sharedInfo.outputOffset + h * headSize;
+    const uint attOffset = batchIndex * nHeads0 * seqLen + h * seqLen;
+    const uint qOffset = batchIndex * qSliceD0 + h * headSize;
+    const uint kvOffset = headIndex * headSize;
+    const uint yOffset = sharedInfo.outputOffset + h * headSize;
 
-        for (uint p = 0; p <= position; p++) {
-            float score = 0.0;
-            const uint kOffset = kvOffset + p * kvDim0;
-            for (uint i = 0; i < headSize; i++) {
-                score += query[qOffset + i] * keyCache[kOffset + i];
-            }
-            att[attOffset + p] = score / headSizeRoot;
+    for (uint p = threadIndex; p <= position; p += N_THREADS) {
+        float score = 0.0;
+        const uint kOffset = kvOffset + p * kvDim0;
+        for (uint i = 0; i < headSize; i++) {
+            score += query[qOffset + i] * keyCache[kOffset + i];
         }
+        att[attOffset + p] = score / headSizeRoot;
+    }
 
-        // softmax
+    barrier();
+
+    // softmax
+    if (threadIndex == 0) {
+        // TODO: split into multiple threads
         float maxScore = att[attOffset];
         for (uint p = 1; p <= position; p++) {
             maxScore = max(maxScore, att[attOffset + p]);
@@ -80,23 +86,31 @@ void main() {
             att[attOffset + p] = v;
             sum += v;
         }
+        sharedSum = sum;
+    }
 
-        for (uint p = 0; p <= position; p++) {
-            att[attOffset + p] /= sum;
-        }
+    barrier();
 
-        // return
-        for (uint i = 0; i < headSize; i++) {
-            y[yOffset + i] = 0.0;
-        }
+    const float sum = sharedSum;
 
-        for (uint p = 0; p <= position; p++) {
+    for (uint p = threadIndex; p <= position; p += N_THREADS) {
+        att[attOffset + p] /= sum;
+    }
+
+    // return
+    for (uint i = threadIndex; i < headSize; i += N_THREADS) {
+        y[yOffset + i] = 0.0;
+    }
+
+    barrier();
+
+    for (uint i = threadIndex; i < headSize; i += N_THREADS) {
+        float sum = 0.0;
+        for (uint p = 0; p <= position; p += 1) {
             const float a = att[attOffset + p];
-            const uint vOffset = kvOffset + p * kvDim0;
-            for (uint i = 0; i < headSize; i++) {
-                float v = valueCache[vOffset + i];
-                y[yOffset + i] += v * a;
-            }
+            const float v = valueCache[kvOffset + p * kvDim0 + i];
+            sum += v * a;
         }
+        y[yOffset + i] = sum;
     }
 }

@@ -466,6 +466,8 @@ static void resolveShaderGroups(const NnOpConfig *opConfig, const NnUint batchSi
         opConfig->code == OP_MERGE_ADD ||
         opConfig->code == OP_MATMUL)
         groupCount[2] = 32;
+    else if (opConfig->code == OP_MULTIHEAD_ATT)
+        groupCount[2] = ((NnMultiHeadAttOpConfig *)opConfig->config)->nHeads;
 }
 
 static std::vector<uint32_t> readShader(const char *fileName) {
