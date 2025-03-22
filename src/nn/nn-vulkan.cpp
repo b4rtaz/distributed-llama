@@ -242,23 +242,36 @@ NnUint NnVulkanDeviceData::resolveBufferBatchOffset(NnPointerConfig *config, NnU
     assert(batchIndex < netConfig->nBatches);
     if (config->type == PNTR_RAW)
         return 0;
-    NnSize2D bufferSize = resolveBufferSize(config);
+
+    const NnSize2D bufferSize = resolveBufferSize(config);
+    const NnSize blockSize = getBlockSize(bufferSize.floatType);
+    assert(bufferSize.x % blockSize == 0);
+    const NnUint sizeX = bufferSize.x / blockSize;
+
     if (config->type == PNTR_BATCH)
-        return bufferSize.x * batchIndex;
-    if (config->type == PNTR_BATCHED_SLICE)
-        return bufferSize.x * batchIndex + (bufferSize.x / netConfig->nNodes) * nodeConfig->nodeIndex;
+        return sizeX * batchIndex;
+    if (config->type == PNTR_BATCHED_SLICE) {
+        assert(sizeX % netConfig->nNodes == 0);
+        return sizeX * batchIndex + (sizeX / netConfig->nNodes) * nodeConfig->nodeIndex;
+    }
     throw std::runtime_error("Cannot determine buffer offset");
 }
 
 NnUint NnVulkanDeviceData::resolveBufferBatchWidth(NnPointerConfig *config, NnUint batchIndex) {
     assert(batchIndex < netConfig->nBatches);
-    NnSize2D bufferSize = resolveBufferSize(config);
+    const NnSize2D bufferSize = resolveBufferSize(config);
+    const NnSize blockSize = getBlockSize(bufferSize.floatType);
+    assert(bufferSize.x % blockSize == 0);
+    const NnUint sizeX = bufferSize.x / blockSize;
+
     if (config->type == PNTR_RAW)
-        return bufferSize.x;
+        return sizeX;
     if (config->type == PNTR_BATCH)
-        return bufferSize.x;
-    if (config->type == PNTR_BATCHED_SLICE)
-        return bufferSize.x / netConfig->nNodes;
+        return sizeX;
+    if (config->type == PNTR_BATCHED_SLICE) {
+        assert(sizeX % netConfig->nNodes == 0);
+        return sizeX / netConfig->nNodes;
+    }
     throw std::runtime_error("Cannot determine buffer width");
 }
 
@@ -389,6 +402,7 @@ static const char *getShaderFileName(const NnOpCode opCode, const NnOpQuantType 
     }
     if (opCode == OP_CAST) {
         if (quantType == F32_F32_F32) return "cast-forward-f32-f32.spv";
+        if (quantType == F32_F32_Q80) return "cast-forward-f32-q80.spv";
     }
     if (opCode == OP_SHIFT) {
         if (quantType == F32_F32_F32) return "shift-forward-f32-f32.spv";
