@@ -293,6 +293,7 @@ NnVulkanDevice::NnVulkanDevice(NnUint gpuIndex, NnNetConfig *netConfig, NnNodeCo
         instanceExtensions.push_back("VK_KHR_portability_enumeration");
         deviceExtension.push_back("VK_KHR_portability_subset");
     }
+    deviceExtension.push_back("VK_KHR_8bit_storage");
     deviceExtension.push_back("VK_KHR_16bit_storage");
     deviceExtension.push_back("VK_KHR_shader_float16_int8");
 
