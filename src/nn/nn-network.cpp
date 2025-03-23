@@ -618,6 +618,11 @@ void NnRootConfigWriter::writeNet(NnUint socketIndex, NnNetConfig *config) {
         network->write(socketIndex, &pipeConfig->size, sizeof(pipeConfig->size));
         writeString(network, socketIndex, pipeConfig->name);
     }
+    network->write(socketIndex, &config->nPreSyncs, sizeof(config->nPreSyncs));
+    for (NnUint preSyncIndex = 0; preSyncIndex < config->nPreSyncs; preSyncIndex++) {
+        NnPreSyncConfig *preSyncConfig = &config->preSyncs[preSyncIndex];
+        network->write(socketIndex, &preSyncConfig->pipeIndex, sizeof(preSyncConfig->pipeIndex));
+    }
     network->readAck(socketIndex);
 }
 
@@ -682,6 +687,12 @@ NnNetConfig NnWorkerConfigReader::readNet() {
         NnPipeConfig *pipeConfig = &config.pipes[pipeIndex];
         network->read(ROOT_SOCKET_INDEX, &pipeConfig->size, sizeof(pipeConfig->size));
         pipeConfig->name = readString(network, ROOT_SOCKET_INDEX);
+    }
+    network->read(ROOT_SOCKET_INDEX, &config.nPreSyncs, sizeof(config.nPreSyncs));
+    config.preSyncs = new NnPreSyncConfig[config.nPreSyncs];
+    for (NnUint preSyncIndex = 0; preSyncIndex < config.nPreSyncs; preSyncIndex++) {
+        NnPreSyncConfig *preSyncConfig = &config.preSyncs[preSyncIndex];
+        network->read(ROOT_SOCKET_INDEX, &preSyncConfig->pipeIndex, sizeof(preSyncConfig->pipeIndex));
     }
     network->writeAck(ROOT_SOCKET_INDEX);
     return config;

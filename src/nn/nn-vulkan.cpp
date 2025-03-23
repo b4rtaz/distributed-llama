@@ -738,9 +738,9 @@ void NnVulkanDeviceSegment::forward(NnUint opIndex, NnUint nThreads, NnUint thre
 
     context->device.resetFences({ fence });
 
+    // TODO: refactor this block
     {
-        // TODO
-        if (segmentIndex == 0) {
+        if (segmentIndex == 0 || segmentIndex == 1) { // TODO: this is a hack to fix workers
             for (NnUint i = 0; i < netConfig->nPreSyncs; i++) {
                 NnPreSyncConfig *preSyncConfig = &netConfig->preSyncs[i];
                 NnByte *pipeData = netExecution->pipes[preSyncConfig->pipeIndex];
@@ -803,8 +803,8 @@ void NnVulkanDeviceSegment::forward(NnUint opIndex, NnUint nThreads, NnUint thre
 
     VULKAN_TRACE("Forwarded");
 
+    // TODO: refactor this block
     {
-        // TODO
         for (NnUint opIndex = 0; opIndex < segmentConfig->nOps; opIndex++) {
             NnOpConfig *opConfig = &segmentConfig->ops[opIndex];
             if (opConfig->output.source == SRC_PIPE) {
