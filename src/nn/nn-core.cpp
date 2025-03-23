@@ -261,7 +261,7 @@ NnMultiHeadAttSlice sliceMultiHeadAtt(NnUint nHeads, NnUint seqLen, NnUint nNode
     assert(nHeads % nNodes == 0);
     s.nHeads = nHeads;
     s.nHeads0 = nHeads / nNodes;
-    s.attSize = size2D(F_32, nBatches, s.nHeads0 * nBatches);
+    s.attSize = size2D(F_32, nBatches, s.nHeads0 * seqLen);
     return s;
 }
 
