@@ -301,7 +301,10 @@ NnVulkanDevice::NnVulkanDevice(NnUint gpuIndex, NnNetConfig *netConfig, NnNodeCo
     context.instance = vk::createInstance(instanceCreateInfo);
 
     auto physicalDevices = context.instance.enumeratePhysicalDevices();
-    context.physicalDevice = physicalDevices.front();
+    const NnSize nDevices = physicalDevices.size();
+    if (gpuIndex >= nDevices)
+        throw std::runtime_error("Invalid GPU index, found " + std::to_string(nDevices) + " GPUs");
+    context.physicalDevice = physicalDevices[gpuIndex];
 
     vk::PhysicalDeviceProperties deviceProps = context.physicalDevice.getProperties();
     printf("🌋 Device: %s\n", (char*)deviceProps.deviceName);
