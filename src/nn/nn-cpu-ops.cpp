@@ -430,7 +430,7 @@ static void matmul_Q80_Q40_F32(float *output, const NnBlockQ80 *x, const NnBlock
                 const int w0 = (wb->qs[k] & 0x0F) - 8;
                 const int w1 = (wb->qs[k] >> 4) - 8;
                 const int i1 = xb->qs[k];
-                const int i2 = xb->qs[k + Q40_BLOCK_SIZE / 2];
+                const int i2 = xb->qs[k + Q80_BLOCK_SIZE / 2];
                 sum += (w0 * i1 + w1 * i2) * s;
             }
         }

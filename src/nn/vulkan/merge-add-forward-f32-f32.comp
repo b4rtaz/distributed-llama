@@ -12,7 +12,7 @@ struct BatchInfo {
 };
 
 layout(binding = 0) readonly buffer inputBuffer { float x[]; };
-layout(binding = 1) writeonly buffer outputBuffer { float y[]; };
+layout(binding = 1) buffer outputBuffer { float y[]; };
 layout(binding = 2) readonly buffer batchInfosBuffer { BatchInfo infos[]; };
 
 shared uint sharedDim;

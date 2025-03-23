@@ -388,6 +388,7 @@ static const char *getShaderFileName(const NnOpCode opCode, const NnOpQuantType 
     }
     if (opCode == OP_MATMUL) {
         if (quantType == F32_F32_F32) return "matmul-forward-f32-f32-f32.spv";
+        if (quantType == Q80_Q40_F32) return "matmul-forward-q80-q40-f32.spv";
     }
     if (opCode == OP_MULTIHEAD_ATT) {
         if (quantType == F32_F32_F32) return "multi-head-att-forward-f32-f32.spv";

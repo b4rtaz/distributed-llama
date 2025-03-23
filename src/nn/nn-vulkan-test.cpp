@@ -483,18 +483,18 @@ void testRope_F32_F32() {
         });
 }
 
-void matmul_F32_F32_F32() {
-    #define MATMUL_N 64
-    #define MATMUL_D 96
+void testMatmul_F32_F32_F32() {
+    #define MATMUL_F32_N 64
+    #define MATMUL_F32_D 96
     execute(
         [](NnNetConfigBuilder *netBuilder, NnNodeConfigBuilder *nodeBuilder, NnSegmentConfigBuilder *segmentBuilder) {
-            NnUint xPipeIndex = netBuilder->addPipe("X", size2D(F_32, N_BATCHES, MATMUL_N));
-            NnUint yPipeIndex = netBuilder->addPipe("Y", size2D(F_32, N_BATCHES, MATMUL_D));
+            NnUint xPipeIndex = netBuilder->addPipe("X", size2D(F_32, N_BATCHES, MATMUL_F32_N));
+            NnUint yPipeIndex = netBuilder->addPipe("Y", size2D(F_32, N_BATCHES, MATMUL_F32_D));
             segmentBuilder->addOp(
                 OP_MATMUL, "matmul", 0,
                 pointerBatchConfig(SRC_PIPE, xPipeIndex),
                 pointerBatchConfig(SRC_PIPE, yPipeIndex),
-                size2D(F_32, MATMUL_N, MATMUL_D),
+                size2D(F_32, MATMUL_F32_N, MATMUL_F32_D),
                 NnMatmulOpConfig{});
         },
         [](NnExecutor *executor, NnNetExecution *execution, NnVulkanDevice *device) {
@@ -503,32 +503,88 @@ void matmul_F32_F32_F32() {
             float *xPipe = (float *)execution->pipes[0];
             float *yPipe = (float *)execution->pipes[1];
 
-            float weight[MATMUL_N * MATMUL_D];
-            for (NnUint i = 0; i < N_BATCHES * MATMUL_N; i++)
+            float weight[MATMUL_F32_N * MATMUL_F32_D];
+            for (NnUint i = 0; i < N_BATCHES * MATMUL_F32_N; i++)
                 xPipe[i] = i * 0.01f;
-            for (NnUint i = 0; i < MATMUL_N * MATMUL_D; i++)
+            for (NnUint i = 0; i < MATMUL_F32_N * MATMUL_F32_D; i++)
                 weight[i] = i * 0.001f;
-            executor->loadWeight("matmul", 0, MATMUL_N * MATMUL_D * sizeof(float), (NnByte *)weight);
+            executor->loadWeight("matmul", 0, MATMUL_F32_N * MATMUL_F32_D * sizeof(float), (NnByte *)weight);
 
             // act
             executor->forward();
 
             // assert
             for (NnUint b = 0; b < N_BATCHES; b++) {
-                for (NnUint d = 0; d < MATMUL_D; d++) {
+                for (NnUint d = 0; d < MATMUL_F32_D; d++) {
                     float sum = 0.0f;
-                    for (NnUint n = 0; n < MATMUL_N; n++)
-                        sum += xPipe[b * MATMUL_N + n] * weight[d * MATMUL_N + n];
+                    for (NnUint n = 0; n < MATMUL_F32_N; n++)
+                        sum += xPipe[b * MATMUL_F32_N + n] * weight[d * MATMUL_F32_N + n];
 
-                    const NnUint p = b * MATMUL_D + d;
+                    const NnUint p = b * MATMUL_F32_D + d;
                     assertFloat(p, yPipe[p], sum, 0.0002f);
                 }
             }
-            printOk("matmul_F32_F32_F32");
+            printOk("testMatmul_F32_F32_F32");
         });
 }
 
-void multiheadAtt_F32_F32() {
+void testMatmul_Q80_Q40_F32() {
+    #define MATMUL_Q80_Q40_N 64
+    #define MATMUL_Q80_Q40_D 96
+    execute(
+        [](NnNetConfigBuilder *netBuilder, NnNodeConfigBuilder *nodeBuilder, NnSegmentConfigBuilder *segmentBuilder) {
+            NnUint xPipeIndex = netBuilder->addPipe("X", size2D(F_Q80, N_BATCHES, MATMUL_Q80_Q40_N));
+            NnUint yPipeIndex = netBuilder->addPipe("Y", size2D(F_32, N_BATCHES, MATMUL_Q80_Q40_D));
+            segmentBuilder->addOp(
+                OP_MATMUL, "matmul", 0,
+                pointerBatchConfig(SRC_PIPE, xPipeIndex),
+                pointerBatchConfig(SRC_PIPE, yPipeIndex),
+                size2D(F_Q40, MATMUL_Q80_Q40_N, MATMUL_Q80_Q40_D),
+                NnMatmulOpConfig{});
+        },
+        [](NnExecutor *executor, NnNetExecution *execution, NnVulkanDevice *device) {
+            // arrange
+            execution->setBatchSize(N_BATCHES);
+            NnBlockQ80 *xPipe = (NnBlockQ80 *)execution->pipes[0];
+            float *yPipe = (float *)execution->pipes[1];
+
+            constexpr NnUint xSize = N_BATCHES * MATMUL_Q80_Q40_N;
+            constexpr NnUint weightSize = MATMUL_Q80_Q40_N * MATMUL_Q80_Q40_D;
+            constexpr NnUint weightBlocks = weightSize / Q40_BLOCK_SIZE;
+
+            float x[xSize];
+            float weight[weightSize];
+            NnBlockQ40 weightQ40[weightBlocks];
+
+            for (NnUint i = 0; i < xSize; i++)
+                x[i] = i * 0.01f;
+            for (NnUint i = 0; i < weightSize; i++)
+                weight[i] = i * 0.001f;
+
+            quantizeF32toQ80(x, xPipe, xSize, 1, 0);
+            quantizeF32toQ40(weight, weightQ40, weightSize, 1, 0);
+
+            executor->loadWeight("matmul", 0, weightBlocks * sizeof(NnBlockQ40), (NnByte *)weightQ40);
+
+            // act
+            executor->forward();
+
+            // assert
+            for (NnUint b = 0; b < N_BATCHES; b++) {
+                for (NnUint d = 0; d < MATMUL_Q80_Q40_D; d++) {
+                    float sum = 0.0f;
+                    for (NnUint n = 0; n < MATMUL_Q80_Q40_N; n++)
+                        sum += x[b * MATMUL_Q80_Q40_N + n] * weight[d * MATMUL_Q80_Q40_N + n];
+                    const NnUint p = b * MATMUL_Q80_Q40_D + d;
+                    const float change = (yPipe[p] - sum) / sum;
+                    assertFloat(p, change, 0.0, 0.04f);
+                }
+            }
+            printOk("testMatmul_Q80_Q40_F32");
+        });
+}
+
+void testMultiheadAtt_F32_F32() {
     #define MULTIHEAD_ATT_DIM 128
     execute(
         [](NnNetConfigBuilder *netBuilder, NnNodeConfigBuilder *nodeBuilder, NnSegmentConfigBuilder *segmentBuilder) {
@@ -560,7 +616,7 @@ void multiheadAtt_F32_F32() {
             // TODO: for now this is a smoke test
             execution->setBatchSize(N_BATCHES);
             executor->forward();
-            printOk("multiheadAtt_F32_F32");
+            printOk("testMultiheadAtt_F32_F32");
         });
 }
 
@@ -577,7 +633,8 @@ int main() {
     testCast_F32_F32();
     testCast_F32_Q80();
     testRope_F32_F32();
-    matmul_F32_F32_F32();
-    multiheadAtt_F32_F32();
+    testMatmul_F32_F32_F32();
+    testMatmul_Q80_Q40_F32();
+    testMultiheadAtt_F32_F32();
     return 0;
 }
