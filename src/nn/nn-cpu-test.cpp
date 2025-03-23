@@ -17,14 +17,14 @@ void buildConfig(NnNetConfig *netConfig, NnNodeConfig *nodeConfig) {
     segmentBuilder.addSync(xPipeIndex, SYNC_NODE_SLICES_EXCEPT_ROOT);
 
     segmentBuilder.addOp(OP_INV_RMS, "inv_rms", 0,
-        pointerConfig(PNTR_PIPE, xPipeIndex),
-        pointerConfig(PNTR_BUFFER, invRmsBufferIndex),
+        pointerBatchConfig(SRC_PIPE, xPipeIndex),
+        pointerBatchConfig(SRC_BUFFER, invRmsBufferIndex),
         size0(),
         NnInvRmsOpConfig{1e-5f});
 
     segmentBuilder.addOp(OP_RMS_NORM, "rms_norm", 0,
-        pointerConfig(PNTR_PIPE, xPipeIndex),
-        pointerConfig(PNTR_PIPE, xPipeIndex),
+        pointerBatchConfig(SRC_PIPE, xPipeIndex),
+        pointerBatchConfig(SRC_PIPE, xPipeIndex),
         size1D(F_32, DIM),
         NnRmsNormOpConfig{invRmsBufferIndex});
 

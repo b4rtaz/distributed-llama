@@ -1,6 +1,10 @@
+#ifdef _WIN32
+    #define _USE_MATH_DEFINES
+#endif
 #include "nn-core.hpp"
 #include <cassert>
 #include <cstring>
+#include <cmath>
 #include <stdexcept>
 
 // utility functions
@@ -106,20 +110,24 @@ NnSize2D size2D(NnFloatType floatType, NnUint y, NnUint x) {
     return { floatType, y, x, length, getBytes(floatType, length) };
 }
 
-NnPointerConfig pointerConfig(NnPointerType type, NnUint index) {
-    return { type, index, SLICE_NONE, PNTR_BATCH_DEFAULT, 0 /* not used*/ };
+NnPointerConfig pointerBatchConfig(NnPointerSource source, NnUint index) {
+    return { source, index, PNTR_BATCH };
 }
 
-NnPointerConfig pointerConfigWithPipedBatch(NnPointerType type, NnUint index, NnUint pipeIndex) {
-    return { type, index, SLICE_NONE, PNTR_BATCH_PIPE, pipeIndex };
+NnPointerConfig pointerBatchedSliceConfig(NnPointerSource source, NnUint index) {
+    return { source, index, PNTR_BATCHED_SLICE };
 }
 
-NnPointerConfig slicedPointerConfig(NnPointerType type, NnUint index) {
-    return { type, index, SLICE_NODE_PART, PNTR_BATCH_DEFAULT, 0 /* not used*/ };
+NnPointerConfig pointerRawConfig(NnPointerSource source, NnUint index) {
+    return { source, index, PNTR_RAW };
 }
 
 bool hasPointerContinuousMemory(NnPointerConfig *config) {
-    return config->batchType == PNTR_BATCH_DEFAULT && config->sliceType == SLICE_NONE;
+    if (config->type == PNTR_RAW)
+        return true;
+    if (config->type == PNTR_BATCH)
+        return true;
+    return false;
 }
 
 void releaseNetConfig(NnNetConfig *netConfig) {
@@ -143,9 +151,11 @@ void releaseNodeConfig(NnNodeConfig *nodeConfig) {
         if (segment->nSyncs > 0)
             delete[] segment->syncs;
     }
-    for (NnUint bufferIndex = 0; bufferIndex < nodeConfig->nBuffers; bufferIndex++)
-        delete[] nodeConfig->buffers[bufferIndex].name;
-    delete[] nodeConfig->buffers;
+    if (nodeConfig->nBuffers > 0) {
+        for (NnUint bufferIndex = 0; bufferIndex < nodeConfig->nBuffers; bufferIndex++)
+            delete[] nodeConfig->buffers[bufferIndex].name;
+        delete[] nodeConfig->buffers;
+    }
     delete[] nodeConfig->segments;
 }
 
@@ -246,12 +256,12 @@ NnRopeSlice sliceRope(NnUint dim, NnUint kvDim, NnUint nKvHeads, NnUint nNodes, 
     return s;
 }
 
-NnMultiHeadAttSlice sliceMultiHeadAtt(NnUint nHeads, NnUint seqLen, NnUint nNodes) {
+NnMultiHeadAttSlice sliceMultiHeadAtt(NnUint nHeads, NnUint seqLen, NnUint nNodes, NnUint nBatches) {
     NnMultiHeadAttSlice s;
     assert(nHeads % nNodes == 0);
     s.nHeads = nHeads;
     s.nHeads0 = nHeads / nNodes;
-    s.attSize = size2D(F_32, seqLen, s.nHeads0);
+    s.attSize = size2D(F_32, nBatches, s.nHeads0 * seqLen);
     return s;
 }
 
@@ -290,4 +300,41 @@ NnUint splitColMatmulWeight(NnColMatmulSlice *slice, NnUint nodeIndex, NnByte *w
         copiedBytes += row0Bytes;
     }
     return copiedBytes;
+}
+
+// helper
+
+static inline float scaleFrequencyLlama3(const float freq, const NnRopeLlamaOpConfig *config) {
+    // https://github.com/meta-llama/llama-models/blob/4269717b2ea587627903bacbb75ccce1427ad914/models/llama3/reference_impl/model.py#L55
+    const float waveLen = 2.0f * M_PI / freq;
+    const float highFreqWavelen = config->ropeScalingOrigMaxSeqLen / config->ropeScalingHighFreqFactor;
+    if (waveLen < highFreqWavelen) {
+        return freq;
+    }
+    const float lowFreqWavelen = config->ropeScalingOrigMaxSeqLen / config->ropeScalingLowFreqFactor;
+    if (waveLen > lowFreqWavelen) {
+        return freq / config->ropeScalingFactor;
+    }
+    const float smooth = (config->ropeScalingOrigMaxSeqLen / waveLen - config->ropeScalingLowFreqFactor) /
+        (config->ropeScalingHighFreqFactor - config->ropeScalingLowFreqFactor);
+    return (1 - smooth) * freq / config->ropeScalingFactor + smooth * freq;
+}
+
+void fullfillRopeLlama3Cache(const NnRopeLlamaOpConfig *config, float *cache) {
+    assert((config->slice.qDimEnd - config->slice.kvDimStart) % 2 == 0);
+
+    const bool applyScaling = config->ropeScalingFactor != 1.0f;
+    for (NnUint pos = 0; pos < config->slice.seqLen; pos++) {
+        for (NnUint i = config->slice.kvDimStart; i < config->slice.qDimEnd; i += 2) {
+            const NnUint headDim = i % config->slice.headSize;
+            float freq = 1.0f / powf(config->slice.ropeTheta, headDim / (float)config->slice.headSize);
+            if (applyScaling)
+                freq = scaleFrequencyLlama3(freq, config);
+            const float val = pos * freq;
+            const float fcr = cosf(val);
+            const float fci = sinf(val);
+            cache[pos * config->slice.sliceDim + (i - config->slice.kvDimStart)] = fcr;
+            cache[pos * config->slice.sliceDim + (i - config->slice.kvDimStart) + 1] = fci;
+        }
+    }
 }

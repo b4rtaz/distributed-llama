@@ -1,6 +1,3 @@
-#ifdef _WIN32
-    #define _USE_MATH_DEFINES
-#endif
 #include <cmath>
 #include <cassert>
 #include <cstring>
@@ -433,7 +430,7 @@ static void matmul_Q80_Q40_F32(float *output, const NnBlockQ80 *x, const NnBlock
                 const int w0 = (wb->qs[k] & 0x0F) - 8;
                 const int w1 = (wb->qs[k] >> 4) - 8;
                 const int i1 = xb->qs[k];
-                const int i2 = xb->qs[k + Q40_BLOCK_SIZE / 2];
+                const int i2 = xb->qs[k + Q80_BLOCK_SIZE / 2];
                 sum += (w0 * i1 + w1 * i2) * s;
             }
         }
@@ -786,7 +783,7 @@ static void multiheadAtt_F32(
     }
 }
 
-static void mul_F32(float *output, const float *x, const NnUint n, const NnUint nThreads, const NnUint threadIndex) {
+static void mul_F32(float *y, const float *x, const float *m, const NnUint n, const NnUint nThreads, const NnUint threadIndex) {
     SPLIT_THREADS(start, end, n, nThreads, threadIndex);
     unsigned int i = start;
 
@@ -794,39 +791,39 @@ static void mul_F32(float *output, const float *x, const NnUint n, const NnUint 
     const unsigned int count = end - start;
     const unsigned int neonEnd = end - (count % 8);
     for (; i < neonEnd; i += 4) {
-        float32x4_t out_vec = vld1q_f32(&output[i]);
-        float32x4_t x_vec = vld1q_f32(&x[i]);
+        float32x4_t out_vec = vld1q_f32(&x[i]);
+        float32x4_t x_vec = vld1q_f32(&m[i]);
         float32x4_t res_vec = vmulq_f32(out_vec, x_vec);
-        vst1q_f32(&output[i], res_vec);
+        vst1q_f32(&y[i], res_vec);
     }
 #elif defined(__AVX2__)
     const unsigned int count = end - start;
     const unsigned int avxEnd = end - (count % 8);
     for (; i < avxEnd; i += 8) {
-        __m256 out_vec = _mm256_loadu_ps(&output[i]);
-        __m256 x_vec = _mm256_loadu_ps(&x[i]);
+        __m256 out_vec = _mm256_loadu_ps(&x[i]);
+        __m256 x_vec = _mm256_loadu_ps(&m[i]);
         __m256 res_vec = _mm256_mul_ps(out_vec, x_vec);
-        _mm256_storeu_ps(&output[i], res_vec);
+        _mm256_storeu_ps(&y[i], res_vec);
     }
 #endif
     for (; i < end; i++)
-        output[i] *= x[i];
+        y[i] = x[i] * m[i];
 }
 
-static void mul_Q80_F32(float *output, const NnBlockQ80 *x, const NnUint n, const NnUint nThreads, const NnUint threadIndex) {
+static void mul_Q80_F32(float *y, const float *x, const NnBlockQ80 *m, const NnUint n, const NnUint nThreads, const NnUint threadIndex) {
     const NnUint nBlocks = n / Q80_BLOCK_SIZE;
     SPLIT_THREADS(start, end, nBlocks, nThreads, threadIndex);
     for (NnUint i = start; i < end; i++) {
-        const NnBlockQ80 *b = &x[i];
+        const NnBlockQ80 *b = &m[i];
         float d = CONVERT_F16_TO_F32(b->d);
         for (NnUint j = 0; j < Q80_BLOCK_SIZE; j++) {
             NnUint k = i * Q80_BLOCK_SIZE + j;
-            output[k] *= d * b->qs[j];
+            y[k] = x[k] * d * b->qs[j];
         }
     }
 }
 
-static void copy_UNK(NnByte *output, const NnByte *x, NnUint size, const NnUint nThreads, const NnUint threadIndex) {
+static void copy_UNK(NnByte *output, const NnByte *x, NnSize size, const NnUint nThreads, const NnUint threadIndex) {
     SPLIT_THREADS(start, end, size, nThreads, threadIndex);
     NnUint s = end - start;
     if (s != 0)
@@ -881,7 +878,7 @@ static void initEmbeddingForward(NnCpuOpContext *context) {
 }
 
 static void embeddingForward_F32_F32_F32(NnUint nThreads, NnUint threadIndex, NnUint batchSize, NnCpuOpContext *context) {
-    NnUint dimSize = getBytes(F_32, context->outputSize.x);
+    NnSize dimSize = getBytes(F_32, context->outputSize.x);
 
     for (NnUint batchIndex = 0; batchIndex < batchSize; batchIndex++) {
         NnUint token = (NnUint)*((float *)context->input[batchIndex]);
@@ -895,7 +892,7 @@ static void embeddingForward_F32_F32_F32(NnUint nThreads, NnUint threadIndex, Nn
 }
 
 static void embeddingForward_F32_F32_Q80(NnUint nThreads, NnUint threadIndex, NnUint batchSize, NnCpuOpContext *context) {
-    NnUint dimSize = getBytes(F_32, context->outputSize.x);
+    NnSize dimSize = getBytes(F_32, context->outputSize.x);
 
     for (NnUint batchIndex = 0; batchIndex < batchSize; batchIndex++) {
         NnUint token = (NnUint)*((float *)context->input[batchIndex]);
@@ -1035,6 +1032,7 @@ static void matmulForward_F32_F32_F32(NnUint nThreads, NnUint threadIndex, NnUin
             context->weightSize.x,
             nThreads,
             threadIndex);
+        DEBUG_VECTOR(context, "output", output);
     }
 }
 
@@ -1079,42 +1077,14 @@ static void geluForward_F32_F32_F32(NnUint nThreads, NnUint threadIndex, NnUint 
     }
 }
 
-static void initRopeLlama31Forward(NnCpuOpContext *context) {
+static void initRopeLlama3Forward(NnCpuOpContext *context) {
     const NnRopeLlamaOpConfig *config = (NnRopeLlamaOpConfig *)context->opConfig;
     if (context->bufferFlags[config->ropeCacheBufferIndex] == 1)
         return;
     context->bufferFlags[config->ropeCacheBufferIndex] = 1;
 
-    const NnRopeSlice *slice = &config->slice;
     float *cache = (float *)context->buffers[config->ropeCacheBufferIndex];
-
-    for (NnUint pos = 0; pos < slice->seqLen; pos++) {
-        for (NnUint i = slice->kvDimStart; i < slice->qDimEnd; i += 2) {
-            const NnUint headDim = i % slice->headSize;
-            const float freq = 1.0f / powf(slice->ropeTheta, headDim / (float)slice->headSize);
-            const float val = pos * freq;
-            const float fcr = cosf(val);
-            const float fci = sinf(val);
-            cache[pos * slice->sliceDim + (i - slice->kvDimStart)] = fcr;
-            cache[pos * slice->sliceDim + (i - slice->kvDimStart) + 1] = fci;
-        }
-    }
-}
-
-static inline float ropeLlama31Scale(const float freq, const NnRopeLlamaOpConfig *config) {
-    // https://github.com/meta-llama/llama-models/blob/4269717b2ea587627903bacbb75ccce1427ad914/models/llama3/reference_impl/model.py#L55
-    const float waveLen = 2.0f * M_PI / freq;
-    const float highFreqWavelen = config->ropeScalingOrigMaxSeqLen / config->ropeScalingHighFreqFactory;
-    if (waveLen < highFreqWavelen) {
-        return freq;
-    }
-    const float lowFreqWavelen = config->ropeScalingOrigMaxSeqLen / config->ropeScalingLowFreqFactor;
-    if (waveLen > lowFreqWavelen) {
-        return freq / config->ropeScalingFactor;
-    }
-    const float smooth = (config->ropeScalingOrigMaxSeqLen / waveLen - config->ropeScalingLowFreqFactor) /
-        (config->ropeScalingHighFreqFactory - config->ropeScalingLowFreqFactor);
-    return (1 - smooth) * freq / config->ropeScalingFactor + smooth * freq;
+    fullfillRopeLlama3Cache(config, cache);
 }
 
 static void ropeLlamaForward_F32_F32(NnUint nThreads, NnUint threadIndex, NnUint batchSize, NnCpuOpContext *context) {
@@ -1126,7 +1096,6 @@ static void ropeLlamaForward_F32_F32(NnUint nThreads, NnUint threadIndex, NnUint
     SPLIT_THREADS(s, e, dim0Half, nThreads, threadIndex);
     const NnUint iStart = s * 2;
     const NnUint iEnd = e * 2;
-    const bool applyScale = config->ropeScalingFactor != 1.0f;
 
     const float *cache = (float *)context->buffers[config->ropeCacheBufferIndex];
     const float *positions = (float *)context->pipes[config->positionPipeIndex];
@@ -1144,10 +1113,6 @@ static void ropeLlamaForward_F32_F32(NnUint nThreads, NnUint threadIndex, NnUint
 
             float x0 = v0 * fcr - v1 * fci;
             float x1 = v0 * fci + v1 * fcr;
-            if (applyScale) {
-                x0 = ropeLlama31Scale(x0, config);
-                x1 = ropeLlama31Scale(x1, config);
-            }
             x[i] = x0;
             x[i + 1] = x1;
         }
@@ -1158,10 +1123,10 @@ static void initMultiHeadAttForward(NnCpuOpContext *context) {
     const NnMultiHeadAttOpConfig *config = (NnMultiHeadAttOpConfig *)context->opConfig;
 
     assert(context->weightSize.nBytes == 0);
-    ASSERT_EQ(context->inputSize.x, config->qSlice.d0);
+    ASSERT_EQ(context->inputSize.x, config->qSliceD0);
     ASSERT_EQ(context->inputSize.y, context->nBatches);
     NnSize2D *querySize = &context->bufferConfigs[config->queryBufferIndex].size;
-    ASSERT_EQ(querySize->x, config->qSlice.d0);
+    ASSERT_EQ(querySize->x, config->qSliceD0);
     NnSize2D *posSize = &context->pipeConfigs[config->positionPipeIndex].size;
     ASSERT_EQ(posSize->x, 1);
     ASSERT_EQ(posSize->y, context->nBatches);
@@ -1178,7 +1143,7 @@ static void multiHeadAttForward_F32_F32(NnUint nThreads, NnUint threadIndex, NnU
 
     for (NnUint batchIndex = 0; batchIndex < batchSize; batchIndex++) {
         float *i = (float *)context->input[batchIndex];
-        float *q = &query[batchIndex * config->qSlice.d0];
+        float *q = &query[batchIndex * config->qSliceD0];
         NnUint pos = (NnUint)positions[batchIndex];
         assert(pos < config->seqLen);
 
@@ -1186,8 +1151,10 @@ static void multiHeadAttForward_F32_F32(NnUint nThreads, NnUint threadIndex, NnU
         DEBUG_VECTOR(context, "q", q);
 
         multiheadAtt_F32(i, q, att, keyCache, valueCache, pos,
-            config->multiHeadAttSlice.nHeads, config->multiHeadAttSlice.nHeads0,
-            config->nKvHeads, config->kvCacheSlice.kvDim0, config->headSize, config->seqLen, nThreads, threadIndex);
+            config->nHeads, config->nHeads0,
+            config->nKvHeads, config->kvDim0, config->headSize, config->seqLen, nThreads, threadIndex);
+
+        DEBUG_VECTOR(context, "output", i);
     }
 }
 
@@ -1196,12 +1163,17 @@ static void mulForward_F32_F32(NnUint nThreads, NnUint threadIndex, NnUint batch
     ASSERT_EQ(context->inputSize.x, context->outputSize.x);
     ASSERT_EQ(context->inputSize.y, context->outputSize.y);
 
+    const NnMulOpCodeConfig *config = (NnMulOpCodeConfig *)context->opConfig;
+    const float *multiplier = (float *)context->buffers[config->multiplierBufferIndex];
+
     for (NnUint batchIndex = 0; batchIndex < batchSize; batchIndex++) {
         float *input = (float *)context->input[batchIndex];
         float *output = (float *)context->output[batchIndex];
+        const float *m = &multiplier[context->inputSize.x * batchIndex];
         mul_F32(
             output,
             input,
+            m,
             context->outputSize.x,
             nThreads,
             threadIndex);
@@ -1209,12 +1181,17 @@ static void mulForward_F32_F32(NnUint nThreads, NnUint threadIndex, NnUint batch
 }
 
 static void mulForward_Q80_F32(NnUint nThreads, NnUint threadIndex, NnUint batchSize, NnCpuOpContext *context) {
+    const NnMulOpCodeConfig *config = (NnMulOpCodeConfig *)context->opConfig;
+    const NnBlockQ80 *multiplier = (NnBlockQ80 *)context->buffers[config->multiplierBufferIndex];
+
     for (NnUint batchIndex = 0; batchIndex < batchSize; batchIndex++) {
-        NnBlockQ80 *input = (NnBlockQ80 *)context->input[batchIndex];
+        float *input = (float *)context->input[batchIndex];
         float *output = (float *)context->output[batchIndex];
+        const NnBlockQ80 *m = &multiplier[batchIndex * context->inputSize.x / Q80_BLOCK_SIZE];
         mul_Q80_F32(
             output,
             input,
+            m,
             context->outputSize.x,
             nThreads,
             threadIndex);
@@ -1271,6 +1248,30 @@ static void castForward_Q80_F32(NnUint nThreads, NnUint threadIndex, NnUint batc
     }
 }
 
+static void shiftForward_F32_F32(NnUint nThreads, NnUint threadIndex, NnUint batchSize, NnCpuOpContext *context) {
+    ASSERT_EQ(context->hasInputContinuousMemory, true);
+    ASSERT_EQ(context->hasOutputContinuousMemory, true);
+    ASSERT_EQ(context->inputSize.floatType, F_32);
+    ASSERT_EQ(context->outputSize.floatType, F_32);
+    ASSERT_EQ(context->outputSize.y, 1);
+
+    const NnShiftOpCodeConfig *config = (NnShiftOpCodeConfig *)context->opConfig;
+    const float *indexes = (float *)context->pipes[config->indexPipeIndex];
+    const NnSize dimBytes = getBytes(F_32, context->inputSize.x);
+    NnByte *output = context->output[0];
+
+    for (NnUint batchIndex = 0; batchIndex < batchSize; batchIndex++) {
+        const NnSize index = (NnSize)indexes[batchIndex];
+        assert((index + 1) * context->inputSize.x < context->outputSize.x);
+        copy_UNK(
+            &output[index * dimBytes],
+            context->input[batchIndex],
+            dimBytes,
+            nThreads,
+            threadIndex);
+    }
+}
+
 // device
 
 void printCpuInstructionSet() {
@@ -1299,7 +1300,7 @@ NnCpuOpForwardInit getCpuOpForwardInit(NnOpCode code, NnOpQuantType quantType) {
     if (code == OP_RMS_NORM)
         return initRmsNormForward_ANY_F32_F32;
     if (code == OP_ROPE_LLAMA)
-        return initRopeLlama31Forward;
+        return initRopeLlama3Forward;
     if (code == OP_MULTIHEAD_ATT)
         return initMultiHeadAttForward;
     if (code == OP_MATMUL)
@@ -1350,6 +1351,9 @@ NnCpuOpForward getCpuOpForward(NnOpCode code, NnOpQuantType quantType) {
         if (quantType == F32_F32_Q80) return castForward_F32_Q80;
         if (quantType == Q80_Q80_Q80) return castForward_ANY;
         if (quantType == Q80_Q80_F32) return castForward_Q80_F32;
+    }
+    if (code == OP_SHIFT) {
+        if (quantType == F32_F32_F32) return shiftForward_F32_F32;
     }
     return nullptr;
 }

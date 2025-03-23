@@ -151,8 +151,8 @@ void testMul(const NnUint m) {
     rand(b0.data(), n, m);
     quantizeF32toQ80(b0.data(), b1.data(), n, 1, 0);
 
-    mul_F32(a0.data(), b0.data(), n, 1, 0);
-    mul_Q80_F32(aQ.data(), b1.data(), n, 1, 0);
+    mul_F32(a0.data(), a0.data(), b0.data(), n, 1, 0);
+    mul_Q80_F32(aQ.data(), aQ.data(), b1.data(), n, 1, 0);
 
     compare_F32("mul_Q80_F32", a0.data(), aQ.data(), n, 0.005);
 }

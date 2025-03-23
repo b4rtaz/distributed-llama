@@ -1,0 +1,59 @@
+#version 450
+
+#extension GL_EXT_control_flow_attributes : enable
+
+#define N_THREADS 256
+
+layout(local_size_x = N_THREADS, local_size_y = 1, local_size_z = 1) in;
+
+struct BatchInfo {
+    uint inputOffset;
+    uint inputSizeX;
+    uint outputOffset;
+    uint outputSizeX;
+};
+
+layout(binding = 0) readonly buffer inputBuffer { float x[]; };
+layout(binding = 1) writeonly buffer outputBuffer { float y[]; };
+layout(binding = 2) readonly buffer batchInfosBuffer { BatchInfo infos[]; };
+layout(binding = 3) readonly uniform opConfigBuffer {
+    float epsilon;
+};
+
+shared BatchInfo sharedInfo;
+shared float sums[N_THREADS];
+
+void main() {
+    const uint threadIndex = gl_LocalInvocationID.x;
+    const uint batchIndex = gl_GlobalInvocationID.y;
+
+    if (threadIndex == 0) {
+        sharedInfo = infos[batchIndex];
+    }
+    memoryBarrierShared();
+    barrier();
+
+    const uint inputSizeX = sharedInfo.inputSizeX;
+    const uint offset = sharedInfo.inputOffset;
+    const uint slice = inputSizeX / N_THREADS;
+    const uint rest = inputSizeX % N_THREADS;
+    const uint start = offset + threadIndex * slice + (threadIndex < rest ? threadIndex : rest);
+    const uint end = start + slice + (threadIndex < rest ? 1 : 0);
+
+    float sum = 0.0;
+    for (uint i = start; i < end; i++) {
+        sum += x[i] * x[i];
+    }
+    sums[threadIndex] = sum;
+
+    memoryBarrierShared();
+    barrier();
+
+    if (threadIndex == 0) {
+        sum = 0.0;
+        [[unroll]] for (uint i = 0; i < N_THREADS; i++) {
+            sum += sums[i];
+        }
+        y[batchIndex] = inversesqrt((sum / float(inputSizeX)) + epsilon);
+    }
+}

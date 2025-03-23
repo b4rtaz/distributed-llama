@@ -2,6 +2,9 @@
 #include <cassert>
 #include <cstring>
 #include <stdexcept>
+#if defined(DLLAMA_VULKAN)
+    #include "nn/nn-vulkan.hpp"
+#endif
 
 static NnFloatType parseFloatType(char *val) {
     if (std::strcmp(val, "f32") == 0) return F_32;
@@ -38,6 +41,7 @@ AppCliArgs AppCliArgs::parse(int argc, char* *argv, bool requireMode) {
     args.seed = (unsigned long long)time(nullptr);
     args.chatTemplateType = TEMPLATE_UNKNOWN;
     args.maxSeqLen = 0;
+    args.gpuIndex = -1;
     int i = 1;
     if (requireMode && argc > 1) {
         args.mode = argv[1];
@@ -102,6 +106,8 @@ AppCliArgs AppCliArgs::parse(int argc, char* *argv, bool requireMode) {
             args.chatTemplateType = parseChatTemplateType(value);
         } else if (std::strcmp(name, "--max-seq-len") == 0) {
             args.maxSeqLen = (unsigned int)atoi(value);
+        } else if (std::strcmp(name, "--gpu-index") == 0) {
+            args.gpuIndex = atoi(value);
         } else {
             throw std::runtime_error("Unknown option: " + std::string(name));
         }
@@ -117,6 +123,17 @@ AppCliArgs::~AppCliArgs() {
     }
     if (workerPorts != nullptr)
         delete[] workerPorts;
+}
+
+static NnDevice *createDevice(AppCliArgs *args, NnNetConfig *netConfig, NnNodeConfig *nodeConfig, NnNetExecution *netExecution) {
+    if (args->gpuIndex >= 0) {
+#if defined(DLLAMA_VULKAN)
+        return new NnVulkanDevice(args->gpuIndex, netConfig, nodeConfig, netExecution);
+#else
+        throw std::runtime_error("This build does not support GPU");
+#endif
+    }
+    return new NnCpuDevice(netConfig, nodeConfig, netExecution);
 }
 
 RootLlmInference::RootLlmInference(LlmNet *net, NnDevice *device, NnNetExecution *execution, NnExecutor *executor, NnNetwork *network) {
@@ -152,7 +169,6 @@ void RootLlmInference::setToken(NnUint batchIndex, NnUint token) {
 void RootLlmInference::forward() {
     if (network != nullptr) 
         network->writeAll(&controlPacket, sizeof(LlmControlPacket));
-    device->syncPointers();
     executor->forward();
 }
 
@@ -226,13 +242,13 @@ void runInferenceApp(AppCliArgs *args, void (*handler)(AppInferenceContext *cont
         configWriter.writeToWorkers(&net.netConfig, net.nodeConfigs);
     }
 
-    NnCpuDevice cpu(&net.netConfig, rootNodeConfig, &execution);
-    NnExecutor executor(&net.netConfig, rootNodeConfig, &cpu, &execution, synchronizer.get(), args->benchmark);
+    std::unique_ptr<NnDevice> device(createDevice(args, &net.netConfig, rootNodeConfig, &execution));
+    NnExecutor executor(&net.netConfig, rootNodeConfig, device.get(), &execution, synchronizer.get(), args->benchmark);
 
     NnRootWeightLoader weightLoader(&executor, network, nNodes);
     loadLlmNetWeight(args->modelPath, &net, &weightLoader);
 
-    RootLlmInference inference(&net, &cpu, &execution, &executor, network);
+    RootLlmInference inference(&net, device.get(), &execution, &executor, network);
 
     if (network != nullptr) {
         network->resetStats();
@@ -268,9 +284,10 @@ void runWorkerApp(AppCliArgs *args) {
 
         NnNetExecution execution(args->nThreads, &netConfig);
 
+        std::unique_ptr<NnDevice> device(createDevice(args, &netConfig, &nodeConfig, &execution));
+
         NnNetworkNodeSynchronizer synchronizer(network, &execution, &netConfig, &nodeConfig);
-        NnCpuDevice cpu(&netConfig, &nodeConfig, &execution);
-        NnExecutor executor(&netConfig, &nodeConfig, &cpu, &execution, &synchronizer, false);
+        NnExecutor executor(&netConfig, &nodeConfig, device.get(), &execution, &synchronizer, false);
 
         NnWorkerWeightReader weightReader(&executor, network);
         weightReader.read();

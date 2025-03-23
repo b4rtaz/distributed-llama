@@ -1,0 +1,88 @@
+#version 450
+
+#extension GL_EXT_control_flow_attributes : enable
+#extension GL_EXT_shader_16bit_storage : enable
+#extension GL_EXT_shader_explicit_arithmetic_types : enable
+
+#define Q80_BLOCK_SIZE 32
+#define N_THREADS 64
+
+layout(local_size_x = N_THREADS, local_size_y = 1, local_size_z = 1) in;
+
+struct BatchInfo {
+    uint inputOffset; // number of Q80 blocks
+    uint inputSizeX; // number of Q80 blocks
+    uint outputOffset;
+    uint outputSizeX;
+};
+
+struct BlockQ80 {
+    float16_t d;
+    int8_t qs[Q80_BLOCK_SIZE];
+};
+
+layout(binding = 0) readonly buffer inputBuffer { BlockQ80 x[]; };
+layout(binding = 1) buffer outputBuffer { float y[]; };
+layout(binding = 2) readonly buffer batchInfosBuffer { BatchInfo infos[]; };
+
+shared uint sharedXStart;
+shared uint sharedXEnd;
+shared uint sharedNParts;
+shared uint sharedXJump;
+shared uint sharedXOffset;
+shared uint sharedYOffset;
+
+void main() {
+    const uint threadIndex = gl_LocalInvocationID.x;
+
+    if (threadIndex == 0) {
+        const uint nWorkGroups = gl_NumWorkGroups.z;
+        const uint batchIndex = gl_WorkGroupID.y;
+        const uint workGroupIndex = gl_WorkGroupID.z;
+
+        const BatchInfo info = infos[batchIndex];
+        const uint xJump = info.outputSizeX / Q80_BLOCK_SIZE;
+        const uint nParts = info.inputSizeX / xJump;
+        const uint xSlice = xJump / nWorkGroups;
+        const uint xRest = xJump % nWorkGroups;
+
+        sharedXStart = workGroupIndex * xSlice + (workGroupIndex < xRest ? workGroupIndex : xRest);
+        sharedXEnd = sharedXStart + xSlice + (workGroupIndex < xRest ? 1 : 0);
+        sharedNParts = nParts;
+        sharedXJump = xJump;
+        sharedXOffset = info.inputOffset;
+        sharedYOffset = info.outputOffset;
+    }
+
+    barrier();
+    memoryBarrierShared();
+
+    const uint xStart = sharedXStart + threadIndex;
+    const uint xEnd = sharedXEnd;
+    const uint xJump = sharedXJump;
+    const uint nParts = sharedNParts;
+    const uint xOffset = sharedXOffset;
+    const uint yOffset = sharedYOffset;
+    float16_t sums[Q80_BLOCK_SIZE];
+
+    for (uint i = xStart; i < xEnd; i += N_THREADS) {
+        const uint xiOffset = xOffset + i;
+        const uint yiOffset = yOffset + i * Q80_BLOCK_SIZE;
+
+        [[unroll]] for (uint k = 0; k < Q80_BLOCK_SIZE; k++) {
+            sums[k] = float16_t(0.0);
+        }
+        for (uint n = 0; n < nParts; n++) {
+            const BlockQ80 b = x[xiOffset + n * xJump];
+            const float16_t d = b.d;
+
+            [[unroll]] for (uint k = 0; k < Q80_BLOCK_SIZE; k++) {
+                sums[k] += float16_t(b.qs[k]) * d;
+            }
+        }
+
+        [[unroll]] for (uint k = 0; k < Q80_BLOCK_SIZE; k++) {
+            y[yiOffset + k] += float(sums[k]);
+        }
+    }
+}

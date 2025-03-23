@@ -80,6 +80,7 @@ enum NnOpCode {
     OP_SILU,
     OP_MUL,
     OP_CAST,
+    OP_SHIFT,
 };
 
 enum NnOpQuantType {
@@ -94,22 +95,18 @@ enum NnOpQuantType {
     Q80_F32_F32,
 };
 
-#define N_OP_CODES (OP_CAST + 1)
+#define N_OP_CODES (OP_SHIFT + 1)
 #define N_OP_QUANTS (Q80_F32_F32 + 1)
 
+enum NnPointerSource {
+    SRC_PIPE,
+    SRC_BUFFER,
+};
+
 enum NnPointerType {
-    PNTR_PIPE,
-    PNTR_BUFFER,
-};
-
-enum NnPointerSliceType {
-    SLICE_NONE,
-    SLICE_NODE_PART,
-};
-
-enum NnPointerBatchType {
-    PNTR_BATCH_DEFAULT,
-    PNTR_BATCH_PIPE,
+    PNTR_RAW,
+    PNTR_BATCH,
+    PNTR_BATCHED_SLICE
 };
 
 enum NnSyncType {
@@ -137,11 +134,9 @@ typedef struct {
 } NnBufferConfig;
 
 typedef struct {
-    NnPointerType pointerType;
+    NnPointerSource source;
     NnUint pointerIndex;
-    NnPointerSliceType sliceType;
-    NnPointerBatchType batchType;
-    NnUint batchArg0;
+    NnPointerType type;
 } NnPointerConfig;
 
 typedef struct {
@@ -157,6 +152,10 @@ typedef struct {
 
 typedef struct {
     NnUint pipeIndex;
+} NnPreSyncConfig;
+
+typedef struct {
+    NnUint pipeIndex;
     NnSyncType syncType;
 } NnSyncConfig;
 
@@ -165,7 +164,6 @@ typedef struct  {
     NnOpConfig *ops;
     NnUint nSyncs;
     NnSyncConfig *syncs;
-    bool syncPointers;
 } NnSegmentConfig;
 
 typedef struct {
@@ -173,6 +171,8 @@ typedef struct {
     NnUint nNodes;
     NnUint nPipes;
     NnPipeConfig *pipes;
+    NnUint nPreSyncs;
+    NnPreSyncConfig *preSyncs;
 } NnNetConfig;
 
 typedef struct {
@@ -207,23 +207,24 @@ typedef struct {
     NnUint ropeCacheBufferIndex;
     float ropeScalingFactor;
     float ropeScalingLowFreqFactor;
-    float ropeScalingHighFreqFactory;
+    float ropeScalingHighFreqFactor;
     NnUint ropeScalingOrigMaxSeqLen;
     NnRopeSlice slice;
 } NnRopeLlamaOpConfig;
 
 typedef struct {
+    NnUint nHeads;
+    NnUint nHeads0;
     NnUint nKvHeads;
     NnUint headSize;
     NnUint seqLen;
+    NnUint qSliceD0;
+    NnUint kvDim0;
     NnUint positionPipeIndex;
     NnUint queryBufferIndex;
     NnUint keyCacheBufferIndex;
     NnUint valueCacheBufferIndex;
     NnUint attBufferIndex;
-    NnRowMatmulSlice qSlice;
-    NnKvCacheSlice kvCacheSlice;
-    NnMultiHeadAttSlice multiHeadAttSlice;
 } NnMultiHeadAttOpConfig;
 
 typedef struct {
@@ -235,12 +236,16 @@ typedef struct {
 } NnSiluOpCodeConfig;
 
 typedef struct {
-    // empty
-} NMulOpCodeConfig;
+    NnUint multiplierBufferIndex;
+} NnMulOpCodeConfig;
 
 typedef struct {
     // empty
 } NnCastOpCodeConfig;
+
+typedef struct {
+    NnUint indexPipeIndex;
+} NnShiftOpCodeConfig;
 
 // utility functions
 
@@ -253,9 +258,9 @@ NnOpQuantType getOpQuantType(NnFloatType input, NnFloatType weight, NnFloatType 
 NnSize2D size0();
 NnSize2D size1D(NnFloatType floatType, NnUint x);
 NnSize2D size2D(NnFloatType floatType, NnUint y, NnUint x);
-NnPointerConfig pointerConfig(NnPointerType type, NnUint index);
-NnPointerConfig pointerConfigWithPipedBatch(NnPointerType type, NnUint index, NnUint pipeIndex);
-NnPointerConfig slicedPointerConfig(NnPointerType type, NnUint index);
+NnPointerConfig pointerBatchConfig(NnPointerSource source, NnUint index);
+NnPointerConfig pointerBatchedSliceConfig(NnPointerSource source, NnUint index);
+NnPointerConfig pointerRawConfig(NnPointerSource source, NnUint index);
 bool hasPointerContinuousMemory(NnPointerConfig *config);
 
 void releaseNetConfig(NnNetConfig *netConfig);
@@ -279,11 +284,15 @@ NnKvCacheSlice sliceKvCache(NnUint kvDim, NnUint seqLen, NnUint nNodes);
 NnRowMatmulSlice sliceRowMatmul(NnFloatType type, NnUint nNodes, NnUint n, NnUint d);
 NnColMatmulSlice sliceColMatmul(NnFloatType type, NnUint nNodes, NnUint n, NnUint d);
 NnRopeSlice sliceRope(NnUint dim, NnUint kvDim, NnUint nKvHeads, NnUint nNodes, NnUint seqLen, NnUint headSize, float ropeTheta, NnUint nodeIndex);
-NnMultiHeadAttSlice sliceMultiHeadAtt(NnUint nHeads, NnUint seqLen, NnUint nNodes);
+NnMultiHeadAttSlice sliceMultiHeadAtt(NnUint nHeads, NnUint seqLen, NnUint nNodes, NnUint nBatches);
 
 // splitters
 
 NnUint splitRowMatmulWeight(NnRowMatmulSlice *slice, NnUint nodeIndex, NnByte *weight, NnByte *weight0);
 NnUint splitColMatmulWeight(NnColMatmulSlice *slice, NnUint nodeIndex, NnByte *weight, NnByte *weight0);
+
+// rope
+
+void fullfillRopeLlama3Cache(const NnRopeLlamaOpConfig *config, float *cache);
 
 #endif

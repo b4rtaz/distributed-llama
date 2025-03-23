@@ -169,59 +169,47 @@ NnCpuDeviceSegment::~NnCpuDeviceSegment() {
 void NnCpuDevice::resolvePointer(NnByte **pntr, NnSize2D *pntrSize, NnPointerConfig *pointerConfig) {
     NnByte *source;
     NnSize2D *sourceSize;
-    if (pointerConfig->pointerType == PNTR_BUFFER) {
+
+    switch (pointerConfig->source) {
+    case SRC_BUFFER:
         source = buffers[pointerConfig->pointerIndex];
         sourceSize = &nodeConfig->buffers[pointerConfig->pointerIndex].size;
-    } else if (pointerConfig->pointerType == PNTR_PIPE) {
+        break;
+    case SRC_PIPE:
         source = netExecution->pipes[pointerConfig->pointerIndex];
         sourceSize = &netConfig->pipes[pointerConfig->pointerIndex].size;
-    } else {
+        break;
+    default:
         throw std::invalid_argument("Unsupported pointer type");
     }
 
-    if (pointerConfig->batchType == PNTR_BATCH_DEFAULT) {
+    switch (pointerConfig->type) {
+    case PNTR_RAW: {
+        pntr[0] = source;
+        *pntrSize = size2D(sourceSize->floatType, 1, sourceSize->length);
+        return;
+    }
+    case PNTR_BATCH:
+    case PNTR_BATCHED_SLICE: {
         ASSERT_EQ(sourceSize->y, netConfig->nBatches);
 
-        NnUint batchBytes = getBytes(sourceSize->floatType, sourceSize->x);
+        NnSize batchBytes = getBytes(sourceSize->floatType, sourceSize->x);
         for (NnUint batchIndex = 0; batchIndex < netConfig->nBatches; batchIndex++)
             pntr[batchIndex] = &source[batchIndex * batchBytes];
         *pntrSize = *sourceSize;
 
-        if (pointerConfig->sliceType == SLICE_NONE)
-            return;
-        if (pointerConfig->sliceType == SLICE_NODE_PART) {
+        if (pointerConfig->type == PNTR_BATCHED_SLICE) {
             assert(sourceSize->x % netConfig->nNodes == 0);
             NnUint xSlice = sourceSize->x / netConfig->nNodes;
-            NnUint xSliceBytes = getBytes(sourceSize->floatType, xSlice);
+            NnSize xSliceBytes = getBytes(sourceSize->floatType, xSlice);
             for (NnUint batchIndex = 0; batchIndex < netConfig->nBatches; batchIndex++)
                 pntr[batchIndex] = &pntr[batchIndex][xSliceBytes * nodeConfig->nodeIndex];
             *pntrSize = size2D(sourceSize->floatType, sourceSize->y, xSlice);
-            return;
         }
+        return;
     }
-    if (pointerConfig->batchType == PNTR_BATCH_PIPE) {
-        if (pointerConfig->sliceType == SLICE_NONE) {
-            dynamicPointers.push_back({ source, sourceSize, pntr, pointerConfig });
-            *pntrSize = size2D(sourceSize->floatType, netConfig->nBatches, sourceSize->x);
-            return;
-        }
-    }
-    throw std::invalid_argument("Unsupported pointer config");
-}
-
-void NnCpuDevice::syncPointers() {
-    NnUint nDynamicPointers = dynamicPointers.size();
-    for (NnUint dynamicPointerIndex = 0; dynamicPointerIndex < nDynamicPointers; dynamicPointerIndex++) {
-        NnCpuDynamicPointer *dp = &dynamicPointers[dynamicPointerIndex];
-        assert(dp->pointerConfig->batchType == PNTR_BATCH_PIPE);
-        float *pipe = (float *)netExecution->pipes[dp->pointerConfig->batchArg0];
-
-        for (NnUint batchIndex = 0; batchIndex < netExecution->batchSize; batchIndex++) {
-            NnUint index = (NnUint)pipe[batchIndex];
-            assert(index < dp->sourceSize->y);
-            NnUint nBytes = dp->sourceSize->nBytes / dp->sourceSize->y;
-            dp->pntr[batchIndex] = &dp->source[index * nBytes];
-        }
+    default:
+        throw std::invalid_argument("Unsupported pointer config");
     }
 }
 

@@ -1,0 +1,52 @@
+#version 450
+
+#define N_THREADS 128
+
+layout(local_size_x = N_THREADS, local_size_y = 1, local_size_z = 1) in;
+
+struct BatchInfo {
+    uint inputOffset;
+    uint inputSizeX;
+    uint outputOffset;
+    uint outputSizeX;
+};
+
+layout(binding = 0) readonly buffer inputBuffer { float x[]; };
+layout(binding = 1) writeonly buffer outputBuffer { float y[]; };
+layout(binding = 2) readonly buffer batchInfosBuffer { BatchInfo infos[]; };
+layout(binding = 3) readonly buffer weightBuffer { float weight[]; };
+
+shared BatchInfo sharedInfo;
+shared uint sharedDim;
+
+void main() {
+    const uint threadIndex = gl_LocalInvocationID.x;
+    const uint workGroupIndex = gl_WorkGroupID.z;
+
+    if (threadIndex == 0) {
+        const uint batchIndex = gl_WorkGroupID.y;
+        const uint nWorkGroups = gl_NumWorkGroups.z;
+
+        sharedInfo = infos[batchIndex];
+        sharedDim = sharedInfo.outputSizeX / nWorkGroups;
+    }
+
+    barrier();
+    memoryBarrierShared();
+
+    const uint inputSizeX = sharedInfo.inputSizeX;
+    const uint xOffset = sharedInfo.inputOffset;
+    const uint yOffset = sharedInfo.outputOffset;
+    const uint dim = sharedDim;
+
+    for (uint i = threadIndex; i < dim; i += N_THREADS) {
+        const uint d = (workGroupIndex * dim) + i;
+        const uint wOffset = d * inputSizeX;
+
+        float sum = 0.0;
+        for (uint j = 0; j < inputSizeX; j++) {
+            sum += x[xOffset + j] * weight[wOffset + j];
+        }
+        y[yOffset + d] = sum;
+    }
+}

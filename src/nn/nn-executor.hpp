@@ -16,8 +16,8 @@ public:
 class NnDevice {
 public:
     virtual NnUint maxNThreads() = 0;
+    virtual ~NnDevice() {}
     virtual NnDeviceSegment *createSegment(NnUint segmentIndex) = 0;
-    virtual void syncPointers() = 0;
 };
 
 class NnNodeSynchronizer {
@@ -35,12 +35,10 @@ public:
 class NnNetExecution {
 public:
     NnUint nThreads;
+    NnUint nPipes;
     NnByte **pipes;
     NnUint batchSize;
-private:
     NnUint nBatches;
-    NnUint nPipes;
-public:
     NnNetExecution(NnUint nThreads, NnNetConfig *netConfig);
     ~NnNetExecution();
     void setBatchSize(NnUint batchSize);
@@ -49,10 +47,9 @@ public:
 enum NnExecutorStepType {
     STEP_EXECUTE_OP,
     STEP_SYNC_NODES,
-    STEP_SYNC_POINTERS
 };
 
-#define N_STEP_TYPES STEP_SYNC_POINTERS + 1
+#define N_STEP_TYPES STEP_SYNC_NODES + 1
 
 typedef struct {
     NnExecutorStepType type;

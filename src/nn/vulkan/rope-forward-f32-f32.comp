@@ -1,0 +1,85 @@
+#version 450
+
+#define N_THREADS 256
+
+layout(local_size_x = N_THREADS, local_size_y = 1, local_size_z = 1) in;
+
+struct BatchInfo {
+    uint inputOffset;
+    uint inputSizeX;
+    uint outputOffset;
+    uint outputSizeX;
+};
+
+struct RopeSlice {
+    uint qDim0;
+    uint qDimStart;
+    uint qDimEnd;
+    uint qShift;
+    uint kvDim;
+    uint kvDim0;
+    uint kvDimStart;
+    uint sliceDim;
+    uint seqLen;
+    uint headSize;
+    uint nKvHeads;
+    float ropeTheta;
+    // NnSize2D cacheSize;
+};
+
+layout(binding = 0) readonly buffer inputBuffer { float x[]; };
+layout(binding = 1) writeonly buffer outputBuffer { float y[]; };
+layout(binding = 2) readonly buffer batchInfosBuffer { BatchInfo infos[]; };
+layout(binding = 3) readonly uniform configBuffer {
+    bool isQ;
+    uint positionPipeIndex;
+    uint ropeCacheBufferIndex;
+    float ropeScalingFactor;
+    float ropeScalingLowFreqFactor;
+    float ropeScalingHighFreqFactor;
+    uint ropeScalingOrigMaxSeqLen;
+    RopeSlice slice;
+};
+layout(binding = 4) readonly buffer positionsBuffer { float positions[]; };
+layout(binding = 5) readonly buffer ropeCacheBuffer { float ropeCache[]; };
+
+shared uint sharedOffset;
+shared BatchInfo sharedInfo;
+
+void main() {
+    const uint threadIndex = gl_LocalInvocationID.x;
+    const uint batchIndex = gl_GlobalInvocationID.y;
+
+    if (threadIndex == 0) {
+        uint position = uint(positions[batchIndex]);
+
+        sharedOffset = position * slice.sliceDim;
+        if (isQ) {
+            sharedOffset += slice.qShift;
+        }
+        sharedInfo = infos[batchIndex];
+    }
+
+    barrier();
+    memoryBarrierShared();
+
+    const uint dim0Half = (isQ ? slice.qDim0 : slice.kvDim0) / 2;
+    const uint xOffset = sharedInfo.inputOffset;
+    const uint yOffset = sharedInfo.outputOffset;
+
+    for (uint i = threadIndex; i < dim0Half; i += N_THREADS) {
+        const uint j = i * 2;
+        const uint c = sharedOffset + j;
+
+        float fcr = ropeCache[c];
+        float fci = ropeCache[c + 1];
+        float v0 = x[xOffset + j];
+        float v1 = x[xOffset + j + 1];
+
+        float x0 = v0 * fcr - v1 * fci;
+        float x1 = v0 * fci + v1 * fcr;
+
+        y[yOffset + j] = x0;
+        y[yOffset + j + 1] = x1;
+    }
+}

@@ -618,6 +618,11 @@ void NnRootConfigWriter::writeNet(NnUint socketIndex, NnNetConfig *config) {
         network->write(socketIndex, &pipeConfig->size, sizeof(pipeConfig->size));
         writeString(network, socketIndex, pipeConfig->name);
     }
+    network->write(socketIndex, &config->nPreSyncs, sizeof(config->nPreSyncs));
+    for (NnUint preSyncIndex = 0; preSyncIndex < config->nPreSyncs; preSyncIndex++) {
+        NnPreSyncConfig *preSyncConfig = &config->preSyncs[preSyncIndex];
+        network->write(socketIndex, &preSyncConfig->pipeIndex, sizeof(preSyncConfig->pipeIndex));
+    }
     network->readAck(socketIndex);
 }
 
@@ -637,7 +642,6 @@ void NnRootConfigWriter::writeNode(NnUint socketIndex, NnNodeConfig *config) {
         NnSegmentConfig *segmentConfig = &config->segments[segmentIndex];
         network->write(socketIndex, &segmentConfig->nSyncs, sizeof(segmentConfig->nSyncs));
         network->write(socketIndex, &segmentConfig->nOps, sizeof(segmentConfig->nOps));
-        network->write(socketIndex, &segmentConfig->syncPointers, sizeof(segmentConfig->syncPointers));
 
         for (NnUint syncIndex = 0; syncIndex < segmentConfig->nSyncs; syncIndex++) {
             NnSyncConfig *syncConfig = &segmentConfig->syncs[syncIndex];
@@ -684,6 +688,12 @@ NnNetConfig NnWorkerConfigReader::readNet() {
         network->read(ROOT_SOCKET_INDEX, &pipeConfig->size, sizeof(pipeConfig->size));
         pipeConfig->name = readString(network, ROOT_SOCKET_INDEX);
     }
+    network->read(ROOT_SOCKET_INDEX, &config.nPreSyncs, sizeof(config.nPreSyncs));
+    config.preSyncs = new NnPreSyncConfig[config.nPreSyncs];
+    for (NnUint preSyncIndex = 0; preSyncIndex < config.nPreSyncs; preSyncIndex++) {
+        NnPreSyncConfig *preSyncConfig = &config.preSyncs[preSyncIndex];
+        network->read(ROOT_SOCKET_INDEX, &preSyncConfig->pipeIndex, sizeof(preSyncConfig->pipeIndex));
+    }
     network->writeAck(ROOT_SOCKET_INDEX);
     return config;
 }
@@ -709,7 +719,6 @@ NnNodeConfig NnWorkerConfigReader::readNode() {
         NnSegmentConfig *segmentConfig = &config.segments[segmentIndex];
         network->read(ROOT_SOCKET_INDEX, &segmentConfig->nSyncs, sizeof(segmentConfig->nSyncs));
         network->read(ROOT_SOCKET_INDEX, &segmentConfig->nOps, sizeof(segmentConfig->nOps));
-        network->read(ROOT_SOCKET_INDEX, &segmentConfig->syncPointers, sizeof(segmentConfig->syncPointers));
 
         if (segmentConfig->nSyncs > 0) {
             segmentConfig->syncs = new NnSyncConfig[segmentConfig->nSyncs];

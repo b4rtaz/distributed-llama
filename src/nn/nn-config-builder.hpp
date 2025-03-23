@@ -17,6 +17,7 @@ public:
     NnUint nNodes;
     NnUint nBatches;
     std::list<NnPipeConfig> pipes;
+    std::list<NnPreSyncConfig> preSyncs;
 
     NnNetConfigBuilder(NnUint nNodes, NnUint nBatches) {
         this->nNodes = nNodes;
@@ -29,6 +30,10 @@ public:
         return pipeIndex;
     }
 
+    void addPreSync(NnUint pipeIndex) {
+        preSyncs.push_back({ pipeIndex });
+    }
+
     NnNetConfig build() {
         NnNetConfig config;
         config.nNodes = nNodes;
@@ -36,6 +41,13 @@ public:
         config.nPipes = pipes.size();
         config.pipes = new NnPipeConfig[config.nPipes];
         std::copy(pipes.begin(), pipes.end(), config.pipes);
+        config.nPreSyncs = preSyncs.size();
+        if (config.nPreSyncs > 0) {
+            config.preSyncs = new NnPreSyncConfig[config.nPreSyncs];
+            std::copy(preSyncs.begin(), preSyncs.end(), config.preSyncs);
+        } else {
+            config.preSyncs = nullptr;
+        }
         return config;
     }
 };
@@ -64,9 +76,12 @@ public:
         NnNodeConfig config;
         config.nodeIndex = nodeIndex;
         config.nBuffers = buffers.size();
-        assert(config.nBuffers > 0);
-        config.buffers = new NnBufferConfig[config.nBuffers];
-        std::copy(buffers.begin(), buffers.end(), config.buffers);
+        if (config.nBuffers > 0) {
+            config.buffers = new NnBufferConfig[config.nBuffers];
+            std::copy(buffers.begin(), buffers.end(), config.buffers);
+        } else {
+            config.buffers = nullptr;
+        }
 
         config.nSegments = segments.size();
         assert(config.nSegments > 0);
@@ -80,7 +95,6 @@ class NnSegmentConfigBuilder {
 private:
     std::list<NnOpConfig> ops;
     std::list<NnSyncConfig> syncs;
-    bool syncPointers = false;
 
 public:
     template <typename T>
@@ -104,10 +118,6 @@ public:
         syncs.push_back({ pipeIndex, syncType });
     }
 
-    void setSyncPointers(bool syncPointers) {
-        this->syncPointers = syncPointers;
-    }
-
     NnSegmentConfig build() {
         NnSegmentConfig segment;
         segment.nOps = ops.size();
@@ -120,7 +130,6 @@ public:
             segment.syncs = new NnSyncConfig[segment.nSyncs];
             std::copy(syncs.begin(), syncs.end(), segment.syncs);
         }
-        segment.syncPointers = syncPointers;
         return segment;
     }
 };
