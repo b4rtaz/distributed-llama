@@ -375,6 +375,7 @@ NnDeviceSegment *NnVulkanDevice::createSegment(NnUint segmentIndex) {
 static const char *getShaderFileName(const NnOpCode opCode, const NnOpQuantType quantType) {
     if (opCode == OP_MERGE_ADD) {
         if (quantType == F32_F32_F32) return "merge-add-forward-f32-f32.spv";
+        if (quantType == Q80_Q80_F32) return "merge-add-forward-q80-f32.spv";
     }
     if (opCode == OP_EMBEDDING) {
         if (quantType == F32_F32_F32) return "embedding-forward-f32-f32.spv";
@@ -493,6 +494,7 @@ static std::vector<uint32_t> readShader(const char *fileName) {
     constexpr size_t maxSize = 16384;
     uint32_t chunk[maxSize];
     size_t bytesRead = fread(chunk, 1, maxSize, file);
+    assert(bytesRead < maxSize); // Check if the file is too large
     if (bytesRead > 0)
         code.insert(code.end(), chunk, chunk + bytesRead);
     if (ferror(file)) {

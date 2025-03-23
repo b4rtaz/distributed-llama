@@ -1,5 +1,6 @@
 #version 450
 
+#extension GL_EXT_control_flow_attributes : enable
 #extension GL_EXT_shader_16bit_storage : enable
 #extension GL_EXT_shader_explicit_arithmetic_types : enable
 
@@ -70,7 +71,7 @@ void main() {
 
         y[yiOffset].d = float16_t(d);
 
-        for (uint j = 0; j < Q80_BLOCK_SIZE; ++j) {
+        [[unroll]] for (uint j = 0; j < Q80_BLOCK_SIZE; ++j) {
             const float v = x[xiOffset + j];
             y[yiOffset].qs[j] = int8_t(clamp(round(v * id), -127.0, 127.0));
         }

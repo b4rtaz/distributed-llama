@@ -182,12 +182,12 @@ void testMul_F32_F32() {
 }
 
 void testMergeAdd_F32_F32() {
-    #define MERGE_ADD_NODES 2
-    #define MERGE_ADD_DIM 64
+    #define MERGE_ADD_F32_NODES 2
+    #define MERGE_ADD_F32_DIM 64
     execute(
         [](NnNetConfigBuilder *netBuilder, NnNodeConfigBuilder *nodeBuilder, NnSegmentConfigBuilder *segmentBuilder) {
-            NnUint zPipeIndex = netBuilder->addPipe("Z", size2D(F_32, N_BATCHES, MERGE_ADD_DIM * MERGE_ADD_NODES));
-            NnUint xPipeIndex = netBuilder->addPipe("X", size2D(F_32, N_BATCHES, MERGE_ADD_DIM));
+            NnUint zPipeIndex = netBuilder->addPipe("Z", size2D(F_32, N_BATCHES, MERGE_ADD_F32_DIM * MERGE_ADD_F32_NODES));
+            NnUint xPipeIndex = netBuilder->addPipe("X", size2D(F_32, N_BATCHES, MERGE_ADD_F32_DIM));
             segmentBuilder->addOp(OP_MERGE_ADD, "mergeAdd", 0,
                 pointerBatchConfig(SRC_PIPE, zPipeIndex),
                 pointerBatchConfig(SRC_PIPE, xPipeIndex),
@@ -201,9 +201,9 @@ void testMergeAdd_F32_F32() {
             float *zPipe = (float *)execution->pipes[0];
             float *xPipe = (float *)execution->pipes[1];
             for (NnUint b = 0; b < N_BATCHES; b++) {
-                for (NnUint n = 0; n < MERGE_ADD_NODES; n++) {
-                    for (NnUint i = 0; i < MERGE_ADD_DIM; i++)
-                        zPipe[b * MERGE_ADD_NODES * MERGE_ADD_DIM + n * MERGE_ADD_DIM + i] = (float)(b + 1);
+                for (NnUint n = 0; n < MERGE_ADD_F32_NODES; n++) {
+                    for (NnUint i = 0; i < MERGE_ADD_F32_DIM; i++)
+                        zPipe[b * MERGE_ADD_F32_NODES * MERGE_ADD_F32_DIM + n * MERGE_ADD_F32_DIM + i] = (float)(b + 1);
                 }
             }
 
@@ -212,12 +212,55 @@ void testMergeAdd_F32_F32() {
 
             // assert
             for (NnUint b = 0; b < N_BATCHES; b++) {
-                for (NnUint i = 0; i < MERGE_ADD_DIM; i++) {
-                    NnUint j = b * MERGE_ADD_DIM + i;
+                for (NnUint i = 0; i < MERGE_ADD_F32_DIM; i++) {
+                    NnUint j = b * MERGE_ADD_F32_DIM + i;
                     assertFloat(j, xPipe[j], (float)(2 * b + 2), 0.00001f);
                 }
             }
             printOk("testMergeAdd_F32_F32");
+        });
+}
+
+static void testMergeAdd_Q80_F32() {
+    #define MERGE_ADD_Q80_NODES 2
+    #define MERGE_ADD_Q80_DIM 64
+    execute(
+        [](NnNetConfigBuilder *netBuilder, NnNodeConfigBuilder *nodeBuilder, NnSegmentConfigBuilder *segmentBuilder) {
+            const NnUint zPipeIndex = netBuilder->addPipe("Z", size2D(F_Q80, N_BATCHES, MERGE_ADD_Q80_DIM * MERGE_ADD_Q80_NODES));
+            const NnUint xPipeIndex = netBuilder->addPipe("X", size2D(F_32, N_BATCHES, MERGE_ADD_Q80_DIM));
+            segmentBuilder->addOp(OP_MERGE_ADD, "mergeAdd", 0,
+                pointerBatchConfig(SRC_PIPE, zPipeIndex),
+                pointerBatchConfig(SRC_PIPE, xPipeIndex),
+                size0(),
+                NnMergeAddOpCodeConfig{});
+        },
+        [](NnExecutor *executor, NnNetExecution *execution, NnVulkanDevice *device) {
+            // arrange
+            execution->setBatchSize(N_BATCHES);
+
+            float z[N_BATCHES * MERGE_ADD_Q80_DIM * MERGE_ADD_Q80_NODES];
+            for (NnUint b = 0; b < N_BATCHES; b++) {
+                for (NnUint n = 0; n < MERGE_ADD_Q80_NODES; n++) {
+                    for (NnUint i = 0; i < MERGE_ADD_Q80_DIM; i++)
+                        z[b * MERGE_ADD_Q80_NODES * MERGE_ADD_Q80_DIM + n * MERGE_ADD_Q80_DIM + i] = (float)(b + 1);
+                }
+            }
+
+            NnBlockQ80 *zPipe = (NnBlockQ80 *)execution->pipes[0];
+            const float *xPipe = (float *)execution->pipes[1];
+            quantizeF32toQ80(z, zPipe, N_BATCHES * MERGE_ADD_Q80_DIM * MERGE_ADD_Q80_NODES, 1, 0);
+
+            // act
+            executor->forward();
+
+            // assert
+            for (NnUint b = 0; b < N_BATCHES; b++) {
+                for (NnUint i = 0; i < MERGE_ADD_Q80_DIM; i++) {
+                    NnUint j = b * MERGE_ADD_Q80_DIM + i;
+                    assertFloat(j, xPipe[j], (float)(2 * b + 2), 0.00001f);
+                }
+            }
+            printOk("testMergeAdd_Q80_F32");
         });
 }
 
@@ -528,6 +571,7 @@ int main() {
     testSilu_F32_F32();
     testMul_F32_F32();
     testMergeAdd_F32_F32();
+    testMergeAdd_Q80_F32();
     testEmbedding_F32_F32();
     testShift_F32_F32();
     testCast_F32_F32();
