@@ -9,6 +9,7 @@ Connect home devices into a powerful cluster to accelerate LLM inference. More d
 Supports Linux, macOS, and Windows. Optimized for ARM and x86_64 AVX2 CPUs.
 
 **News**
+- 23 Mar 2025 - [🌋 Experimental Vulkan support](https://github.com/b4rtaz/distributed-llama/releases/tag/v0.13.0)
 - 12 Feb 2025 - 🚧 Merged the [fundamental codebase refactor](https://github.com/b4rtaz/distributed-llama/releases/tag/v0.12.0)
 - 9 Jan 2025 - [🍎 Llama 3.3 70B on 4 x Mac Mini M4 Pro 24GB RAM](https://github.com/b4rtaz/distributed-llama/discussions/147)
 - 28 Jul 2024 - [🌳 How to Run Llama 3.1 405B on Home Devices? Build AI Cluster!](https://medium.com/@b4rtaz/how-to-run-llama-3-405b-on-home-devices-build-ai-cluster-ad0d5ad3473b)
