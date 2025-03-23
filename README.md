@@ -68,7 +68,7 @@ You always need the root node and you can add 2^n - 1 worker nodes to speed up t
 | `--model <path>`             | Path to model.                                                   | `dllama_model_meta-llama-3-8b_q40.m`   |
 | `--tokenizer <path>`         | Tokenizer to model.                                              | `dllama_tokenizer_llama3.t`            |
 | `--buffer-float-type <type>` | Float precision of synchronization.                              | `q80`                                  |
-| `--workers <workers>`        | Addresses of workers (ip:port), separated by space.              | `10.0.0.1:9991 10.0.0.2:9991`          |
+| `--workers <workers>`        | Addresses of workers (ip:port), separated by space.              | `10.0.0.1:9999 10.0.0.2:9999`          |
 | `--max-seq-len <n>`          | The maximum sequence length, it helps to reduce the RAM usage.   | `4096`                                 |
 
 Inference, Chat, Worker, API
@@ -145,17 +145,17 @@ Continue to point 3.
 3. Transfer weights and the tokenizer file to the root computer.
 4. Run worker nodes on worker computers:
 ```sh
-./dllama worker --port 9998 --nthreads 4
+./dllama worker --port 9999 --nthreads 4
 ```
 5. Run root node on the root computer:
 ```sh
-./dllama inference --model dllama_model_meta-llama-3-8b_q40.m --tokenizer dllama_tokenizer_llama3.t --buffer-float-type q80 --prompt "Hello world" --steps 16 --nthreads 4 --workers 192.168.0.1:9998
+./dllama inference --model dllama_model_meta-llama-3-8b_q40.m --tokenizer dllama_tokenizer_llama3.t --buffer-float-type q80 --prompt "Hello world" --steps 16 --nthreads 4 --workers 192.168.0.1:9999
 ```
 
 To add more worker nodes, just add more addresses to the `--workers` argument.
 
 ```
-./dllama inference ... --workers 192.168.0.1:9998 192.168.0.2:9998 192.168.0.3:9998
+./dllama inference ... --workers 192.168.0.1:9999 192.168.0.2:9999 192.168.0.3:9999
 ```
 
 </details>
@@ -192,17 +192,17 @@ sudo ip addr add 10.0.0.2/24 dev eth0 # 2th device
 ```
 8. Run worker nodes on worker devices:
 ```sh
-sudo nice -n -20 ./dllama worker --port 9998 --nthreads 4
+sudo nice -n -20 ./dllama worker --port 9999 --nthreads 4
 ```
 9. Run root node on the root device:
 ```sh
-sudo nice -n -20 ./dllama inference --model dllama_model_meta-llama-3-8b_q40.m --tokenizer dllama_tokenizer_llama3.t --buffer-float-type q80 --prompt "Hello world" --steps 16 --nthreads 4 --workers 10.0.0.2:9998
+sudo nice -n -20 ./dllama inference --model dllama_model_meta-llama-3-8b_q40.m --tokenizer dllama_tokenizer_llama3.t --buffer-float-type q80 --prompt "Hello world" --steps 16 --nthreads 4 --workers 10.0.0.2:9999
 ```
 
 To add more worker nodes, just add more addresses to the `--workers` argument.
 
 ```
-./dllama inference ... --workers 10.0.0.2:9998 10.0.0.3:9998 10.0.0.4:9998
+./dllama inference ... --workers 10.0.0.2:9999 10.0.0.3:9999 10.0.0.4:9999
 ```
 
 </details>
