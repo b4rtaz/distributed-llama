@@ -63,10 +63,11 @@ void main() {
 
     for (uint d = sharedStart + threadIndex; d < end; d += N_THREADS) {
         float16_t sum = float16_t(0.0f);
+        const uint wOffset = d * inputSizeX;
 
         for (uint i = 0; i < inputSizeX; i++) {
             const BlockQ80 xi = x[inputOffset + i];
-            const BlockQ40 wi = weight[d * inputSizeX + i];
+            const BlockQ40 wi = weight[wOffset + i];
 
             float16_t s = float16_t(0.0f);
             [[unroll]] for (uint j = 0; j < Q40_BLOCK_SIZE / 2; j++) {
