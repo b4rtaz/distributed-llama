@@ -6,7 +6,10 @@
 
 #define Q80_BLOCK_SIZE 32
 #define Q40_BLOCK_SIZE 32
-#define N_THREADS 128
+#define N_THREADS 256
+
+#define GROUP_SIZE 32
+#define N_THREADS_PER_GROUP (N_THREADS / GROUP_SIZE)
 
 layout(local_size_x = N_THREADS, local_size_y = 1, local_size_z = 1) in;
 
@@ -35,6 +38,7 @@ layout(binding = 3) readonly buffer weightBuffer { BlockQ40 weight[]; };
 shared uint sharedStart;
 shared uint sharedEnd;
 shared BatchInfo sharedInfo;
+shared float16_t sums[N_THREADS];
 
 void main() {
     const uint threadIndex = gl_LocalInvocationID.x;
@@ -56,16 +60,25 @@ void main() {
     barrier();
     memoryBarrierShared();
 
-    const uint end = sharedEnd;
+    const uint dEnd = sharedEnd;
     const uint inputOffset = sharedInfo.inputOffset;
     const uint inputSizeX = sharedInfo.inputSizeX;
+    const uint inputSizeXPerGroup = (inputSizeX + N_THREADS_PER_GROUP - 1) / N_THREADS_PER_GROUP;
     const uint outputOffset = sharedInfo.outputOffset;
 
-    for (uint d = sharedStart + threadIndex; d < end; d += N_THREADS) {
-        float16_t sum = float16_t(0.0f);
-        const uint wOffset = d * inputSizeX;
+    const uint iGroup = threadIndex % N_THREADS_PER_GROUP;
+    const uint dGroup = threadIndex / N_THREADS_PER_GROUP;
 
-        for (uint i = 0; i < inputSizeX; i++) {
+    for (uint dBatch = sharedStart; dBatch < dEnd; dBatch += GROUP_SIZE) {
+        const uint d = dBatch + dGroup;
+        if (d >= dEnd) break;
+
+        const uint wOffset = d * inputSizeX;
+        const uint iStart = inputSizeXPerGroup * iGroup;
+        const uint iEnd = min(iStart + inputSizeXPerGroup, inputSizeX);
+
+        float16_t sum = float16_t(0.0f);
+        for (uint i = iStart; i < iEnd; i++) {
             const BlockQ80 xi = x[inputOffset + i];
             const BlockQ40 wi = weight[wOffset + i];
 
@@ -81,7 +94,20 @@ void main() {
             }
             sum += s * xi.d * wi.d;
         }
+        sums[threadIndex] = sum;
 
-        y[outputOffset + d] = float(sum);
+        barrier();
+        memoryBarrierShared();
+
+        [[unroll]] for (uint i = N_THREADS_PER_GROUP / 2; i > 0; i >>= 1) {
+            if (iGroup < i)
+                sums[threadIndex] += sums[threadIndex + i];
+            barrier();
+        }
+        if (iGroup == 0) {
+            y[outputOffset + d] = float(sums[threadIndex]);
+        }
+
+        barrier();
     }
 }
