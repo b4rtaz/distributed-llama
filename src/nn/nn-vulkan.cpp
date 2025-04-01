@@ -126,6 +126,8 @@ NnVulkanBuffer::NnVulkanBuffer(NnVulkanContext *context, const vk::DeviceSize bu
     this->usageFlags = usageFlags;
     this->hostPointer = nullptr;
 
+    isHostVisible = false;
+
     uint32_t memoryTypeIndex = MEMORY_TYPE_INDEX_NOT_FOUND;
     if (fastAccess) {
         memoryTypeIndex = findMemoryTypeIndex(&context->physicalDevice, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eDeviceLocal);
