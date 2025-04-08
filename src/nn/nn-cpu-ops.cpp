@@ -748,7 +748,7 @@ static float dotProduct_F32(const float *a, const float *b, const unsigned int s
 
 static void multiheadAtt_F32(
     float *x, const float *q, float *att, float *keyCache, float *valueCache,
-    const unsigned pos, const NnUint nHeads, const NnUint nHeads0, const NnUint nKvHeads, const NnUint kvDim0, const NnUint headSize, const NnUint seqLen,
+    const NnUint pos, const NnUint nHeads, const NnUint nHeads0, const NnUint nKvHeads, const NnUint kvDim0, const NnUint headSize, const NnUint seqLen,
     const NnUint nThreads, const NnUint threadIndex) 
 {
     SPLIT_THREADS(h0Start, h0End, nHeads0, nThreads, threadIndex);
@@ -1150,7 +1150,9 @@ static void multiHeadAttForward_F32_F32(NnUint nThreads, NnUint threadIndex, NnU
         DEBUG_VECTOR(context, "input", i);
         DEBUG_VECTOR(context, "q", q);
 
-        multiheadAtt_F32(i, q, att, keyCache, valueCache, pos,
+        multiheadAtt_F32(i, q, 
+            &att[batchIndex * config->nHeads0 * config->seqLen],
+            keyCache, valueCache, pos,
             config->nHeads, config->nHeads0,
             config->nKvHeads, config->kvDim0, config->headSize, config->seqLen, nThreads, threadIndex);
 
