@@ -130,12 +130,26 @@ NnVulkanBuffer::NnVulkanBuffer(NnVulkanContext *context, const vk::DeviceSize bu
 
     uint32_t memoryTypeIndex = MEMORY_TYPE_INDEX_NOT_FOUND;
     if (fastAccess) {
-        memoryTypeIndex = findMemoryTypeIndex(&context->physicalDevice, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eDeviceLocal);
+        memoryTypeIndex = findMemoryTypeIndex(
+            &context->physicalDevice,
+            vk::MemoryPropertyFlagBits::eHostVisible |
+            vk::MemoryPropertyFlagBits::eHostCoherent |
+            vk::MemoryPropertyFlagBits::eHostCached
+        );
+        if (memoryTypeIndex == MEMORY_TYPE_INDEX_NOT_FOUND)
+            memoryTypeIndex = findMemoryTypeIndex(
+                &context->physicalDevice,
+                vk::MemoryPropertyFlagBits::eHostVisible |
+                vk::MemoryPropertyFlagBits::eHostCoherent
+            );
         if (memoryTypeIndex != MEMORY_TYPE_INDEX_NOT_FOUND)
             isHostVisible = true;
     }
     if (!isHostVisible) {
-        memoryTypeIndex = findMemoryTypeIndex(&context->physicalDevice, vk::MemoryPropertyFlagBits::eDeviceLocal);
+        memoryTypeIndex = findMemoryTypeIndex(
+            &context->physicalDevice,
+            vk::MemoryPropertyFlagBits::eDeviceLocal
+        );
         if (memoryTypeIndex == MEMORY_TYPE_INDEX_NOT_FOUND)
             throw std::runtime_error("Cannot find host visible memory type");
     }
