@@ -145,7 +145,7 @@ NnVulkanBuffer::NnVulkanBuffer(NnVulkanContext *context, const vk::DeviceSize bu
     deviceMemory = b.second;
     if (isHostVisible)
         hostPointer = context->device.mapMemory(deviceMemory, 0, bufferSize);
-    VULKAN_TRACE("Created buffer of size %lld (fastAccess=%d)", bufferSize, fastAccess);
+    VULKAN_TRACE("Created buffer of size %zu (fastAccess=%d)", (NnSize)bufferSize, fastAccess);
 }
 
 NnVulkanBuffer::~NnVulkanBuffer() {
@@ -153,19 +153,19 @@ NnVulkanBuffer::~NnVulkanBuffer() {
         context->device.unmapMemory(deviceMemory);
     context->device.freeMemory(deviceMemory);
     context->device.destroyBuffer(deviceBuffer);
-    VULKAN_TRACE("Destroyed buffer of size %lld", bufferSize);
+    VULKAN_TRACE("Destroyed buffer of size %zu", (NnSize)bufferSize);
 }
 
 void NnVulkanBuffer::write(const NnByte *data) {
     if (isHostVisible && hostPointer != nullptr) {
         std::memcpy(hostPointer, data, bufferSize);
         context->device.flushMappedMemoryRanges({ { deviceMemory, 0, bufferSize } });
-        VULKAN_TRACE("Wrote %lld bytes to host visible buffer", bufferSize);
+        VULKAN_TRACE("Wrote %zu bytes to host visible buffer", (NnSize)bufferSize);
     } else {
         NnVulkanStagingCopy copy(context, deviceBuffer, bufferSize, COPY_TO_DEVICE);
         copy.copy((NnByte *)data);
         copy.executeCopyCommand();
-        VULKAN_TRACE("Wrote %lld bytes to buffer", bufferSize);
+        VULKAN_TRACE("Wrote %zu bytes to buffer", (NnSize)bufferSize);
     }
 }
 
@@ -174,13 +174,13 @@ void NnVulkanBuffer::read(NnByte *data) {
         context->device.invalidateMappedMemoryRanges({ {deviceMemory, 0, bufferSize} });
         std::memcpy(data, hostPointer, bufferSize);
 
-        VULKAN_TRACE("Read %lld bytes from host visible buffer", bufferSize);
+        VULKAN_TRACE("Read %zu bytes from host visible buffer", (NnSize)bufferSize);
     } else {
         NnVulkanStagingCopy copy(context, deviceBuffer, bufferSize, COPY_FROM_DEVICE);
         copy.executeCopyCommand();
         copy.copy(data);
 
-        VULKAN_TRACE("Read %lld bytes from buffer", bufferSize);
+        VULKAN_TRACE("Read %zu bytes from buffer", (NnSize)bufferSize);
     }
 }
 
@@ -742,8 +742,6 @@ void NnVulkanDeviceSegment::forward(NnUint opIndex, NnUint nThreads, NnUint thre
         return;
     }
 
-    context->device.resetFences({ fence });
-
     // TODO: refactor this block
     {
         if (segmentIndex == 0 || segmentIndex == 1) { // TODO: this is a hack to fix workers
@@ -807,6 +805,8 @@ void NnVulkanDeviceSegment::forward(NnUint opIndex, NnUint nThreads, NnUint thre
     context->queue.submit({ submitInfo }, fence);
     assert(context->device.waitForFences({ fence }, true, uint64_t(-1)) == vk::Result::eSuccess);
 
+    context->device.resetFences({ fence });
+    
     VULKAN_TRACE("Forwarded");
 
     // TODO: refactor this block
