@@ -134,15 +134,13 @@ NnVulkanBuffer::NnVulkanBuffer(NnVulkanContext *context, const vk::DeviceSize bu
             &context->physicalDevice,
             vk::MemoryPropertyFlagBits::eHostVisible |
             vk::MemoryPropertyFlagBits::eHostCoherent |
-            vk::MemoryPropertyFlagBits::eHostCached |
-            vk::MemoryPropertyFlagBits::eDeviceLocal
+            vk::MemoryPropertyFlagBits::eHostCached
         );
         if (memoryTypeIndex == MEMORY_TYPE_INDEX_NOT_FOUND)
             memoryTypeIndex = findMemoryTypeIndex(
                 &context->physicalDevice,
                 vk::MemoryPropertyFlagBits::eHostVisible |
-                vk::MemoryPropertyFlagBits::eHostCoherent |
-                vk::MemoryPropertyFlagBits::eDeviceLocal
+                vk::MemoryPropertyFlagBits::eHostCoherent
             );
         if (memoryTypeIndex != MEMORY_TYPE_INDEX_NOT_FOUND)
             isHostVisible = true;
