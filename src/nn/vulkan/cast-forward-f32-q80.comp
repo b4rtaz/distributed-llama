@@ -5,7 +5,7 @@
 #extension GL_EXT_shader_explicit_arithmetic_types : enable
 
 #define Q80_BLOCK_SIZE 32
-#define N_THREADS 64
+#define N_THREADS 256
 
 layout(local_size_x = N_THREADS, local_size_y = 1, local_size_z = 1) in;
 
@@ -61,7 +61,7 @@ void main() {
         const uint yiOffset = yOffset + i;
 
         float amax = 0.0;
-        for (uint j = 0; j < Q80_BLOCK_SIZE; ++j) {
+        [[unroll]] for (uint j = 0; j < Q80_BLOCK_SIZE; ++j) {
             const float v = abs(x[xiOffset + j]);
             amax = max(amax, v);
         }

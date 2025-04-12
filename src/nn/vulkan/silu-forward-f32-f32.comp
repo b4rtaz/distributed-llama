@@ -21,7 +21,6 @@ shared uint sharedYOffset;
 
 void main() {
     const uint threadIndex = gl_LocalInvocationID.x;
-    const uint batchIndex = gl_GlobalInvocationID.y;
 
     if (threadIndex == 0) {
         const uint nWorkGroups = gl_NumWorkGroups.z;

@@ -1,6 +1,8 @@
 #version 450
 
-#define N_THREADS 64
+#extension GL_EXT_control_flow_attributes : enable
+
+#define N_THREADS 256
 
 layout(local_size_x = N_THREADS, local_size_y = 1, local_size_z = 1) in;
 
@@ -36,7 +38,8 @@ layout(binding = 8) buffer attBufferBuffer { float att[]; };
 
 shared BatchInfo sharedInfo;
 shared uint position;
-shared float sharedSum;
+shared float sharedMaxScore;
+shared float temp[N_THREADS];
 
 void main() {
     const uint threadIndex = gl_LocalInvocationID.x;
@@ -61,13 +64,25 @@ void main() {
     const uint kvOffset = headIndex * headSize;
     const uint yOffset = sharedInfo.outputOffset + h * headSize;
 
-    for (uint p = threadIndex; p <= position; p += N_THREADS) {
-        float score = 0.0;
+    for (uint p = 0; p <= position; p++) {
         const uint kOffset = kvOffset + p * kvDim0;
-        for (uint i = 0; i < headSize; i++) {
-            score += query[qOffset + i] * keyCache[kOffset + i];
+
+        float s = 0.0;
+        for (uint i = threadIndex; i < headSize; i += N_THREADS) {
+            s += query[qOffset + i] * keyCache[kOffset + i];
         }
-        att[attOffset + p] = score / headSizeRoot;
+        temp[threadIndex] = s;
+        barrier();
+
+        [[unroll]] for (uint i = N_THREADS / 2; i > 0; i >>= 1) {
+            if (threadIndex < i)
+                temp[threadIndex] += temp[threadIndex + i];
+            barrier();
+        }
+
+        if (threadIndex == 0) {
+            att[attOffset + p] = temp[0] / headSizeRoot;
+        }
     }
 
     barrier();
@@ -79,19 +94,32 @@ void main() {
         for (uint p = 1; p <= position; p++) {
             maxScore = max(maxScore, att[attOffset + p]);
         }
-
-        float sum = 0.0;
-        for (uint p = 0; p <= position; p++) {
-            float v = exp(att[attOffset + p] - maxScore);
-            att[attOffset + p] = v;
-            sum += v;
-        }
-        sharedSum = sum;
+        sharedMaxScore = maxScore;
     }
 
     barrier();
 
-    const float sum = sharedSum;
+    const float maxScore = sharedMaxScore;
+
+    float s = 0.0;
+    for (uint p = threadIndex; p <= position; p += N_THREADS) {
+        float v = exp(att[attOffset + p] - maxScore);
+        att[attOffset + p] = v;
+        s += v;
+    }
+
+    temp[threadIndex] = s;
+    barrier();
+
+    [[unroll]] for (uint i = N_THREADS / 2; i > 0; i >>= 1) {
+        if (threadIndex < i)
+            temp[threadIndex] += temp[threadIndex + i];
+        barrier();
+    }
+
+    barrier();
+
+    const float sum = temp[0];
 
     for (uint p = threadIndex; p <= position; p += N_THREADS) {
         att[attOffset + p] /= sum;
