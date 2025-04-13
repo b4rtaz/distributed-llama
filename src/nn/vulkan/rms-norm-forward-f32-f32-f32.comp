@@ -1,6 +1,6 @@
 #version 450
 
-#define N_THREADS 64
+#define N_THREADS 256
 
 layout(local_size_x = N_THREADS, local_size_y = 1, local_size_z = 1) in;
 

@@ -5,7 +5,7 @@
 #extension GL_EXT_shader_explicit_arithmetic_types : enable
 
 #define Q80_BLOCK_SIZE 32
-#define N_THREADS 64
+#define N_THREADS 256
 
 layout(local_size_x = N_THREADS, local_size_y = 1, local_size_z = 1) in;
 

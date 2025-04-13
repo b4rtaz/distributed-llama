@@ -7,8 +7,8 @@
 #define Q80_Q40_BLOCK_SIZE 32
 #define N_THREADS 256
 
-#define GROUP_SIZE 64
-#define N_THREADS_PER_GROUP (N_THREADS / GROUP_SIZE)
+#define N_OUTPUTS_PER_ITER 64
+#define N_THREADS_PER_OUTPUT (N_THREADS / N_OUTPUTS_PER_ITER)
 
 layout(local_size_x = N_THREADS, local_size_y = 1, local_size_z = 1) in;
 
@@ -50,13 +50,14 @@ void main() {
         const uint batchIndex = gl_WorkGroupID.y;
         const uint workGroupIndex = gl_WorkGroupID.z;
 
-        sharedInputOffset = infos[batchIndex].inputOffset;
-        sharedInputSizeX = infos[batchIndex].inputSizeX;
-        sharedOutputOffset = infos[batchIndex].outputOffset;
-        sharedInputSizeXPerGroup = (sharedInputSizeX + N_THREADS_PER_GROUP - 1) / N_THREADS_PER_GROUP;
+        const BatchInfo info = infos[batchIndex];
+        sharedInputOffset = info.inputOffset;
+        sharedInputSizeX = info.inputSizeX;
+        sharedOutputOffset = info.outputOffset;
+        sharedInputSizeXPerGroup = (sharedInputSizeX + N_THREADS_PER_OUTPUT - 1) / N_THREADS_PER_OUTPUT;
 
-        const uint ySlice = infos[batchIndex].outputSizeX / nWorkGroups;
-        const uint yRest = infos[batchIndex].outputSizeX % nWorkGroups;
+        const uint ySlice = info.outputSizeX / nWorkGroups;
+        const uint yRest = info.outputSizeX % nWorkGroups;
         sharedStart = workGroupIndex * ySlice + (workGroupIndex < yRest ? workGroupIndex : yRest);
         sharedEnd = sharedStart + ySlice + (workGroupIndex < yRest ? 1 : 0);
     }
@@ -70,12 +71,12 @@ void main() {
     const uint outputOffset = sharedOutputOffset;
     const uint inputSizeXPerGroup = sharedInputSizeXPerGroup;
 
-    const uint dGroup = threadIndex / N_THREADS_PER_GROUP;
-    const uint iGroup = threadIndex % N_THREADS_PER_GROUP;
+    const uint dGroup = threadIndex / N_THREADS_PER_OUTPUT;
+    const uint iGroup = threadIndex % N_THREADS_PER_OUTPUT;
     const uint iStart = inputSizeXPerGroup * iGroup;
     const uint iEnd = min(iStart + inputSizeXPerGroup, inputSizeX);
 
-    for (uint dBatch = sharedStart; dBatch < dEnd; dBatch += GROUP_SIZE) {
+    for (uint dBatch = sharedStart; dBatch < dEnd; dBatch += N_OUTPUTS_PER_ITER) {
         const uint d = dBatch + dGroup;
         if (d >= dEnd) {
             break;
@@ -85,11 +86,12 @@ void main() {
         for (uint i = iStart; i < iEnd; i++) {
             const uint xi = inputOffset + i;
             const uint wi = d * inputSizeX + i;
+            const float16_t scale = x[xi].d * weight[wi].d;
             [[unroll]] for (uint j = 0; j < Q80_Q40_BLOCK_SIZE / 2; j++) {
                 sum += (
                     float16_t(x[xi].qs[j])                          * (float16_t(weight[wi].qs[j] & 0xF) - float16_t(8.0f)) +
                     float16_t(x[xi].qs[j + Q80_Q40_BLOCK_SIZE / 2]) * (float16_t(weight[wi].qs[j] >>  4) - float16_t(8.0f))
-                ) * x[xi].d * weight[wi].d;
+                ) * scale;
             }
         }
         sums[threadIndex] = sum;
@@ -97,7 +99,7 @@ void main() {
         barrier();
         memoryBarrierShared();
 
-        [[unroll]] for (uint i = N_THREADS_PER_GROUP / 2; i > 0; i >>= 1) {
+        [[unroll]] for (uint i = N_THREADS_PER_OUTPUT / 2; i > 0; i >>= 1) {
             if (iGroup < i)
                 sums[threadIndex] += sums[threadIndex + i];
             barrier();
