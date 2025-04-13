@@ -88,12 +88,10 @@ void main() {
             const uint wi = d * inputSizeX + i;
             const float16_t scale = x[xi].d * weight[wi].d;
             [[unroll]] for (uint j = 0; j < Q80_Q40_BLOCK_SIZE / 2; j++) {
-                sum = fma(
+                sum += (
                     float16_t(x[xi].qs[j])                          * (float16_t(weight[wi].qs[j] & 0xF) - float16_t(8.0f)) +
-                    float16_t(x[xi].qs[j + Q80_Q40_BLOCK_SIZE / 2]) * (float16_t(weight[wi].qs[j] >>  4) - float16_t(8.0f)),
-                    scale,
-                    sum
-                );
+                    float16_t(x[xi].qs[j + Q80_Q40_BLOCK_SIZE / 2]) * (float16_t(weight[wi].qs[j] >>  4) - float16_t(8.0f))
+                ) * scale;
             }
         }
         sums[threadIndex] = sum;
