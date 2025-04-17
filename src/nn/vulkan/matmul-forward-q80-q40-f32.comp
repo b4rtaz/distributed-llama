@@ -7,7 +7,8 @@
 #define Q80_Q40_BLOCK_SIZE 32
 #define N_THREADS 64
 
-#define TILE_SIZE 2
+#define TILE_SIZE_X 2
+#define TILE_SIZE_D 4
 
 layout(local_size_x = N_THREADS, local_size_y = 1, local_size_z = 1) in;
 
@@ -39,7 +40,7 @@ shared uint sharedInputOffset;
 shared uint sharedInputSizeX;
 shared uint sharedOutputOffset;
 shared uint sharedInputSizeXPerThread;
-shared float16_t sums[N_THREADS * TILE_SIZE];
+shared float16_t sums[N_THREADS * TILE_SIZE_D];
 
 void main() {
     const uint threadIndex = gl_LocalInvocationID.x;
@@ -73,34 +74,43 @@ void main() {
     const uint iStart = inputSizeXPerThread * threadIndex;
     const uint iEnd = min(iStart + inputSizeXPerThread, inputSizeX);
 
-    float16_t xTemp[Q80_Q40_BLOCK_SIZE];
+    f16vec4 xTemp[Q80_Q40_BLOCK_SIZE / 4];
 
-    for (uint d = sharedDStart; d < dEnd; d += TILE_SIZE) {
-        for (uint dt = 0; dt < TILE_SIZE; dt++) {
-            sums[threadIndex * TILE_SIZE + dt] = float16_t(0.0f);
+    for (uint d = sharedDStart; d < dEnd; d += TILE_SIZE_D) {
+        for (uint dt = 0; dt < TILE_SIZE_D; dt++) {
+            sums[threadIndex * TILE_SIZE_D + dt] = float16_t(0.0f);
         }
 
-        for (uint i = iStart; i < iEnd; i += TILE_SIZE) {
-            [[unroll]] for (uint it = 0; it < TILE_SIZE; it++) {
+        for (uint i = iStart; i < iEnd; i += TILE_SIZE_X) {
+            [[unroll]] for (uint it = 0; it < TILE_SIZE_X; it++) {
                 const uint xi = inputOffset + i + it;
                 const float16_t xScale = x[xi].d;
-                [[unroll]] for (uint j = 0; j < Q80_Q40_BLOCK_SIZE / 2; j++) {
-                    xTemp[j * 2]     = float16_t(x[xi].qs[j]);
-                    xTemp[j * 2 + 1] = float16_t(x[xi].qs[j + Q80_Q40_BLOCK_SIZE / 2]);
+                [[unroll]] for (uint j = 0; j < Q80_Q40_BLOCK_SIZE / 4; j++) {
+                    xTemp[j] = f16vec4(
+                        x[xi].qs[j * 2],
+                        x[xi].qs[j * 2 + Q80_Q40_BLOCK_SIZE / 2],
+                        x[xi].qs[j * 2 + 1],
+                        x[xi].qs[j * 2 + 1 + Q80_Q40_BLOCK_SIZE / 2]
+                    );
                 }
 
-                [[unroll]] for (uint dt = 0; dt < TILE_SIZE; dt++) {
+                [[unroll]] for (uint dt = 0; dt < TILE_SIZE_D; dt++) {
                     const uint wi = (d + dt) * inputSizeX + (i + it);
                     const BlockQ40 wBlock = weight[wi];
 
                     float16_t s = float16_t(0.0f);
-                    [[unroll]] for (uint j = 0; j < Q80_Q40_BLOCK_SIZE / 2; j++) {
-                        s += (
-                            xTemp[j * 2]     * (float16_t(wBlock.qs[j] & 0xF) - float16_t(8.0f)) +
-                            xTemp[j * 2 + 1] * (float16_t(wBlock.qs[j] >>  4) - float16_t(8.0f))
+                    [[unroll]] for (uint j = 0; j < Q80_Q40_BLOCK_SIZE / 4; j++) {
+                        s += dot(
+                            xTemp[j],
+                            f16vec4(
+                                wBlock.qs[j * 2] & 0xF,
+                                wBlock.qs[j * 2] >>  4,
+                                wBlock.qs[j * 2 + 1] & 0xF,
+                                wBlock.qs[j * 2 + 1] >>  4
+                            ) - float16_t(8.0f)
                         );
                     }
-                    sums[threadIndex * TILE_SIZE + dt] += s * xScale * wBlock.d;
+                    sums[threadIndex * TILE_SIZE_D + dt] += s * xScale * wBlock.d;
                 }
             }
         }
@@ -109,15 +119,14 @@ void main() {
         memoryBarrierShared();
 
         [[unroll]] for (uint i = N_THREADS / 2; i > 0; i >>= 1) {
-            for (uint dt = 0; dt < TILE_SIZE; dt++) {
+            for (uint dt = 0; dt < TILE_SIZE_D; dt++) {
                 if (threadIndex < i) {
-                    sums[threadIndex * TILE_SIZE + dt] += sums[(threadIndex + i) * TILE_SIZE + dt];
+                    sums[threadIndex * TILE_SIZE_D + dt] += sums[(threadIndex + i) * TILE_SIZE_D + dt];
                 }
             }
             barrier();
         }
-
-        if (threadIndex < TILE_SIZE) {
+        if (threadIndex < TILE_SIZE_D) {
             y[outputOffset + d + threadIndex] = float(sums[threadIndex]);
         }
 
