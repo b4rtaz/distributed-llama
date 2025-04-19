@@ -503,9 +503,17 @@ static void resolveShaderGroups(const NnOpConfig *opConfig, const NnUint batchSi
         opConfig->code == OP_MUL ||
         opConfig->code == OP_SILU ||
         opConfig->code == OP_SHIFT ||
-        opConfig->code == OP_MERGE_ADD ||
-        opConfig->code == OP_MATMUL)
+        opConfig->code == OP_MERGE_ADD)
         groupCount[2] = 32;
+    else if (opConfig->code == OP_MATMUL) {
+        if (opConfig->weightSize.floatType == F_Q40) {
+            constexpr NnUint tileSizeD = 16; // Must be synced with the shader
+            assert(opConfig->weightSize.x % tileSizeD == 0);
+            groupCount[2] = opConfig->weightSize.x / tileSizeD;
+        } else {
+            groupCount[2] = 32;
+        }
+    }
     else if (opConfig->code == OP_MULTIHEAD_ATT)
         groupCount[2] = ((NnMultiHeadAttOpConfig *)opConfig->config)->nHeads;
 }
