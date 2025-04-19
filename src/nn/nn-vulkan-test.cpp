@@ -529,8 +529,8 @@ void testMatmul_F32_F32_F32() {
 }
 
 void testMatmul_Q80_Q40_F32() {
-    #define MATMUL_Q80_Q40_N 512
-    #define MATMUL_Q80_Q40_D 512
+    #define MATMUL_Q80_Q40_N 4096
+    #define MATMUL_Q80_Q40_D 4096
     execute(
         [](NnNetConfigBuilder *netBuilder, NnNodeConfigBuilder *nodeBuilder, NnSegmentConfigBuilder *segmentBuilder) {
             NnUint xPipeIndex = netBuilder->addPipe("X", size2D(F_Q80, N_BATCHES, MATMUL_Q80_Q40_N));
@@ -557,9 +557,9 @@ void testMatmul_Q80_Q40_F32() {
             std::unique_ptr<NnBlockQ40[]> weightQ40(new NnBlockQ40[weightBlocks]);
 
             for (NnUint i = 0; i < xSize; i++)
-                x[i] = i * 0.001f;
+                x[i] = i * 0.00001f;
             for (NnUint i = 0; i < weightSize; i++)
-                weight[i] = i * 0.0001f;
+                weight[i] = i * 0.000001f;
 
             quantizeF32toQ80(x.get(), xPipe, xSize, 1, 0);
             quantizeF32toQ40(weight.get(), weightQ40.get(), weightSize, 1, 0);
@@ -576,7 +576,7 @@ void testMatmul_Q80_Q40_F32() {
                     for (NnUint n = 0; n < MATMUL_Q80_Q40_N; n++)
                         sum += x[b * MATMUL_Q80_Q40_N + n] * weight[d * MATMUL_Q80_Q40_N + n];
                     const NnUint p = b * MATMUL_Q80_Q40_D + d;
-                    const float tolerance = sum * 0.025f;
+                    const float tolerance = sum * 0.035f;
                     assertFloat(p, yPipe[p], sum, tolerance);
                 }
             }

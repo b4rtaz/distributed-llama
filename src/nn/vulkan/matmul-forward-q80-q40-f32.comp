@@ -4,11 +4,11 @@
 #extension GL_EXT_shader_16bit_storage : enable
 #extension GL_EXT_shader_explicit_arithmetic_types : enable
 
-#define Q80_Q40_BLOCK_SIZE 32
-#define N_THREADS 256
+#define N_THREADS 64
+#define TILE_SIZE_X 2
+#define TILE_SIZE_D 16
 
-#define N_OUTPUTS_PER_ITER 64
-#define N_THREADS_PER_OUTPUT (N_THREADS / N_OUTPUTS_PER_ITER)
+#define Q80_Q40_BLOCK_SIZE 32
 
 layout(local_size_x = N_THREADS, local_size_y = 1, local_size_z = 1) in;
 
@@ -34,80 +34,98 @@ layout(binding = 1) writeonly buffer outputBuffer { float y[]; };
 layout(binding = 2) readonly buffer batchInfosBuffer { BatchInfo infos[]; };
 layout(binding = 3) readonly buffer weightBuffer { BlockQ40 weight[]; };
 
-shared uint sharedStart;
-shared uint sharedEnd;
+shared uint sharedXSlice;
+shared uint sharedXRest;
 shared uint sharedInputOffset;
 shared uint sharedInputSizeX;
 shared uint sharedOutputOffset;
-shared uint sharedInputSizeXPerGroup;
-shared float16_t sums[N_THREADS];
+shared uint sharedD;
+shared float16_t sums[N_THREADS * TILE_SIZE_D];
 
 void main() {
     const uint threadIndex = gl_LocalInvocationID.x;
 
     if (threadIndex == 0) {
-        const uint nWorkGroups = gl_NumWorkGroups.z;
         const uint batchIndex = gl_WorkGroupID.y;
         const uint workGroupIndex = gl_WorkGroupID.z;
 
         const BatchInfo info = infos[batchIndex];
+
+        const uint xTiles = info.inputSizeX / TILE_SIZE_X;
+        sharedXSlice = xTiles / N_THREADS;
+        sharedXRest = xTiles % N_THREADS;
+
         sharedInputOffset = info.inputOffset;
         sharedInputSizeX = info.inputSizeX;
         sharedOutputOffset = info.outputOffset;
-        sharedInputSizeXPerGroup = (sharedInputSizeX + N_THREADS_PER_OUTPUT - 1) / N_THREADS_PER_OUTPUT;
-
-        const uint ySlice = info.outputSizeX / nWorkGroups;
-        const uint yRest = info.outputSizeX % nWorkGroups;
-        sharedStart = workGroupIndex * ySlice + (workGroupIndex < yRest ? workGroupIndex : yRest);
-        sharedEnd = sharedStart + ySlice + (workGroupIndex < yRest ? 1 : 0);
+        sharedD = TILE_SIZE_D * workGroupIndex;
     }
 
     barrier();
     memoryBarrierShared();
 
-    const uint dEnd = sharedEnd;
+    const uint xSlice = sharedXSlice;
+    const uint xRest = sharedXRest;
+    const uint xStart = (threadIndex * xSlice + min(threadIndex, xRest)) * TILE_SIZE_X;
+    const uint xEnd = xStart + (xSlice + (threadIndex < xRest ? 1 : 0)) * TILE_SIZE_X;
+
     const uint inputOffset = sharedInputOffset;
     const uint inputSizeX = sharedInputSizeX;
     const uint outputOffset = sharedOutputOffset;
-    const uint inputSizeXPerGroup = sharedInputSizeXPerGroup;
+    const uint d = sharedD;
 
-    const uint dGroup = threadIndex / N_THREADS_PER_OUTPUT;
-    const uint iGroup = threadIndex % N_THREADS_PER_OUTPUT;
-    const uint iStart = inputSizeXPerGroup * iGroup;
-    const uint iEnd = min(iStart + inputSizeXPerGroup, inputSizeX);
+    f16vec4 xTemp[Q80_Q40_BLOCK_SIZE / 4];
 
-    for (uint dBatch = sharedStart; dBatch < dEnd; dBatch += N_OUTPUTS_PER_ITER) {
-        const uint d = dBatch + dGroup;
-        if (d >= dEnd) {
-            break;
-        }
+    for (uint dt = 0; dt < TILE_SIZE_D; dt++) {
+        sums[threadIndex * TILE_SIZE_D + dt] = float16_t(0.0f);
+    }
 
-        float16_t sum = float16_t(0.0f);
-        for (uint i = iStart; i < iEnd; i++) {
-            const uint xi = inputOffset + i;
-            const uint wi = d * inputSizeX + i;
-            const float16_t scale = x[xi].d * weight[wi].d;
-            [[unroll]] for (uint j = 0; j < Q80_Q40_BLOCK_SIZE / 2; j++) {
-                sum += (
-                    float16_t(x[xi].qs[j])                          * (float16_t(weight[wi].qs[j] & 0xF) - float16_t(8.0f)) +
-                    float16_t(x[xi].qs[j + Q80_Q40_BLOCK_SIZE / 2]) * (float16_t(weight[wi].qs[j] >>  4) - float16_t(8.0f))
-                ) * scale;
+    for (uint i = xStart; i < xEnd; i += TILE_SIZE_X) {
+        [[unroll]] for (uint it = 0; it < TILE_SIZE_X; it++) {
+            const uint xi = inputOffset + i + it;
+            const float16_t xScale = x[xi].d;
+            [[unroll]] for (uint j = 0; j < Q80_Q40_BLOCK_SIZE / 4; j++) {
+                xTemp[j] = f16vec4(
+                    x[xi].qs[j * 2],
+                    x[xi].qs[j * 2 + Q80_Q40_BLOCK_SIZE / 2],
+                    x[xi].qs[j * 2 + 1],
+                    x[xi].qs[j * 2 + 1 + Q80_Q40_BLOCK_SIZE / 2]
+                );
+            }
+
+            [[unroll]] for (uint dt = 0; dt < TILE_SIZE_D; dt++) {
+                const uint wi = (d + dt) * inputSizeX + (i + it);
+                const BlockQ40 wBlock = weight[wi];
+
+                float16_t s = float16_t(0);
+                [[unroll]] for (uint j = 0; j < Q80_Q40_BLOCK_SIZE / 4; j++) {
+                    uint w0 = wBlock.qs[j * 2];
+                    uint w1 = wBlock.qs[j * 2 + 1];
+                    ivec4 w = ivec4(
+                        w0 & 0xFu,
+                        w0 >> 4,
+                        w1 & 0xFu,
+                        w1 >> 4
+                    ) - ivec4(8);
+                    s += dot(xTemp[j], f16vec4(w));
+                }
+                sums[threadIndex * TILE_SIZE_D + dt] += s * xScale * wBlock.d;
             }
         }
-        sums[threadIndex] = sum;
+    }
 
-        barrier();
-        memoryBarrierShared();
+    barrier();
+    memoryBarrierShared();
 
-        [[unroll]] for (uint i = N_THREADS_PER_OUTPUT / 2; i > 0; i >>= 1) {
-            if (iGroup < i)
-                sums[threadIndex] += sums[threadIndex + i];
-            barrier();
+    [[unroll]] for (uint i = N_THREADS / 2; i > 0; i >>= 1) {
+        for (uint dt = 0; dt < TILE_SIZE_D; dt++) {
+            if (threadIndex < i) {
+                sums[threadIndex * TILE_SIZE_D + dt] += sums[(threadIndex + i) * TILE_SIZE_D + dt];
+            }
         }
-        if (iGroup == 0) {
-            y[outputOffset + d] = float(sums[threadIndex]);
-        }
-
         barrier();
+    }
+    for (uint dt = threadIndex; dt < TILE_SIZE_D; dt += N_THREADS) {
+        y[outputOffset + d + dt] = float(sums[dt]);
     }
 }

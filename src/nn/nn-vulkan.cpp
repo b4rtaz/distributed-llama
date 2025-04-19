@@ -499,9 +499,17 @@ static void resolveShaderGroups(const NnOpConfig *opConfig, const NnUint batchSi
         opConfig->code == OP_MUL ||
         opConfig->code == OP_SILU ||
         opConfig->code == OP_SHIFT ||
-        opConfig->code == OP_MERGE_ADD ||
-        opConfig->code == OP_MATMUL)
+        opConfig->code == OP_MERGE_ADD)
         groupCount[2] = 32;
+    else if (opConfig->code == OP_MATMUL) {
+        if (opConfig->weightSize.floatType == F_Q40) {
+            constexpr NnUint tileSizeD = 16; // Must be synced with the shader
+            assert(opConfig->weightSize.x % tileSizeD == 0);
+            groupCount[2] = opConfig->weightSize.x / tileSizeD;
+        } else {
+            groupCount[2] = 32;
+        }
+    }
     else if (opConfig->code == OP_MULTIHEAD_ATT)
         groupCount[2] = ((NnMultiHeadAttOpConfig *)opConfig->config)->nHeads;
 }
@@ -599,6 +607,12 @@ NnVulkanDeviceSegment::NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanD
     std::vector<vk::PipelineShaderStageCreateInfo> shaderCreateInfos(segmentConfig->nOps);
     std::vector<std::vector<NnVulkanBuffer *>> opBuffers(segmentConfig->nOps);
 
+    constexpr NnUint maxConsts = 3;
+    std::vector<NnUint> nConsts(segmentConfig->nOps);
+    std::vector<int> consts(segmentConfig->nOps * maxConsts);
+    std::vector<vk::SpecializationInfo> specInfos(segmentConfig->nOps);
+    std::vector<vk::SpecializationMapEntry> specMapEntries(segmentConfig->nOps * maxConsts);
+    
     for (NnUint opIndex = 0; opIndex < segmentConfig->nOps; opIndex++) {
         NnOpConfig *opConfig = &segmentConfig->ops[opIndex];
         NnSize2D inputSize = data->resolveBufferSize(&opConfig->input);
@@ -620,6 +634,7 @@ NnVulkanDeviceSegment::NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanD
             code.size(),
             code.data()
         );
+
         vk::ShaderModule shaderModule = context->device.createShaderModule(shaderModuleCreateInfo);
         vk::PipelineShaderStageCreateInfo shaderCreateInfo(
             vk::PipelineShaderStageCreateFlags(),
