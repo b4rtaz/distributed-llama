@@ -41,6 +41,7 @@ AppCliArgs AppCliArgs::parse(int argc, char* *argv, bool requireMode) {
     args.seed = (unsigned long long)time(nullptr);
     args.chatTemplateType = TEMPLATE_UNKNOWN;
     args.maxSeqLen = 0;
+    args.netTurbo = true;
     args.gpuIndex = -1;
     int i = 1;
     if (requireMode && argc > 1) {
@@ -108,6 +109,8 @@ AppCliArgs AppCliArgs::parse(int argc, char* *argv, bool requireMode) {
             args.maxSeqLen = (unsigned int)atoi(value);
         } else if (std::strcmp(name, "--gpu-index") == 0) {
             args.gpuIndex = atoi(value);
+        } else if (std::strcmp(name, "--net-turbo") == 0) {
+            args.netTurbo = atoi(value) == 1;
         } else {
             throw std::runtime_error("Unknown option: " + std::string(name));
         }
@@ -252,7 +255,10 @@ void runInferenceApp(AppCliArgs *args, void (*handler)(AppInferenceContext *cont
 
     if (network != nullptr) {
         network->resetStats();
-        network->setTurbo(true);
+        if (args->netTurbo) {
+            network->setTurbo(true);
+            printf("🚁 Network is in non-blocking mode\n");
+        }
     }
 
     AppInferenceContext context;
@@ -313,7 +319,7 @@ void runWorkerApp(AppCliArgs *args) {
                 if (inference.isFinished)
                     break;
 
-                if (!isTurboEnabled) {
+                if (args->netTurbo && !isTurboEnabled) {
                     network->setTurbo(true);
                     isTurboEnabled = true;
                     printf("🚁 Network is in non-blocking mode\n");

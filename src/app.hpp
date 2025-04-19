@@ -29,6 +29,7 @@ public:
     unsigned long long seed;
     ChatTemplateType chatTemplateType;
     NnUint maxSeqLen;
+    bool netTurbo;
     int gpuIndex;
 
     // worker
