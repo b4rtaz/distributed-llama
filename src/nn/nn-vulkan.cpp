@@ -489,10 +489,6 @@ static std::vector<NnVulkanBatchInfo> buildBatchInfo(NnOpConfig *opConfig, NnVul
     return offset;
 }
 
-static NnUint resolveShaderConstants(const NnOpConfig *opConfig, int* consts) {
-    return 0;
-}
-
 static void resolveShaderGroups(const NnOpConfig *opConfig, const NnUint batchSize, NnUint *groupCount) {
     groupCount[0] = 1;
     groupCount[1] = batchSize;
@@ -628,23 +624,6 @@ NnVulkanDeviceSegment::NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanD
         );
         const char *shaderFileName = getShaderFileName(opConfig->code, opQuant);
         std::vector<uint32_t> code = readShader(shaderFileName);
-    
-        NnUint nConsts = resolveShaderConstants(opConfig, &consts[opIndex * maxConsts]);
-        if (nConsts > 0) {
-            for (NnUint i = 0; i < nConsts; i++) {
-                specMapEntries[opIndex * maxConsts + i] = vk::SpecializationMapEntry(
-                    i,
-                    sizeof(int) * i,
-                    sizeof(int)
-                );
-            }
-            specInfos[opIndex] = vk::SpecializationInfo(
-                nConsts,
-                &specMapEntries[opIndex * maxConsts],
-                nConsts * sizeof(int),
-                &consts[opIndex * maxConsts]
-            );
-        }
 
         std::vector<NnVulkanBuffer *> &buffers = opBuffers[opIndex];
         buildShaderLayout(buffers, data, segmentData.get(), opIndex, opConfig);
@@ -661,8 +640,7 @@ NnVulkanDeviceSegment::NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanD
             vk::PipelineShaderStageCreateFlags(),
             vk::ShaderStageFlagBits::eCompute,
             shaderModule,
-            "main",
-            nConsts > 0 ? &specInfos[opIndex] : nullptr
+            "main"
         );
 
         shaderModules[opIndex] = shaderModule;
