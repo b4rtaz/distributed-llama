@@ -10,6 +10,7 @@ class NnDeviceSegment {
 public:
     virtual ~NnDeviceSegment() {};
     virtual void loadWeight(NnUint opIndex, NnSize nBytes, NnByte *weight) = 0;
+    virtual void initForward(NnUint batchSize) = 0;
     virtual void forward(NnUint opIndex, NnUint nThreads, NnUint threadIndex, NnUint batchSize) = 0;
 };
 

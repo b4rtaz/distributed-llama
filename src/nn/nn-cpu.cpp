@@ -225,6 +225,10 @@ void NnCpuDeviceSegment::loadWeight(NnUint opIndex, NnSize nBytes, NnByte *weigh
 #endif
 }
 
+void NnCpuDeviceSegment::initForward(NnUint batchSize) {
+    // Nothing to do
+}
+
 void NnCpuDeviceSegment::forward(NnUint opIndex, NnUint nThreads, NnUint threadIndex, NnUint batchSize) {
     NnCpuOpContext *context = &opContexts[opIndex];
     // printf("forward: %d %s (%d/%d)\n", opIndex, context->name, threadIndex + 1, nThreads); fflush(stdout);

@@ -9,12 +9,34 @@
 #define DEBUG_VULKAN_TRACE false
 
 typedef struct {
+    uint64_t waitValue;
+    uint64_t signalValue;
+    vk::CommandBuffer *commandBuffer;
+    vk::Semaphore *semaphore;
+} NnVulkanQueueBufferItem;
+
+class NnVulkanQueueBuffer {
+private:
+    vk::Queue *queue;
+    std::vector<NnVulkanQueueBufferItem> items;
+    vk::PipelineStageFlags waitStages;
+    bool isCleared;
+    int currentFrom;
+    int currentTo;
+public:
+    NnVulkanQueueBuffer(vk::Queue *queue);
+    NnUint push(vk::Semaphore *semaphore, vk::CommandBuffer *commandBuffer, uint64_t waitValue, uint64_t signalValue);
+    void flush(NnUint position);
+};
+
+typedef struct {
     vk::Instance instance;
     vk::PhysicalDevice physicalDevice;
     vk::Device device;
     uint32_t queueFamilyIndex;
     vk::CommandPool commandPool;
     vk::Queue queue;
+    NnVulkanQueueBuffer *queueBuffer;
 } NnVulkanContext;
 
 enum NnStagingVulkanCopyDirection {
@@ -85,6 +107,7 @@ private:
     NnNetConfig *netConfig;
     NnNodeConfig *nodeConfig;
     NnNetExecution *netExecution;
+    NnVulkanQueueBuffer *queueBuffer;
 public:
     NnVulkanDeviceData *data;
     NnVulkanDevice(NnUint gpuIndex, NnNetConfig *netConfig, NnNodeConfig *nodeConfig, NnNetExecution *netExecution);
@@ -120,7 +143,11 @@ private:
     std::vector<vk::DescriptorSetLayout> descriptorSetLayouts;
     vk::DescriptorPool descriptorPool;
     std::vector<vk::DescriptorSet> descriptorSets;
-    vk::Fence fence;
+
+    uint64_t semaphoreValue;
+    vk::Semaphore semaphore;
+    NnUint queuePosition;
+
     std::vector<vk::PipelineLayout> pipelineLayouts;
     std::vector<vk::Pipeline> pipelines;
     vk::PipelineCache pipelineCache;
@@ -130,6 +157,7 @@ public:
     NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanDeviceData *data, NnNetConfig *netConfig, NnUint segmentIndex, NnSegmentConfig *segmentConfig, NnNetExecution *netExecution);
     ~NnVulkanDeviceSegment() override;
     void loadWeight(NnUint opIndex, NnSize nBytes, NnByte *weight) override;
+    void initForward(NnUint batchSize) override;
     void forward(NnUint opIndex, NnUint nThreads, NnUint threadIndex, NnUint batchSize) override;
 };
 

@@ -33,6 +33,7 @@ public:
         : opForward(opForward), opContexts(opContexts), nOps(nOps) {}
     ~NnCpuDeviceSegment() override;
     void loadWeight(NnUint opIndex, NnSize nBytes, NnByte *weight) override;
+    void initForward(NnUint batchSize) override;
     void forward(NnUint opIndex, NnUint nThreads, NnUint threadIndex, NnUint batchSize) override;
 };
 

@@ -152,6 +152,9 @@ void NnExecutor::forward() {
         context.timer->reset();
     }
 
+    for (NnUint i = 0; i < nodeConfig->nSegments; i++)
+        segments[i]->initForward(context.batchSize);
+
     NnUint threadIndex;
     for (threadIndex = 1; threadIndex < nThreads; threadIndex++) {
         int result = pthread_create(&threads[threadIndex].handler, NULL, (PthreadFunc)executorThreadHandler, (void *)&threads[threadIndex]);

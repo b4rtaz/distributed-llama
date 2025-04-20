@@ -58,6 +58,60 @@ static std::pair<vk::Buffer, vk::DeviceMemory> createBuffer(const NnVulkanContex
     return std::make_pair(buffer, bufferMemory);
 }
 
+NnVulkanQueueBuffer::NnVulkanQueueBuffer(vk::Queue *queue) {
+    this->queue = queue;
+    this->currentFrom = -1;
+    waitStages = vk::PipelineStageFlagBits::eComputeShader;
+}
+
+NnUint NnVulkanQueueBuffer::push(vk::Semaphore *semaphore, vk::CommandBuffer *commandBuffer, uint64_t waitValue, uint64_t signalValue) {
+    items.push_back(NnVulkanQueueBufferItem{
+        waitValue,
+        signalValue,
+        commandBuffer,
+        semaphore
+    });
+    return items.size() - 1;
+}
+
+void NnVulkanQueueBuffer::flush(NnUint position) {
+    // TODO: clear not needed items
+
+    constexpr NnUint chunkSize = 32;
+    if (currentFrom >= 0 && currentFrom <= position && currentTo > position) {
+        // Already submitted
+        return;
+    }
+
+    NnUint size = chunkSize;
+    if (position + size > items.size()) {
+        size = items.size() - position;
+    }
+    //printf("size=%d position=%d currentFrom=%d\n", (int)size, (int)position, currentFrom);
+
+    std::vector<vk::TimelineSemaphoreSubmitInfo> timelineSubmitInfos(size);
+    std::vector<vk::SubmitInfo> submitInfos(size);
+    for (NnUint i = 0; i < size; i++) {
+        const NnUint j = i + position;
+        timelineSubmitInfos[i] = vk::TimelineSemaphoreSubmitInfo(1, &items[j].waitValue, 1, &items[j].signalValue);
+        submitInfos[i] = vk::SubmitInfo(
+            1, items[j].semaphore, &waitStages,
+            1, items[j].commandBuffer,
+            1, items[j].semaphore,
+            &timelineSubmitInfos[i]
+        );
+    }
+
+    assert(queue->submit(
+        size,
+        submitInfos.data(),
+        nullptr) == vk::Result::eSuccess
+    );
+
+    currentFrom = position;
+    currentTo = position + size;
+}
+
 NnVulkanStagingCopy::NnVulkanStagingCopy(const NnVulkanContext *context, vk::Buffer& deviceBuffer, const vk::DeviceSize bufferSize, const NnStagingVulkanCopyDirection direction) {
     this->direction = direction;
     this->deviceBuffer = deviceBuffer;
@@ -312,6 +366,7 @@ NnVulkanDevice::NnVulkanDevice(NnUint gpuIndex, NnNetConfig *netConfig, NnNodeCo
     deviceExtension.push_back("VK_KHR_8bit_storage");
     deviceExtension.push_back("VK_KHR_16bit_storage");
     deviceExtension.push_back("VK_KHR_shader_float16_int8");
+    deviceExtension.push_back("VK_KHR_timeline_semaphore");
 
     vk::ApplicationInfo appInfo {"Distributed Llama", 1, nullptr, 0, VK_API_VERSION_1_2 };
     vk::InstanceCreateInfo instanceCreateInfo(createInstanceFlags, &appInfo, instanceLayers, instanceExtensions);
@@ -370,12 +425,16 @@ NnVulkanDevice::NnVulkanDevice(NnUint gpuIndex, NnNetConfig *netConfig, NnNodeCo
     vk::CommandPoolCreateInfo commandPoolCreateInfo(vk::CommandPoolCreateFlags(vk::CommandPoolCreateFlagBits::eTransient | vk::CommandPoolCreateFlagBits::eResetCommandBuffer), context.queueFamilyIndex);
     context.commandPool = context.device.createCommandPool(commandPoolCreateInfo);
     context.queue = context.device.getQueue(context.queueFamilyIndex, 0);
+    
+    queueBuffer = new NnVulkanQueueBuffer(&context.queue);
+    context.queueBuffer = queueBuffer;
 
     data = new NnVulkanDeviceData(&context, netConfig, nodeConfig);
 }
 
 NnVulkanDevice::~NnVulkanDevice() {
     delete data;
+    delete queueBuffer;
 
     context.device.destroyCommandPool(context.commandPool);
     context.device.destroy();
@@ -393,6 +452,7 @@ NnDeviceSegment *NnVulkanDevice::createSegment(NnUint segmentIndex) {
 };
 
 static const char *getShaderFileName(const NnOpCode opCode, const NnOpQuantType quantType) {
+    // return "nop.spv";
     if (opCode == OP_MERGE_ADD) {
         if (quantType == F32_F32_F32) return "merge-add-forward-f32-f32.spv";
         if (quantType == Q80_Q80_F32) return "merge-add-forward-q80-f32.spv";
@@ -733,7 +793,9 @@ NnVulkanDeviceSegment::NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanD
         pipelines[opIndex] = context->device.createComputePipelines(pipelineCache, pipelineInfo).value.front();
     }
 
-    fence = context->device.createFence(vk::FenceCreateInfo());
+    semaphoreValue = 0;
+    vk::SemaphoreTypeCreateInfo signalSemaphoreInfo(vk::SemaphoreType::eTimeline, semaphoreValue);
+    semaphore = context->device.createSemaphore(vk::SemaphoreCreateInfo(vk::SemaphoreCreateFlags(), &signalSemaphoreInfo));
 
     vk::CommandBufferAllocateInfo commandBufferAllocInfo(context->commandPool, vk::CommandBufferLevel::ePrimary, 1);
     const std::vector<vk::CommandBuffer> cmdBuffers = context->device.allocateCommandBuffers(commandBufferAllocInfo);
@@ -743,12 +805,12 @@ NnVulkanDeviceSegment::NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanD
 NnVulkanDeviceSegment::~NnVulkanDeviceSegment() {
     context->device.freeCommandBuffers(context->commandPool, 1, &commandBuffer);
     context->device.destroyDescriptorPool(descriptorPool);
+    context->device.destroySemaphore(semaphore);
 
     for (NnUint opIndex = 0; opIndex < segmentConfig->nOps; opIndex++) {
         context->device.destroyPipeline(pipelines[opIndex]);
         context->device.destroyPipelineLayout(pipelineLayouts[opIndex]);
     }
-    context->device.destroyFence(fence);
     context->device.destroyPipelineCache(pipelineCache);
     for (NnUint opIndex = 0; opIndex < segmentConfig->nOps; opIndex++) {
         context->device.destroyDescriptorSetLayout(descriptorSetLayouts[opIndex]);
@@ -764,31 +826,8 @@ void NnVulkanDeviceSegment::loadWeight(NnUint opIndex, NnSize nBytes, NnByte *we
     buffer->write(weight);
 }
 
-void NnVulkanDeviceSegment::forward(NnUint opIndex, NnUint nThreads, NnUint threadIndex, NnUint batchSize)  {
-    assert(threadIndex == 0);
-    if (opIndex != 0) {
-        // TODO: this is a design problem, executor tries to forward all ops in a segment
-        return;
-    }
-
-    // TODO: refactor this block
-    {
-        if (segmentIndex == 0 || segmentIndex == 1) { // TODO: this is a hack to fix workers
-            for (NnUint i = 0; i < netConfig->nPreSyncs; i++) {
-                NnPreSyncConfig *preSyncConfig = &netConfig->preSyncs[i];
-                NnByte *pipeData = netExecution->pipes[preSyncConfig->pipeIndex];
-                data->pipes[preSyncConfig->pipeIndex]->write(pipeData);
-            }
-        }
-
-        for (NnUint opIndex = 0; opIndex < segmentConfig->nOps; opIndex++) {
-            NnOpConfig *opConfig = &segmentConfig->ops[opIndex];
-            if (opConfig->input.source == SRC_PIPE) {
-                NnByte *pipeData = netExecution->pipes[opConfig->input.pointerIndex];
-                data->pipes[opConfig->input.pointerIndex]->write(pipeData);
-            }
-        }
-    }
+void NnVulkanDeviceSegment::initForward(NnUint batchSize) {
+    //printf("INIT SEGMENT %d mops %d\n", segmentIndex, segmentConfig->nOps);
 
     if (lastBatchSize != batchSize) {
         lastBatchSize = batchSize;
@@ -830,13 +869,48 @@ void NnVulkanDeviceSegment::forward(NnUint opIndex, NnUint nThreads, NnUint thre
         commandBuffer.end();
     }
 
-    vk::SubmitInfo submitInfo(0, nullptr, nullptr, 1, &commandBuffer);
-    context->queue.submit({ submitInfo }, fence);
-    assert(context->device.waitForFences({ fence }, true, uint64_t(-1)) == vk::Result::eSuccess);
+    queuePosition = context->queueBuffer->push(&semaphore, &commandBuffer, semaphoreValue + 1, semaphoreValue + 2);
+}
 
-    context->device.resetFences({ fence });
-    
+void NnVulkanDeviceSegment::forward(NnUint opIndex, NnUint nThreads, NnUint threadIndex, NnUint batchSize)  {
+    assert(threadIndex == 0);
+    if (opIndex != 0) {
+        // TODO: this is a design problem, executor tries to forward all ops in a segment
+        return;
+    }
+
+    context->queueBuffer->flush(queuePosition);
+
+    //printf("FORWARDING SEGMENT %d\n", segmentIndex);
+
+    // TODO: refactor this block
+    {
+        if (segmentIndex == 0 || segmentIndex == 1) { // TODO: this is a hack to fix workers
+            for (NnUint i = 0; i < netConfig->nPreSyncs; i++) {
+                NnPreSyncConfig *preSyncConfig = &netConfig->preSyncs[i];
+                NnByte *pipeData = netExecution->pipes[preSyncConfig->pipeIndex];
+                data->pipes[preSyncConfig->pipeIndex]->write(pipeData);
+            }
+        }
+
+        for (NnUint opIndex = 0; opIndex < segmentConfig->nOps; opIndex++) {
+            NnOpConfig *opConfig = &segmentConfig->ops[opIndex];
+            if (opConfig->input.source == SRC_PIPE) {
+                NnByte *pipeData = netExecution->pipes[opConfig->input.pointerIndex];
+                data->pipes[opConfig->input.pointerIndex]->write(pipeData);
+            }
+        }
+    }
+
+    context->device.signalSemaphore(vk::SemaphoreSignalInfo(semaphore, semaphoreValue + 1));
+
     VULKAN_TRACE("Forwarded");
+
+    uint64_t signalValue = semaphoreValue + 2;
+    vk::SemaphoreWaitInfo waitInfo({}, 1, &semaphore, &signalValue);
+    context->device.waitSemaphores(waitInfo, UINT64_MAX);
+
+    semaphoreValue = signalValue;
 
     // TODO: refactor this block
     {
