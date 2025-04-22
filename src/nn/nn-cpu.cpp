@@ -150,6 +150,14 @@ NnDeviceSegment *NnCpuDevice::createSegment(NnUint segmentIndex) {
     return new NnCpuDeviceSegment(opForward, opContexts, segmentConfig->nOps);
 }
 
+void NnCpuDevice::beginForward(NnUint batchSize) {
+    // Nothing to do
+}
+
+void NnCpuDevice::finishForward() {
+    // Nothing to do
+}
+
 NnCpuDeviceSegment::~NnCpuDeviceSegment() {
     for (NnUint opIndex = 0; opIndex < nOps; opIndex++) {
         NnCpuOpContext *context = &opContexts[opIndex];

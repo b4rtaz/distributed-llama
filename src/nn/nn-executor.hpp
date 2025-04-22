@@ -18,6 +18,8 @@ public:
     virtual NnUint maxNThreads() = 0;
     virtual ~NnDevice() {}
     virtual NnDeviceSegment *createSegment(NnUint segmentIndex) = 0;
+    virtual void beginForward(NnUint batchSize) = 0;
+    virtual void finishForward() = 0;
 };
 
 class NnNodeSynchronizer {
@@ -81,6 +83,7 @@ class NnExecutor {
 private:
     NnNetExecution *netExecution;
     NnNodeConfig *nodeConfig;
+    NnDevice *device;
     std::vector<std::unique_ptr<NnDeviceSegment>> segments;
     std::vector<NnExecutorStep> steps;
     NnExecutorThread *threads;

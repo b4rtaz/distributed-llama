@@ -21,6 +21,8 @@ public:
     ~NnCpuDevice() override;
     NnUint maxNThreads() override;
     NnDeviceSegment *createSegment(NnUint segmentIndex) override;
+    void beginForward(NnUint batchSize) override;
+    void finishForward() override;
     void resolvePointer(NnByte **pntr, NnSize2D *pntrSize, NnPointerConfig *pointerConfig);
 };
 

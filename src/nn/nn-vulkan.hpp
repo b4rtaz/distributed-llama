@@ -8,6 +8,19 @@
 
 #define DEBUG_VULKAN_TRACE false
 
+class NnVulkanQueueBuffer {
+private:
+    vk::Queue *queue;
+    vk::CommandBuffer *commandBuffer;
+    bool started;
+    NnUint nDispatches;
+public:
+    NnVulkanQueueBuffer(vk::Queue *queue, vk::CommandBuffer *commandBuffer);
+    void reset();
+    void dispatch(vk::Pipeline &pipeline, vk::PipelineLayout &pipelineLayout, vk::DescriptorSet &descriptorSet, NnUint groupCountX, NnUint groupCountY, NnUint groupCountZ);
+    void flush(vk::Fence &fence);
+};
+
 typedef struct {
     vk::Instance instance;
     vk::PhysicalDevice physicalDevice;
@@ -15,6 +28,9 @@ typedef struct {
     uint32_t queueFamilyIndex;
     vk::CommandPool commandPool;
     vk::Queue queue;
+    NnVulkanQueueBuffer *queueBuffer;
+    vk::CommandBuffer commandBuffer;
+    vk::Fence fence;
 } NnVulkanContext;
 
 enum NnStagingVulkanCopyDirection {
@@ -79,20 +95,6 @@ public:
     NnUint resolveBufferBatchWidth(NnPointerConfig *config, NnUint batchIndex);
 };
 
-class NnVulkanDevice : public NnDevice {
-private:
-    NnVulkanContext context;
-    NnNetConfig *netConfig;
-    NnNodeConfig *nodeConfig;
-    NnNetExecution *netExecution;
-public:
-    NnVulkanDeviceData *data;
-    NnVulkanDevice(NnUint gpuIndex, NnNetConfig *netConfig, NnNodeConfig *nodeConfig, NnNetExecution *netExecution);
-    ~NnVulkanDevice() override;
-    NnUint maxNThreads() override;
-    NnDeviceSegment *createSegment(NnUint segmentIndex) override;
-};
-
 class NnVulkanDeviceSegmentData {
 private:
     NnVulkanDeviceData *data;
@@ -120,17 +122,33 @@ private:
     std::vector<vk::DescriptorSetLayout> descriptorSetLayouts;
     vk::DescriptorPool descriptorPool;
     std::vector<vk::DescriptorSet> descriptorSets;
-    vk::Fence fence;
     std::vector<vk::PipelineLayout> pipelineLayouts;
     std::vector<vk::Pipeline> pipelines;
     vk::PipelineCache pipelineCache;
-    vk::CommandBuffer commandBuffer;
-    NnUint lastBatchSize;
 public:
     NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanDeviceData *data, NnNetConfig *netConfig, NnUint segmentIndex, NnSegmentConfig *segmentConfig, NnNetExecution *netExecution);
     ~NnVulkanDeviceSegment() override;
     void loadWeight(NnUint opIndex, NnSize nBytes, NnByte *weight) override;
+    void buildForward(NnUint batchSize);
     void forward(NnUint opIndex, NnUint nThreads, NnUint threadIndex, NnUint batchSize) override;
+};
+
+class NnVulkanDevice : public NnDevice {
+private:
+    NnVulkanContext context;
+    NnNetConfig *netConfig;
+    NnNodeConfig *nodeConfig;
+    NnNetExecution *netExecution;
+    std::vector<NnVulkanDeviceSegment *> segments;
+    NnUint lastBatchSize;
+public:
+    NnVulkanDeviceData *data;
+    NnVulkanDevice(NnUint gpuIndex, NnNetConfig *netConfig, NnNodeConfig *nodeConfig, NnNetExecution *netExecution);
+    ~NnVulkanDevice() override;
+    NnUint maxNThreads() override;
+    NnDeviceSegment *createSegment(NnUint segmentIndex) override;
+    void beginForward(NnUint batchSize) override;
+    void finishForward() override;
 };
 
 #endif

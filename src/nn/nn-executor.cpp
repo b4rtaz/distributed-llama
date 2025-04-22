@@ -41,6 +41,7 @@ NnExecutor::NnExecutor(NnNetConfig *netConfig, NnNodeConfig *nodeConfig, NnDevic
         throw std::invalid_argument("This device supports max " + std::to_string(maxNThreads) + " threads");
     this->netExecution = netExecution;
     this->nodeConfig = nodeConfig;
+    this->device = device;
 
     bool useSynchronizer = netConfig->nNodes > 1;
     for (NnUint segmentIndex = 0; segmentIndex < nodeConfig->nSegments; segmentIndex++) {
@@ -152,6 +153,8 @@ void NnExecutor::forward() {
         context.timer->reset();
     }
 
+    device->beginForward(netExecution->batchSize);
+
     NnUint threadIndex;
     for (threadIndex = 1; threadIndex < nThreads; threadIndex++) {
         int result = pthread_create(&threads[threadIndex].handler, NULL, (PthreadFunc)executorThreadHandler, (void *)&threads[threadIndex]);
@@ -161,6 +164,8 @@ void NnExecutor::forward() {
     executorThreadHandler((void *)&threads[0]);
     for (threadIndex = 1; threadIndex < nThreads; threadIndex++)
         pthread_join(threads[threadIndex].handler, NULL);
+
+    device->finishForward();
 }
 
 NnUint NnExecutor::getTotalTime(NnExecutorStepType type) {
