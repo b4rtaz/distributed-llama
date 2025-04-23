@@ -8,19 +8,6 @@
 
 #define DEBUG_VULKAN_TRACE false
 
-class NnVulkanQueueBuffer {
-private:
-    vk::Queue *queue;
-    vk::CommandBuffer *commandBuffer;
-    bool started;
-    NnUint nDispatches;
-public:
-    NnVulkanQueueBuffer(vk::Queue *queue, vk::CommandBuffer *commandBuffer);
-    void reset();
-    void dispatch(vk::Pipeline &pipeline, vk::PipelineLayout &pipelineLayout, vk::DescriptorSet &descriptorSet, NnUint groupCountX, NnUint groupCountY, NnUint groupCountZ);
-    void flush(vk::Fence &fence);
-};
-
 typedef struct {
     vk::Instance instance;
     vk::PhysicalDevice physicalDevice;
@@ -28,7 +15,6 @@ typedef struct {
     uint32_t queueFamilyIndex;
     vk::CommandPool commandPool;
     vk::Queue queue;
-    NnVulkanQueueBuffer *queueBuffer;
     vk::CommandBuffer commandBuffer;
     vk::Fence fence;
 } NnVulkanContext;
@@ -69,6 +55,28 @@ public:
     ~NnVulkanBuffer();
     void write(const NnByte *data);
     void read(NnByte *data);
+};
+
+class NnVulkanQueueBuffer {
+private:
+    NnVulkanContext *context;
+    bool started;
+    NnUint nDispatches;
+    NnVulkanBuffer *waitSemaphore;
+    vk::ShaderModule waitShaderModule;
+    vk::Pipeline waitPipeline;
+    vk::PipelineLayout waitPipelineLayout;
+    vk::DescriptorSet waitDescriptorSet;
+    vk::DescriptorSetLayout waitDescriptorSetLayout;
+    vk::DescriptorPool waitDescriptorPool;
+public:
+    NnVulkanQueueBuffer(NnVulkanContext *context);
+    ~NnVulkanQueueBuffer();
+    void reset();
+    void addWaitShader();
+    void addShader(vk::Pipeline &pipeline, vk::PipelineLayout &pipelineLayout, vk::DescriptorSet &descriptorSet, NnUint groupCountX, NnUint groupCountY, NnUint groupCountZ);
+    void flush(vk::Fence &fence);
+    void wait();
 };
 
 typedef struct {
@@ -112,6 +120,7 @@ class NnVulkanDeviceSegment : public NnDeviceSegment {
 private:
     NnVulkanContext *context;
     NnVulkanDeviceData *data;
+    NnVulkanQueueBuffer *queueBuffer;
     NnNetConfig *netConfig;
     NnUint segmentIndex;
     NnSegmentConfig *segmentConfig;
@@ -126,7 +135,7 @@ private:
     std::vector<vk::Pipeline> pipelines;
     vk::PipelineCache pipelineCache;
 public:
-    NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanDeviceData *data, NnNetConfig *netConfig, NnUint segmentIndex, NnSegmentConfig *segmentConfig, NnNetExecution *netExecution);
+    NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanDeviceData *data, NnVulkanQueueBuffer *queueBuffer, NnNetConfig *netConfig, NnUint segmentIndex, NnSegmentConfig *segmentConfig, NnNetExecution *netExecution);
     ~NnVulkanDeviceSegment() override;
     void loadWeight(NnUint opIndex, NnSize nBytes, NnByte *weight) override;
     void buildForward(NnUint batchSize);
@@ -139,6 +148,7 @@ private:
     NnNetConfig *netConfig;
     NnNodeConfig *nodeConfig;
     NnNetExecution *netExecution;
+    NnVulkanQueueBuffer *queueBuffer;
     std::vector<NnVulkanDeviceSegment *> segments;
     NnUint lastBatchSize;
 public:

@@ -1,0 +1,25 @@
+#version 450
+
+#define N_THREADS 32
+
+layout(local_size_x = N_THREADS, local_size_y = 1, local_size_z = 1) in;
+
+layout(binding = 0) buffer semaphoreBuffer { uint semaphore; };
+
+void main() {
+    // GPU killer
+    for (uint u = 0 ;; u++) {
+        if (u % N_THREADS == gl_LocalInvocationID.x) {
+            volatile uint value = semaphore;
+            if (value == 32) {
+                semaphore = 0;
+                break;
+            }
+        }
+        if (u == 99999999) {
+            semaphore = 55;
+            break;
+        }
+        barrier();
+    }
+}
