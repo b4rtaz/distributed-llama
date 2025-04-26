@@ -36,11 +36,13 @@ void execute(
     NnNetExecution execution(1, &netConfig);
 
     NnUint gpuIndex = 0;
-    NnVulkanDevice device(gpuIndex, &netConfig, &nodeConfig, &execution);
+    std::vector<NnExecutorDevice> devices;
+    NnVulkanDevice *device = new NnVulkanDevice(gpuIndex, &netConfig, &nodeConfig, &execution);
+    devices.push_back(NnExecutorDevice(device, -1, -1));
     NnFakeNodeSynchronizer synchronizer;
-    NnExecutor executor(&netConfig, &nodeConfig, &device, &execution, &synchronizer, false);
+    NnExecutor executor(&netConfig, &nodeConfig, &devices, &execution, &synchronizer, false);
 
-    execute(&executor, &execution, &device);
+    execute(&executor, &execution, device);
 }
 
 void testRmsNorm_F32_F32_F32() {

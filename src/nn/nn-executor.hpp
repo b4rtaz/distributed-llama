@@ -51,6 +51,14 @@ enum NnExecutorStepType {
 
 #define N_STEP_TYPES STEP_SYNC_NODES + 1
 
+class NnExecutorDevice {
+public:
+    std::unique_ptr<NnDevice> device;
+    int segmentFrom;
+    int segmentTo;
+    NnExecutorDevice(NnDevice *device, int segmentFrom, int segmentTo);
+};
+
 typedef struct {
     NnExecutorStepType type;
     NnDeviceSegment *segment;
@@ -63,7 +71,6 @@ typedef struct {
     NnUint nSteps;
     NnExecutorStep *steps;
     NnNodeSynchronizer *synchronizer;
-    NnDevice *device;
     std::atomic_uint currentStepIndex;
     std::atomic_uint doneThreadCount;
     NnUint batchSize;
@@ -86,7 +93,7 @@ private:
     NnExecutorThread *threads;
     NnExecutorContext context;
 public:
-    NnExecutor(NnNetConfig *netConfig, NnNodeConfig *nodeConfig, NnDevice *device, NnNetExecution *netExecution, NnNodeSynchronizer *synchronizer, bool benchmark);
+    NnExecutor(NnNetConfig *netConfig, NnNodeConfig *nodeConfig, std::vector<NnExecutorDevice> *device, NnNetExecution *netExecution, NnNodeSynchronizer *synchronizer, bool benchmark);
     ~NnExecutor();
     void loadWeight(const char *name, NnUint index, NnSize nBytes, NnByte *weight);
     void forward();

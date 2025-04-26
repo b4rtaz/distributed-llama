@@ -64,10 +64,13 @@ int main() {
     for (NnUint i = 0; i < DIM; i++)
         rmsNormWeight[i] = 0.5 + i / (float)DIM;
 
-    NnCpuDevice device(&netConfig, &nodeConfig, &execution);
+    NnCpuDevice *device = new NnCpuDevice(&netConfig, &nodeConfig, &execution);
+    std::vector<NnExecutorDevice> devices;
+    devices.push_back(NnExecutorDevice(device, -1, -1));
+
     NnFakeNodeSynchronizer synchronizer;
-    float *rms = (float *)device.buffers[0];
-    NnExecutor executor(&netConfig, &nodeConfig, &device, &execution, &synchronizer, false);
+    float *rms = (float *)device->buffers[0];
+    NnExecutor executor(&netConfig, &nodeConfig, &devices, &execution, &synchronizer, false);
     executor.loadWeight("rms_norm", 0, sizeof(rmsNormWeight), (NnByte *)rmsNormWeight);
 
     execution.setBatchSize(2);

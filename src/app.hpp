@@ -31,6 +31,8 @@ public:
     NnUint maxSeqLen;
     bool netTurbo;
     int gpuIndex;
+    int gpuSegmentFrom;
+    int gpuSegmentTo;
 
     // worker
     NnUint port;
@@ -51,13 +53,12 @@ private:
     float *tokenPipe;
     float *positionPipe;
     LlmHeader *header;
-    NnDevice *device;
     NnNetExecution *execution;
     NnExecutor *executor;
     NnNetwork *network;
     LlmControlPacket controlPacket;
 public:
-    RootLlmInference(LlmNet *net, NnDevice *device, NnNetExecution *execution, NnExecutor *executor, NnNetwork *network);
+    RootLlmInference(LlmNet *net, NnNetExecution *execution, NnExecutor *executor, NnNetwork *network);
     void setBatchSize(NnUint batchSize);
     void setPosition(NnUint position);
     void setToken(NnUint batchIndex, NnUint token);
