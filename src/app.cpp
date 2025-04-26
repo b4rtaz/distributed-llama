@@ -43,6 +43,9 @@ AppCliArgs AppCliArgs::parse(int argc, char* *argv, bool requireMode) {
     args.maxSeqLen = 0;
     args.netTurbo = true;
     args.gpuIndex = -1;
+    args.gpuSegmentFrom = -1;
+    args.gpuSegmentTo = -1;
+
     int i = 1;
     if (requireMode && argc > 1) {
         args.mode = argv[1];
@@ -79,15 +82,15 @@ AppCliArgs AppCliArgs::parse(int argc, char* *argv, bool requireMode) {
 
             for (int s = 0; s < count; s++) {
                 char *v = argv[i + 1 + s];
-                char *sep = std::strstr(v, ":");
-                if (sep == NULL) {
+                char *separator = std::strstr(v, ":");
+                if (separator == NULL) {
                     throw std::runtime_error("Invalid worker address: " + std::string(v));
                 }
-                int hostLen = sep - v;
+                int hostLen = separator - v;
                 args.workerHosts[s] = new char[hostLen + 1];
                 std::memcpy(args.workerHosts[s], v, hostLen);
                 args.workerHosts[s][hostLen] = '\0';
-                args.workerPorts[s] = std::atoi(sep + 1);
+                args.workerPorts[s] = std::atoi(separator + 1);
             }
 
             i += count - 1;
@@ -109,6 +112,12 @@ AppCliArgs AppCliArgs::parse(int argc, char* *argv, bool requireMode) {
             args.maxSeqLen = (unsigned int)atoi(value);
         } else if (std::strcmp(name, "--gpu-index") == 0) {
             args.gpuIndex = atoi(value);
+        } else if (std::strcmp(name, "--gpu-segments") == 0) {
+            char *separator = std::strstr(value, ":");
+            if (separator == NULL)
+                throw std::runtime_error("GPU segments expected in the format <from>:<to>");
+            args.gpuSegmentFrom = atoi(value);
+            args.gpuSegmentTo = atoi(separator + 1);
         } else if (std::strcmp(name, "--net-turbo") == 0) {
             args.netTurbo = atoi(value) == 1;
         } else {
@@ -128,23 +137,32 @@ AppCliArgs::~AppCliArgs() {
         delete[] workerPorts;
 }
 
-static NnDevice *createDevice(AppCliArgs *args, NnNetConfig *netConfig, NnNodeConfig *nodeConfig, NnNetExecution *netExecution) {
+static std::vector<NnExecutorDevice> resolveDevices(AppCliArgs *args, NnNetConfig *netConfig, NnNodeConfig *nodeConfig, NnNetExecution *netExecution) {
+    std::vector<NnExecutorDevice> devices;
+
     if (args->gpuIndex >= 0) {
 #if defined(DLLAMA_VULKAN)
-        return new NnVulkanDevice(args->gpuIndex, netConfig, nodeConfig, netExecution);
+        devices.push_back(NnExecutorDevice(
+            new NnVulkanDevice(args->gpuIndex, netConfig, nodeConfig, netExecution),
+            args->gpuSegmentFrom,
+            args->gpuSegmentTo
+        ));
 #else
         throw std::runtime_error("This build does not support GPU");
 #endif
     }
-    return new NnCpuDevice(netConfig, nodeConfig, netExecution);
+
+    if (args->gpuIndex < 0 || (args->gpuSegmentFrom >= 0 && args->gpuSegmentTo >= 0)) {
+        devices.push_back(NnExecutorDevice(new NnCpuDevice(netConfig, nodeConfig, netExecution), -1, -1));
+    }
+    return devices;
 }
 
-RootLlmInference::RootLlmInference(LlmNet *net, NnDevice *device, NnNetExecution *execution, NnExecutor *executor, NnNetwork *network) {
+RootLlmInference::RootLlmInference(LlmNet *net, NnNetExecution *execution, NnExecutor *executor, NnNetwork *network) {
     this->header = net->header;
     this->tokenPipe = (float *)execution->pipes[net->tokenPipeIndex];
     this->positionPipe = (float *)execution->pipes[net->positionPipeIndex];
     this->logitsPipe = (float *)execution->pipes[net->logitsPipeIndex];
-    this->device = device;
     this->execution = execution;
     this->executor = executor;
     this->network = network; // May be nullptr!
@@ -245,13 +263,13 @@ void runInferenceApp(AppCliArgs *args, void (*handler)(AppInferenceContext *cont
         configWriter.writeToWorkers(&net.netConfig, net.nodeConfigs);
     }
 
-    std::unique_ptr<NnDevice> device(createDevice(args, &net.netConfig, rootNodeConfig, &execution));
-    NnExecutor executor(&net.netConfig, rootNodeConfig, device.get(), &execution, synchronizer.get(), args->benchmark);
+    std::vector<NnExecutorDevice> devices = resolveDevices(args, &net.netConfig, rootNodeConfig, &execution);
+    NnExecutor executor(&net.netConfig, rootNodeConfig, &devices, &execution, synchronizer.get(), args->benchmark);
 
     NnRootWeightLoader weightLoader(&executor, network, nNodes);
     loadLlmNetWeight(args->modelPath, &net, &weightLoader);
 
-    RootLlmInference inference(&net, device.get(), &execution, &executor, network);
+    RootLlmInference inference(&net, &execution, &executor, network);
 
     if (network != nullptr) {
         network->resetStats();
@@ -290,10 +308,9 @@ void runWorkerApp(AppCliArgs *args) {
 
         NnNetExecution execution(args->nThreads, &netConfig);
 
-        std::unique_ptr<NnDevice> device(createDevice(args, &netConfig, &nodeConfig, &execution));
-
+        std::vector<NnExecutorDevice> devices = resolveDevices(args, &netConfig, &nodeConfig, &execution);
         NnNetworkNodeSynchronizer synchronizer(network, &execution, &netConfig, &nodeConfig);
-        NnExecutor executor(&netConfig, &nodeConfig, device.get(), &execution, &synchronizer, false);
+        NnExecutor executor(&netConfig, &nodeConfig, &devices, &execution, &synchronizer, false);
 
         NnWorkerWeightReader weightReader(&executor, network);
         weightReader.read();

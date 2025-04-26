@@ -33,17 +33,41 @@ void NnNetExecution::setBatchSize(NnUint batchSize) {
     this->batchSize = batchSize;
 }
 
-NnExecutor::NnExecutor(NnNetConfig *netConfig, NnNodeConfig *nodeConfig, NnDevice *device, NnNetExecution *netExecution, NnNodeSynchronizer *synchronizer, bool benchmark)
+NnExecutorDevice::NnExecutorDevice(NnDevice *device, int segmentFrom, int segmentTo) {
+    this->device = std::unique_ptr<NnDevice>(device);
+    this->segmentFrom = segmentFrom;
+    this->segmentTo = segmentTo;
+}
+
+NnExecutor::NnExecutor(NnNetConfig *netConfig, NnNodeConfig *nodeConfig, std::vector<NnExecutorDevice> *devices, NnNetExecution *netExecution, NnNodeSynchronizer *synchronizer, bool benchmark)
     : segments(nodeConfig->nSegments), steps()
 {
-    NnUint maxNThreads = device->maxNThreads();
+    NnUint maxNThreads = 0;
+    for (NnExecutorDevice &d : *devices) {
+        if (d.device->maxNThreads() > maxNThreads)
+            maxNThreads = d.device->maxNThreads();
+    }
     if (netExecution->nThreads > maxNThreads)
-        throw std::invalid_argument("This device supports max " + std::to_string(maxNThreads) + " threads");
+        throw std::invalid_argument("This configuration supports max " + std::to_string(maxNThreads) + " threads");
+
     this->netExecution = netExecution;
     this->nodeConfig = nodeConfig;
 
     bool useSynchronizer = netConfig->nNodes > 1;
     for (NnUint segmentIndex = 0; segmentIndex < nodeConfig->nSegments; segmentIndex++) {
+        NnDevice *device = nullptr;
+        for (NnExecutorDevice &d : *devices) {
+            if (
+                (d.segmentFrom == -1 && d.segmentTo == -1) ||
+                (segmentIndex >= d.segmentFrom && segmentIndex <= d.segmentTo)
+            ) {
+                device = d.device.get();
+                break;
+            }
+        }
+        if (device == nullptr)
+            throw std::invalid_argument("Cannot locate device for segment " + std::to_string(segmentIndex));
+
         NnSegmentConfig *segmentConfig = &nodeConfig->segments[segmentIndex];
         if (segmentConfig->nOps > 0) {
             NnDeviceSegment *segment = device->createSegment(segmentIndex);
@@ -60,7 +84,6 @@ NnExecutor::NnExecutor(NnNetConfig *netConfig, NnNodeConfig *nodeConfig, NnDevic
 
     context.nThreads = netExecution->nThreads;
     context.synchronizer = synchronizer;
-    context.device = device;
     context.nSteps = (NnUint)steps.size();
     context.steps = steps.data();
     if (benchmark)
