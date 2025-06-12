@@ -56,7 +56,7 @@ class TokensResolver:
             if (self.eosIds is None):
                 self.eosIds = config['eos_token_id']
                 if isinstance(self.eosIds, list):
-                    self.eosIds = self.eosIds[:2] # TODO: add support more than 2 eos ids
+                    self.eosIds = self.eosIds
                 else:
                     self.eosIds = [self.eosIds]
 
@@ -89,7 +89,6 @@ class TokensResolver:
             return self.resolveLlamaTokenizer()
         raise Exception(f'Tokenizer {cls} is not supported')
 
-
 def printUsage():
     print('Usage: python convert-tokenizer-hf.py <tokenizerFolderPath> <name>')
     print()
@@ -116,18 +115,16 @@ if __name__ == '__main__':
         print(f'eosId: {eosId} ({resolver.tokens[eosId]})')
 
     chatTemplate = None
-    chatExtraStop = None
     if ('chat_template' in tokenizerConfig):
         chatTemplate = tokenizerConfig['chat_template'].encode('utf-8')
-        input = input('⏩ Enter value for chat extra stop (enter to skip): ')
-        if (input != ''):
-            chatExtraStop = input.encode('utf-8')
 
     outputFileName = f'dllama_tokenizer_{name}.t'
     with open(outputFileName, 'wb') as outputFile:
-        writer.writeTokenizer(outputFile, {
-            'bos_id': resolver.bosId,
-            'eos_id': resolver.eosIds[0],
-            'chat_eos_id': resolver.eosIds[1 if len(resolver.eosIds) > 1 else 0],
-        }, resolver.tokens, resolver.scores, chatTemplate, chatExtraStop)
+        writer.writeTokenizer(
+            outputFile,
+            resolver.tokens,
+            resolver.scores,
+            chatTemplate,
+            resolver.bosId,
+            resolver.eosIds)
     print(f'✅ Created {outputFileName}')

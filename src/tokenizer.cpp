@@ -73,6 +73,7 @@ Tokenizer::Tokenizer(const char* tokenizerPath)
         }
         int version = -1;
         int chatTemplateLength = -1;
+        int nEosTokens = 0;
         for (int i = 0; i < nKv; i += 2) {
             int key = buffer[i];
             int value = buffer[i + 1];
@@ -80,11 +81,12 @@ Tokenizer::Tokenizer(const char* tokenizerPath)
             else if (key == TOK_VOCAB_SIZE) vocabSize = value;
             else if (key == MAX_TOKEN_LENGTH) maxTokenLength = (unsigned int)value;
             else if (key == BOS_ID) bosId = value;
-            else if (key == EOS_ID) eosTokenIds.push_back(value);
-            else if (key == CHAT_EOS_ID) eosTokenIds.push_back(value);
+            else if (key == EOS_ID) eosTokenIds.push_back(value); // Backward compatibility
+            else if (key == CHAT_EOS_ID) eosTokenIds.push_back(value); // Backward compatibility
             else if (key == CHAT_TEMPLATE) chatTemplateLength = value;
-            else if (key == CHAT_STOP) fseek(file, value, SEEK_CUR); // ignore
-            else if (key == PAD_ID) {} // ignore
+            else if (key == CHAT_STOP) fseek(file, value, SEEK_CUR); // Ignored
+            else if (key == PAD_ID) {} // Ignored
+            else if (key == N_EOS_TOKENS) nEosTokens = value;
             else {
                 throw std::runtime_error("Invalid tokenizer header key:" + std::to_string(key));
             }
@@ -98,6 +100,14 @@ Tokenizer::Tokenizer(const char* tokenizerPath)
             if (fread(chatTemplate, chatTemplateLength, 1, file) != 1)
                 throw std::runtime_error("Cannot read chat template from tokenizer file");
             chatTemplate[chatTemplateLength] = '\0';
+        }
+        if (nEosTokens > 0) {
+            int eosTokenId;
+            for (int i = 0; i < nEosTokens; i++) {
+                if (fread(&eosTokenId, sizeof(int), 1, file) != 1)
+                    throw std::runtime_error("Cannot read eos token id from tokenizer file");
+                eosTokenIds.push_back(eosTokenId);
+            }
         }
     } else {
         throw std::runtime_error("Invalid tokenizer file");
