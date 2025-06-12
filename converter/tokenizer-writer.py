@@ -46,7 +46,7 @@ def writeTokenizer(file, tokens, scores, chatTemplate, bosId, eosTokens):
         file.write(chatTemplate)
 
     for eosToken in eosTokens:
-        file.write(struct.pack('I', eosToken))
+        file.write(struct.pack('i', eosToken))
 
     for i in range(0, nTokens):
         size = len(tokens[i])
