@@ -23,11 +23,12 @@ enum TokenizerHeaderKey {
     TOK_VOCAB_SIZE = 1,
     MAX_TOKEN_LENGTH = 2,
     BOS_ID = 3,
-    EOS_ID = 4,
-    PAD_ID = 5,
-    CHAT_EOS_ID = 6,
+    EOS_ID = 4, // Backward compatibility
+    PAD_ID = 5, // Ignored
+    CHAT_EOS_ID = 6, // Backward compatibility
     CHAT_TEMPLATE = 7,
-    CHAT_STOP = 8,
+    CHAT_STOP = 8, // Ignored
+    N_EOS_TOKENS = 9,
 };
 
 class Tokenizer {
