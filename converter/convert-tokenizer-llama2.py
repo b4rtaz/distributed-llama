@@ -33,10 +33,10 @@ if __name__ == '__main__':
 
     outputFileName = 'dllama_tokenizer_llama2.t'
     with open(outputFileName, 'wb') as outputFile:
-        writer.writeTokenizer(outputFile, {
-            'bos_id': processor.bos_id(),
-            'eos_id': processor.eos_id(),
-            'chat_eos_id': processor.eos_id(),
-        }, tokens, scores, chatTemplate.encode('utf-8'), None)
+        writer.writeTokenizer(outputFile, [
+            ('bos_id', processor.bos_id()),
+            ('eos_id', processor.eos_id()),
+            ('chat_eos_id', processor.eos_id())
+        ], tokens, scores, chatTemplate.encode('utf-8'), None)
 
     print(f'✅ Created {outputFileName}')

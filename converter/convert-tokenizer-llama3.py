@@ -67,10 +67,10 @@ if __name__ == '__main__':
                 scores.append(score)
                 specialTokenIndex += 1
 
-            writer.writeTokenizer(outputFile, {
-                'bos_id': bosId,
-                'eos_id': eosId,
-                'chat_eos_id': chatEosId,
-            }, tokens, scores, chatTemplate.encode('utf-8'), None)
+            writer.writeTokenizer(outputFile, [
+                ('bos_id', bosId),
+                ('eos_id', eosId),
+                ('chat_eos_id', chatEosId)
+            ], tokens, scores, chatTemplate.encode('utf-8'), None)
 
     print(f'✅ Created {outputFileName}')

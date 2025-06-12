@@ -56,7 +56,7 @@ class TokensResolver:
             if (self.eosIds is None):
                 self.eosIds = config['eos_token_id']
                 if isinstance(self.eosIds, list):
-                    self.eosIds = self.eosIds[:2] # TODO: add support more than 2 eos ids
+                    self.eosIds = self.eosIds
                 else:
                     self.eosIds = [self.eosIds]
 
@@ -124,10 +124,12 @@ if __name__ == '__main__':
             chatExtraStop = input.encode('utf-8')
 
     outputFileName = f'dllama_tokenizer_{name}.t'
+    write_params = [
+        ('bos_id', resolver.bosId),
+        ('eos_id', resolver.eosIds[0])
+    ]
+    for eos_id in resolver.eosIds[1:]:
+        write_params += [('chat_eos_id', eos_id)]
     with open(outputFileName, 'wb') as outputFile:
-        writer.writeTokenizer(outputFile, {
-            'bos_id': resolver.bosId,
-            'eos_id': resolver.eosIds[0],
-            'chat_eos_id': resolver.eosIds[1 if len(resolver.eosIds) > 1 else 0],
-        }, resolver.tokens, resolver.scores, chatTemplate, chatExtraStop)
+        writer.writeTokenizer(outputFile, write_params, resolver.tokens, resolver.scores, chatTemplate, chatExtraStop)
     print(f'✅ Created {outputFileName}')

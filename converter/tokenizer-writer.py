@@ -1,9 +1,6 @@
 import struct
 
 def writeTokenizer(file, params, tokens, scores, chatTemplate, chatExtraStop):
-    assert(params['eos_id'] is not None)
-    assert(params['bos_id'] is not None)
-
     headerKeys = {
         'version': 0,
         'vocab_size': 1,
@@ -20,23 +17,31 @@ def writeTokenizer(file, params, tokens, scores, chatTemplate, chatExtraStop):
     nTokens = len(tokens)
     maxTokenLength = max(len(t) for t in tokens)
 
-    params['version'] = 1
-    params['vocab_size'] = nTokens
-    params['max_token_length'] = maxTokenLength
+    params += [
+        ('version', 1),
+        ('vocab_size', nTokens),
+        ('max_token_length', maxTokenLength)
+    ]
     if (chatTemplate):
-        params['chat_template'] = len(chatTemplate)
+        params += [('chat_template', len(chatTemplate))]
     if (chatExtraStop):
-        params['chat_stop'] = len(chatExtraStop)
+        params += [('chat_stop', len(chatExtraStop))]
 
+    seen_bos_id = False
+    seen_eos_id = False
     data = b''
-    for key in params:
-        value = params[key]
+    for key, value in params:
         if value is None:
             continue
         if key in headerKeys:
-            data += struct.pack('ii', headerKeys[key], params[key])
+            data += struct.pack('ii', headerKeys[key], value)
+        if key == 'eos_id':
+            seen_eos_id = True
+        if key == 'bos_id':
+            seen_bos_id = True
         else:
             print(f'Unknown header key: {key}')
+    assert(seen_bos_id and seen_eos_id)
 
     print('⭐ Params:')
     print(params)
