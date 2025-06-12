@@ -28,6 +28,7 @@ specialTokens = [
 ]
 bosId = 128000
 eosId = 128001
+chatEomId = 128008
 chatEosId = 128009
 chatTemplate = "{% set loop_messages = messages %}{% for message in loop_messages %}{% set content = '<|start_header_id|>' + message['role'] + '<|end_header_id|>\n\n'+ message['content'] | trim + '<|eot_id|>' %}{% if loop.index0 == 0 %}{% set content = bos_token + content %}{% endif %}{{ content }}{% endfor %}{% if add_generation_prompt %}{{ '<|start_header_id|>assistant<|end_header_id|>\n\n' }}{% endif %}"
 
@@ -70,6 +71,7 @@ if __name__ == '__main__':
             writer.writeTokenizer(outputFile, [
                 ('bos_id', bosId),
                 ('eos_id', eosId),
+                ('chat_eos_id', chatEomId),
                 ('chat_eos_id', chatEosId)
             ], tokens, scores, chatTemplate.encode('utf-8'), None)
 
