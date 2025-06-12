@@ -1264,7 +1264,7 @@ static void shiftForward_F32_F32(NnUint nThreads, NnUint threadIndex, NnUint bat
 
     for (NnUint batchIndex = 0; batchIndex < batchSize; batchIndex++) {
         const NnSize index = (NnSize)indexes[batchIndex];
-        assert((index + 1) * context->inputSize.x < context->outputSize.x);
+        assert((index + 1) * context->inputSize.x <= context->outputSize.x);
         copy_UNK(
             &output[index * dimBytes],
             context->input[batchIndex],
