@@ -68,6 +68,22 @@ void dev_testEncode(Tokenizer *tokenizer) {
     }
 }
 
+void dev_testDecoderEmojiStreamRecover(Tokenizer *tokenizer) {
+    char *x0 = tokenizer->decode(128000);
+    assert(x0 == nullptr);
+
+    char *x1 = tokenizer->decode(76460);
+    assert(x1 == nullptr);
+
+    char *x2 = tokenizer->decode(76460);
+    assert(x2 == nullptr);
+
+    char *x3 = tokenizer->decode(225);
+    assert(strcmp(x3, "�😃") == 0);
+
+    printOk("testDecoderEmojiStreamRecover");
+}
+
 void dev_testDecoderEmoji(Tokenizer *tokenizer) {
     char *x0 = tokenizer->decode(128000);
     assert(x0 == nullptr);
@@ -76,27 +92,30 @@ void dev_testDecoderEmoji(Tokenizer *tokenizer) {
     assert(x1 == nullptr);
 
     char *x2 = tokenizer->decode(225);
-    assert(x2 == nullptr);
+    assert(strcmp(x2, "😃") == 0);
 
     char *x3 = tokenizer->decode(0);
-    assert(strstr(x3, "😃!") != NULL);
+    assert(strcmp(x3, "!") == 0);
 
     char *x4 = tokenizer->decode(56);
-    assert(strstr(x3, "Y") != NULL);
+    assert(strcmp(x4, "Y") == 0);
 
     printOk("testDecoderEmoji");
 }
 
 void dev_testDecoderEmojiWithEos(Tokenizer *tokenizer) {
     char *x0 = tokenizer->decode(128000);
-    char *x1 = tokenizer->decode(76460);
-    char *x2 = tokenizer->decode(225);
-    char *x3 = tokenizer->decode(128001);
-
     assert(x0 == nullptr);
+
+    char *x1 = tokenizer->decode(76460);
     assert(x1 == nullptr);
-    assert(x2 == nullptr);
-    assert(strstr(x3, "😃") != NULL); // piece should not contain <|end_of_text|>
+
+    char *x2 = tokenizer->decode(225);
+    assert(strcmp(x2, "😃") == 0);
+
+    char *x3 = tokenizer->decode(128001);
+    assert(x3 == nullptr); // piece should not contain <|end_of_text|>
+
     printOk("decoderEmojiWithEos");
 }
 
@@ -289,6 +308,7 @@ int main() {
     dev_testEncode(&tokenizer);
     dev_testDecoderEmoji(&tokenizer);
     dev_testDecoderEmojiWithEos(&tokenizer);
+    dev_testDecoderEmojiStreamRecover(&tokenizer);
 #endif
 
     testChatTemplateDetection();

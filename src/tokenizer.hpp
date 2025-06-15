@@ -42,6 +42,7 @@ private:
     TokenIndex *specialVocab;
     size_t strBufferSize;
     char *strBuffer;
+    char *utf8Buffer;
     size_t strBufferPos;
 
 
@@ -60,6 +61,9 @@ public:
     bool isEos(int token);
     char *decode(int token);
     void resetDecoder();
+
+private:
+    char *detokUtf8();
 };
 
 typedef struct {
