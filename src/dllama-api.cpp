@@ -405,6 +405,7 @@ public:
 
         inference->setBatchSize(1);
         tokenizer->resetDecoder();
+        eosDetector->reset();
 
         for (; pos < maxPredPos;) {
             inference->setPosition(pos);
