@@ -33,7 +33,8 @@ enum class HttpMethod {
     METHOD_POST = 1,
     METHOD_PUT = 2,
     METHOD_DELETE = 3,
-    METHOD_UNKNOWN = 4
+    METHOD_OPTIONS = 4,
+    METHOD_UNKNOWN = 5
 };
 
 class HttpRequest {
@@ -86,6 +87,7 @@ public:
         if (method == "POST") return HttpMethod::METHOD_POST;
         if (method == "PUT") return HttpMethod::METHOD_PUT;
         if (method == "DELETE") return HttpMethod::METHOD_DELETE;
+        if (method == "OPTIONS") return HttpMethod::METHOD_OPTIONS;
         return HttpMethod::METHOD_UNKNOWN;
     }
 
@@ -184,13 +186,29 @@ public:
         if (method == HttpMethod::METHOD_POST) return "POST";
         if (method == HttpMethod::METHOD_PUT) return "PUT";
         if (method == HttpMethod::METHOD_DELETE) return "DELETE";
+        if (method == HttpMethod::METHOD_OPTIONS) return "OPTIONS";
         return "UNKNOWN";
     }
  
+    void writeCors() {
+        std::ostringstream buffer;
+        buffer << "HTTP/1.1 204 No Content\r\n"
+            << "Access-Control-Allow-Origin: *\r\n"
+            << "Access-Control-Allow-Methods: GET, POST, PUT, DELETE\r\n"
+            << "Access-Control-Allow-Headers: Content-Type, Authorization\r\n"
+            << "Connection: close\r\n"
+            << "\r\n";
+        std::string data = buffer.str();
+        writeSocket(serverSocket, data.c_str(), data.size());
+    }
+
     void writeNotFound() {
         std::ostringstream buffer;
         buffer << "HTTP/1.1 404 Not Found\r\n"
-            << "Content-Length: 9\r\n\r\nNot Found";
+            << "Connection: close\r\n"
+            << "Content-Length: 9\r\n"
+            << "\r\n"
+            << "Not Found";
         std::string data = buffer.str();
         writeSocket(serverSocket, data.c_str(), data.size());
     }
@@ -198,7 +216,9 @@ public:
     void writeJson(std::string json) {
         std::ostringstream buffer;
         buffer << "HTTP/1.1 200 OK\r\n"
+            << "Access-Control-Allow-Origin: *\r\n"
             << "Content-Type: application/json; charset=utf-8\r\n"
+            << "Connection: close\r\n"
             << "Content-Length: " << json.length() << "\r\n\r\n" << json;
         std::string data = buffer.str();
         writeSocket(serverSocket, data.c_str(), data.size());
@@ -207,6 +227,7 @@ public:
     void writeStreamStartChunk() {
         std::ostringstream buffer;
         buffer << "HTTP/1.1 200 OK\r\n"
+            << "Access-Control-Allow-Origin: *\r\n"
             << "Content-Type: text/event-stream; charset=utf-8\r\n"
             << "Connection: close\r\n"
             << "Transfer-Encoding: chunked\r\n\r\n";
@@ -236,6 +257,10 @@ struct Route {
 class Router {
 public:
     static void resolve(HttpRequest& request, std::vector<Route>& routes) {
+        if (request.method == HttpMethod::METHOD_OPTIONS) {
+            request.writeCors();
+            return;
+        }
         for (const auto& route : routes) {
             if (request.method == route.method && request.path == route.path) {
                 route.handler(request);
@@ -533,6 +558,7 @@ static void server(AppInferenceContext *context) {
             HttpRequest request = HttpRequest::read(clientSocket);
             printf("🔷 %s %s\n", request.getMethod().c_str(), request.path.c_str());
             Router::resolve(request, routes);
+            close(clientSocket);
         } catch (NnReadNetworkException& ex) {
             printf("Read socket error: %d %s\n", ex.code, ex.message);
         } catch (NnWriteNetworkException& ex) {
