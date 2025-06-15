@@ -174,6 +174,7 @@ Tokenizer::~Tokenizer() {
     for (int i = 0; i < vocabSize; i++)
         delete[] vocab[i];
     delete[] vocab;
+    delete[] vocabLength;
     delete[] vocabScores;
     delete[] regularVocab;
     delete[] specialVocab;
