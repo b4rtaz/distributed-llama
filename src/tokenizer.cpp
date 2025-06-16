@@ -264,7 +264,7 @@ char *Tokenizer::detokUtf8() {
             *dst++ = 0xbf;
             *dst++ = 0xbd;
 
-            fprintf(stderr, "\nTokenizer: decoded invalid utf8 -- attempting stream recover\n");
+            fprintf(stderr, "Tokenizer: decoded invalid utf8 -- attempting stream recover\n");
         }
     }
 
