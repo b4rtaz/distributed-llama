@@ -151,8 +151,13 @@ Tokenizer::Tokenizer(const char* tokenizerPath)
         specialVocab[i].id = i + regularVocabSize;
     }
 
-    strBufferSize = maxTokenLength * 2 + 1 + 2;
+    strBufferSize = maxTokenLength * 2;
+    if (strBufferSize < (4 * 2)) { // ensure place for 2 utf-8 multi-byte sequence
+        strBufferSize = 4 * 2;
+    }
+    strBufferSize += 1 + 2;
     strBuffer = new char[strBufferSize];
+    utf8Buffer = new char[strBufferSize];
 
     if (bosId >= 0) printf("📄 BosId: %d (%s)\n", bosId, vocab[bosId]);
     if (eosTokenIds.size() > 0) {
@@ -179,6 +184,7 @@ Tokenizer::~Tokenizer() {
     delete[] regularVocab;
     delete[] specialVocab;
     delete[] strBuffer;
+    delete[] utf8Buffer;
 }
 
 int Tokenizer::findSpecialTokenStartWith(char *piece) {
@@ -209,6 +215,73 @@ void Tokenizer::resetDecoder() {
     strBufferPos = 0;
 }
 
+char *Tokenizer::detokUtf8() {
+    char* src = strBuffer;
+    char* dst = utf8Buffer;
+    char* checkpoint_src = src;
+    char* checkpoint = dst;
+    unsigned expect_continuation = 0;
+
+    while (unsigned char c = *src) {
+        bool need_recovery = false;
+        if (expect_continuation) {
+            if ((c & 0xc0) == 0x80) {
+                *dst++ = *src++;
+                expect_continuation--;
+            } else {
+                need_recovery = true;
+            }
+        } else if (c <= 0x7f) {
+            *dst++ = *src++;
+        } else if (c >= 0xc0 && c <= 0xdf) {
+            *dst++ = *src++;
+            expect_continuation = 1;
+        } else if (c >= 0xe0 && c <= 0xef) {
+            *dst++ = *src++;
+            expect_continuation = 2;
+        } else if (c >= 0xf0 && c <= 0xf7) {
+            *dst++ = *src++;
+            expect_continuation = 3;
+        } else {
+            need_recovery = true;
+        }
+
+        if (!need_recovery) {
+            if (!expect_continuation) {
+                checkpoint = dst;
+                checkpoint_src = src;
+            }
+        } else {
+            // perform stream recover
+            if (expect_continuation) {
+                expect_continuation = 0;
+            } else {
+                ++src;
+            }
+            dst = checkpoint;
+            // emit 0xfffd
+            *dst++ = 0xef;
+            *dst++ = 0xbf;
+            *dst++ = 0xbd;
+
+            fprintf(stderr, "\nTokenizer: decoded invalid utf8 -- attempting stream recover\n");
+        }
+    }
+
+    if (src > checkpoint_src) {
+        memmove(strBuffer, checkpoint_src, src - checkpoint_src + 1);
+        strBufferPos = src - checkpoint_src;
+    } else {
+        strBufferPos = 0;
+    }
+    *checkpoint = '\0';
+    if (checkpoint > utf8Buffer) {
+        return utf8Buffer;
+    } else {
+        return nullptr;
+    }
+}
+
 char *Tokenizer::decode(int token) {
     if (token == bosId)
         return nullptr;
@@ -220,18 +293,13 @@ char *Tokenizer::decode(int token) {
 
     char *piece = vocab[token];
     int pieceLen = vocabLength[token];
-    bool hasContinuation = (piece[pieceLen - 1] & 0xC0) == 0x80;
 
     assert(strBufferPos + pieceLen + 1 < strBufferSize);
     std::memcpy(&strBuffer[strBufferPos], piece, pieceLen * sizeof(char));
     strBufferPos += pieceLen;
     strBuffer[strBufferPos] = '\0';
 
-    if (!hasContinuation) {
-        strBufferPos = 0;
-        return strBuffer;
-    }
-    return nullptr;
+    return detokUtf8();
 }
 
 void Tokenizer::encode(char *text, int *tokens, int *nTokens, bool addBos, bool addSpecialTokens) {
