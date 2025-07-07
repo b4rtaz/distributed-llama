@@ -3,7 +3,6 @@
 #include <ws2tcpip.h> // For inet_addr and other functions
 #include <windows.h>  // For SSIZE_T
 typedef SSIZE_T ssize_t;
-#define close closesocket
 #else
 #include <sys/socket.h>
 #include <netinet/tcp.h>
