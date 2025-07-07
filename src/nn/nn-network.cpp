@@ -9,6 +9,7 @@ typedef SSIZE_T ssize_t;
 #include <netinet/tcp.h>
 #include <arpa/inet.h>
 #include <unistd.h>
+#include <netdb.h>  // for getaddrinfo
 #endif
 #include "nn-network.hpp"
 #include <cassert>
@@ -141,17 +142,33 @@ static void writeAckPacket(int socket) {
 }
 
 static inline int connectSocket(char *host, int port) {
-    struct sockaddr_in addr;
-    memset(&addr, 0, sizeof(addr));
-    addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = inet_addr(host);
-    addr.sin_port = htons(port);
+    
+    int sd, err;
+    struct addrinfo hints = {}, *addrs;
+    char port_str[16] = {};
+    sprintf(port_str, "%d", port);
 
-    int sock = ::socket(AF_INET, SOCK_STREAM, 0);
+    hints.ai_family = AF_INET; 
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_protocol = IPPROTO_TCP; 
+    err = getaddrinfo(host, port_str, &hints, &addrs);
+    if (err != 0){
+        fprintf(stderr, "%s: %s\n", host, gai_strerror(err));
+        abort();
+    }
+
+    struct addrinfo *addr = addrs;
+    if (addr == NULL){
+        fprintf(stderr, "%s: %s\n", host, "addresses were null");
+        abort();
+    }
+    
+    int sock = ::socket(addr->ai_family, addr->ai_socktype, addr->ai_protocol);
+
     if (sock < 0)
         throw std::runtime_error("Cannot create socket");
 
-    int connectResult = ::connect(sock, (struct sockaddr*)&addr, sizeof(addr));
+    int connectResult = ::connect(sock, addr->ai_addr, addr->ai_addrlen);
     if (connectResult != 0) {
         printf("Cannot connect to %s:%d (%s)\n", host, port, SOCKET_LAST_ERROR);
         throw std::runtime_error("Cannot connect");
