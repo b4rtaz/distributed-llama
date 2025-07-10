@@ -3,7 +3,6 @@
 #include <ws2tcpip.h> // For inet_addr and other functions
 #include <windows.h>  // For SSIZE_T
 typedef SSIZE_T ssize_t;
-#define close closesocket
 #else
 #include <sys/socket.h>
 #include <netinet/tcp.h>
@@ -142,29 +141,23 @@ static void writeAckPacket(int socket) {
 }
 
 static inline int connectSocket(char *host, int port) {
-    
-    int sd, err;
-    struct addrinfo hints = {}, *addrs;
-    char port_str[16] = {};
-    sprintf(port_str, "%d", port);
-
-    hints.ai_family = AF_INET; 
+    struct addrinfo hints;
+    struct addrinfo *addr = NULL;
+    std::memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_INET;
     hints.ai_socktype = SOCK_STREAM;
-    hints.ai_protocol = IPPROTO_TCP; 
-    err = getaddrinfo(host, port_str, &hints, &addrs);
-    if (err != 0){
-        fprintf(stderr, "%s: %s\n", host, gai_strerror(err));
-        abort();
+    hints.ai_protocol = IPPROTO_TCP;
+
+    char portStr[11];
+    snprintf(portStr, sizeof(portStr), "%d", port);
+
+    int addrinfoError = getaddrinfo(host, portStr, &hints, &addr);
+    if (addrinfoError != 0 || addr == NULL) {
+        printf("Cannot resolve target %s (%s)\n", host, gai_strerror(addrinfoError));
+        throw std::runtime_error("Cannot resolve address");
     }
 
-    struct addrinfo *addr = addrs;
-    if (addr == NULL){
-        fprintf(stderr, "%s: %s\n", host, "addresses were null");
-        abort();
-    }
-    
     int sock = ::socket(addr->ai_family, addr->ai_socktype, addr->ai_protocol);
-
     if (sock < 0)
         throw std::runtime_error("Cannot create socket");
 
