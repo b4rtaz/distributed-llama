@@ -20,13 +20,13 @@ void buildConfig(NnNetConfig *netConfig, NnNodeConfig *nodeConfig) {
         pointerBatchConfig(SRC_PIPE, xPipeIndex),
         pointerBatchConfig(SRC_BUFFER, invRmsBufferIndex),
         size0(),
-        NnInvRmsOpConfig{1e-5f});
+        NnInvRmsOpConfig{1e-5f, 1});
 
     segmentBuilder.addOp(OP_RMS_NORM, "rms_norm", 0,
         pointerBatchConfig(SRC_PIPE, xPipeIndex),
         pointerBatchConfig(SRC_PIPE, xPipeIndex),
         size1D(F_32, DIM),
-        NnRmsNormOpConfig{invRmsBufferIndex});
+        NnRmsNormOpConfig{invRmsBufferIndex, 1});
 
     nodeBuilder.addSegment(segmentBuilder.build());
 
