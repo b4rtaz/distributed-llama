@@ -222,12 +222,12 @@ NnVulkanDeviceData::NnVulkanDeviceData(NnVulkanContext *context, NnNetConfig *ne
     for (NnUint i = 0; i < nodeConfig->nBuffers; i++)
         buffers[i].reset(new NnVulkanBuffer(context, nodeConfig->buffers[i].size.nBytes, vk::BufferUsageFlagBits::eStorageBuffer, false));
 
-    NnRopeLlamaOpConfig *ropeLlamaOpConfig = (NnRopeLlamaOpConfig *)findFirstOpConfig(nodeConfig, OP_ROPE_LLAMA);
+    NnRopeOpConfig *ropeLlamaOpConfig = (NnRopeOpConfig *)findFirstOpConfig(nodeConfig, OP_ROPE);
     if (ropeLlamaOpConfig != nullptr) {
         assert(ropeLlamaOpConfig->ropeCacheBufferIndex < nodeConfig->nBuffers);
         NnVulkanBuffer *buffer = buffers[ropeLlamaOpConfig->ropeCacheBufferIndex].get();
         std::vector<NnByte> ropeCache(ropeLlamaOpConfig->slice.cacheSize.nBytes);
-        fullfillRopeLlama3Cache(ropeLlamaOpConfig, (float *)ropeCache.data());
+        fullfillRopeCache(ropeLlamaOpConfig, (float *)ropeCache.data());
         buffer->write(ropeCache.data());
     }
 }
@@ -400,7 +400,7 @@ static const char *getShaderFileName(const NnOpCode opCode, const NnOpQuantType 
     if (opCode == OP_EMBEDDING) {
         if (quantType == F32_F32_F32) return "embedding-forward-f32-f32.spv";
     }
-    if (opCode == OP_ROPE_LLAMA) {
+    if (opCode == OP_ROPE) {
         if (quantType == F32_F32_F32) return "rope-forward-f32-f32.spv";
     }
     if (opCode == OP_INV_RMS) {
@@ -459,8 +459,8 @@ static void buildShaderLayout(std::vector<NnVulkanBuffer *> &buffers, NnVulkanDe
             const NnShiftOpCodeConfig *config = (NnShiftOpCodeConfig *)opConfig->config;
             buffers.push_back(data->pipes[config->indexPipeIndex].get());
         } break;
-        case OP_ROPE_LLAMA: {
-            const NnRopeLlamaOpConfig *config = (NnRopeLlamaOpConfig *)opConfig->config;
+        case OP_ROPE: {
+            const NnRopeOpConfig *config = (NnRopeOpConfig *)opConfig->config;
             buffers.push_back(data->pipes[config->positionPipeIndex].get());
             buffers.push_back(data->buffers[config->ropeCacheBufferIndex].get());
         } break;

@@ -31,6 +31,7 @@ layout(binding = 0) readonly buffer inputBuffer { float x[]; };
 layout(binding = 1) writeonly buffer outputBuffer { float y[]; };
 layout(binding = 2) readonly buffer batchInfosBuffer { BatchInfo infos[]; };
 layout(binding = 3) readonly uniform configBuffer {
+    uint ropeType;
     bool isQ;
     uint positionPipeIndex;
     uint ropeCacheBufferIndex;

@@ -76,7 +76,7 @@ const char *opCodeToString(NnOpCode code) {
     if (code == OP_INV_RMS) return "INV_RMS";
     if (code == OP_RMS_NORM) return "RMS_NORM";
     if (code == OP_MATMUL) return "MATMUL";
-    if (code == OP_ROPE_LLAMA) return "ROPE_LLAMA";
+    if (code == OP_ROPE) return "ROPE";
     if (code == OP_MULTIHEAD_ATT) return "MULTIHEAD_ATT";
     if (code == OP_GELU) return "GELU";
     if (code == OP_SILU) return "SILU";
@@ -304,7 +304,7 @@ NnUint splitColMatmulWeight(NnColMatmulSlice *slice, NnUint nodeIndex, NnByte *w
 
 // helper
 
-static inline float scaleFrequencyLlama3(const float freq, const NnRopeLlamaOpConfig *config) {
+static inline float scaleFrequencyLlama3(const float freq, const NnRopeOpConfig *config) {
     // https://github.com/meta-llama/llama-models/blob/4269717b2ea587627903bacbb75ccce1427ad914/models/llama3/reference_impl/model.py#L55
     const float waveLen = 2.0f * M_PI / freq;
     const float highFreqWavelen = config->ropeScalingOrigMaxSeqLen / config->ropeScalingHighFreqFactor;
@@ -320,7 +320,7 @@ static inline float scaleFrequencyLlama3(const float freq, const NnRopeLlamaOpCo
     return (1 - smooth) * freq / config->ropeScalingFactor + smooth * freq;
 }
 
-void fullfillRopeLlama3Cache(const NnRopeLlamaOpConfig *config, float *cache) {
+static inline void fullfillRopeLlamaCache(const NnRopeOpConfig *config, float *cache) {
     assert((config->slice.qDimEnd - config->slice.kvDimStart) % 2 == 0);
 
     const bool applyScaling = config->ropeScalingFactor != 1.0f;
@@ -337,4 +337,28 @@ void fullfillRopeLlama3Cache(const NnRopeLlamaOpConfig *config, float *cache) {
             cache[pos * config->slice.sliceDim + (i - config->slice.kvDimStart) + 1] = fci;
         }
     }
+}
+
+static inline void fullfillRopeFalconCache(const NnRopeOpConfig *config, float *cache) {
+    const float hs = (float)config->slice.headSize;
+
+    for (NnUint pos = 0; pos < config->slice.seqLen; pos++) {
+        for (NnUint j = 0; j < config->slice.headSize / 2; j++) {
+            const float freq = 1.0f / powf(config->slice.ropeTheta, 2.0f * (float)(j / hs));
+            const float val = pos * freq;
+            const float fcr = cosf(val);
+            const float fci = sinf(val);
+            cache[pos * config->slice.headSize + j] = fcr;
+            cache[pos * config->slice.headSize + j + config->slice.headSize / 2] = fci;
+        }
+    }
+}
+
+void fullfillRopeCache(const NnRopeOpConfig *config, float *cache) {
+    if (config->type == ROPE_LLAMA || config->type == ROPE_LLAMA3_1)
+        fullfillRopeLlamaCache(config, cache);
+    else if (config->type == ROPE_FALCON)
+        fullfillRopeFalconCache(config, cache);
+    else
+        throw std::invalid_argument("Unsupported rope type");
 }

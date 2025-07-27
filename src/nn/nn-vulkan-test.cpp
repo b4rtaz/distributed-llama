@@ -438,11 +438,11 @@ void testRope_F32_F32() {
             bool isQ = true;
 
             segmentBuilder->addOp(
-                OP_ROPE_LLAMA, "rope_llama", 0,
+                OP_ROPE, "rope_llama", 0,
                 pointerBatchConfig(SRC_PIPE, xPipeIndex),
                 pointerBatchConfig(SRC_PIPE, xPipeIndex),
                 size0(),
-                NnRopeLlamaOpConfig{isQ, posPipeIndex, ropeCacheBufferIndex, 32.0f, 1.0f, 4.0f, 8192, slice});
+                NnRopeOpConfig{NnRopeType::ROPE_LLAMA, isQ, posPipeIndex, ropeCacheBufferIndex, 32.0f, 1.0f, 4.0f, 8192, slice});
         },
         [](NnExecutor *executor, NnNetExecution *execution, NnVulkanDevice *device) {
             // arrange
