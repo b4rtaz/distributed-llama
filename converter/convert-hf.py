@@ -202,10 +202,6 @@ def loadConfig(folderPath: str, weightsFloatType: int):
         'files': files,
     }
 
-    headDim = config.get('head_dim')
-    if (headDim is not None):
-        result['head_dim'] = headDim
-
     nExperts = config.get('num_local_experts')
     nActiveExperts = config.get('num_active_local_experts') or config.get('num_experts_per_tok')
     result['n_experts'] = int(nExperts) if nExperts is not None else 0
@@ -222,6 +218,10 @@ def loadConfig(folderPath: str, weightsFloatType: int):
         result['rope_scaling_high_freq_factory'] = int(ropeScaling['high_freq_factor'])
         result['rope_scaling_orig_max_seq_len'] = int(ropeScaling['original_max_position_embeddings'])
         result['rope_type'] = parseRopeType(ropeScaling['rope_type'])
+
+    headDim = config.get('head_dim')
+    if (headDim is not None):
+        result['head_dim'] = headDim
 
     rmsNormEps = config.get('rms_norm_eps')
     if (rmsNormEps is not None):
