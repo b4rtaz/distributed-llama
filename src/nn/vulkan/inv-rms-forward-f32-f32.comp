@@ -18,6 +18,7 @@ layout(binding = 1) writeonly buffer outputBuffer { float y[]; };
 layout(binding = 2) readonly buffer batchInfosBuffer { BatchInfo infos[]; };
 layout(binding = 3) readonly uniform opConfigBuffer {
     float epsilon;
+    uint nColumns;
 };
 
 shared BatchInfo sharedInfo;

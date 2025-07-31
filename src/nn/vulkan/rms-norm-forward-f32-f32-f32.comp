@@ -17,6 +17,7 @@ layout(binding = 2) readonly buffer batchInfosBuffer { BatchInfo infos[]; };
 layout(binding = 3) readonly buffer weightBuffer { float weight[]; };
 layout(binding = 4) readonly uniform configBuffer {
     uint invRmsBufferIndex; // not used
+    uint nColumns;
 };
 layout(binding = 5) readonly buffer invRmsBuffer { float invRms[]; };
 
