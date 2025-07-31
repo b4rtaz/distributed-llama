@@ -229,13 +229,13 @@ NnColMatmulSlice sliceColMatmul(NnFloatType type, NnUint nNodes, NnUint n, NnUin
     return s;
 }
 
-NnRopeSlice sliceRope(NnUint dim, NnUint kvDim, NnUint nKvHeads, NnUint nNodes, NnUint seqLen, NnUint headSize, float ropeTheta, NnUint nodeIndex) {
+NnRopeSlice sliceRope(NnUint qDim, NnUint kvDim, NnUint nKvHeads, NnUint nNodes, NnUint seqLen, NnUint headSize, float ropeTheta, NnUint nodeIndex) {
     NnRopeSlice s;
-    assert(dim >= kvDim);
-    assert(dim % nNodes == 0);
+    assert(qDim >= kvDim);
+    assert(qDim % nNodes == 0);
     assert(kvDim % nNodes == 0);
 
-    s.qDim0 = dim / nNodes;
+    s.qDim0 = qDim / nNodes;
     s.kvDim0 = kvDim / nNodes;
     assert(s.qDim0 % 2 == 0);
     assert(s.kvDim0 % 2 == 0);

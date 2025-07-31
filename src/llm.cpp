@@ -63,9 +63,8 @@ LlmHeader loadLlmHeader(const char *path, const NnUint maxSeqLen, NnFloatType sy
     if (fread(buffer, header.headerSize, 1, fd) != 1)
         throw std::runtime_error("Cannot read header values");
 
-    int nKv = (header.headerSize - 2  *sizeof(int)) / sizeof(int);
+    int nKv = (header.headerSize - 2 * sizeof(int)) / sizeof(int);
 
-    NnFloatType modelWeightType = F_UNK;
     for (int i = 0; i < nKv; i += 2) {
         int key = buffer[i];
         int value = buffer[i + 1];
@@ -173,7 +172,7 @@ LlmNet buildLlmNet(LlmHeader *h, NnUint nNodes, NnUint nBatches) {
     n.nodeConfigs = new NnNodeConfig[nNodes];
 
     for (NnUint nodeIndex = 0; nodeIndex < nNodes; nodeIndex++) {
-        NnRopeSlice ropeSlice = sliceRope(h->dim, h->kvDim, h->nKvHeads, nNodes, h->seqLen, h->headDim, h->ropeTheta, nodeIndex);
+        NnRopeSlice ropeSlice = sliceRope(h->qDim, h->kvDim, h->nKvHeads, nNodes, h->seqLen, h->headDim, h->ropeTheta, nodeIndex);
         NnNodeConfigBuilder nodeBuilder(nodeIndex);
 
         const NnUint xBufferIndex = nodeBuilder.addBuffer("x", size2D(F_32, nBatches, h->dim));
@@ -338,7 +337,7 @@ LlmNet buildLlmNet(LlmHeader *h, NnUint nNodes, NnUint nBatches) {
                 NnShiftOpCodeConfig{n.positionPipeIndex});
             att.addOp(
                 OP_MULTIHEAD_ATT, "block_multihead_att", layerIndex,
-                pointerBatchedSliceConfig(SRC_BUFFER, yBufferIndex),
+                pointerBatchedSliceConfig(SRC_BUFFER, zBufferIndex),
                 pointerBatchedSliceConfig(SRC_BUFFER, zBufferIndex),
                 size0(),
                 NnMultiHeadAttOpConfig{
