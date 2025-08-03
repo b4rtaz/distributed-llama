@@ -1,4 +1,5 @@
 #include <cstdio>
+#include <cmath>
 #include "nn-config-builder.hpp"
 #include "nn-quants.hpp"
 #include "nn-vulkan.hpp"
