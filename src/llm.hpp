@@ -88,6 +88,7 @@ typedef struct {
     NnUint logitsPipeIndex;
     NnSize2D tokenEmbeddingSize;
     NnSize2D rmsNormSize;
+    NnSize2D qkRmsNormSize;
 } LlmNet;
 
 LlmHeader loadLlmHeader(const char* path, const unsigned int maxSeqLen, NnFloatType syncType);

@@ -143,6 +143,7 @@ LlmNet buildLlmNet(LlmHeader *h, NnUint nNodes, NnUint nBatches) {
     LlmNet n;
     n.tokenEmbeddingSize = size2D(F_32, h->vocabSize, h->dim);
     n.rmsNormSize = size1D(F_32, h->dim);
+    n.qkRmsNormSize = size1D(F_32, h->headDim);
 
     NnKvCacheSlice kvCacheSlice = sliceKvCache(h->kvDim, h->seqLen, nNodes);
     NnMultiHeadAttSlice multiHeadAttSlice = sliceMultiHeadAtt(h->nHeads, h->seqLen, nNodes, nBatches);
@@ -519,9 +520,8 @@ void loadLlmNetWeight(const char *path, LlmNet *net, NnRootWeightLoader *loader)
         b += loader->loadColMatmulSlices("block_matmul_w2", layerIndex, &net->w2Slice, b);
         b += loader->loadRowMatmulSlices("block_matmul_w3", layerIndex, &net->w3Slice, b);
         if (net->header->archType == QWEN3) {
-            const NnSize qkNormSize = getBytes(F_32, net->header->headDim);
-            b += loader->loadAll("block_norm_q", layerIndex, qkNormSize, b);
-            b += loader->loadAll("block_norm_k", layerIndex, qkNormSize, b);
+            b += loader->loadAll("block_norm_q", layerIndex, net->qkRmsNormSize.nBytes, b);
+            b += loader->loadAll("block_norm_k", layerIndex, net->qkRmsNormSize.nBytes, b);
         }
         b += loader->loadAll("block_norm_0", layerIndex, net->rmsNormSize.nBytes, b);
         b += loader->loadAll("block_norm_1", layerIndex, net->rmsNormSize.nBytes, b);
