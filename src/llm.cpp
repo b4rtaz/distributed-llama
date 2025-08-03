@@ -172,7 +172,7 @@ LlmNet buildLlmNet(LlmHeader *h, NnUint nNodes, NnUint nBatches) {
     n.nodeConfigs = new NnNodeConfig[nNodes];
 
     for (NnUint nodeIndex = 0; nodeIndex < nNodes; nodeIndex++) {
-        NnRopeSlice ropeSlice = sliceRope(h->qDim, h->kvDim, h->nKvHeads, nNodes, h->seqLen, h->headDim, h->ropeTheta, nodeIndex);
+        NnRopeSlice ropeSlice = sliceRope(h->ropeType, h->qDim, h->kvDim, h->nKvHeads, nNodes, h->seqLen, h->headDim, h->ropeTheta, nodeIndex);
         NnNodeConfigBuilder nodeBuilder(nodeIndex);
 
         const NnUint xBufferIndex = nodeBuilder.addBuffer("x", size2D(F_32, nBatches, h->dim));

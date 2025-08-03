@@ -229,30 +229,36 @@ NnColMatmulSlice sliceColMatmul(NnFloatType type, NnUint nNodes, NnUint n, NnUin
     return s;
 }
 
-NnRopeSlice sliceRope(NnUint qDim, NnUint kvDim, NnUint nKvHeads, NnUint nNodes, NnUint seqLen, NnUint headSize, float ropeTheta, NnUint nodeIndex) {
+NnRopeSlice sliceRope(NnRopeType type, NnUint qDim, NnUint kvDim, NnUint nKvHeads, NnUint nNodes, NnUint seqLen, NnUint headDim, float ropeTheta, NnUint nodeIndex) {
     NnRopeSlice s;
     assert(qDim >= kvDim);
     assert(qDim % nNodes == 0);
     assert(kvDim % nNodes == 0);
+
+    s.kvDim = kvDim;
+    s.nKvHeads = nKvHeads;
+    s.seqLen = seqLen;
+    s.headDim = headDim;
+    s.ropeTheta = ropeTheta;
 
     s.qDim0 = qDim / nNodes;
     s.kvDim0 = kvDim / nNodes;
     assert(s.qDim0 % 2 == 0);
     assert(s.kvDim0 % 2 == 0);
 
-    s.kvDimStart = s.kvDim0 * nodeIndex;
-    s.qDimStart = s.qDim0 * nodeIndex;
-    s.qDimEnd = s.qDimStart + s.qDim0;
-    s.qShift = s.qDimStart - s.kvDimStart;
-    s.sliceDim = s.qDimEnd - s.kvDimStart;
-    assert(s.sliceDim % 2 == 0);
-
-    s.kvDim = kvDim;
-    s.nKvHeads = nKvHeads;
-    s.seqLen = seqLen;
-    s.headSize = headSize;
-    s.ropeTheta = ropeTheta;
-    s.cacheSize = size2D(F_32, s.seqLen, s.sliceDim);
+    if (type == ROPE_LLAMA || type == ROPE_LLAMA3_1) {
+        s.kvDimStart = s.kvDim0 * nodeIndex;
+        s.qDimStart = s.qDim0 * nodeIndex;
+        s.qDimEnd = s.qDimStart + s.qDim0;
+        s.qShift = s.qDimStart - s.kvDimStart;
+        s.sliceDim = s.qDimEnd - s.kvDimStart;
+        assert(s.sliceDim % 2 == 0);
+        s.cacheSize = size2D(F_32, seqLen, s.sliceDim);
+    } else if (type == ROPE_FALCON) {
+        s.cacheSize = size2D(F_32, seqLen, headDim);
+    } else {
+        throw std::invalid_argument("Unsupported rope type");
+    }
     return s;
 }
 
@@ -326,8 +332,8 @@ static inline void fullfillRopeLlamaCache(const NnRopeOpConfig *config, float *c
     const bool applyScaling = config->ropeScalingFactor != 1.0f;
     for (NnUint pos = 0; pos < config->slice.seqLen; pos++) {
         for (NnUint i = config->slice.kvDimStart; i < config->slice.qDimEnd; i += 2) {
-            const NnUint headDim = i % config->slice.headSize;
-            float freq = 1.0f / powf(config->slice.ropeTheta, headDim / (float)config->slice.headSize);
+            const NnUint h = i % config->slice.headDim;
+            float freq = 1.0f / powf(config->slice.ropeTheta, h / (float)config->slice.headDim);
             if (applyScaling)
                 freq = scaleFrequencyLlama3(freq, config);
             const float val = pos * freq;
@@ -340,16 +346,16 @@ static inline void fullfillRopeLlamaCache(const NnRopeOpConfig *config, float *c
 }
 
 static inline void fullfillRopeFalconCache(const NnRopeOpConfig *config, float *cache) {
-    const float hs = (float)config->slice.headSize;
+    const float hs = (float)config->slice.headDim;
 
     for (NnUint pos = 0; pos < config->slice.seqLen; pos++) {
-        for (NnUint j = 0; j < config->slice.headSize / 2; j++) {
+        for (NnUint j = 0; j < config->slice.headDim / 2; j++) {
             const float freq = 1.0f / powf(config->slice.ropeTheta, 2.0f * (float)(j / hs));
             const float val = pos * freq;
             const float fcr = cosf(val);
             const float fci = sinf(val);
-            cache[pos * config->slice.headSize + j] = fcr;
-            cache[pos * config->slice.headSize + j + config->slice.headSize / 2] = fci;
+            cache[pos * config->slice.headDim + j] = fcr;
+            cache[pos * config->slice.headDim + j + config->slice.headDim / 2] = fci;
         }
     }
 }

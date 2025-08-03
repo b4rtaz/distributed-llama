@@ -34,27 +34,37 @@ void main() {
     memoryBarrierShared();
     barrier();
 
-    const uint inputSizeX = sharedInfo.inputSizeX;
+    const uint colDim = sharedInfo.inputSizeX / nColumns;
     const uint offset = sharedInfo.inputOffset;
-    const uint slice = inputSizeX / N_THREADS;
-    const uint rest = inputSizeX % N_THREADS;
+    const uint slice = colDim / N_THREADS;
+    const uint rest = colDim % N_THREADS;
     const uint start = offset + threadIndex * slice + (threadIndex < rest ? threadIndex : rest);
     const uint end = start + slice + (threadIndex < rest ? 1 : 0);
 
-    float sum = 0.0;
-    for (uint i = start; i < end; i++) {
-        sum += x[i] * x[i];
-    }
-    sums[threadIndex] = sum;
-
-    memoryBarrierShared();
-    barrier();
-
-    if (threadIndex == 0) {
-        sum = 0.0;
-        [[unroll]] for (uint i = 0; i < N_THREADS; i++) {
-            sum += sums[i];
+    for (uint col = 0; col < nColumns; col++) {
+        if (col != 0) {
+            barrier();
         }
-        y[batchIndex] = inversesqrt((sum / float(inputSizeX)) + epsilon);
+
+        const uint colOffset = col * colDim;
+        const uint colStart = start + colOffset;
+        const uint colEnd = end + colOffset;
+
+        float sum = 0.0;
+        for (uint i = colStart; i < colEnd; i++) {
+            sum += x[i] * x[i];
+        }
+        sums[threadIndex] = sum;
+
+        memoryBarrierShared();
+        barrier();
+
+        if (threadIndex == 0) {
+            sum = 0.0;
+            [[unroll]] for (uint i = 0; i < N_THREADS; i++) {
+                sum += sums[i];
+            }
+            y[batchIndex * nColumns + col] = inversesqrt((sum / float(colDim)) + epsilon);
+        }
     }
 }

@@ -19,7 +19,7 @@ static void inference(AppInferenceContext *context) {
 
     NnUint pos = 0;
     int nInputTokens;
-    context->tokenizer->encode(context->args->prompt, inputTokens, &nInputTokens, true, false);
+    context->tokenizer->encode(context->args->prompt, inputTokens, &nInputTokens, true, true);
 
     if (nInputTokens > context->header->seqLen)
         throw std::runtime_error("The number of prompt tokens is greater than the sequence length");

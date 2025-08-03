@@ -752,35 +752,35 @@ static float dotProduct_F32(const float *a, const float *b, const unsigned int s
 
 static void multiheadAtt_F32(
     float *y, const float *q, float *att, float *keyCache, float *valueCache,
-    const NnUint pos, const NnUint nHeads, const NnUint nHeads0, const NnUint nKvHeads, const NnUint kvDim0, const NnUint headSize, const NnUint seqLen,
+    const NnUint pos, const NnUint nHeads, const NnUint nHeads0, const NnUint nKvHeads, const NnUint kvDim0, const NnUint headDim, const NnUint seqLen,
     const NnUint nThreads, const NnUint threadIndex) 
 {
     SPLIT_THREADS(h0Start, h0End, nHeads0, nThreads, threadIndex);
     const NnUint kvMul = nHeads / nKvHeads;
-    const float headSizeRoot = sqrtf(headSize);
+    const float headDimRoot = sqrtf(headDim);
 
     for (NnUint h0 = h0Start; h0 < h0End; h0++) {
-        const float *hQ = &q[h0 * headSize];
+        const float *hQ = &q[h0 * headDim];
         const NnUint headIndex = h0 / kvMul;
-        const float *hKc = &keyCache[headIndex * headSize];
-        const float *hVc = &valueCache[headIndex * headSize];
+        const float *hKc = &keyCache[headIndex * headDim];
+        const float *hVc = &valueCache[headIndex * headDim];
         float *hAtt = &att[h0 * seqLen];
 
         for (NnUint t = 0; t <= pos; t++) {
             const float *posK = &hKc[t * kvDim0];
-            const float score = dotProduct_F32(hQ, posK, headSize) / headSizeRoot;
+            const float score = dotProduct_F32(hQ, posK, headDim) / headDimRoot;
             hAtt[t] = score;
         }
 
         softmax_F32(hAtt, pos + 1);
 
-        float *hY = &y[h0 * headSize];
-        std::memset(hY, 0, headSize * sizeof(float));
+        float *hY = &y[h0 * headDim];
+        std::memset(hY, 0, headDim * sizeof(float));
 
         for (NnUint t = 0; t <= pos; t++) {
             const float *posV = &hVc[t * kvDim0];
             const float posA = hAtt[t];
-            for (int i = 0; i < headSize; i++) {
+            for (int i = 0; i < headDim; i++) {
                 hY[i] += posA * posV[i];
             }
         }
@@ -859,30 +859,22 @@ static void ropeLlama_F32(float* x, const float *cache, bool isQ, const NnUint p
 
 static void ropeFalcon_F32(float* x, const float *cache, bool isQ, const NnUint pos, const NnRopeSlice *slice, const NnUint nThreads, const NnUint threadIndex) {
     unsigned int dim0 =  isQ ? slice->qDim0 : slice->kvDim0;
-    assert(dim0 % slice->headSize == 0);
-    unsigned int nHeads0 = dim0 / slice->headSize;
+    assert(dim0 % slice->headDim == 0);
+    unsigned int nHeads0 = dim0 / slice->headDim;
     SPLIT_THREADS(h0s, h0e, nHeads0, nThreads, threadIndex);
-    //const float headeSizeF = (float)slice->headSize;
 
-    const float *posCache = &cache[pos * slice->headSize];
+    const float *posCache = &cache[pos * slice->headDim];
 
     for (unsigned int h = h0s; h < h0e; h++) {
-        const unsigned int o = h * slice->headSize;
-        for (unsigned int j = 0; j < slice->headSize / 2; j++) {
+        const unsigned int o = h * slice->headDim;
+        for (unsigned int j = 0; j < slice->headDim / 2; j++) {
             const float fcr0 = posCache[j];
-            const float fci0 = posCache[j + slice->headSize / 2];
+            const float fci0 = posCache[j + slice->headDim / 2];
 
-            //float freq = 1.0f / powf(slice->ropeTheta, 2.0f * (float)j / headeSizeF);
-            //float val = pos * freq;
-            //float fcr = cosf(val);
-            //float fci = sinf(val);
             float q0 = x[o + j];
-            float q1 = x[o + j + slice->headSize / 2];
+            float q1 = x[o + j + slice->headDim / 2];
             x[o + j] = q0 * fcr0 - q1 * fci0;
-            x[o + j + slice->headSize / 2] = q0 * fci0 + q1 * fcr0;
-
-            //assert(fabsf(fcr - fcr0) < 0.0001f);
-            //assert(fabsf(fci - fci0) < 0.0001f);
+            x[o + j + slice->headDim / 2] = q0 * fci0 + q1 * fcr0;
         }
     }
 }
@@ -1214,7 +1206,7 @@ static void multiHeadAttForward_F32_F32(NnUint nThreads, NnUint threadIndex, NnU
             &att[batchIndex * config->nHeads0 * config->seqLen],
             keyCache, valueCache, pos,
             config->nHeads, config->nHeads0,
-            config->nKvHeads, config->kvDim0, config->headSize, config->seqLen, nThreads, threadIndex);
+            config->nKvHeads, config->kvDim0, config->headDim, config->seqLen, nThreads, threadIndex);
 
         DEBUG_VECTOR(context, "output", y);
     }

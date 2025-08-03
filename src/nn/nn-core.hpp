@@ -54,7 +54,7 @@ typedef struct {
     NnUint kvDimStart;
     NnUint sliceDim;
     NnUint seqLen;
-    NnUint headSize;
+    NnUint headDim;
     NnUint nKvHeads;
     float ropeTheta;
     NnSize2D cacheSize;
@@ -219,7 +219,7 @@ typedef struct {
     NnUint nHeads;
     NnUint nHeads0;
     NnUint nKvHeads;
-    NnUint headSize;
+    NnUint headDim;
     NnUint seqLen;
     NnUint qSliceD0;
     NnUint kvDim0;
@@ -286,7 +286,7 @@ public:
 NnKvCacheSlice sliceKvCache(NnUint kvDim, NnUint seqLen, NnUint nNodes);
 NnRowMatmulSlice sliceRowMatmul(NnFloatType type, NnUint nNodes, NnUint n, NnUint d);
 NnColMatmulSlice sliceColMatmul(NnFloatType type, NnUint nNodes, NnUint n, NnUint d);
-NnRopeSlice sliceRope(NnUint qDim, NnUint kvDim, NnUint nKvHeads, NnUint nNodes, NnUint seqLen, NnUint headSize, float ropeTheta, NnUint nodeIndex);
+NnRopeSlice sliceRope(NnRopeType type, NnUint qDim, NnUint kvDim, NnUint nKvHeads, NnUint nNodes, NnUint seqLen, NnUint headDim, float ropeTheta, NnUint nodeIndex);
 NnMultiHeadAttSlice sliceMultiHeadAtt(NnUint nHeads, NnUint seqLen, NnUint nNodes, NnUint nBatches);
 
 // splitters
