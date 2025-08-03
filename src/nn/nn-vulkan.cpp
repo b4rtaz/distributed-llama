@@ -128,6 +128,8 @@ NnVulkanBuffer::NnVulkanBuffer(NnVulkanContext *context, const vk::DeviceSize bu
 
     isHostVisible = false;
 
+    VULKAN_TRACE("Creating buffer of size %zu (fastAccess=%d)", (NnSize)bufferSize, fastAccess);
+
     uint32_t memoryTypeIndex = MEMORY_TYPE_INDEX_NOT_FOUND;
     if (fastAccess) {
         memoryTypeIndex = findMemoryTypeIndex(
@@ -371,6 +373,7 @@ NnVulkanDevice::NnVulkanDevice(NnUint gpuIndex, NnNetConfig *netConfig, NnNodeCo
     context.commandPool = context.device.createCommandPool(commandPoolCreateInfo);
     context.queue = context.device.getQueue(context.queueFamilyIndex, 0);
 
+    VULKAN_TRACE("Context created");
     data = new NnVulkanDeviceData(&context, netConfig, nodeConfig);
 }
 
