@@ -21,7 +21,7 @@ struct RopeSlice {
     uint kvDimStart;
     uint sliceDim;
     uint seqLen;
-    uint headSize;
+    uint headDim;
     uint nKvHeads;
     float ropeTheta;
     // NnSize2D cacheSize;
@@ -54,9 +54,13 @@ void main() {
     if (threadIndex == 0) {
         uint position = uint(positions[batchIndex]);
 
-        sharedOffset = position * slice.sliceDim;
-        if (isQ) {
-            sharedOffset += slice.qShift;
+        if (ropeType == 0 || ropeType == 2 /* Llama */) {
+            sharedOffset = position * slice.sliceDim;
+            if (isQ) {
+                sharedOffset += slice.qShift;
+            }
+        } else if (ropeType == 1 /* Falcon */) {
+            sharedOffset = position * slice.headDim;
         }
         sharedInfo = infos[batchIndex];
     }
@@ -64,23 +68,50 @@ void main() {
     barrier();
     memoryBarrierShared();
 
-    const uint dim0Half = (isQ ? slice.qDim0 : slice.kvDim0) / 2;
     const uint xOffset = sharedInfo.inputOffset;
     const uint yOffset = sharedInfo.outputOffset;
+    const uint dim0 = isQ ? slice.qDim0 : slice.kvDim0;
 
-    for (uint i = threadIndex; i < dim0Half; i += N_THREADS) {
-        const uint j = i * 2;
-        const uint c = sharedOffset + j;
+    if (ropeType == 0 || ropeType == 2 /* Llama */) {
+        const uint dim0Half = dim0 / 2;
 
-        float fcr = ropeCache[c];
-        float fci = ropeCache[c + 1];
-        float v0 = x[xOffset + j];
-        float v1 = x[xOffset + j + 1];
+        for (uint i = threadIndex; i < dim0Half; i += N_THREADS) {
+            const uint j = i * 2;
+            const uint c = sharedOffset + j;
 
-        float x0 = v0 * fcr - v1 * fci;
-        float x1 = v0 * fci + v1 * fcr;
+            float fcr = ropeCache[c];
+            float fci = ropeCache[c + 1];
+            float v0 = x[xOffset + j];
+            float v1 = x[xOffset + j + 1];
 
-        y[yOffset + j] = x0;
-        y[yOffset + j + 1] = x1;
+            float x0 = v0 * fcr - v1 * fci;
+            float x1 = v0 * fci + v1 * fcr;
+
+            y[yOffset + j] = x0;
+            y[yOffset + j + 1] = x1;
+        }
+    } else if (ropeType == 1 /* Falcon */) {
+        const uint headDim = slice.headDim;
+        const uint headDimHalf = headDim / 2;
+        const uint nHeads0 = dim0 / headDim;
+
+        for (uint h = 0; h < nHeads0; h++) {
+            const uint o = h * headDim;
+
+            for (uint i = threadIndex; i < headDimHalf; i += N_THREADS) {
+                const uint c = sharedOffset + i;
+                float fcr = ropeCache[c];
+                float fci = ropeCache[c + headDimHalf];
+
+                float v0 = x[xOffset + o + i];
+                float v1 = x[xOffset + o + i + headDimHalf];
+
+                float x0 = v0 * fcr - v1 * fci;
+                float x1 = v0 * fci + v1 * fcr;
+
+                y[yOffset + o + i] = x0;
+                y[yOffset + o + i + headDimHalf] = x1;
+            }
+        }
     }
 }

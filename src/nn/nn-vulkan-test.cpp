@@ -55,12 +55,12 @@ void testRmsNorm_F32_F32_F32() {
                 pointerBatchConfig(SRC_PIPE, xPipeIndex),
                 pointerBatchConfig(SRC_BUFFER, invRmsBufferIndex),
                 size0(),
-                NnInvRmsOpConfig{1e-5f});
+                NnInvRmsOpConfig{1e-5f, 1});
             segmentBuilder->addOp(OP_RMS_NORM, "rms_norm", 0,
                 pointerBatchConfig(SRC_PIPE, xPipeIndex),
                 pointerBatchConfig(SRC_PIPE, xPipeIndex),
                 size1D(F_32, RMS_NORM_DIM),
-                NnRmsNormOpConfig{invRmsBufferIndex});
+                NnRmsNormOpConfig{invRmsBufferIndex, 1});
         },
         [](NnExecutor *executor, NnNetExecution *execution, NnVulkanDevice *device) {
             // arrange
@@ -423,6 +423,7 @@ void testCast_F32_Q80() {
         });
 }
 
+template <NnRopeType ropeType, void (*assertOutput)(float *x0, float *x1)>
 void testRope_F32_F32() {
     #define ROPE_DIM 2048
     #define ROPE_KV_DIM 512
@@ -442,7 +443,7 @@ void testRope_F32_F32() {
                 pointerBatchConfig(SRC_PIPE, xPipeIndex),
                 pointerBatchConfig(SRC_PIPE, xPipeIndex),
                 size0(),
-                NnRopeOpConfig{NnRopeType::ROPE_LLAMA, isQ, posPipeIndex, ropeCacheBufferIndex, 32.0f, 1.0f, 4.0f, 8192, slice});
+                NnRopeOpConfig{ropeType, isQ, posPipeIndex, ropeCacheBufferIndex, 32.0f, 1.0f, 4.0f, 8192, slice});
         },
         [](NnExecutor *executor, NnNetExecution *execution, NnVulkanDevice *device) {
             // arrange
@@ -464,25 +465,57 @@ void testRope_F32_F32() {
             executor->forward();
 
             // assert
-            float t = 0.000001f;
-
             float *x0 = &xPipe[0 * ROPE_DIM];
-            assertFloat(0, x0[0], 1.239586f, t);
-            assertFloat(1, x0[1], 0.680755f, t);
-            assertFloat(2, x0[2], 0.077202f, t);
-            assertFloat(3, x0[3], -1.412105f, t);
-            assertFloat(1988, x0[1988], -1.356766f, t);
-            assertFloat(2022, x0[2022], 0.999923, t);
-            assertFloat(2023, x0[2023], 1.000077, t);
-
             float *x1 = &xPipe[1 * ROPE_DIM];
-            assertFloat(0, x1[0], 1.318780f, t);
-            assertFloat(1, x1[1], 0.510705f, t);
-            assertFloat(1078, x1[1078], 0.999985f, t);
-            assertFloat(1078, x1[1079], 1.000015f, t);
-
-            printOk("testRope_F32_F32");
+            assertOutput(x0, x1);
         });
+}
+
+void assertRopeLlama_F32_F32(float *x0, float *x1) {
+    const float t = 0.000001f;
+
+    assertFloat(0, x0[0], 1.239586f, t);
+    assertFloat(1, x0[1], 0.680755f, t);
+    assertFloat(2, x0[2], 0.077202f, t);
+    assertFloat(3, x0[3], -1.412105f, t);
+    assertFloat(1988, x0[1988], -1.356766f, t);
+    assertFloat(2022, x0[2022], 0.999923f, t);
+    assertFloat(2023, x0[2023], 1.000077f, t);
+
+    assertFloat(0, x1[0], 1.318780f, t);
+    assertFloat(1, x1[1], 0.510705f, t);
+    assertFloat(1078, x1[1078], 0.999985f, t);
+    assertFloat(1078, x1[1079], 1.000015f, t);
+}
+
+void assertRopeFalcon_F32_F32(float *x0, float *x1) {
+    const float t = 0.000001f;
+
+    assertFloat(0, x0[0], 1.239586f, t);
+    assertFloat(1, x0[1], 0.077202f, t);
+    assertFloat(2, x0[2], -1.356766f, t);
+    assertFloat(3, x0[3], -1.164938f, t);
+    assertFloat(1988, x0[1988], -0.522115f, t);
+    assertFloat(1988, x0[1989], 0.018772f, t);
+    assertFloat(2022, x0[2022], 1.361834f, t);
+    assertFloat(2023, x0[2023], 1.276253f, t);
+
+    assertFloat(0, x1[0], 1.318780f, t);
+    assertFloat(1, x1[1], -1.139289f, t);
+    assertFloat(1, x1[2], -0.417384f, t);
+    assertFloat(1, x1[3], -1.291486f, t);
+    assertFloat(1078, x1[1078], 1.003737f, t);
+    assertFloat(1078, x1[1079], 1.002481f, t);
+}
+
+void testRopeLlama_F32_F32() {
+    testRope_F32_F32<NnRopeType::ROPE_LLAMA, assertRopeLlama_F32_F32>();
+    printOk("testRopeLlama_F32_F32");
+}
+
+void testRopeFalcon_F32_F32() {
+    testRope_F32_F32<NnRopeType::ROPE_FALCON, assertRopeFalcon_F32_F32>();
+    printOk("testRopeFalcon_F32_F32");
 }
 
 void testMatmul_F32_F32_F32() {
@@ -634,7 +667,8 @@ int main() {
     testShift_F32_F32();
     testCast_F32_F32();
     testCast_F32_Q80();
-    testRope_F32_F32();
+    testRopeLlama_F32_F32();
+    testRopeFalcon_F32_F32();
     testMatmul_F32_F32_F32();
     testMatmul_Q80_Q40_F32();
     testMultiheadAtt_F32_F32();
