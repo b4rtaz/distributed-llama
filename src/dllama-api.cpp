@@ -381,8 +381,8 @@ public:
         int nPromptTokens;
         std::unique_ptr<int[]> promptTokensPtr(new int[inputPrompt.length + 2]);
         int *promptTokens = promptTokensPtr.get();
-        bool addBos = startPos == 0;
-        tokenizer->encode((char*)inputPrompt.content, promptTokens, &nPromptTokens, addBos, true);
+        bool isStart = startPos == 0;
+        tokenizer->encode((char*)inputPrompt.content, promptTokens, &nPromptTokens, isStart, true);
 
         pos_t promptEndPos = startPos + nPromptTokens - 1;
         if (promptEndPos > header->seqLen)

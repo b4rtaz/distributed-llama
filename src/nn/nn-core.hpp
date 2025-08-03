@@ -54,7 +54,7 @@ typedef struct {
     NnUint kvDimStart;
     NnUint sliceDim;
     NnUint seqLen;
-    NnUint headSize;
+    NnUint headDim;
     NnUint nKvHeads;
     float ropeTheta;
     NnSize2D cacheSize;
@@ -74,7 +74,7 @@ enum NnOpCode {
     OP_INV_RMS,
     OP_RMS_NORM,
     OP_MATMUL,
-    OP_ROPE_LLAMA,
+    OP_ROPE,
     OP_MULTIHEAD_ATT,
     OP_GELU,
     OP_SILU,
@@ -191,10 +191,12 @@ typedef struct {
 
 typedef struct {
     float epsilon;
+    NnUint nColumns;
 } NnInvRmsOpConfig;
 
 typedef struct {
     NnUint invRmsBufferIndex;
+    NnUint nColumns;
 } NnRmsNormOpConfig;
 
 typedef struct {
@@ -202,6 +204,7 @@ typedef struct {
 } NnMatmulOpConfig;
 
 typedef struct {
+    NnRopeType type;
     bool isQ;
     NnUint positionPipeIndex;
     NnUint ropeCacheBufferIndex;
@@ -210,13 +213,13 @@ typedef struct {
     float ropeScalingHighFreqFactor;
     NnUint ropeScalingOrigMaxSeqLen;
     NnRopeSlice slice;
-} NnRopeLlamaOpConfig;
+} NnRopeOpConfig;
 
 typedef struct {
     NnUint nHeads;
     NnUint nHeads0;
     NnUint nKvHeads;
-    NnUint headSize;
+    NnUint headDim;
     NnUint seqLen;
     NnUint qSliceD0;
     NnUint kvDim0;
@@ -283,7 +286,7 @@ public:
 NnKvCacheSlice sliceKvCache(NnUint kvDim, NnUint seqLen, NnUint nNodes);
 NnRowMatmulSlice sliceRowMatmul(NnFloatType type, NnUint nNodes, NnUint n, NnUint d);
 NnColMatmulSlice sliceColMatmul(NnFloatType type, NnUint nNodes, NnUint n, NnUint d);
-NnRopeSlice sliceRope(NnUint dim, NnUint kvDim, NnUint nKvHeads, NnUint nNodes, NnUint seqLen, NnUint headSize, float ropeTheta, NnUint nodeIndex);
+NnRopeSlice sliceRope(NnRopeType type, NnUint qDim, NnUint kvDim, NnUint nKvHeads, NnUint nNodes, NnUint seqLen, NnUint headDim, float ropeTheta, NnUint nodeIndex);
 NnMultiHeadAttSlice sliceMultiHeadAtt(NnUint nHeads, NnUint seqLen, NnUint nNodes, NnUint nBatches);
 
 // splitters
@@ -293,6 +296,6 @@ NnUint splitColMatmulWeight(NnColMatmulSlice *slice, NnUint nodeIndex, NnByte *w
 
 // rope
 
-void fullfillRopeLlama3Cache(const NnRopeLlamaOpConfig *config, float *cache);
+void fullfillRopeCache(const NnRopeOpConfig *config, float *cache);
 
 #endif

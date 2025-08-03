@@ -20,7 +20,7 @@ layout(binding = 3) readonly uniform configBuffer {
     uint nHeads;
     uint nHeads0;
     uint nKvHeads;
-    uint headSize;
+    uint headDim;
     uint seqLen;
     uint qSliceD0;
     uint kvDim0;
@@ -48,7 +48,7 @@ void main() {
 
     const uint kvMul = nHeads / nKvHeads;
     const uint headIndex = h / kvMul;
-    const float invHeadSizeRoot = 1.0 / sqrt(float(headSize));
+    const float invHeadDimRoot = 1.0 / sqrt(float(headDim));
 
 
     if (threadIndex == 0) {
@@ -60,19 +60,19 @@ void main() {
     memoryBarrierShared();
 
     const uint attOffset = batchIndex * nHeads0 * seqLen + h * seqLen;
-    const uint qOffset = batchIndex * qSliceD0 + h * headSize;
-    const uint kvOffset = headIndex * headSize;
-    const uint yOffset = sharedInfo.outputOffset + h * headSize;
+    const uint qOffset = batchIndex * qSliceD0 + h * headDim;
+    const uint kvOffset = headIndex * headDim;
+    const uint yOffset = sharedInfo.outputOffset + h * headDim;
 
     float ms = -1e10f;
     for (uint p = threadIndex; p <= position; p += N_THREADS) {
         const uint kOffset = kvOffset + p * kvDim0;
 
         float score = 0.0;
-        for (uint i = 0; i < headSize; i++) {
+        for (uint i = 0; i < headDim; i++) {
             score += query[qOffset + i] * keyCache[kOffset + i];
         }
-        score *= invHeadSizeRoot;
+        score *= invHeadDimRoot;
         ms = max(ms, score);
         att[attOffset + p] = score;
     }
@@ -115,7 +115,7 @@ void main() {
 
     const float yScale = 1.0 / temp[0];
 
-    for (uint i = threadIndex; i < headSize; i += N_THREADS) {
+    for (uint i = threadIndex; i < headDim; i += N_THREADS) {
         float sum = 0.0;
         const uint vOffset = kvOffset + i;
         for (uint p = 0; p <= position; p += 1) {

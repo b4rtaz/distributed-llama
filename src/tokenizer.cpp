@@ -87,6 +87,7 @@ Tokenizer::Tokenizer(const char* tokenizerPath)
             else if (key == CHAT_STOP) fseek(file, value, SEEK_CUR); // Ignored
             else if (key == PAD_ID) {} // Ignored
             else if (key == N_EOS_TOKENS) nEosTokens = value;
+            else if (key == ADD_BOS) addBos = value == 1;
             else {
                 throw std::runtime_error("Invalid tokenizer header key:" + std::to_string(key));
             }
@@ -159,7 +160,10 @@ Tokenizer::Tokenizer(const char* tokenizerPath)
     strBuffer = new char[strBufferSize];
     utf8Buffer = new char[strBufferSize];
 
-    if (bosId >= 0) printf("📄 BosId: %d (%s)\n", bosId, vocab[bosId]);
+    if (bosId >= 0) {
+        printf("📄 AddBos: %d\n", addBos ? 1 : 0);
+        printf("📄 BosId: %d (%s)\n", bosId, vocab[bosId]);
+    }
     if (eosTokenIds.size() > 0) {
         printf("📄 EosId: ");
         for (unsigned int i = 0; i < eosTokenIds.size(); i++) {
@@ -302,7 +306,7 @@ char *Tokenizer::decode(int token) {
     return detokUtf8();
 }
 
-void Tokenizer::encode(char *text, int *tokens, int *nTokens, bool addBos, bool addSpecialTokens) {
+void Tokenizer::encode(char *text, int *tokens, int *nTokens, bool isStart, bool addSpecialTokens) {
 #if DEBUG_TOKENIZER_BENCHMARK
     Timer startTime;
 #endif
@@ -313,7 +317,7 @@ void Tokenizer::encode(char *text, int *tokens, int *nTokens, bool addBos, bool 
 
     *nTokens = 0;
 
-    if (addBos)
+    if (isStart && addBos && bosId >= 0)
         tokens[(*nTokens)++] = bosId;
 
     for (char *c = text; *c != '\0'; c++) {
@@ -536,6 +540,7 @@ static const char *chatTemplateTypeToString(const ChatTemplateType type) {
     if (type == TEMPLATE_LLAMA2) return "llama2";
     if (type == TEMPLATE_LLAMA3) return "llama3";
     if (type == TEMPLATE_DEEP_SEEK3) return "deepSeek3";
+    if (type == TEMPLATE_CHATML) return "chatml";
     return "unknown";
 }
 
@@ -551,6 +556,8 @@ ChatTemplateGenerator::ChatTemplateGenerator(const ChatTemplateType type, const 
             this->type = TEMPLATE_LLAMA3;
         } else if (strstr(chatTemplate, "<｜Assistant｜>") != NULL) {
             this->type = TEMPLATE_DEEP_SEEK3;
+        } else if (strstr(chatTemplate, "<|im_start|>") != NULL) {
+            this->type = TEMPLATE_CHATML;
         } else {
             throw std::runtime_error("Not supported chat template");
         }
@@ -601,6 +608,18 @@ GeneratedChat ChatTemplateGenerator::generate(unsigned int nItems, ChatItem* ite
         if (appendGenerationPrompt) {
             buffer += "<｜Assistant｜><think>\n";
             publicPromptSize = 8; 
+        }
+    } else if (type == TEMPLATE_CHATML) {
+        for (unsigned int i = 0; i < nItems; i++) {
+            if (items[i].role == "system") {
+                buffer += "<|im_start|>system\n" + items[i].message + "<|im_end|>\n";
+            } else if (items[i].role == "user") {
+                buffer += "<|im_start|>user\n" + items[i].message + "<|im_end|>\n";
+            } else if (items[i].role == "assistant") {
+                buffer += "<|im_start|>assistant\n" + items[i].message + "<|im_end|>\n";
+            }
+            if (appendGenerationPrompt)
+                buffer += "<|im_start|>assistant\n";
         }
     }
 

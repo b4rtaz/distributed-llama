@@ -9,11 +9,11 @@ Connect home devices into a powerful cluster to accelerate LLM inference. More d
 Supports Linux, macOS, and Windows. Optimized for ARM and x86_64 AVX2 CPUs.
 
 **News**
+- 3 Aug 2025 - Qwen 3 0.6B, 1.7B, 8B and 14B models are now supported.
 - 23 Mar 2025 - [🌋 Experimental Vulkan support](https://github.com/b4rtaz/distributed-llama/releases/tag/v0.13.0)
 - 12 Feb 2025 - 🚧 Merged the [fundamental codebase refactor](https://github.com/b4rtaz/distributed-llama/releases/tag/v0.12.0)
 - 9 Jan 2025 - [🍎 Llama 3.3 70B on 4 x Mac Mini M4 Pro 24GB RAM](https://github.com/b4rtaz/distributed-llama/discussions/147)
 - 28 Jul 2024 - [🌳 How to Run Llama 3.1 405B on Home Devices? Build AI Cluster!](https://medium.com/@b4rtaz/how-to-run-llama-3-405b-on-home-devices-build-ai-cluster-ad0d5ad3473b)
-
 
 ### 🔥 Setup Root Node by Single Command
 
@@ -27,10 +27,13 @@ Python 3 and C++ compiler required. The command will download the model and the 
 | Llama 3.2 3B Instruct Q40         | 3.4 GB   | `python launch.py llama3_2_3b_instruct_q40`          |
 | Llama 3.3 70B Instruct Q40        | 40 GB    | `python launch.py llama3_3_70b_instruct_q40`         |
 | DeepSeek R1 Distill Llama 8B Q40  | 6.32 GB  | `python launch.py deepseek_r1_distill_llama_8b_q40`  |
+| Qwen 3 0.6B Q40                   | 0.9 GB   | `python launch.py qwen3_0.6b_q40`                    |
+| Qwen 3 1.7B Q40                   | 2.2 GB   | `python launch.py qwen3_1.7b_q40`                    |
+| Qwen 3 8B Q40                     | 6.7 GB   | `python launch.py qwen3_8b_q40`                    |
 
 ### 🛠️ Convert Model Manually
 
-Supported architectures: Llama.
+Supported architectures: Llama, Qwen3.
 
 * [How to Convert Llama 3.1](./docs/LLAMA.md)
 * [How to Convert Hugging Face Model](./docs/HUGGINGFACE.md)

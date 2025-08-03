@@ -44,6 +44,21 @@ MODELS = {
         'https://huggingface.co/b4rtaz/DeepSeek-R1-Distill-Llama-8B-Distributed-Llama/resolve/main/dllama_tokenizer_deepseek-r1-distill-llama-8b.t?download=true',
         'q40', 'q80', 'chat', '--max-seq-len 4096'
     ],
+    'qwen3_0.6b_q40': [
+        ['https://huggingface.co/b4rtaz/Qwen3-0.6B-Q40-Distributed-Llama/resolve/main/dllama_model_qwen3_0.6b_q40.m?download=true'],
+        'https://huggingface.co/b4rtaz/Qwen3-0.6B-Q40-Distributed-Llama/resolve/main/dllama_tokenizer_qwen3_0.6b.t?download=true',
+        'q40', 'q80', 'chat', '--max-seq-len 4096'
+    ],
+    'qwen3_1.7b_q40': [
+        ['https://huggingface.co/b4rtaz/Qwen3-1.7B-Q40-Distributed-Llama/resolve/main/dllama_model_qwen3_1.7b_q40.m?download=true'],
+        'https://huggingface.co/b4rtaz/Qwen3-1.7B-Q40-Distributed-Llama/resolve/main/dllama_tokenizer_qwen3_1.7b.t?download=true',
+        'q40', 'q80', 'chat', '--max-seq-len 4096'
+    ],
+    'qwen3_8b_q40': [
+        ['https://huggingface.co/b4rtaz/Qwen3-8B-Q40-Distributed-Llama/resolve/main/dllama_model_qwen3_8b_q40.m?download=true'],
+        'https://huggingface.co/b4rtaz/Qwen3-8B-Q40-Distributed-Llama/resolve/main/dllama_tokenizer_qwen3_8b.t?download=true',
+        'q40', 'q80', 'chat', '--max-seq-len 4096'
+    ],
 }
 
 def confirm(message: str):
