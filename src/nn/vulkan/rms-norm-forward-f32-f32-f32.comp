@@ -36,8 +36,11 @@ void main() {
         const uint workGroupIndex = gl_WorkGroupID.z;
 
         const BatchInfo info = infos[batchIndex];
-        sharedDim = info.inputSizeX / nWorkGroups;
-        sharedDimOffset = sharedDim * workGroupIndex;
+        const uint slice = info.inputSizeX / nWorkGroups;
+        const uint rest = info.inputSizeX % nWorkGroups;
+
+        sharedDim = slice + (workGroupIndex < rest ? 1 : 0);
+        sharedDimOffset = slice * workGroupIndex + min(rest, workGroupIndex);
         sharedColDim = info.inputSizeX / nColumns;
         sharedXOffset = info.inputOffset + sharedDimOffset;
         sharedYOffset = info.outputOffset + sharedDimOffset;
