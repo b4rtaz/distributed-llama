@@ -22,14 +22,15 @@ Python 3 and C++ compiler required. The command will download the model and the 
 | Model                             | Size     | Command                                              |
 | --------------------------------- | -------- | ---------------------------------------------------- |
 | Llama 3.1 8B Instruct Q40         | 6.32 GB  | `python launch.py llama3_1_8b_instruct_q40`          |
-| Llama 3.1 405B Instruct Q40.      | 238 GB   | `python launch.py llama3_1_405b_instruct_q40`.       |
+| Llama 3.1 405B Instruct Q40       | 238 GB   | `python launch.py llama3_1_405b_instruct_q40`.       |
 | Llama 3.2 1B Instruct Q40         | 1.7 GB   | `python launch.py llama3_2_1b_instruct_q40`          |
 | Llama 3.2 3B Instruct Q40         | 3.4 GB   | `python launch.py llama3_2_3b_instruct_q40`          |
 | Llama 3.3 70B Instruct Q40        | 40 GB    | `python launch.py llama3_3_70b_instruct_q40`         |
 | DeepSeek R1 Distill Llama 8B Q40  | 6.32 GB  | `python launch.py deepseek_r1_distill_llama_8b_q40`  |
 | Qwen 3 0.6B Q40                   | 0.9 GB   | `python launch.py qwen3_0.6b_q40`                    |
 | Qwen 3 1.7B Q40                   | 2.2 GB   | `python launch.py qwen3_1.7b_q40`                    |
-| Qwen 3 8B Q40                     | 6.7 GB   | `python launch.py qwen3_8b_q40`                    |
+| Qwen 3 8B Q40                     | 6.7 GB   | `python launch.py qwen3_8b_q40`                      |
+| Qwen 3 14B Q40                    | 10.9 GB  | `python launch.py qwen3_14b_q40`                     |
 
 ### 🛠️ Convert Model Manually
 
