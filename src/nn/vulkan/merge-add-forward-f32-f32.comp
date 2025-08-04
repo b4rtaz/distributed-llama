@@ -30,11 +30,15 @@ void main() {
         const uint workGroupIndex = gl_WorkGroupID.z;
 
         const BatchInfo info = infos[batchIndex];
-        sharedDim = info.outputSizeX / nWorkGroups;
+        const uint slice = info.outputSizeX / nWorkGroups;
+        const uint rest = info.outputSizeX % nWorkGroups;
+        const uint offset = workGroupIndex * slice + min(rest, workGroupIndex);
+
+        sharedDim = slice + (workGroupIndex < rest ? 1 : 0);
         sharedOutputSizeX = info.outputSizeX;
         sharedParts = info.inputSizeX / info.outputSizeX;
-        sharedXOffset = info.inputOffset + sharedDim * workGroupIndex;
-        sharedYOffset = info.outputOffset + sharedDim * workGroupIndex;
+        sharedXOffset = info.inputOffset + offset;
+        sharedYOffset = info.outputOffset + offset;
     }
 
     barrier();

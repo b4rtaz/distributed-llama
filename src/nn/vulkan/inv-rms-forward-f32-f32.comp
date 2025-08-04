@@ -38,7 +38,7 @@ void main() {
     const uint offset = sharedInfo.inputOffset;
     const uint slice = colDim / N_THREADS;
     const uint rest = colDim % N_THREADS;
-    const uint start = offset + threadIndex * slice + (threadIndex < rest ? threadIndex : rest);
+    const uint start = offset + threadIndex * slice + min(rest, threadIndex);
     const uint end = start + slice + (threadIndex < rest ? 1 : 0);
 
     for (uint col = 0; col < nColumns; col++) {

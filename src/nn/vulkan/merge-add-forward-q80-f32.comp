@@ -46,7 +46,7 @@ void main() {
         const uint xSlice = xJump / nWorkGroups;
         const uint xRest = xJump % nWorkGroups;
 
-        sharedXStart = workGroupIndex * xSlice + (workGroupIndex < xRest ? workGroupIndex : xRest);
+        sharedXStart = workGroupIndex * xSlice + min(xRest, workGroupIndex);
         sharedXEnd = sharedXStart + xSlice + (workGroupIndex < xRest ? 1 : 0);
         sharedNParts = nParts;
         sharedXJump = xJump;

@@ -40,10 +40,10 @@ void main() {
 
         const BatchInfo info = infos[batchIndex];
 
-        const uint ySlice = info.outputSizeX / nWorkGroups;
-        const uint yRest = info.outputSizeX % nWorkGroups;
-        sharedYStart = workGroupIndex * ySlice + (workGroupIndex < yRest ? workGroupIndex : yRest);
-        sharedYEnd = sharedYStart + ySlice + (workGroupIndex < yRest ? 1 : 0);
+        const uint slice = info.outputSizeX / nWorkGroups;
+        const uint rest = info.outputSizeX % nWorkGroups;
+        sharedYStart = workGroupIndex * slice + min(rest, workGroupIndex);
+        sharedYEnd = sharedYStart + slice + (workGroupIndex < rest ? 1 : 0);
         sharedXOffset = info.inputOffset;
         sharedYOffset = info.outputOffset;
     }
