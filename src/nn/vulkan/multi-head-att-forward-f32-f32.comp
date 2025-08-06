@@ -24,11 +24,11 @@ layout(binding = 3) readonly uniform configBuffer {
     uint seqLen;
     uint qSliceD0;
     uint kvDim0;
-    // uint positionPipeIndex;
-    // uint queryBufferIndex;
-    // uint keyCacheBufferIndex;
-    // uint valueCacheBufferIndex;
-    // uint attBufferIndex;
+    uint positionPipeIndex;
+    uint queryBufferIndex;
+    uint keyCacheBufferIndex;
+    uint valueCacheBufferIndex;
+    uint attBufferIndex;
 };
 layout(binding = 4) readonly buffer positionsBuffer { float positions[]; };
 layout(binding = 5) readonly buffer queryBuffer { float query[]; };

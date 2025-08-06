@@ -506,7 +506,11 @@ static void resolveShaderGroups(const NnOpConfig *opConfig, const NnUint batchSi
         groupCount[2] = 32;
     else if (opConfig->code == OP_MATMUL) {
         if (opConfig->weightSize.floatType == F_Q40) {
-            constexpr NnUint tileSizeD = 16; // Must be synced with the shader
+            // Must be synced with the shader
+            constexpr NnUint tileSizeN = 2;
+            constexpr NnUint tileSizeD = 16;
+            const NnUint blockSize = getBlockSize(opConfig->weightSize.floatType);
+            assert(opConfig->weightSize.y % (tileSizeN * blockSize) == 0);
             assert(opConfig->weightSize.x % tileSizeD == 0);
             groupCount[2] = opConfig->weightSize.x / tileSizeD;
         } else {
@@ -800,7 +804,7 @@ void NnVulkanDeviceSegment::forward(NnUint opIndex, NnUint nThreads, NnUint thre
         NnUint opGroupCount[3];
         for (NnUint opIndex = 0; opIndex < segmentConfig->nOps; opIndex++) {
             resolveShaderGroups(&segmentConfig->ops[opIndex], batchSize, opGroupCount);
-    
+
             if (opIndex > 0) {
                 vk::MemoryBarrier memoryBarrier(
                     vk::AccessFlagBits::eShaderWrite,
@@ -838,7 +842,6 @@ void NnVulkanDeviceSegment::forward(NnUint opIndex, NnUint nThreads, NnUint thre
     assert(context->device.waitForFences({ fence }, true, uint64_t(-1)) == vk::Result::eSuccess);
 
     context->device.resetFences({ fence });
-    
     VULKAN_TRACE("Forwarded");
 
     // TODO: refactor this block
