@@ -19,6 +19,8 @@ jobs:
             arch: amd64
           - runner: ubuntu-22.04
             arch: amd64
+          - runner: ubuntu-22.04
+            arch: arm64
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v3
