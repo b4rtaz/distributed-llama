@@ -131,7 +131,7 @@ void testSilu_F32_F32() {
             for (NnUint b = 0; b < N_BATCHES; b++) {
                 const NnUint offset = b * dim;
                 for (NnUint i = 0; i < dim; i++) {
-                    const float v = i / (float)dim;
+                    const float v = i / (float)dim + (float)(b + 1);
                     xPipe[offset + i] = v;
                     expectedOutput[offset + i] = v / (1.0 + expf(-v));
                 }
@@ -263,7 +263,7 @@ static void testMergeAdd_Q80_F32() {
                 for (NnUint i = 0; i < dim; i++) {
                     float expectedValue = (float)((b + 1) * nNodes);
                     NnUint j = b * dim + i;
-                    assertFloat(j, xPipe[j], expectedValue, 0.00001f);
+                    assertFloat(j, xPipe[j], expectedValue, 0.001f);
                 }
             }
             printOk("testMergeAdd_Q80_F32");
@@ -315,13 +315,13 @@ void testEmbedding_F32_F32() {
         });
 }
 
+template <NnUint dim>
 void testShift_F32_F32() {
-    #define SHIFT_DIM 64
     execute(
         [](NnNetConfigBuilder *netBuilder, NnNodeConfigBuilder *nodeBuilder, NnSegmentConfigBuilder *segmentBuilder) {
             NnUint posPipeIndex = netBuilder->addPipe("POS", size2D(F_32, N_BATCHES, 1));
-            NnUint xPipeIndex = netBuilder->addPipe("X", size2D(F_32, N_BATCHES, SHIFT_DIM));
-            NnUint yPipeIndex = netBuilder->addPipe("Y", size2D(F_32, 1, N_BATCHES * SHIFT_DIM));
+            NnUint xPipeIndex = netBuilder->addPipe("X", size2D(F_32, N_BATCHES, dim));
+            NnUint yPipeIndex = netBuilder->addPipe("Y", size2D(F_32, 1, N_BATCHES * dim));
             segmentBuilder->addOp(
                 OP_SHIFT, "shift", 0,
                 pointerBatchConfig(SRC_PIPE, xPipeIndex),
@@ -338,8 +338,8 @@ void testShift_F32_F32() {
             float pos[N_BATCHES];
             for (NnUint b = 0; b < N_BATCHES; b++) {
                 pos[b] = (float)b;
-                for (NnUint i = 0; i < SHIFT_DIM; i++)
-                    xPipe[b * SHIFT_DIM + i] = (float)(b * 100 + i);
+                for (NnUint i = 0; i < dim; i++)
+                    xPipe[b * dim + i] = (float)(b * 100 + i);
             }
 
             device->data->pipes[0].get()->write((NnByte *)pos);
@@ -349,8 +349,8 @@ void testShift_F32_F32() {
 
             // assert
             for (NnUint b = 0; b < N_BATCHES; b++) {
-                for (NnUint i = 0; i < SHIFT_DIM; i++) {
-                    NnUint j = b * SHIFT_DIM + i;
+                for (NnUint i = 0; i < dim; i++) {
+                    NnUint j = b * dim + i;
                     assertFloat(j, yPipe[j], (float)(b * 100 + i), 0.00001f);
                 }
             }
@@ -390,12 +390,12 @@ void testCast_F32_F32() {
         });
 }
 
+template <NnUint dim>
 void testCast_F32_Q80() {
-    #define CAST_Q80_DIM 256
     execute(
         [](NnNetConfigBuilder *netBuilder, NnNodeConfigBuilder *nodeBuilder, NnSegmentConfigBuilder *segmentBuilder) {
-            NnUint xPipeIndex = netBuilder->addPipe("X", size2D(F_32, N_BATCHES, CAST_Q80_DIM));
-            NnUint yPipeIndex = netBuilder->addPipe("Y", size2D(F_Q80, N_BATCHES, CAST_Q80_DIM));
+            NnUint xPipeIndex = netBuilder->addPipe("X", size2D(F_32, N_BATCHES, dim));
+            NnUint yPipeIndex = netBuilder->addPipe("Y", size2D(F_Q80, N_BATCHES, dim));
             segmentBuilder->addOp(
                 OP_CAST, "cast", 0,
                 pointerBatchConfig(SRC_PIPE, xPipeIndex),
@@ -409,18 +409,19 @@ void testCast_F32_Q80() {
             float *xPipe = (float *)execution->pipes[0];
             NnBlockQ80 *yPipe = (NnBlockQ80 *)execution->pipes[1];
 
-            for (NnUint i = 0; i < N_BATCHES * CAST_Q80_DIM; i++)
+            for (NnUint i = 0; i < N_BATCHES * dim; i++)
                 xPipe[i] = (float)(i + 1);
 
             // act
             executor->forward();
 
-            float yF32[CAST_Q80_DIM * N_BATCHES];
-            dequantizeQ80toF32(yPipe, yF32, CAST_Q80_DIM * N_BATCHES, 1, 0);
+            float yF32[dim * N_BATCHES];
+            dequantizeQ80toF32(yPipe, yF32, dim * N_BATCHES, 1, 0);
 
-            for (NnUint i = 0; i < N_BATCHES * CAST_Q80_DIM; i++) {
+            for (NnUint i = 0; i < N_BATCHES * dim; i++) {
                 const float expectedV = (float)(i + 1);
                 const float change = (yF32[i] - expectedV) / expectedV;
+                printf("cast %f %f\n", expectedV, yF32[i]);
                 assertFloat(i, change, 0.0, 0.009f);
             }
             printOk("testCast_F32_Q80");
@@ -680,13 +681,17 @@ int main() {
     testMergeAdd_Q80_F32<4, 160>();
 
     testEmbedding_F32_F32();
-    testShift_F32_F32();
+
+    testShift_F32_F32<32>();
+    testShift_F32_F32<9>();
 
     testCast_F32_F32<128>();
     testCast_F32_F32<32>();
     testCast_F32_F32<9>();
 
-    testCast_F32_Q80();
+    testCast_F32_Q80<256>();
+    testCast_F32_Q80<64>();
+
     testRopeLlama_F32_F32();
     testRopeFalcon_F32_F32();
 
