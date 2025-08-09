@@ -85,6 +85,7 @@ static inline float horizontalMax_avx2(__m256 v) {
 
 static inline __m256 expf_avx2(__m256 x) {
     x = _mm256_max_ps(x, _mm256_set1_ps(-88.0f));
+    x = _mm256_min_ps(x, _mm256_set1_ps(88.0f));
 
     const __m256 log2e = _mm256_set1_ps(1.4426950408889634f);
     const __m256 c0 = _mm256_set1_ps(1.0f);
