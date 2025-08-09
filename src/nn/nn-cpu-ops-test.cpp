@@ -22,6 +22,7 @@ void compare_F32(const char *name, const float *a, const float *b, const NnUint 
         }
     }
     printf("✅ %24s passed\n", name);
+    fflush(stdout);
 }
 
 // tests
@@ -275,6 +276,7 @@ void testLlamafileSgemm() {
 
     compare_F32("llamafileSgemm_F32", o.data(), oTemp.data(), d * batchSize, 0.01f);
 
+#if __ARM_FEATURE_DOTPROD
     // q40ᵀ * q80
 
     assert(llamafile_sgemm(
@@ -287,6 +289,7 @@ void testLlamafileSgemm() {
     ));
 
     compare_F32("llamafileSgemm_Q80_Q40", o.data(), oTemp.data(), d * batchSize, 1.5f);
+#endif
 }
 
 int main() {

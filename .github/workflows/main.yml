@@ -11,14 +11,14 @@ on:
 jobs:
   build-linux:
     name: Linux
-    runs-on: ${{matrix.os}}
+    runs-on: ${{matrix.runner}}
     strategy:
       matrix:
-        os:
-          - ubuntu-latest
-        platforms: 
-          - linux/arm64
-          - linux/amd64
+        include:
+          - runner: ubuntu-22.04
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v3

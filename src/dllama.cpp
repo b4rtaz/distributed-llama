@@ -1,12 +1,14 @@
 #include "nn/nn-core.hpp"
 #include "nn/nn-config-builder.hpp"
 #include "nn/nn-cpu.hpp"
+#include "nn/nn-cpu-ops.hpp"
 #include "nn/nn-network.hpp"
 #include "nn/nn-executor.hpp"
 #include "llm.hpp"
 #include "tokenizer.hpp"
 #include "app.hpp"
 #include <stdexcept>
+#include <cmath>
 
 static void inference(AppInferenceContext *context) {
     if (context->args->prompt == nullptr)
@@ -127,6 +129,48 @@ static NnUint readStdin(const char *guide, char *buffer, NnUint size) {
     return 0;
 }
 
+static void perplexity(AppInferenceContext *context) {
+    if (context->args->prompt == nullptr)
+        throw std::runtime_error("Prompt is required");
+
+    std::vector<int> inputTokensVec(std::strlen(context->args->prompt) + 3);
+    int *inputTokens = inputTokensVec.data();
+
+    int nInputTokens;
+    context->tokenizer->encode(context->args->prompt, inputTokens, &nInputTokens, true, true);
+
+    printf("Evaluating %d tokens...\n", nInputTokens);
+
+    float totalLogProb = 0.0f;
+    NnUint pos = 0;
+
+    context->inference->setBatchSize(1);
+
+    for (pos = 0; pos < nInputTokens - 1; pos++) {
+        context->inference->setPosition(pos);
+        context->inference->setToken(0, inputTokens[pos]);
+        context->inference->forward();
+
+        float *logits = context->inference->logitsPipe;
+        softmax_F32(logits, context->header->vocabSize);
+
+        int targetToken = inputTokens[pos + 1];
+        float prob = logits[targetToken];
+
+        totalLogProb += std::log(std::max(prob, 1e-30f));
+        printf("%5d / %d, prob=%f\n", pos + 1, nInputTokens - 1, prob);
+    }
+
+    float avgLogProb = totalLogProb / (float)(nInputTokens - 1);
+    float perplexity = expf(-avgLogProb);
+
+    printf("\n");
+    printf("Results\n");
+    printf("   perplexity: %f (lower = better)\n", perplexity);
+    printf("   avgLogProb: %f\n", avgLogProb);
+    printf("   bitPerToken: %f\n", -avgLogProb / std::log(2.0));
+}
+
 static void chat(AppInferenceContext *context) {
     const NnUint seqLen = context->header->seqLen;
     char prompt[2048];
@@ -223,7 +267,9 @@ int main(int argc, char **argv) {
         if (std::strcmp(args.mode, "inference") == 0) {
             args.benchmark = true;
             runInferenceApp(&args, &inference);
-        } else if (std::strcmp(args.mode, "chat") == 0)
+        } else if (std::strcmp(args.mode, "perplexity") == 0)
+            runInferenceApp(&args, &perplexity);
+        else if (std::strcmp(args.mode, "chat") == 0)
             runInferenceApp(&args, &chat);
         else if (std::strcmp(args.mode, "worker") == 0)
             runWorkerApp(&args);
