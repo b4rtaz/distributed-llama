@@ -22,6 +22,7 @@ void compare_F32(const char *name, const float *a, const float *b, const NnUint 
         }
     }
     printf("✅ %24s passed\n", name);
+    fflush(stdout);
 }
 
 // tests
