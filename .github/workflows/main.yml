@@ -15,8 +15,6 @@ jobs:
     strategy:
       matrix:
         include:
-          - runner: ubuntu-latest
-            arch: amd64
           - runner: ubuntu-22.04
             arch: amd64
           - runner: ubuntu-22.04
