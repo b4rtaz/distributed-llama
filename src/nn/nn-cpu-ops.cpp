@@ -653,16 +653,12 @@ void softmax_F32(float *x, const NnUint size) {
 
     if (avxEnd >= 8) {
         __m256 max_vec = _mm256_loadu_ps(x);
+        i = 8;
         for (; i < avxEnd; i += 8) {
             __m256 vec = _mm256_loadu_ps(&x[i]);
             max_vec = _mm256_max_ps(max_vec, vec);
         }
         maxVal = horizontalMax_avx2(max_vec);
-
-        for (; i < size; ++i) {
-            if (x[i] > maxVal)
-                maxVal = x[i];
-        }
     } else {
         maxVal = x[0];
         i = 1;
@@ -675,7 +671,6 @@ void softmax_F32(float *x, const NnUint size) {
     __m256 max_val_vec = _mm256_set1_ps(maxVal);
     __m256 sum_vec = _mm256_setzero_ps();
     float sum = 0.0f;
-    
     i = 0;
     for (; i < avxEnd; i += 8) {
         __m256 vec = _mm256_loadu_ps(&x[i]);
@@ -690,8 +685,8 @@ void softmax_F32(float *x, const NnUint size) {
         sum += x[i];
     }
 
-    if (sum == 0.0)
-        sum = 0.000001;
+    if (sum == 0.0f)
+        sum = 0.000001f;
 
     const float inv_sum = 1.0f / sum;
     const __m256 inv_sum_vec = _mm256_set1_ps(inv_sum);
