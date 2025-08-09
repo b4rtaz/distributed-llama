@@ -5,7 +5,7 @@
 #include <cstring>
 #if defined(__ARM_NEON)
     #include <arm_neon.h>
-#elif defined(__AVX2__)
+#elif defined(__AVX2__) || defined(__F16C__)
     #include <immintrin.h>
 #endif
 
