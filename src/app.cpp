@@ -234,9 +234,9 @@ void runInferenceApp(AppCliArgs *args, void (*handler)(AppInferenceContext *cont
 
     Tokenizer tokenizer(args->tokenizerPath);
     if (tokenizer.vocabSize != header.vocabSize)
-        printf("Tokenizer vocab size does not match the model vocab size: %d != %d\n", tokenizer.vocabSize, header.vocabSize);
+        printf("Tokenizer vocab size (%d) does not match the model vocab size (%d)\n", tokenizer.vocabSize, header.vocabSize);
 
-    Sampler sampler(header.vocabSize, args->temperature, args->topp, args->seed);
+    Sampler sampler(tokenizer.vocabSize, args->temperature, args->topp, args->seed);
 
     LlmNet net = buildLlmNet(&header, nNodes, args->nBatches);
     std::unique_ptr<LlmNet, void(*)(LlmNet *)> netPtr(&net, releaseLlmNet);

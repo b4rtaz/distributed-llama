@@ -421,7 +421,6 @@ void testCast_F32_Q80() {
             for (NnUint i = 0; i < N_BATCHES * dim; i++) {
                 const float expectedV = (float)(i + 1);
                 const float change = (yF32[i] - expectedV) / expectedV;
-                printf("cast %f %f\n", expectedV, yF32[i]);
                 assertFloat(i, change, 0.0, 0.009f);
             }
             printOk("testCast_F32_Q80");
