@@ -157,7 +157,7 @@ static void perplexity(AppInferenceContext *context) {
         int targetToken = inputTokens[pos + 1];
         float prob = logits[targetToken];
 
-        totalLogProb += std::logf(std::max(prob, 1e-30f));
+        totalLogProb += std::log(std::max(prob, 1e-30f));
         printf("%5d / %d, prob=%f\n", pos + 1, nInputTokens - 1, prob);
     }
 
@@ -168,7 +168,7 @@ static void perplexity(AppInferenceContext *context) {
     printf("Results\n");
     printf("   perplexity: %f (lower = better)\n", perplexity);
     printf("   avgLogProb: %f\n", avgLogProb);
-    printf("   bitPerToken: %f\n", -avgLogProb / logf(2.0));
+    printf("   bitPerToken: %f\n", -avgLogProb / std::log(2.0));
 }
 
 static void chat(AppInferenceContext *context) {
