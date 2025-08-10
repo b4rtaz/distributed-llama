@@ -70,7 +70,7 @@ void main() {
         const uint yiOffset = yOffset + i * Q80_BLOCK_SIZE;
 
         [[unroll]] for (uint k = 0; k < Q80_BLOCK_SIZE; k++) {
-            sums[k] = float16_t(0.0);
+            sums[k] = float16_t(0.0f);
         }
         for (uint n = 0; n < nParts; n++) {
             const BlockQ80 b = x[xiOffset + n * xJump];

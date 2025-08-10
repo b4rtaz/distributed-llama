@@ -50,7 +50,7 @@ void main() {
         const uint colStart = start + colOffset;
         const uint colEnd = end + colOffset;
 
-        float sum = 0.0;
+        float sum = 0.0f;
         for (uint i = colStart; i < colEnd; i++) {
             sum += x[i] * x[i];
         }
@@ -60,7 +60,7 @@ void main() {
         barrier();
 
         if (threadIndex == 0) {
-            sum = 0.0;
+            sum = 0.0f;
             [[unroll]] for (uint i = 0; i < N_THREADS; i++) {
                 sum += sums[i];
             }
