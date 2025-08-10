@@ -66,14 +66,14 @@ void main() {
             amax = max(amax, v);
         }
 
-        const float d = amax / 127.0;
+        const float d = amax / 127.0f;
         const float id = d != 0.0 ? 1.0 / d : 0.0;
 
         y[yiOffset].d = float16_t(d);
 
         [[unroll]] for (uint j = 0; j < Q80_BLOCK_SIZE; ++j) {
             const float v = x[xiOffset + j];
-            y[yiOffset].qs[j] = int8_t(clamp(round(v * id), -127.0, 127.0));
+            y[yiOffset].qs[j] = int8_t(clamp(round(v * id), -127.0f, 127.0f));
         }
     }
 }

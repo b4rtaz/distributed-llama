@@ -48,7 +48,7 @@ void main() {
 
     const uint kvMul = nHeads / nKvHeads;
     const uint headIndex = h / kvMul;
-    const float invHeadDimRoot = 1.0 / sqrt(float(headDim));
+    const float invHeadDimRoot = 1.0f / sqrt(float(headDim));
 
 
     if (threadIndex == 0) {
@@ -68,7 +68,7 @@ void main() {
     for (uint p = threadIndex; p <= position; p += N_THREADS) {
         const uint kOffset = kvOffset + p * kvDim0;
 
-        float score = 0.0;
+        float score = 0.0f;
         for (uint i = 0; i < headDim; i++) {
             score += query[qOffset + i] * keyCache[kOffset + i];
         }
@@ -97,7 +97,7 @@ void main() {
 
     const float maxScore = sharedMaxScore;
 
-    float s = 0.0;
+    float s = 0.0f;
     for (uint p = threadIndex; p <= position; p += N_THREADS) {
         float v = exp(att[attOffset + p] - maxScore);
         att[attOffset + p] = v;
@@ -113,7 +113,7 @@ void main() {
         barrier();
     }
 
-    const float yScale = 1.0 / temp[0];
+    const float yScale = 1.0f / temp[0];
 
     for (uint i = threadIndex; i < headDim; i += N_THREADS) {
         float sum = 0.0;

@@ -46,6 +46,6 @@ void main() {
 
     for (uint i = threadIndex; i < dim; i += N_THREADS) {
         float v = x[xOffset + i];
-        y[yOffset + i] = v / (1.0 + exp(-v));
+        y[yOffset + i] = v / (1.0f + exp(-v));
     }
 }
