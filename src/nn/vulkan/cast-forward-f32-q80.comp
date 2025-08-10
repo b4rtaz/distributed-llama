@@ -67,7 +67,7 @@ void main() {
         }
 
         const float d = amax / 127.0f;
-        const float id = d != 0.0 ? 1.0 / d : 0.0;
+        const float id = d != 0.0f ? 1.0f / d : 0.0f;
 
         y[yiOffset].d = float16_t(d);
 

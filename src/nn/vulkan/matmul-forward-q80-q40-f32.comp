@@ -97,7 +97,7 @@ void main() {
                 const uint wi = (d + dt) * inputSizeX + (i + it);
                 const BlockQ40 wBlock = weight[wi];
 
-                float16_t s = float16_t(0);
+                float16_t s = float16_t(0.0f);
                 [[unroll]] for (uint j = 0; j < Q80_Q40_BLOCK_SIZE / 4; j++) {
                     uint w0 = wBlock.qs[j * 2];
                     uint w1 = wBlock.qs[j * 2 + 1];
