@@ -46,10 +46,11 @@ private:
     vk::DeviceMemory deviceMemory;
     void *hostPointer;
 public:
+    const char *name;
     vk::DeviceSize bufferSize;
     vk::Buffer deviceBuffer;
     vk::BufferUsageFlags usageFlags;
-    NnVulkanBuffer(NnVulkanContext *context, const vk::DeviceSize bufferSize, vk::BufferUsageFlags usageFlags, bool fastAccess);
+    NnVulkanBuffer(NnVulkanContext *context, const char *name, const vk::DeviceSize bufferSize, vk::BufferUsageFlags usageFlags, bool fastAccess);
     ~NnVulkanBuffer();
     void write(const NnByte *data);
     void read(NnByte *data);
