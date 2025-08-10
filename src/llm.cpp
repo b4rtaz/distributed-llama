@@ -180,10 +180,10 @@ LlmNet buildLlmNet(LlmHeader *h, NnUint nNodes, NnUint nBatches) {
         const NnUint yBufferIndex = nodeBuilder.addBuffer("y", size2D(F_32, nBatches, h->dim));
         const NnUint yqBufferIndex = h->syncType == F_32
             ? yBufferIndex
-            : nodeBuilder.addBuffer("yq", size2D(h->syncType, nBatches, h->dim));
+            : nodeBuilder.addBuffer("q_y", size2D(h->syncType, nBatches, h->dim));
 
         const NnUint zBufferIndex = nodeBuilder.addBuffer("z", size2D(F_32, nBatches, h->qDim));
-        const NnUint zqSliceBufferIndex = nodeBuilder.addBuffer("zq_slice", size2D(h->syncType, nBatches, h->qDim / nNodes));
+        const NnUint zqSliceBufferIndex = nodeBuilder.addBuffer("q_z_slice", size2D(h->syncType, nBatches, h->qDim / nNodes));
 
         const NnUint qBufferIndex = nodeBuilder.addBuffer("q", size2D(F_32, nBatches, n.qSlice.d0));
         const NnUint kTempBufferIndex = nodeBuilder.addBuffer("k_temp", size2D(F_32, nBatches, n.kSlice.d0));
@@ -201,7 +201,7 @@ LlmNet buildLlmNet(LlmHeader *h, NnUint nNodes, NnUint nBatches) {
         const NnUint dBufferIndex = nodeBuilder.addBuffer("d", size2D(F_32, nBatches, n.w1Slice.d0));
         const NnUint dqBufferIndex = h->syncType == F_32
             ? dBufferIndex
-            : nodeBuilder.addBuffer("d", size2D(h->syncType, nBatches, n.w1Slice.d0));
+            : nodeBuilder.addBuffer("q_d", size2D(h->syncType, nBatches, n.w1Slice.d0));
         const NnUint lBufferIndex = nodeBuilder.addBuffer("l", size2D(F_32, nBatches, n.w3Slice.d0));
         const NnUint ropeCacheBufferIndex = nodeBuilder.addBuffer("rope_cache", ropeSlice.cacheSize);
         const NnUint attBufferIndex = nodeBuilder.addBuffer("att", multiHeadAttSlice.attSize);

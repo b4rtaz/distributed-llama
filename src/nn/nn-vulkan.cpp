@@ -6,6 +6,8 @@
     #define VULKAN_TRACE(...)
 #endif
 
+#define DEBUG_VULKAN_BUFFERS false
+
 static bool hasPortabilityExtension() {
 #ifdef __APPLE__
     const std::vector<vk::ExtensionProperties> extensionProperties = vk::enumerateInstanceExtensionProperties();
@@ -120,8 +122,9 @@ void NnVulkanStagingCopy::executeCopyCommand() {
     context->device.freeCommandBuffers(context->commandPool, 1, &commandBuffer);
 }
 
-NnVulkanBuffer::NnVulkanBuffer(NnVulkanContext *context, const vk::DeviceSize bufferSize, vk::BufferUsageFlags usageFlags, bool fastAccess) {
+NnVulkanBuffer::NnVulkanBuffer(NnVulkanContext *context, const char *name, const vk::DeviceSize bufferSize, vk::BufferUsageFlags usageFlags, bool fastAccess) {
     this->context = context;
+    this->name = name;
     this->bufferSize = bufferSize;
     this->usageFlags = usageFlags;
     this->hostPointer = nullptr;
@@ -220,9 +223,9 @@ NnVulkanDeviceData::NnVulkanDeviceData(NnVulkanContext *context, NnNetConfig *ne
     this->nodeConfig = nodeConfig;
 
     for (NnUint i = 0; i < netConfig->nPipes; i++)
-        pipes[i].reset(new NnVulkanBuffer(context, netConfig->pipes[i].size.nBytes, vk::BufferUsageFlagBits::eStorageBuffer, true));
+        pipes[i].reset(new NnVulkanBuffer(context, netConfig->pipes[i].name, netConfig->pipes[i].size.nBytes, vk::BufferUsageFlagBits::eStorageBuffer, true));
     for (NnUint i = 0; i < nodeConfig->nBuffers; i++)
-        buffers[i].reset(new NnVulkanBuffer(context, nodeConfig->buffers[i].size.nBytes, vk::BufferUsageFlagBits::eStorageBuffer, false));
+        buffers[i].reset(new NnVulkanBuffer(context, nodeConfig->buffers[i].name, nodeConfig->buffers[i].size.nBytes, vk::BufferUsageFlagBits::eStorageBuffer, false));
 
     NnRopeOpConfig *ropeLlamaOpConfig = (NnRopeOpConfig *)findFirstOpConfig(nodeConfig, OP_ROPE);
     if (ropeLlamaOpConfig != nullptr) {
@@ -561,18 +564,18 @@ NnVulkanDeviceSegmentData::NnVulkanDeviceSegmentData(NnVulkanContext *context, N
 
         std::vector<NnVulkanBatchInfo> batchInfo = buildBatchInfo(opConfig, data, nBatches);
         NnSize batchInfoSize = sizeof(NnVulkanBatchInfo) * batchInfo.size();
-        NnVulkanBuffer *batchInfoBuffer = new NnVulkanBuffer(context, batchInfoSize, vk::BufferUsageFlagBits::eStorageBuffer, false);
+        NnVulkanBuffer *batchInfoBuffer = new NnVulkanBuffer(context, "batchInfo", batchInfoSize, vk::BufferUsageFlagBits::eStorageBuffer, false);
         data->internalBuffers.push_back(std::unique_ptr<NnVulkanBuffer>(batchInfoBuffer));
         batchInfoBuffer->write((NnByte *)batchInfo.data());
         batchInfoBufferIndex[opIndex] = data->internalBuffers.size() - 1;
 
         if (opConfig->weightSize.nBytes > 0) {
-            NnVulkanBuffer *buffer = new NnVulkanBuffer(context, opConfig->weightSize.nBytes, vk::BufferUsageFlagBits::eStorageBuffer, false);
+            NnVulkanBuffer *buffer = new NnVulkanBuffer(context, "weights", opConfig->weightSize.nBytes, vk::BufferUsageFlagBits::eStorageBuffer, false);
             data->internalBuffers.push_back(std::unique_ptr<NnVulkanBuffer>(buffer));
             weightBufferIndex[opIndex] = data->internalBuffers.size() - 1;
         }
         if (opConfig->configSize > 0) {
-            NnVulkanBuffer *configBuffer = new NnVulkanBuffer(context, opConfig->configSize, vk::BufferUsageFlagBits::eUniformBuffer, false);
+            NnVulkanBuffer *configBuffer = new NnVulkanBuffer(context, "config", opConfig->configSize, vk::BufferUsageFlagBits::eUniformBuffer, false);
             data->internalBuffers.push_back(std::unique_ptr<NnVulkanBuffer>(configBuffer));
             configBuffer->write(opConfig->config);
             configBufferIndex[opIndex] = data->internalBuffers.size() - 1;
@@ -854,4 +857,29 @@ void NnVulkanDeviceSegment::forward(NnUint opIndex, NnUint nThreads, NnUint thre
             }
         }
     }
+
+#if DEBUG_VULKAN_BUFFERS
+    NnUint nBuffers = data->buffers.size();
+    for (NnUint i = 0; i < nBuffers; i++) {
+        NnVulkanBuffer *buffer = data->buffers[i].get();
+        printf("[%3d:%3d:%10s] ", segmentIndex, i, buffer->name);
+        std::vector<NnByte> data(buffer->bufferSize);
+        buffer->read(data.data());
+        if (strncmp(buffer->name, "q_", 2) == 0) {
+            NnUint nBytes = 32;
+            if (buffer->bufferSize < nBytes)
+                nBytes = buffer->bufferSize;
+            for (NnUint j = 0; j < nBytes; j++)
+                printf(" %x", data.data()[j]);
+        } else {
+            NnUint nNumbers = buffer->bufferSize / sizeof(float);
+            if (nNumbers > 16)
+                nNumbers = 16;
+            float *nums = (float *)data.data();
+            for (NnUint j = 0; j < nNumbers; j++)
+                printf(" %.4f", nums[j]);
+        }
+        printf("\n");
+    }
+#endif
 }
