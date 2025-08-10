@@ -60,14 +60,14 @@ void main() {
         const uint xiOffset = xOffset + i * Q80_BLOCK_SIZE;
         const uint yiOffset = yOffset + i;
 
-        float amax = 0.0;
+        float amax = 0.0f;
         [[unroll]] for (uint j = 0; j < Q80_BLOCK_SIZE; ++j) {
             const float v = abs(x[xiOffset + j]);
             amax = max(amax, v);
         }
 
         const float d = amax / 127.0f;
-        const float id = d != 0.0 ? 1.0 / d : 0.0;
+        const float id = d != 0.0f ? 1.0f / d : 0.0f;
 
         y[yiOffset].d = float16_t(d);
 

@@ -116,7 +116,7 @@ void main() {
     const float yScale = 1.0f / temp[0];
 
     for (uint i = threadIndex; i < headDim; i += N_THREADS) {
-        float sum = 0.0;
+        float sum = 0.0f;
         const uint vOffset = kvOffset + i;
         for (uint p = 0; p <= position; p += 1) {
             const float a = att[attOffset + p];

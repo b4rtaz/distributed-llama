@@ -51,7 +51,7 @@ void main() {
     const uint yOffset = sharedYOffset;
 
     for (uint i = threadIndex; i < dim; i += N_THREADS) {
-        float sum = 0.0;
+        float sum = 0.0f;
         const uint iOffset = xOffset + i;
         const uint oOffset = yOffset + i;
         for (uint n = 0; n < parts; n++) {
