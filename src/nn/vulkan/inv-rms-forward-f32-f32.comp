@@ -26,7 +26,8 @@ shared float sums[N_THREADS];
 
 void main() {
     const uint threadIndex = gl_LocalInvocationID.x;
-    const uint batchIndex = gl_GlobalInvocationID.y;
+    const uint batchIndex = gl_WorkGroupID.y;
+    const uint colIndex = gl_WorkGroupID.z;
 
     if (threadIndex == 0) {
         sharedInfo = infos[batchIndex];
@@ -41,30 +42,24 @@ void main() {
     const uint start = offset + threadIndex * slice + min(rest, threadIndex);
     const uint end = start + slice + (threadIndex < rest ? 1 : 0);
 
-    for (uint col = 0; col < nColumns; col++) {
-        if (col != 0) {
-            barrier();
+    const uint colOffset = colIndex * colDim;
+    const uint colStart = start + colOffset;
+    const uint colEnd = end + colOffset;
+
+    float sum = 0.0f;
+    for (uint i = colStart; i < colEnd; i++) {
+        sum += x[i] * x[i];
+    }
+    sums[threadIndex] = sum;
+
+    memoryBarrierShared();
+    barrier();
+
+    if (threadIndex == 0) {
+        sum = 0.0f;
+        [[unroll]] for (uint i = 0; i < N_THREADS; i++) {
+            sum += sums[i];
         }
-
-        const uint colOffset = col * colDim;
-        const uint colStart = start + colOffset;
-        const uint colEnd = end + colOffset;
-
-        float sum = 0.0f;
-        for (uint i = colStart; i < colEnd; i++) {
-            sum += x[i] * x[i];
-        }
-        sums[threadIndex] = sum;
-
-        memoryBarrierShared();
-        barrier();
-
-        if (threadIndex == 0) {
-            sum = 0.0f;
-            [[unroll]] for (uint i = 0; i < N_THREADS; i++) {
-                sum += sums[i];
-            }
-            y[batchIndex * nColumns + col] = inversesqrt((sum / float(colDim)) + epsilon);
-        }
+        y[batchIndex * nColumns + colIndex] = inversesqrt((sum / float(colDim)) + epsilon);
     }
 }
