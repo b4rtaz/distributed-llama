@@ -205,7 +205,7 @@ typedef struct {
 
 typedef struct {
     NnRopeType type;
-    bool isQ;
+    NnUint isQ; // Cannot use `bool` here due to GPU memory alignment
     NnUint positionPipeIndex;
     NnUint ropeCacheBufferIndex;
     float ropeScalingFactor;

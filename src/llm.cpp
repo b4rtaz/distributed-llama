@@ -313,7 +313,7 @@ LlmNet buildLlmNet(LlmHeader *h, NnUint nNodes, NnUint nBatches) {
                 pointerBatchConfig(SRC_BUFFER, qBufferIndex),
                 pointerBatchConfig(SRC_BUFFER, qBufferIndex),
                 size0(),
-                NnRopeOpConfig{n.header->ropeType, true, n.positionPipeIndex, ropeCacheBufferIndex, 
+                NnRopeOpConfig{n.header->ropeType, 1, n.positionPipeIndex, ropeCacheBufferIndex, 
                     h->ropeScalingFactor, h->ropeScalingLowFreqFactor, h->ropeScalingHighFreqFactory, h->ropeScalingOrigMaxSeqLen,
                     ropeSlice});
             att.addOp(
@@ -321,7 +321,7 @@ LlmNet buildLlmNet(LlmHeader *h, NnUint nNodes, NnUint nBatches) {
                 pointerBatchConfig(SRC_BUFFER, kTempBufferIndex),
                 pointerBatchConfig(SRC_BUFFER, kTempBufferIndex),
                 size0(),
-                NnRopeOpConfig{n.header->ropeType, false, n.positionPipeIndex, ropeCacheBufferIndex, 
+                NnRopeOpConfig{n.header->ropeType, 0, n.positionPipeIndex, ropeCacheBufferIndex, 
                     h->ropeScalingFactor, h->ropeScalingLowFreqFactor, h->ropeScalingHighFreqFactory, h->ropeScalingOrigMaxSeqLen,
                     ropeSlice});
             att.addOp(

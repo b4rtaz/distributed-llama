@@ -32,7 +32,7 @@ layout(binding = 1) writeonly buffer outputBuffer { float y[]; };
 layout(binding = 2) readonly buffer batchInfosBuffer { BatchInfo infos[]; };
 layout(binding = 3) readonly uniform configBuffer {
     uint ropeType;
-    bool isQ;
+    uint isQ;
     uint positionPipeIndex;
     uint ropeCacheBufferIndex;
     float ropeScalingFactor;
@@ -56,7 +56,7 @@ void main() {
 
         if (ropeType == 0 || ropeType == 2 /* Llama */) {
             sharedOffset = position * slice.sliceDim;
-            if (isQ) {
+            if (isQ == 1) {
                 sharedOffset += slice.qShift;
             }
         } else if (ropeType == 1 /* Falcon */) {
@@ -70,7 +70,7 @@ void main() {
 
     const uint xOffset = sharedInfo.inputOffset;
     const uint yOffset = sharedInfo.outputOffset;
-    const uint dim0 = isQ ? slice.qDim0 : slice.kvDim0;
+    const uint dim0 = isQ == 1 ? slice.qDim0 : slice.kvDim0;
 
     if (ropeType == 0 || ropeType == 2 /* Llama */) {
         const uint dim0Half = dim0 / 2;
