@@ -22,43 +22,35 @@ layout(binding = 4) readonly uniform configBuffer {
 layout(binding = 5) readonly buffer invRmsBuffer { float invRms[]; };
 
 shared uint sharedDim;
-shared uint sharedDimOffset;
-shared uint sharedColDim;
 shared uint sharedXOffset;
 shared uint sharedYOffset;
+shared float sharedS;
 
 void main() {
     const uint threadIndex = uint(gl_LocalInvocationID.x);
-    const uint batchIndex = gl_WorkGroupID.y;
 
     if (threadIndex == 0) {
-        const uint nWorkGroups = gl_NumWorkGroups.z;
-        const uint workGroupIndex = gl_WorkGroupID.z;
+        const uint batchIndex = gl_WorkGroupID.y;
+        const uint colIndex = gl_WorkGroupID.z;
 
         const BatchInfo info = infos[batchIndex];
-        const uint slice = info.inputSizeX / nWorkGroups;
-        const uint rest = info.inputSizeX % nWorkGroups;
+        sharedDim = info.inputSizeX / nColumns;
+        const uint offset = sharedDim * colIndex;
+        sharedXOffset = info.inputOffset + offset;
+        sharedYOffset = info.outputOffset + offset;
 
-        sharedDim = slice + (workGroupIndex < rest ? 1 : 0);
-        sharedDimOffset = slice * workGroupIndex + min(rest, workGroupIndex);
-        sharedColDim = info.inputSizeX / nColumns;
-        sharedXOffset = info.inputOffset + sharedDimOffset;
-        sharedYOffset = info.outputOffset + sharedDimOffset;
+        sharedS = invRms[batchIndex * nColumns + colIndex];
     }
 
     barrier();
     memoryBarrierShared();
 
     const uint dim = sharedDim;
-    const uint dimOffset = sharedDimOffset;
-    const uint colDim = sharedColDim;
     const uint xOffset = sharedXOffset;
     const uint yOffset = sharedYOffset;
-    const uint invRmsOffset = batchIndex * nColumns;
+    const float s = sharedS;
 
     for (uint i = threadIndex; i < dim; i += N_THREADS) {
-        const uint j = i + dimOffset;
-        const float s = invRms[invRmsOffset + (j / colDim)];
-        y[yOffset + i] = (x[xOffset + i] * s) * weight[j % colDim];
+        y[yOffset + i] = (x[xOffset + i] * s) * weight[i];
     }
 }

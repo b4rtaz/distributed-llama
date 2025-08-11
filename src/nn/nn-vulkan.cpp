@@ -501,7 +501,6 @@ static void resolveShaderGroups(const NnOpConfig *opConfig, const NnUint batchSi
     groupCount[2] = 1;
 
     if (opConfig->code == OP_CAST ||
-        opConfig->code == OP_RMS_NORM ||
         opConfig->code == OP_MUL ||
         opConfig->code == OP_SILU ||
         opConfig->code == OP_SHIFT ||
@@ -522,6 +521,10 @@ static void resolveShaderGroups(const NnOpConfig *opConfig, const NnUint batchSi
     }
     else if (opConfig->code == OP_MULTIHEAD_ATT)
         groupCount[2] = ((NnMultiHeadAttOpConfig *)opConfig->config)->nHeads0;
+    else if (opConfig->code == OP_INV_RMS)
+        groupCount[2] = ((NnInvRmsOpConfig *)opConfig->config)->nColumns;
+    else if (opConfig->code == OP_RMS_NORM)
+        groupCount[2] = ((NnRmsNormOpConfig *)opConfig->config)->nColumns;
 }
 
 static std::vector<uint32_t> readShader(const char *fileName) {
