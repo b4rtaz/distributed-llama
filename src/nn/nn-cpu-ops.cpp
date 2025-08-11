@@ -1156,14 +1156,15 @@ static void ropeForward_F32_F32(NnUint nThreads, NnUint threadIndex, NnUint batc
     const NnRopeSlice *slice = &config->slice;
     const float *positions = (float *)context->pipes[config->positionPipeIndex];
     const float *cache = (float *)context->buffers[config->ropeCacheBufferIndex];
+    const bool isQ = config->isQ == 1;
 
     for (NnUint batchIndex = 0; batchIndex < batchSize; batchIndex++) {
         float *x = (float *)context->input[batchIndex];
         const NnUint pos = (NnUint)positions[batchIndex];
         if (config->type == ROPE_LLAMA || config->type == ROPE_LLAMA3_1)
-            ropeLlama_F32(x, cache, config->isQ, pos, slice, nThreads, threadIndex);
+            ropeLlama_F32(x, cache, isQ, pos, slice, nThreads, threadIndex);
         else if (config->type == ROPE_FALCON)
-            ropeFalcon_F32(x, cache, config->isQ, pos, slice, nThreads, threadIndex);
+            ropeFalcon_F32(x, cache, isQ, pos, slice, nThreads, threadIndex);
         else
             throw std::runtime_error("Unsupported rope type");
     }

@@ -440,7 +440,7 @@ void testRope_F32_F32() {
             NnUint xPipeIndex = netBuilder->addPipe("X", size2D(F_32, N_BATCHES, ROPE_DIM));
             NnUint posPipeIndex = netBuilder->addPipe("POS", size2D(F_32, N_BATCHES, 1));
             NnUint ropeCacheBufferIndex = nodeBuilder->addBuffer("ropeCache", slice.cacheSize);
-            bool isQ = true;
+            NnUint isQ = 1;
 
             segmentBuilder->addOp(
                 OP_ROPE, "rope_llama", 0,
