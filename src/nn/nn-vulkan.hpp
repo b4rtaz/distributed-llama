@@ -6,8 +6,6 @@
 #include "nn-executor.hpp"
 #include "nn-cpu-ops.hpp"
 
-#define DEBUG_VULKAN_TRACE false
-
 typedef struct {
     vk::Instance instance;
     vk::PhysicalDevice physicalDevice;
@@ -15,6 +13,7 @@ typedef struct {
     uint32_t queueFamilyIndex;
     vk::CommandPool commandPool;
     vk::Queue queue;
+    NnSize nonCoherentAtomSize;
 } NnVulkanContext;
 
 enum NnStagingVulkanCopyDirection {
@@ -47,13 +46,16 @@ private:
     void *hostPointer;
 public:
     const char *name;
-    vk::DeviceSize bufferSize;
+    NnSize bufferSize;
     vk::Buffer deviceBuffer;
     vk::BufferUsageFlags usageFlags;
-    NnVulkanBuffer(NnVulkanContext *context, const char *name, const vk::DeviceSize bufferSize, vk::BufferUsageFlags usageFlags, bool fastAccess);
+    NnVulkanBuffer(NnVulkanContext *context, const char *name, const NnSize bufferSize, vk::BufferUsageFlags usageFlags, bool fastAccess);
     ~NnVulkanBuffer();
     void write(const NnByte *data);
+    void write(const NnByte *data, const NnSize size);
     void read(NnByte *data);
+    void read(NnByte *data, const NnSize size);
+    NnSize calcSliceSize(const NnSize nominator, const NnSize denominator);
 };
 
 typedef struct {
