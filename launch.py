@@ -1,6 +1,7 @@
 import os
 import sys
 import time
+import socket
 import multiprocessing
 from urllib.request import urlopen
 
@@ -79,6 +80,7 @@ def downloadFile(urls, path: str):
         if not confirm(f'{fileName} already exists, do you want to download again?'):
             return
 
+    socket.setdefaulttimeout(30)
     lastSizeMb = 0
     with open(path, 'wb') as file:
         for url in urls:
