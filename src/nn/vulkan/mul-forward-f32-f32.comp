@@ -1,6 +1,7 @@
 #version 450
 
 #define N_THREADS 256
+#define N_BATCHES 32
 
 layout(local_size_x = N_THREADS, local_size_y = 1, local_size_z = 1) in;
 
@@ -13,7 +14,7 @@ struct BatchInfo {
 
 layout(binding = 0) readonly buffer inputBuffer { float x[]; };
 layout(binding = 1) buffer outputBuffer { float y[]; };
-layout(binding = 2) readonly buffer batchInfosBuffer { BatchInfo infos[]; };
+layout(binding = 2) readonly uniform batchInfosBuffer { BatchInfo infos[N_BATCHES]; };
 layout(binding = 3) readonly uniform configBuffer {
     uint multiplierBufferIndex;
 };

@@ -594,7 +594,7 @@ NnVulkanDeviceSegmentData::NnVulkanDeviceSegmentData(NnVulkanContext *context, N
 
         std::vector<NnVulkanBatchInfo> batchInfo = buildBatchInfo(opConfig, data, nBatches);
         NnSize batchInfoSize = sizeof(NnVulkanBatchInfo) * batchInfo.size();
-        NnVulkanBuffer *batchInfoBuffer = new NnVulkanBuffer(context, "batchInfo", batchInfoSize, vk::BufferUsageFlagBits::eStorageBuffer, false);
+        NnVulkanBuffer *batchInfoBuffer = new NnVulkanBuffer(context, "batchInfo", batchInfoSize, vk::BufferUsageFlagBits::eUniformBuffer, false);
         data->internalBuffers.push_back(std::unique_ptr<NnVulkanBuffer>(batchInfoBuffer));
         batchInfoBuffer->write((NnByte *)batchInfo.data());
         batchInfoBufferIndex[opIndex] = data->internalBuffers.size() - 1;

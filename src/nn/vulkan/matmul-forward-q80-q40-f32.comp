@@ -5,6 +5,7 @@
 #extension GL_EXT_shader_explicit_arithmetic_types : enable
 
 #define N_THREADS 64
+#define N_BATCHES 32
 #define TILE_SIZE_X 2
 #define TILE_SIZE_D 16
 
@@ -31,47 +32,28 @@ struct BlockQ40 {
 
 layout(binding = 0) readonly buffer inputBuffer { BlockQ80 x[]; };
 layout(binding = 1) writeonly buffer outputBuffer { float y[]; };
-layout(binding = 2) readonly buffer batchInfosBuffer { BatchInfo infos[]; };
+layout(binding = 2) readonly uniform batchInfosBuffer { BatchInfo infos[N_BATCHES]; };
 layout(binding = 3) readonly buffer weightBuffer { BlockQ40 weight[]; };
 
-shared uint sharedXSlice;
-shared uint sharedXRest;
-shared uint sharedInputOffset;
-shared uint sharedInputSizeX;
-shared uint sharedOutputOffset;
-shared uint sharedD;
 shared float16_t sums[N_THREADS * TILE_SIZE_D];
 
 void main() {
     const uint threadIndex = gl_LocalInvocationID.x;
+    const uint batchIndex = gl_WorkGroupID.y;
+    const uint workGroupIndex = gl_WorkGroupID.z;
+    const BatchInfo info = infos[batchIndex];
 
-    if (threadIndex == 0) {
-        const uint batchIndex = gl_WorkGroupID.y;
-        const uint workGroupIndex = gl_WorkGroupID.z;
+    const uint xTiles = info.inputSizeX / TILE_SIZE_X;
+    const uint xSlice = xTiles / N_THREADS;
+    const uint xRest = xTiles % N_THREADS;
 
-        const BatchInfo info = infos[batchIndex];
+    const uint inputOffset = info.inputOffset;
+    const uint inputSizeX = info.inputSizeX;
+    const uint outputOffset = info.outputOffset;
+    const uint d = TILE_SIZE_D * workGroupIndex;
 
-        const uint xTiles = info.inputSizeX / TILE_SIZE_X;
-        sharedXSlice = xTiles / N_THREADS;
-        sharedXRest = xTiles % N_THREADS;
-
-        sharedInputOffset = info.inputOffset;
-        sharedInputSizeX = info.inputSizeX;
-        sharedOutputOffset = info.outputOffset;
-        sharedD = TILE_SIZE_D * workGroupIndex;
-    }
-
-    barrier();
-
-    const uint xSlice = sharedXSlice;
-    const uint xRest = sharedXRest;
     const uint xStart = (threadIndex * xSlice + min(threadIndex, xRest)) * TILE_SIZE_X;
     const uint xEnd = xStart + (xSlice + (threadIndex < xRest ? 1 : 0)) * TILE_SIZE_X;
-
-    const uint inputOffset = sharedInputOffset;
-    const uint inputSizeX = sharedInputSizeX;
-    const uint outputOffset = sharedOutputOffset;
-    const uint d = sharedD;
 
     f16vec4 xTemp[Q80_Q40_BLOCK_SIZE / 4];
 
