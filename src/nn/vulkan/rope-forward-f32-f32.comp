@@ -45,10 +45,19 @@ layout(binding = 3) readonly uniform configBuffer {
 layout(binding = 4) readonly buffer positionsBuffer { float positions[]; };
 layout(binding = 5) readonly buffer ropeCacheBuffer { float ropeCache[]; };
 
+shared uint sharedPosition;
+
 void main() {
     const uint threadIndex = gl_LocalInvocationID.x;
     const uint batchIndex = gl_GlobalInvocationID.y;
-    const uint position = uint(positions[batchIndex]);;
+
+    if (threadIndex == 0) {
+        sharedPosition = uint(positions[batchIndex]);
+    }
+
+    barrier();
+
+    const uint position = sharedPosition;
     const BatchInfo info = infos[batchIndex];
 
     const uint xOffset = info.inputOffset;

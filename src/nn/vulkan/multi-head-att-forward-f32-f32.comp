@@ -37,6 +37,7 @@ layout(binding = 6) readonly buffer keyCacheBuffer { float keyCache[]; };
 layout(binding = 7) readonly buffer valueCacheBuffer { float valueCache[]; };
 layout(binding = 8) buffer attBufferBuffer { float att[]; };
 
+shared uint sharedPosition;
 shared float sharedMaxScore;
 shared float temp[N_THREADS];
 
@@ -45,12 +46,18 @@ void main() {
     const uint batchIndex = gl_WorkGroupID.y;
     const uint h = gl_WorkGroupID.z;
 
+    if (threadIndex == 0) {
+        sharedPosition = uint(positions[batchIndex]);
+    }
+
+    barrier();
+
     const uint kvMul = nHeads / nKvHeads;
     const uint headIndex = h / kvMul;
     const float invHeadDimRoot = 1.0f / sqrt(float(headDim));
 
     const BatchInfo info = infos[batchIndex];
-    const uint position = uint(positions[batchIndex]);
+    const uint position = sharedPosition;
 
     const uint attOffset = batchIndex * nHeads0 * seqLen + h * seqLen;
     const uint qOffset = batchIndex * qSliceD0 + h * headDim;

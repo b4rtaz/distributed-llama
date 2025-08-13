@@ -17,10 +17,19 @@ layout(binding = 1) buffer outputBuffer { float y[]; };
 layout(binding = 2) readonly uniform batchInfosBuffer { BatchInfo infos[N_BATCHES]; };
 layout(binding = 3) readonly buffer weightBuffer { float weight[]; };
 
+shared uint sharedPosition;
+
 void main() {
     const uint threadIndex = gl_LocalInvocationID.x;
     const uint batchIndex = gl_GlobalInvocationID.y;
-    const uint position = uint(x[batchIndex]);
+
+    if (threadIndex == 0) {
+        sharedPosition = uint(x[batchIndex]);
+    }
+
+    barrier();
+
+    const uint position = sharedPosition;
     const BatchInfo info = infos[batchIndex];
 
     const uint outputSizeX = info.outputSizeX;
