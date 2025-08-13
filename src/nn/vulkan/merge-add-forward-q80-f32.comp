@@ -55,7 +55,6 @@ void main() {
     }
 
     barrier();
-    memoryBarrierShared();
 
     const uint xStart = sharedXStart + threadIndex;
     const uint xEnd = sharedXEnd;

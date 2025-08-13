@@ -21,7 +21,6 @@ layout(binding = 3) readonly uniform opConfigBuffer {
     uint nColumns;
 };
 
-shared BatchInfo sharedInfo;
 shared float sums[N_THREADS];
 
 void main() {
@@ -29,14 +28,9 @@ void main() {
     const uint batchIndex = gl_WorkGroupID.y;
     const uint colIndex = gl_WorkGroupID.z;
 
-    if (threadIndex == 0) {
-        sharedInfo = infos[batchIndex];
-    }
-    memoryBarrierShared();
-    barrier();
-
-    const uint dim = sharedInfo.inputSizeX / nColumns;
-    const uint offset = sharedInfo.inputOffset + dim * colIndex;
+    const BatchInfo info = infos[batchIndex];
+    const uint dim = info.inputSizeX / nColumns;
+    const uint offset = info.inputOffset + dim * colIndex;
 
     float sum = 0.0f;
     for (uint i = threadIndex; i < dim; i += N_THREADS) {
@@ -45,14 +39,15 @@ void main() {
     }
     sums[threadIndex] = sum;
 
-    memoryBarrierShared();
     barrier();
 
+    [[unroll]] for (uint i = N_THREADS / 2; i > 0; i >>= 1) {
+        if (threadIndex < i)
+            sums[threadIndex] += sums[threadIndex + i];
+        barrier();
+    }
+
     if (threadIndex == 0) {
-        sum = 0.0f;
-        [[unroll]] for (uint i = 0; i < N_THREADS; i++) {
-            sum += sums[i];
-        }
-        y[batchIndex * nColumns + colIndex] = inversesqrt((sum / float(dim)) + epsilon);
+        y[batchIndex * nColumns + colIndex] = inversesqrt((sums[0] / float(dim)) + epsilon);
     }
 }

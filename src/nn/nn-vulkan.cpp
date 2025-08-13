@@ -465,45 +465,45 @@ static const char *getShaderFileName(const NnOpCode opCode, const NnOpQuantType 
     throw std::invalid_argument(std::string("Unsupported shader: ") + opCodeToString(opCode) + "/" + opQuantTypeToString(quantType));
 }
 
-static void buildShaderLayout(std::vector<NnVulkanBuffer *> &buffers, NnVulkanDeviceData *data, NnVulkanDeviceSegmentData *segmentData, NnUint opIndex, NnOpConfig *opConfig) {
+static void buildShaderLayout(std::vector<NnOpBufferUsage> &usages, NnVulkanDeviceData *data, NnVulkanDeviceSegmentData *segmentData, NnUint opIndex, NnOpConfig *opConfig) {
     // input
-    buffers.push_back(data->resolvePointerVulkanBuffer(&opConfig->input));
+    usages.push_back({true, data->resolvePointerVulkanBuffer(&opConfig->input)});
     // output
-    buffers.push_back(data->resolvePointerVulkanBuffer(&opConfig->output));
+    usages.push_back({false, data->resolvePointerVulkanBuffer(&opConfig->output)});
     // batch info
-    buffers.push_back(segmentData->resolveOpBatchInfoVulkanBuffer(opIndex));
+    usages.push_back({false, segmentData->resolveOpBatchInfoVulkanBuffer(opIndex)});
     // weight
     if (opConfig->weightSize.nBytes > 0)
-        buffers.push_back(segmentData->resolveOpWeightVulkanBuffer(opIndex));
+        usages.push_back({false, segmentData->resolveOpWeightVulkanBuffer(opIndex)});
     // config
     if (opConfig->configSize > 0) {
-        buffers.push_back(segmentData->resolveOpConfigVulkanBuffer(opIndex));
+        usages.push_back({false, segmentData->resolveOpConfigVulkanBuffer(opIndex)});
 
         switch (opConfig->code) {
         case OP_RMS_NORM: {
             const NnRmsNormOpConfig *config = (NnRmsNormOpConfig *)opConfig->config;
-            buffers.push_back(data->buffers[config->invRmsBufferIndex].get());
+            usages.push_back({true, data->buffers[config->invRmsBufferIndex].get()});
         } break;
         case OP_MUL: {
             const NnMulOpCodeConfig *config = (NnMulOpCodeConfig *)opConfig->config;
-            buffers.push_back(data->buffers[config->multiplierBufferIndex].get());
+            usages.push_back({true, data->buffers[config->multiplierBufferIndex].get()});
         } break;
         case OP_SHIFT: {
             const NnShiftOpCodeConfig *config = (NnShiftOpCodeConfig *)opConfig->config;
-            buffers.push_back(data->pipes[config->indexPipeIndex].get());
+            usages.push_back({true, data->pipes[config->indexPipeIndex].get()});
         } break;
         case OP_ROPE: {
             const NnRopeOpConfig *config = (NnRopeOpConfig *)opConfig->config;
-            buffers.push_back(data->pipes[config->positionPipeIndex].get());
-            buffers.push_back(data->buffers[config->ropeCacheBufferIndex].get());
+            usages.push_back({true, data->pipes[config->positionPipeIndex].get()});
+            usages.push_back({true, data->buffers[config->ropeCacheBufferIndex].get()});
         } break;
         case OP_MULTIHEAD_ATT: {
             const NnMultiHeadAttOpConfig *config = (NnMultiHeadAttOpConfig *)opConfig->config;
-            buffers.push_back(data->pipes[config->positionPipeIndex].get());
-            buffers.push_back(data->buffers[config->queryBufferIndex].get());
-            buffers.push_back(data->buffers[config->keyCacheBufferIndex].get());
-            buffers.push_back(data->buffers[config->valueCacheBufferIndex].get());
-            buffers.push_back(data->buffers[config->attBufferIndex].get());
+            usages.push_back({true, data->pipes[config->positionPipeIndex].get()});
+            usages.push_back({true, data->buffers[config->queryBufferIndex].get()});
+            usages.push_back({true, data->buffers[config->keyCacheBufferIndex].get()});
+            usages.push_back({true, data->buffers[config->valueCacheBufferIndex].get()});
+            usages.push_back({true, data->buffers[config->attBufferIndex].get()});
         } break;
         default:
             break;
@@ -633,7 +633,8 @@ NnVulkanDeviceSegment::NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanD
     descriptorSets(segmentConfig->nOps),
     descriptorSetLayouts(segmentConfig->nOps),
     pipelineLayouts(segmentConfig->nOps),
-    pipelines(segmentConfig->nOps)
+    pipelines(segmentConfig->nOps),
+    opBufferUsages(segmentConfig->nOps)
 {
     this->context = context;
     this->data = data;
@@ -645,7 +646,6 @@ NnVulkanDeviceSegment::NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanD
     this->lastBatchSize = 0;
 
     std::vector<vk::PipelineShaderStageCreateInfo> shaderCreateInfos(segmentConfig->nOps);
-    std::vector<std::vector<NnVulkanBuffer *>> opBuffers(segmentConfig->nOps);
 
     constexpr NnUint maxConsts = 3;
     std::vector<NnUint> nConsts(segmentConfig->nOps);
@@ -665,8 +665,7 @@ NnVulkanDeviceSegment::NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanD
         const char *shaderFileName = getShaderFileName(opConfig->code, opQuant);
         std::vector<uint32_t> code = readShader(shaderFileName);
 
-        std::vector<NnVulkanBuffer *> &buffers = opBuffers[opIndex];
-        buildShaderLayout(buffers, data, segmentData.get(), opIndex, opConfig);
+        buildShaderLayout(opBufferUsages[opIndex], data, segmentData.get(), opIndex, opConfig);
 
         VULKAN_TRACE("Loading shader: %s", shaderFileName);
         vk::ShaderModuleCreateInfo shaderModuleCreateInfo(
@@ -691,10 +690,10 @@ NnVulkanDeviceSegment::NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanD
     NnUint nUniformBuffers = 0;
     NnUint nStorageBuffers = 0;
     for (NnUint opIndex = 0; opIndex < segmentConfig->nOps; opIndex++) {
-        std::vector<NnVulkanBuffer *> &buffers = opBuffers[opIndex];
-        std::vector<vk::DescriptorSetLayoutBinding> descriptorSetLayoutBindings(buffers.size());
-        for (NnUint i = 0; i < buffers.size(); i++) {
-            vk::DescriptorType descriptorType = toDescriptorType(buffers.data()[i]);
+        std::vector<NnOpBufferUsage> &usages = opBufferUsages[opIndex];
+        std::vector<vk::DescriptorSetLayoutBinding> descriptorSetLayoutBindings(usages.size());
+        for (NnUint i = 0; i < usages.size(); i++) {
+            vk::DescriptorType descriptorType = toDescriptorType(usages[i].buffer);
             descriptorSetLayoutBindings[i] = vk::DescriptorSetLayoutBinding(
                 i,
                 descriptorType,
@@ -738,9 +737,9 @@ NnVulkanDeviceSegment::NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanD
     std::vector<vk::DescriptorBufferInfo> bufferInfos(nUniformBuffers + nStorageBuffers);
     NnUint writeDescriptorSetIndex = 0;
     for (NnUint opIndex = 0; opIndex < segmentConfig->nOps; opIndex++) {
-        std::vector<NnVulkanBuffer *> &buffers = opBuffers[opIndex];
-        for (NnUint i = 0; i < buffers.size(); i++) {
-            NnVulkanBuffer *buffer = buffers.data()[i];
+        std::vector<NnOpBufferUsage> &usages = opBufferUsages[opIndex];
+        for (NnUint i = 0; i < usages.size(); i++) {
+            NnVulkanBuffer *buffer = usages[i].buffer;
             bufferInfos[writeDescriptorSetIndex] = vk::DescriptorBufferInfo(
                 buffer->deviceBuffer,
                 0,
@@ -841,18 +840,33 @@ void NnVulkanDeviceSegment::forward(NnUint opIndex, NnUint nThreads, NnUint thre
             resolveShaderGroups(&segmentConfig->ops[opIndex], batchSize, opGroupCount);
 
             if (opIndex > 0) {
-                vk::MemoryBarrier memoryBarrier(
-                    vk::AccessFlagBits::eShaderWrite,
-                    vk::AccessFlagBits::eShaderRead
-                );
-                commandBuffer.pipelineBarrier(
-                    vk::PipelineStageFlagBits::eComputeShader,
-                    vk::PipelineStageFlagBits::eComputeShader,
-                    vk::DependencyFlags(),
-                    memoryBarrier,
-                    nullptr,
-                    nullptr
-                );
+                std::vector<NnOpBufferUsage> *usages = &opBufferUsages[opIndex];
+                std::vector<vk::BufferMemoryBarrier> memoryBarriers;
+                for (NnUint b = 0; b < usages->size(); b++) {
+                    NnOpBufferUsage *usage = &usages->data()[b];
+                    if (!usage->isBarrierNeeded)
+                        continue;
+                    memoryBarriers.push_back(vk::BufferMemoryBarrier(
+                        vk::AccessFlagBits::eShaderWrite,
+                        vk::AccessFlagBits::eShaderRead,
+                        VK_QUEUE_FAMILY_IGNORED,
+                        VK_QUEUE_FAMILY_IGNORED,
+                        usage->buffer->deviceBuffer,
+                        0,
+                        usage->buffer->calcSliceSize(batchSize, netConfig->nBatches)
+                    ));
+                }
+                if (!memoryBarriers.empty()) {
+                    commandBuffer.pipelineBarrier(
+                        vk::PipelineStageFlagBits::eComputeShader,
+                        vk::PipelineStageFlagBits::eComputeShader,
+                        vk::DependencyFlags(),
+                        nullptr,
+                        memoryBarriers,
+                        nullptr
+                    );
+                    VULKAN_TRACE("Created barrier for %zu buffers", memoryBarriers.size());
+                }
             }
 
             commandBuffer.bindPipeline(

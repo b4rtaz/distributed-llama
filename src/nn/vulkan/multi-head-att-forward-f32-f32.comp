@@ -57,7 +57,6 @@ void main() {
     }
 
     barrier();
-    memoryBarrierShared();
 
     const uint attOffset = batchIndex * nHeads0 * seqLen + h * seqLen;
     const uint qOffset = batchIndex * qSliceD0 + h * headDim;
@@ -80,7 +79,6 @@ void main() {
     temp[threadIndex] = ms;
 
     barrier();
-    memoryBarrierShared();
 
     [[unroll]] for (uint i = N_THREADS / 2; i > 0; i >>= 1) {
         if (threadIndex < i)
@@ -93,7 +91,6 @@ void main() {
     }
 
     barrier();
-    memoryBarrierShared();
 
     const float maxScore = sharedMaxScore;
 

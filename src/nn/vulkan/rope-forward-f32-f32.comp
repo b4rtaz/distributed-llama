@@ -66,7 +66,6 @@ void main() {
     }
 
     barrier();
-    memoryBarrierShared();
 
     const uint xOffset = sharedInfo.inputOffset;
     const uint yOffset = sharedInfo.outputOffset;
@@ -84,8 +83,8 @@ void main() {
             float v0 = x[xOffset + j];
             float v1 = x[xOffset + j + 1];
 
-            float x0 = v0 * fcr - v1 * fci;
-            float x1 = v0 * fci + v1 * fcr;
+            const float x0 = fma(-v1, fci, v0 * fcr);
+            const float x1 = fma( v0, fci, v1 * fcr);
 
             y[yOffset + j] = x0;
             y[yOffset + j + 1] = x1;

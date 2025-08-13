@@ -29,7 +29,6 @@ void main() {
     }
 
     barrier();
-    memoryBarrierShared();
 
     const uint outputSizeX = sharedInfo.outputSizeX;
     const uint yOffset = sharedInfo.outputOffset;

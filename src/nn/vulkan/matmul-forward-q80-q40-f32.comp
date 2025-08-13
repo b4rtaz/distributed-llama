@@ -62,7 +62,6 @@ void main() {
     }
 
     barrier();
-    memoryBarrierShared();
 
     const uint xSlice = sharedXSlice;
     const uint xRest = sharedXRest;
@@ -115,7 +114,6 @@ void main() {
     }
 
     barrier();
-    memoryBarrierShared();
 
     [[unroll]] for (uint i = N_THREADS / 2; i > 0; i >>= 1) {
         for (uint dt = 0; dt < TILE_SIZE_D; dt++) {

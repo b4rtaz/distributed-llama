@@ -109,6 +109,11 @@ public:
     NnVulkanBuffer *resolveOpConfigVulkanBuffer(NnUint opIndex);
 };
 
+typedef struct {
+    bool isBarrierNeeded;
+    NnVulkanBuffer *buffer;
+} NnOpBufferUsage;
+
 class NnVulkanDeviceSegment : public NnDeviceSegment {
 private:
     NnVulkanContext *context;
@@ -128,6 +133,7 @@ private:
     std::vector<vk::Pipeline> pipelines;
     vk::PipelineCache pipelineCache;
     vk::CommandBuffer commandBuffer;
+    std::vector<std::vector<NnOpBufferUsage>> opBufferUsages;
     NnUint lastBatchSize;
 public:
     NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanDeviceData *data, NnNetConfig *netConfig, NnUint segmentIndex, NnSegmentConfig *segmentConfig, NnNetExecution *netExecution);

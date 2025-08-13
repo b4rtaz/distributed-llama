@@ -1,6 +1,6 @@
 #version 450
 
-#define N_THREADS 128
+#define N_THREADS 256
 
 layout(local_size_x = N_THREADS, local_size_y = 1, local_size_z = 1) in;
 
@@ -21,34 +21,18 @@ layout(binding = 4) readonly uniform configBuffer {
 };
 layout(binding = 5) readonly buffer invRmsBuffer { float invRms[]; };
 
-shared uint sharedDim;
-shared uint sharedXOffset;
-shared uint sharedYOffset;
-shared float sharedS;
-
 void main() {
     const uint threadIndex = uint(gl_LocalInvocationID.x);
+    const uint batchIndex = gl_WorkGroupID.y;
+    const uint colIndex = gl_WorkGroupID.z;
 
-    if (threadIndex == 0) {
-        const uint batchIndex = gl_WorkGroupID.y;
-        const uint colIndex = gl_WorkGroupID.z;
+    const BatchInfo info = infos[batchIndex];
+    const uint dim = info.inputSizeX / nColumns;
+    const uint offset = dim * colIndex;
+    const uint xOffset = info.inputOffset + offset;
+    const uint yOffset = info.outputOffset + offset;
 
-        const BatchInfo info = infos[batchIndex];
-        sharedDim = info.inputSizeX / nColumns;
-        const uint offset = sharedDim * colIndex;
-        sharedXOffset = info.inputOffset + offset;
-        sharedYOffset = info.outputOffset + offset;
-
-        sharedS = invRms[batchIndex * nColumns + colIndex];
-    }
-
-    barrier();
-    memoryBarrierShared();
-
-    const uint dim = sharedDim;
-    const uint xOffset = sharedXOffset;
-    const uint yOffset = sharedYOffset;
-    const float s = sharedS;
+    const float s = invRms[batchIndex * nColumns + colIndex];
 
     for (uint i = threadIndex; i < dim; i += N_THREADS) {
         y[yOffset + i] = (x[xOffset + i] * s) * weight[i];

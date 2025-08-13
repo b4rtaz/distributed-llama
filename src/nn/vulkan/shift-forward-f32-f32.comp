@@ -43,7 +43,6 @@ void main() {
     }
 
     barrier();
-    memoryBarrierShared();
 
     const uint dim = sharedDim;
     const uint xOffset = sharedXOffset;
