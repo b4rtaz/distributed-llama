@@ -522,22 +522,34 @@ static std::vector<NnVulkanBatchInfo> buildBatchInfo(NnOpConfig *opConfig, NnVul
     return offset;
 }
 
-static void resolveShaderGroups(const NnOpConfig *opConfig, const NnUint batchSize, NnUint *groupCount) {
+static void resolveShaderGroups(const NnOpConfig *opConfig, const NnUint batchSize, NnUint *groupCount, const NnSize2D inputSize, const NnSize2D outputSize) {
     groupCount[0] = 1;
     groupCount[1] = batchSize;
     groupCount[2] = 1;
 
-    if (opConfig->code == OP_CAST ||
+    if (opConfig->code == OP_CAST) {
+        if (outputSize.floatType == F_Q80) {
+            groupCount[2] = outputSize.x / Q80_BLOCK_SIZE;
+        } else {
+            groupCount[2] = 32;
+        }
+    } else if (opConfig->code == OP_MERGE_ADD) {
+        if (inputSize.floatType == F_Q80) {
+            groupCount[2] = outputSize.x / Q80_BLOCK_SIZE; // Yes, outputSize is used here
+        } else {
+            groupCount[2] = 32;
+        }
+    } else if (
         opConfig->code == OP_MUL ||
         opConfig->code == OP_SILU ||
-        opConfig->code == OP_SHIFT ||
-        opConfig->code == OP_MERGE_ADD)
+        opConfig->code == OP_SHIFT
+    )
         groupCount[2] = 32;
     else if (opConfig->code == OP_MATMUL) {
         if (opConfig->weightSize.floatType == F_Q40) {
             // Must be synced with the shader
             constexpr NnUint tileSizeN = 2;
-            constexpr NnUint tileSizeD = 16;
+            constexpr NnUint tileSizeD = 8;
             const NnUint blockSize = getBlockSize(opConfig->weightSize.floatType);
             assert(opConfig->weightSize.y % (tileSizeN * blockSize) == 0);
             assert(opConfig->weightSize.x % tileSizeD == 0);
@@ -837,7 +849,10 @@ void NnVulkanDeviceSegment::forward(NnUint opIndex, NnUint nThreads, NnUint thre
 
         NnUint opGroupCount[3];
         for (NnUint opIndex = 0; opIndex < segmentConfig->nOps; opIndex++) {
-            resolveShaderGroups(&segmentConfig->ops[opIndex], batchSize, opGroupCount);
+            NnSize2D inputSize = data->resolveBufferSize(&segmentConfig->ops[opIndex].input);
+            NnSize2D outputSize = data->resolveBufferSize(&segmentConfig->ops[opIndex].output);
+
+            resolveShaderGroups(&segmentConfig->ops[opIndex], batchSize, opGroupCount, inputSize, outputSize);
 
             if (opIndex > 0) {
                 std::vector<NnOpBufferUsage> *usages = &opBufferUsages[opIndex];

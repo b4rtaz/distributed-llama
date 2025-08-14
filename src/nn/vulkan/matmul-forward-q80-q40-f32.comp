@@ -7,7 +7,7 @@
 #define N_THREADS 64
 #define N_BATCHES 32
 #define TILE_SIZE_X 2
-#define TILE_SIZE_D 16
+#define TILE_SIZE_D 8
 
 #define Q80_Q40_BLOCK_SIZE 32
 
