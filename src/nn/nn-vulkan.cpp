@@ -539,13 +539,7 @@ static void resolveShaderGroups(const NnOpConfig *opConfig, const NnUint batchSi
         } else {
             groupCount[2] = 32;
         }
-    } else if (
-        opConfig->code == OP_MUL ||
-        opConfig->code == OP_SILU ||
-        opConfig->code == OP_SHIFT
-    )
-        groupCount[2] = 32;
-    else if (opConfig->code == OP_MATMUL) {
+    } else if (opConfig->code == OP_MATMUL) {
         if (opConfig->weightSize.floatType == F_Q40) {
             // Must be synced with the shader
             constexpr NnUint tileSizeN = 2;
@@ -562,8 +556,17 @@ static void resolveShaderGroups(const NnOpConfig *opConfig, const NnUint batchSi
         groupCount[2] = ((NnMultiHeadAttOpConfig *)opConfig->config)->nHeads0;
     else if (opConfig->code == OP_INV_RMS)
         groupCount[2] = ((NnInvRmsOpConfig *)opConfig->config)->nColumns;
-    else if (opConfig->code == OP_RMS_NORM)
-        groupCount[2] = ((NnRmsNormOpConfig *)opConfig->config)->nColumns;
+    else if (
+        opConfig->code == OP_EMBEDDING ||
+        opConfig->code == OP_RMS_NORM ||
+        opConfig->code == OP_MUL ||
+        opConfig->code == OP_SILU ||
+        opConfig->code == OP_SHIFT
+    ) {
+        constexpr NnUint chunkSize = 4;
+        assert(outputSize.x % chunkSize == 0);
+        groupCount[2] = outputSize.x / chunkSize;
+    }
 }
 
 static std::vector<uint32_t> readShader(const char *fileName) {
