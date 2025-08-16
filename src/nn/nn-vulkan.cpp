@@ -522,6 +522,26 @@ static std::vector<NnVulkanBatchInfo> buildBatchInfo(NnOpConfig *opConfig, NnVul
     return offset;
 }
 
+static NnUint roundUpPow2(NnUint n, NnUint min, NnUint max) {
+    NnUint p = 1;
+    while (p << 1 <= n) p <<= 1;
+    if (p < n)  p <<= 1;
+    if (p < min) p = min;
+    if (p > max) p = max;
+    return p;
+}
+
+static uint32_t resolveShaderNThreads(const NnOpConfig *opConfig, const NnSize2D inputSize) {
+    if (opConfig->code == OP_MATMUL) {
+        if (opConfig->weightSize.floatType == F_Q40) {
+            constexpr NnUint maxThreads = 256; // Shader constant
+            NnUint t = roundUpPow2(inputSize.x / (Q40_BLOCK_SIZE * 2), 32, maxThreads);
+            return t;
+        }
+    }
+    return 0;
+}
+
 static void resolveShaderGroups(const NnOpConfig *opConfig, const NnUint batchSize, NnUint *groupCount, const NnSize2D inputSize, const NnSize2D outputSize) {
     groupCount[0] = 1;
     groupCount[1] = batchSize;
@@ -531,7 +551,7 @@ static void resolveShaderGroups(const NnOpConfig *opConfig, const NnUint batchSi
         if (outputSize.floatType == F_Q80) {
             groupCount[2] = outputSize.x / Q80_BLOCK_SIZE;
         } else {
-            constexpr NnUint chunkSize = 4;
+            constexpr NnUint chunkSize = 4; // Shader constant
             groupCount[2] = outputSize.x / chunkSize;
         }
     } else if (opConfig->code == OP_MERGE_ADD) {
@@ -542,9 +562,8 @@ static void resolveShaderGroups(const NnOpConfig *opConfig, const NnUint batchSi
         }
     } else if (opConfig->code == OP_MATMUL) {
         if (opConfig->weightSize.floatType == F_Q40) {
-            // Must be synced with the shader
-            constexpr NnUint tileSizeN = 2;
-            constexpr NnUint tileSizeD = 8;
+            constexpr NnUint tileSizeN = 2; // Shader constant
+            constexpr NnUint tileSizeD = 8; // Shader constant
             const NnUint blockSize = getBlockSize(opConfig->weightSize.floatType);
             assert(opConfig->weightSize.y % (tileSizeN * blockSize) == 0);
             assert(opConfig->weightSize.x % tileSizeD == 0);
@@ -564,7 +583,7 @@ static void resolveShaderGroups(const NnOpConfig *opConfig, const NnUint batchSi
         opConfig->code == OP_SILU ||
         opConfig->code == OP_SHIFT
     ) {
-        constexpr NnUint chunkSize = 4;
+        constexpr NnUint chunkSize = 4; // Shader constant
         assert(outputSize.x % chunkSize == 0);
         groupCount[2] = outputSize.x / chunkSize;
     }
@@ -663,12 +682,10 @@ NnVulkanDeviceSegment::NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanD
 
     std::vector<vk::PipelineShaderStageCreateInfo> shaderCreateInfos(segmentConfig->nOps);
 
-    constexpr NnUint maxConsts = 3;
-    std::vector<NnUint> nConsts(segmentConfig->nOps);
-    std::vector<int> consts(segmentConfig->nOps * maxConsts);
     std::vector<vk::SpecializationInfo> specInfos(segmentConfig->nOps);
-    std::vector<vk::SpecializationMapEntry> specMapEntries(segmentConfig->nOps * maxConsts);
-    
+    std::vector<vk::SpecializationMapEntry> specEntries(segmentConfig->nOps);
+    std::vector<uint32_t> nThreads(segmentConfig->nOps);
+
     for (NnUint opIndex = 0; opIndex < segmentConfig->nOps; opIndex++) {
         NnOpConfig *opConfig = &segmentConfig->ops[opIndex];
         NnSize2D inputSize = data->resolveBufferSize(&opConfig->input);
@@ -690,12 +707,17 @@ NnVulkanDeviceSegment::NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanD
             code.data()
         );
 
+        nThreads[opIndex] = resolveShaderNThreads(opConfig, inputSize);
+        specEntries[opIndex] = vk::SpecializationMapEntry(0, 0, sizeof(uint32_t));
+        specInfos[opIndex] = vk::SpecializationInfo(1, &specEntries[opIndex], sizeof(uint32_t), &nThreads[opIndex]);
+
         vk::ShaderModule shaderModule = context->device.createShaderModule(shaderModuleCreateInfo);
         vk::PipelineShaderStageCreateInfo shaderCreateInfo(
             vk::PipelineShaderStageCreateFlags(),
             vk::ShaderStageFlagBits::eCompute,
             shaderModule,
-            "main"
+            "main",
+            &specInfos[opIndex]
         );
 
         shaderModules[opIndex] = shaderModule;
