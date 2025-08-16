@@ -522,22 +522,48 @@ static std::vector<NnVulkanBatchInfo> buildBatchInfo(NnOpConfig *opConfig, NnVul
     return offset;
 }
 
-static void resolveShaderGroups(const NnOpConfig *opConfig, const NnUint batchSize, NnUint *groupCount) {
+static NnUint roundUpPow2(NnUint n, NnUint min, NnUint max) {
+    NnUint p = 1;
+    while (p << 1 <= n) p <<= 1;
+    if (p < n)  p <<= 1;
+    if (p < min) p = min;
+    if (p > max) p = max;
+    return p;
+}
+
+static uint32_t resolveShaderNThreads(const NnOpConfig *opConfig, const NnSize2D inputSize) {
+    if (opConfig->code == OP_MATMUL) {
+        if (opConfig->weightSize.floatType == F_Q40) {
+            constexpr NnUint maxThreads = 256; // Shader constant
+            NnUint t = roundUpPow2(inputSize.x / (Q40_BLOCK_SIZE * 2), 32, maxThreads);
+            return t;
+        }
+    }
+    return 0;
+}
+
+static void resolveShaderGroups(const NnOpConfig *opConfig, const NnUint batchSize, NnUint *groupCount, const NnSize2D inputSize, const NnSize2D outputSize) {
     groupCount[0] = 1;
     groupCount[1] = batchSize;
     groupCount[2] = 1;
 
-    if (opConfig->code == OP_CAST ||
-        opConfig->code == OP_MUL ||
-        opConfig->code == OP_SILU ||
-        opConfig->code == OP_SHIFT ||
-        opConfig->code == OP_MERGE_ADD)
-        groupCount[2] = 32;
-    else if (opConfig->code == OP_MATMUL) {
+    if (opConfig->code == OP_CAST) {
+        if (outputSize.floatType == F_Q80) {
+            groupCount[2] = outputSize.x / Q80_BLOCK_SIZE;
+        } else {
+            constexpr NnUint chunkSize = 4; // Shader constant
+            groupCount[2] = outputSize.x / chunkSize;
+        }
+    } else if (opConfig->code == OP_MERGE_ADD) {
+        if (inputSize.floatType == F_Q80) {
+            groupCount[2] = outputSize.x / Q80_BLOCK_SIZE; // Yes, outputSize is used here
+        } else {
+            groupCount[2] = 32;
+        }
+    } else if (opConfig->code == OP_MATMUL) {
         if (opConfig->weightSize.floatType == F_Q40) {
-            // Must be synced with the shader
-            constexpr NnUint tileSizeN = 2;
-            constexpr NnUint tileSizeD = 16;
+            constexpr NnUint tileSizeN = 2; // Shader constant
+            constexpr NnUint tileSizeD = 8; // Shader constant
             const NnUint blockSize = getBlockSize(opConfig->weightSize.floatType);
             assert(opConfig->weightSize.y % (tileSizeN * blockSize) == 0);
             assert(opConfig->weightSize.x % tileSizeD == 0);
@@ -550,8 +576,17 @@ static void resolveShaderGroups(const NnOpConfig *opConfig, const NnUint batchSi
         groupCount[2] = ((NnMultiHeadAttOpConfig *)opConfig->config)->nHeads0;
     else if (opConfig->code == OP_INV_RMS)
         groupCount[2] = ((NnInvRmsOpConfig *)opConfig->config)->nColumns;
-    else if (opConfig->code == OP_RMS_NORM)
-        groupCount[2] = ((NnRmsNormOpConfig *)opConfig->config)->nColumns;
+    else if (
+        opConfig->code == OP_EMBEDDING ||
+        opConfig->code == OP_RMS_NORM ||
+        opConfig->code == OP_MUL ||
+        opConfig->code == OP_SILU ||
+        opConfig->code == OP_SHIFT
+    ) {
+        constexpr NnUint chunkSize = 4; // Shader constant
+        assert(outputSize.x % chunkSize == 0);
+        groupCount[2] = outputSize.x / chunkSize;
+    }
 }
 
 static std::vector<uint32_t> readShader(const char *fileName) {
@@ -647,12 +682,10 @@ NnVulkanDeviceSegment::NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanD
 
     std::vector<vk::PipelineShaderStageCreateInfo> shaderCreateInfos(segmentConfig->nOps);
 
-    constexpr NnUint maxConsts = 3;
-    std::vector<NnUint> nConsts(segmentConfig->nOps);
-    std::vector<int> consts(segmentConfig->nOps * maxConsts);
     std::vector<vk::SpecializationInfo> specInfos(segmentConfig->nOps);
-    std::vector<vk::SpecializationMapEntry> specMapEntries(segmentConfig->nOps * maxConsts);
-    
+    std::vector<vk::SpecializationMapEntry> specEntries(segmentConfig->nOps);
+    std::vector<uint32_t> nThreads(segmentConfig->nOps);
+
     for (NnUint opIndex = 0; opIndex < segmentConfig->nOps; opIndex++) {
         NnOpConfig *opConfig = &segmentConfig->ops[opIndex];
         NnSize2D inputSize = data->resolveBufferSize(&opConfig->input);
@@ -674,12 +707,17 @@ NnVulkanDeviceSegment::NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanD
             code.data()
         );
 
+        nThreads[opIndex] = resolveShaderNThreads(opConfig, inputSize);
+        specEntries[opIndex] = vk::SpecializationMapEntry(0, 0, sizeof(uint32_t));
+        specInfos[opIndex] = vk::SpecializationInfo(1, &specEntries[opIndex], sizeof(uint32_t), &nThreads[opIndex]);
+
         vk::ShaderModule shaderModule = context->device.createShaderModule(shaderModuleCreateInfo);
         vk::PipelineShaderStageCreateInfo shaderCreateInfo(
             vk::PipelineShaderStageCreateFlags(),
             vk::ShaderStageFlagBits::eCompute,
             shaderModule,
-            "main"
+            "main",
+            &specInfos[opIndex]
         );
 
         shaderModules[opIndex] = shaderModule;
@@ -837,7 +875,10 @@ void NnVulkanDeviceSegment::forward(NnUint opIndex, NnUint nThreads, NnUint thre
 
         NnUint opGroupCount[3];
         for (NnUint opIndex = 0; opIndex < segmentConfig->nOps; opIndex++) {
-            resolveShaderGroups(&segmentConfig->ops[opIndex], batchSize, opGroupCount);
+            NnSize2D inputSize = data->resolveBufferSize(&segmentConfig->ops[opIndex].input);
+            NnSize2D outputSize = data->resolveBufferSize(&segmentConfig->ops[opIndex].output);
+
+            resolveShaderGroups(&segmentConfig->ops[opIndex], batchSize, opGroupCount, inputSize, outputSize);
 
             if (opIndex > 0) {
                 std::vector<NnOpBufferUsage> *usages = &opBufferUsages[opIndex];

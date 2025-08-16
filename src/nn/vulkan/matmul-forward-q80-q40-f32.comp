@@ -4,14 +4,14 @@
 #extension GL_EXT_shader_16bit_storage : enable
 #extension GL_EXT_shader_explicit_arithmetic_types : enable
 
-#define N_THREADS 64
+#define MAX_THREADS 256
 #define N_BATCHES 32
 #define TILE_SIZE_X 2
-#define TILE_SIZE_D 16
+#define TILE_SIZE_D 8
 
 #define Q80_Q40_BLOCK_SIZE 32
 
-layout(local_size_x = N_THREADS, local_size_y = 1, local_size_z = 1) in;
+layout(local_size_x_id = 0, local_size_y = 1, local_size_z = 1) in;
 
 struct BatchInfo {
     uint inputOffset;
@@ -35,17 +35,18 @@ layout(binding = 1) writeonly buffer outputBuffer { float y[]; };
 layout(binding = 2) readonly uniform batchInfosBuffer { BatchInfo infos[N_BATCHES]; };
 layout(binding = 3) readonly buffer weightBuffer { BlockQ40 weight[]; };
 
-shared float16_t sums[N_THREADS * TILE_SIZE_D];
+shared float16_t sums[MAX_THREADS * TILE_SIZE_D];
 
 void main() {
+    const uint nThreads = gl_WorkGroupSize.x;
     const uint threadIndex = gl_LocalInvocationID.x;
     const uint batchIndex = gl_WorkGroupID.y;
     const uint workGroupIndex = gl_WorkGroupID.z;
     const BatchInfo info = infos[batchIndex];
 
     const uint xTiles = info.inputSizeX / TILE_SIZE_X;
-    const uint xSlice = xTiles / N_THREADS;
-    const uint xRest = xTiles % N_THREADS;
+    const uint xSlice = xTiles / nThreads;
+    const uint xRest = xTiles % nThreads;
 
     const uint inputOffset = info.inputOffset;
     const uint inputSizeX = info.inputSizeX;
@@ -97,7 +98,7 @@ void main() {
 
     barrier();
 
-    [[unroll]] for (uint i = N_THREADS / 2; i > 0; i >>= 1) {
+    for (uint i = nThreads / 2; i > 0; i >>= 1) {
         for (uint dt = 0; dt < TILE_SIZE_D; dt++) {
             if (threadIndex < i) {
                 sums[threadIndex * TILE_SIZE_D + dt] += sums[(threadIndex + i) * TILE_SIZE_D + dt];
@@ -105,7 +106,7 @@ void main() {
         }
         barrier();
     }
-    for (uint dt = threadIndex; dt < TILE_SIZE_D; dt += N_THREADS) {
+    for (uint dt = threadIndex; dt < TILE_SIZE_D; dt += nThreads) {
         y[outputOffset + d + dt] = float(sums[dt]);
     }
 }

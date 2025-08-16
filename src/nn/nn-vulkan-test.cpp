@@ -662,16 +662,16 @@ void testMultiheadAtt_F32_F32() {
 int main() {
     initQuants();
 
-    testRmsNorm_F32_F32_F32<3>();
+    testRmsNorm_F32_F32_F32<4>();
     testRmsNorm_F32_F32_F32<1024>();
-    testRmsNorm_F32_F32_F32<3191>();
+    testRmsNorm_F32_F32_F32<3196>();
 
-    testSilu_F32_F32<3>();
+    testSilu_F32_F32<4>();
     testSilu_F32_F32<32>();
-    testSilu_F32_F32<101>();
+    testSilu_F32_F32<104>();
 
     testMul_F32_F32<32>();
-    testMul_F32_F32<47>();
+    testMul_F32_F32<48>();
 
     testMergeAdd_F32_F32();
 
@@ -686,7 +686,7 @@ int main() {
 
     testCast_F32_F32<128>();
     testCast_F32_F32<32>();
-    testCast_F32_F32<9>();
+    testCast_F32_F32<8>();
 
     testCast_F32_Q80<256>();
     testCast_F32_Q80<64>();
