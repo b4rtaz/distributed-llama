@@ -70,7 +70,7 @@ VULKAN_SHADER_BINS := $(VULKAN_SHADER_SRCS:.comp=.spv)
 DEPS += $(VULKAN_SHADER_BINS)
 
 %.spv: %.comp
-	$(CGLSLC) -c $< -o $@
+	$(CGLSLC) -c $< -o $@ --target-env=vulkan1.1
 nn-vulkan-test: src/nn/nn-vulkan-test.cpp nn-quants.o nn-core.o nn-executor.o nn-vulkan.o ${DEPS}
 	$(CXX) $(CXXFLAGS) $(filter-out %.spv, $^) -o $@ $(LIBS)
 endif
