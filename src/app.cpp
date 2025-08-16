@@ -124,6 +124,9 @@ AppCliArgs AppCliArgs::parse(int argc, char* *argv, bool requireMode) {
             throw std::runtime_error("Unknown option: " + std::string(name));
         }
     }
+
+    if (args.nThreads < 1)
+        throw std::runtime_error("Number of threads must be at least 1");
     return args;
 }
 
