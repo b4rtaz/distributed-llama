@@ -531,7 +531,8 @@ static void resolveShaderGroups(const NnOpConfig *opConfig, const NnUint batchSi
         if (outputSize.floatType == F_Q80) {
             groupCount[2] = outputSize.x / Q80_BLOCK_SIZE;
         } else {
-            groupCount[2] = 32;
+            constexpr NnUint chunkSize = 4;
+            groupCount[2] = outputSize.x / chunkSize;
         }
     } else if (opConfig->code == OP_MERGE_ADD) {
         if (inputSize.floatType == F_Q80) {
