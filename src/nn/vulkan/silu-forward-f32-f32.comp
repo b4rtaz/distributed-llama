@@ -2,10 +2,10 @@
 
 #extension GL_EXT_control_flow_attributes : enable
 
+#define N_THREADS 512
 #define N_BATCHES 32
-#define CHUNK_SIZE 4
 
-layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+layout(local_size_x = N_THREADS, local_size_y = 1, local_size_z = 1) in;
 
 struct BatchInfo {
     uint inputOffset;
@@ -19,15 +19,15 @@ layout(binding = 1) writeonly buffer outputBuffer { float y[]; };
 layout(binding = 2) readonly uniform batchInfosBuffer { BatchInfo infos[N_BATCHES]; };
 
 void main() {
+    const uint threadIndex = gl_LocalInvocationID.x;
     const uint batchIndex = gl_WorkGroupID.y;
-    const uint chunkIndex = gl_WorkGroupID.z;
 
     const BatchInfo info = infos[batchIndex];
-    const uint offset = chunkIndex * CHUNK_SIZE;
-    const uint xOffset = info.inputOffset + offset;
-    const uint yOffset = info.outputOffset + offset;
+    const uint dim = info.outputSizeX;
+    const uint xOffset = info.inputOffset;
+    const uint yOffset = info.outputOffset;
 
-    [[unroll]] for (uint i = 0; i < CHUNK_SIZE; i++) {
+    [[unroll]] for (uint i = threadIndex; i < dim; i += N_THREADS) {
         float v = x[xOffset + i];
         y[yOffset + i] = v / (1.0f + exp(-v));
     }

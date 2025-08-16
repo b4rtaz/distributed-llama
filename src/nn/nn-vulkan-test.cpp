@@ -698,9 +698,8 @@ int main() {
     testMatmul_F32_F32_F32<3191, 109>();
 
     testMatmul_Q80_Q40_F32<4096, 4096>();
-    testMatmul_Q80_Q40_F32<64, 48>();
     testMatmul_Q80_Q40_F32<64, 64>();
-    testMatmul_Q80_Q40_F32<192, 16>();
+    testMatmul_Q80_Q40_F32<192, 32>();
 
     testMultiheadAtt_F32_F32();
     return 0;

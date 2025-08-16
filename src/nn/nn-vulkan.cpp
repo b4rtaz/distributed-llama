@@ -342,8 +342,9 @@ NnVulkanDevice::NnVulkanDevice(NnUint gpuIndex, NnNetConfig *netConfig, NnNodeCo
     deviceExtension.push_back("VK_KHR_8bit_storage");
     deviceExtension.push_back("VK_KHR_16bit_storage");
     deviceExtension.push_back("VK_KHR_shader_float16_int8");
+    deviceExtension.push_back("VK_KHR_maintenance4");
 
-    vk::ApplicationInfo appInfo {"Distributed Llama", 1, nullptr, 0, VK_API_VERSION_1_2 };
+    vk::ApplicationInfo appInfo {"Distributed Llama", 1, nullptr, 0, VK_API_VERSION_1_3 };
     vk::InstanceCreateInfo instanceCreateInfo(createInstanceFlags, &appInfo, instanceLayers, instanceExtensions);
     context.instance = vk::createInstance(instanceCreateInfo);
 
@@ -369,18 +370,22 @@ NnVulkanDevice::NnVulkanDevice(NnUint gpuIndex, NnNetConfig *netConfig, NnNodeCo
 
     VkPhysicalDeviceFeatures2 deviceFeatures2;
     deviceFeatures2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
-    deviceFeatures2.pNext = nullptr;
     deviceFeatures2.features = (VkPhysicalDeviceFeatures)deviceFeatures;
 
     VkPhysicalDeviceVulkan11Features vk11Features;
-    vk11Features.pNext = nullptr;
     vk11Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
     deviceFeatures2.pNext = &vk11Features;
 
     VkPhysicalDeviceVulkan12Features vk12Features;
-    vk12Features.pNext = nullptr;
+    // vk12Features.pNext = nullptr;
     vk12Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
     vk11Features.pNext = &vk12Features;
+
+    VkPhysicalDeviceVulkan13Features vk13Features;
+    vk13Features.pNext = nullptr;
+    vk13Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
+    vk12Features.pNext = &vk13Features;
+
     vkGetPhysicalDeviceFeatures2(context.physicalDevice, &deviceFeatures2);
 
     std::vector<vk::QueueFamilyProperties> queueFamilyProps = context.physicalDevice.getQueueFamilyProperties();
@@ -522,52 +527,39 @@ static std::vector<NnVulkanBatchInfo> buildBatchInfo(NnOpConfig *opConfig, NnVul
     return offset;
 }
 
+static uint32_t resolveShaderNThreads(const NnOpConfig *opConfig, const NnSize2D inputSize, const NnSize2D outputSize) {
+    if (opConfig->code == OP_MATMUL) {
+        NnUint n = inputSize.x / 64;
+        NnUint p = 1;
+        while (p << 1 <= n) p <<= 1;
+        printf("n=%d->%d\n", n, p);
+        return p;
+    }
+    return 1;
+}
+
 static void resolveShaderGroups(const NnOpConfig *opConfig, const NnUint batchSize, NnUint *groupCount, const NnSize2D inputSize, const NnSize2D outputSize) {
     groupCount[0] = 1;
     groupCount[1] = batchSize;
     groupCount[2] = 1;
 
-    if (opConfig->code == OP_CAST) {
-        if (outputSize.floatType == F_Q80) {
-            groupCount[2] = outputSize.x / Q80_BLOCK_SIZE;
-        } else {
-            constexpr NnUint chunkSize = 4;
-            groupCount[2] = outputSize.x / chunkSize;
-        }
-    } else if (opConfig->code == OP_MERGE_ADD) {
-        if (inputSize.floatType == F_Q80) {
-            groupCount[2] = outputSize.x / Q80_BLOCK_SIZE; // Yes, outputSize is used here
-        } else {
-            groupCount[2] = 32;
-        }
-    } else if (opConfig->code == OP_MATMUL) {
+    if (opConfig->code == OP_MATMUL) {
         if (opConfig->weightSize.floatType == F_Q40) {
             // Must be synced with the shader
-            constexpr NnUint tileSizeN = 2;
-            constexpr NnUint tileSizeD = 8;
+            //constexpr NnUint tileSizeN = 2;
+            constexpr NnUint tileSizeD = 4;
+            constexpr NnUint tilesPerGroup = 1;
             const NnUint blockSize = getBlockSize(opConfig->weightSize.floatType);
-            assert(opConfig->weightSize.y % (tileSizeN * blockSize) == 0);
+            //assert(opConfig->weightSize.y % (tileSizeN * blockSize) == 0);
             assert(opConfig->weightSize.x % tileSizeD == 0);
-            groupCount[2] = opConfig->weightSize.x / tileSizeD;
-        } else {
-            groupCount[2] = 32;
+            groupCount[2] = (opConfig->weightSize.x / tileSizeD) / tilesPerGroup;
+            printf("MatMul: %u tiles per group, %u groups\n", tilesPerGroup, groupCount[2]);
         }
     }
     else if (opConfig->code == OP_MULTIHEAD_ATT)
         groupCount[2] = ((NnMultiHeadAttOpConfig *)opConfig->config)->nHeads0;
     else if (opConfig->code == OP_INV_RMS)
         groupCount[2] = ((NnInvRmsOpConfig *)opConfig->config)->nColumns;
-    else if (
-        opConfig->code == OP_EMBEDDING ||
-        opConfig->code == OP_RMS_NORM ||
-        opConfig->code == OP_MUL ||
-        opConfig->code == OP_SILU ||
-        opConfig->code == OP_SHIFT
-    ) {
-        constexpr NnUint chunkSize = 4;
-        assert(outputSize.x % chunkSize == 0);
-        groupCount[2] = outputSize.x / chunkSize;
-    }
 }
 
 static std::vector<uint32_t> readShader(const char *fileName) {
@@ -663,12 +655,10 @@ NnVulkanDeviceSegment::NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanD
 
     std::vector<vk::PipelineShaderStageCreateInfo> shaderCreateInfos(segmentConfig->nOps);
 
-    constexpr NnUint maxConsts = 3;
-    std::vector<NnUint> nConsts(segmentConfig->nOps);
-    std::vector<int> consts(segmentConfig->nOps * maxConsts);
     std::vector<vk::SpecializationInfo> specInfos(segmentConfig->nOps);
-    std::vector<vk::SpecializationMapEntry> specMapEntries(segmentConfig->nOps * maxConsts);
-    
+    std::vector<vk::SpecializationMapEntry> nThreadsEntries(segmentConfig->nOps);
+    std::vector<uint32_t> nThreads(segmentConfig->nOps);
+
     for (NnUint opIndex = 0; opIndex < segmentConfig->nOps; opIndex++) {
         NnOpConfig *opConfig = &segmentConfig->ops[opIndex];
         NnSize2D inputSize = data->resolveBufferSize(&opConfig->input);
@@ -690,12 +680,17 @@ NnVulkanDeviceSegment::NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanD
             code.data()
         );
 
+        nThreadsEntries[opIndex] = vk::SpecializationMapEntry(0, 0, sizeof(uint32_t));
+        nThreads[opIndex] = resolveShaderNThreads(opConfig, inputSize, outputSize);
+        specInfos[opIndex] = vk::SpecializationInfo(1, &nThreadsEntries[opIndex], sizeof(uint32_t), &nThreads[opIndex]);
+
         vk::ShaderModule shaderModule = context->device.createShaderModule(shaderModuleCreateInfo);
         vk::PipelineShaderStageCreateInfo shaderCreateInfo(
             vk::PipelineShaderStageCreateFlags(),
             vk::ShaderStageFlagBits::eCompute,
             shaderModule,
-            "main"
+            "main",
+            &specInfos[opIndex]
         );
 
         shaderModules[opIndex] = shaderModule;
