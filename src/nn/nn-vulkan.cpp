@@ -522,21 +522,12 @@ static std::vector<NnVulkanBatchInfo> buildBatchInfo(NnOpConfig *opConfig, NnVul
     return offset;
 }
 
-static NnUint roundUpPow2(NnUint n, NnUint min, NnUint max) {
-    NnUint p = 1;
-    while (p << 1 <= n) p <<= 1;
-    if (p < n)  p <<= 1;
-    if (p < min) p = min;
-    if (p > max) p = max;
-    return p;
-}
-
 static uint32_t resolveShaderNThreads(const NnOpConfig *opConfig, const NnSize2D inputSize) {
     if (opConfig->code == OP_MATMUL) {
         if (opConfig->weightSize.floatType == F_Q40) {
-            constexpr NnUint maxThreads = 256; // Shader constant
-            NnUint t = roundUpPow2(inputSize.x / (Q40_BLOCK_SIZE * 2), 32, maxThreads);
-            return t;
+            constexpr NnUint tileSizeX = 2; // Shader constant
+            assert(inputSize.x % (Q40_BLOCK_SIZE * tileSizeX) == 0);
+            return inputSize.x / (Q40_BLOCK_SIZE * tileSizeX);
         }
     }
     return 0;
@@ -562,10 +553,7 @@ static void resolveShaderGroups(const NnOpConfig *opConfig, const NnUint batchSi
         }
     } else if (opConfig->code == OP_MATMUL) {
         if (opConfig->weightSize.floatType == F_Q40) {
-            constexpr NnUint tileSizeN = 2; // Shader constant
             constexpr NnUint tileSizeD = 8; // Shader constant
-            const NnUint blockSize = getBlockSize(opConfig->weightSize.floatType);
-            assert(opConfig->weightSize.y % (tileSizeN * blockSize) == 0);
             assert(opConfig->weightSize.x % tileSizeD == 0);
             groupCount[2] = opConfig->weightSize.x / tileSizeD;
         } else {
