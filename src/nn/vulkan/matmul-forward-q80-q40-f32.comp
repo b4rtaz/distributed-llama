@@ -4,7 +4,6 @@
 #extension GL_EXT_shader_16bit_storage : enable
 #extension GL_EXT_shader_explicit_arithmetic_types : enable
 
-#define MAX_THREADS 256
 #define N_BATCHES 32
 #define TILE_SIZE_X 2
 #define TILE_SIZE_D 8
@@ -12,6 +11,8 @@
 #define Q80_Q40_BLOCK_SIZE 32
 
 layout(local_size_x_id = 0, local_size_y = 1, local_size_z = 1) in;
+
+layout(constant_id = 0) const uint N_THREADS = 32;
 
 struct BatchInfo {
     uint inputOffset;
@@ -35,10 +36,9 @@ layout(binding = 1) writeonly buffer outputBuffer { float y[]; };
 layout(binding = 2) readonly uniform batchInfosBuffer { BatchInfo infos[N_BATCHES]; };
 layout(binding = 3) readonly buffer weightBuffer { BlockQ40 weight[]; };
 
-shared float sums[MAX_THREADS * TILE_SIZE_D];
+shared float sums[N_THREADS * TILE_SIZE_D];
 
 void main() {
-    const uint nThreads = gl_WorkGroupSize.x;
     const uint threadIndex = gl_LocalInvocationID.x;
     const uint batchIndex = gl_WorkGroupID.y;
     const uint workGroupIndex = gl_WorkGroupID.z;
@@ -56,7 +56,7 @@ void main() {
     }
 
     [[unroll]] for (uint it = 0; it < TILE_SIZE_X; it++) {
-        const uint xi = inputOffset + threadIndex + it * nThreads;
+        const uint xi = inputOffset + threadIndex + it * N_THREADS;
         const float xScale = float(x[xi].d);
         [[unroll]] for (uint j = 0; j < Q80_Q40_BLOCK_SIZE / 4; j++) {
             xTemp[j] = vec4(
@@ -68,7 +68,7 @@ void main() {
         }
 
         [[unroll]] for (uint dt = 0; dt < TILE_SIZE_D; dt++) {
-            const uint wi = (d + dt) * inputSizeX + threadIndex + it * nThreads;
+            const uint wi = (d + dt) * inputSizeX + threadIndex + it * N_THREADS;
             const BlockQ40 wBlock = weight[wi];
 
             float s = 0.0f;
@@ -88,11 +88,21 @@ void main() {
 
     barrier();
 
-    for (uint dt = threadIndex; dt < TILE_SIZE_D; dt += nThreads) {
-        float sum = 0.0f;
-        for (uint i = 0; i < nThreads; i++) {
-            sum += sums[i * TILE_SIZE_D + dt];
+    uint i = N_THREADS;
+    while (i % 2 == 0) {
+        i >>= 1;
+        for (uint dt = 0; dt < TILE_SIZE_D; dt++) {
+            if (threadIndex < i) {
+                sums[threadIndex * TILE_SIZE_D + dt] += sums[(threadIndex + i) * TILE_SIZE_D + dt];
+            }
         }
-        y[outputOffset + d + dt] = sum;
+        barrier();
+    }
+    for (uint dt = threadIndex; dt < TILE_SIZE_D; dt += N_THREADS) {
+        float s = 0.0;
+        for (uint j = 1; j <= i; j++) {
+            s += sums[(j - 1) * TILE_SIZE_D + dt];
+        }
+        y[outputOffset + d + dt] = float(s);
     }
 }

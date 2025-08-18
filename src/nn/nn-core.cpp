@@ -172,7 +172,7 @@ void printNodeRequiredMemory(NnNetConfig *netConfig, NnNodeConfig *nodeConfig) {
             total += segment->ops[opIndex].configSize;
         }
     }
-    printf("📀 RequiredMemory: %lu kB\n", total / 1024);
+    printf("📀 RequiredMemory: %lu MB\n", total / (1024 * 1024));
 }
 
 Timer::Timer() {
