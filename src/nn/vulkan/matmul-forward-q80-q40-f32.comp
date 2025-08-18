@@ -4,7 +4,6 @@
 #extension GL_EXT_shader_16bit_storage : enable
 #extension GL_EXT_shader_explicit_arithmetic_types : enable
 
-#define MAX_THREADS 256
 #define N_BATCHES 32
 #define TILE_SIZE_X 2
 #define TILE_SIZE_D 8
@@ -12,6 +11,8 @@
 #define Q80_Q40_BLOCK_SIZE 32
 
 layout(local_size_x_id = 0, local_size_y = 1, local_size_z = 1) in;
+
+layout(constant_id = 0) const uint N_THREADS = 32;
 
 struct BatchInfo {
     uint inputOffset;
@@ -35,26 +36,18 @@ layout(binding = 1) writeonly buffer outputBuffer { float y[]; };
 layout(binding = 2) readonly uniform batchInfosBuffer { BatchInfo infos[N_BATCHES]; };
 layout(binding = 3) readonly buffer weightBuffer { BlockQ40 weight[]; };
 
-shared float sums[MAX_THREADS * TILE_SIZE_D];
+shared float sums[N_THREADS * TILE_SIZE_D];
 
 void main() {
-    const uint nThreads = gl_WorkGroupSize.x;
     const uint threadIndex = gl_LocalInvocationID.x;
     const uint batchIndex = gl_WorkGroupID.y;
     const uint workGroupIndex = gl_WorkGroupID.z;
     const BatchInfo info = infos[batchIndex];
 
-    const uint xTiles = info.inputSizeX / TILE_SIZE_X;
-    const uint xSlice = xTiles / nThreads;
-    const uint xRest = xTiles % nThreads;
-
     const uint inputOffset = info.inputOffset;
     const uint inputSizeX = info.inputSizeX;
     const uint outputOffset = info.outputOffset;
     const uint d = TILE_SIZE_D * workGroupIndex;
-
-    const uint xStart = (threadIndex * xSlice + min(threadIndex, xRest)) * TILE_SIZE_X;
-    const uint xEnd = xStart + (xSlice + (threadIndex < xRest ? 1 : 0)) * TILE_SIZE_X;
 
     vec4 xTemp[Q80_Q40_BLOCK_SIZE / 4];
 
@@ -62,42 +55,42 @@ void main() {
         sums[threadIndex * TILE_SIZE_D + dt] = 0.0f;
     }
 
-    for (uint i = xStart; i < xEnd; i += TILE_SIZE_X) {
-        [[unroll]] for (uint it = 0; it < TILE_SIZE_X; it++) {
-            const uint xi = inputOffset + i + it;
-            const float xScale = float(x[xi].d);
+    [[unroll]] for (uint it = 0; it < TILE_SIZE_X; it++) {
+        const uint xi = inputOffset + threadIndex + it * N_THREADS;
+        const float xScale = float(x[xi].d);
+        [[unroll]] for (uint j = 0; j < Q80_Q40_BLOCK_SIZE / 4; j++) {
+            xTemp[j] = vec4(
+                x[xi].qs[j * 2],
+                x[xi].qs[j * 2 + Q80_Q40_BLOCK_SIZE / 2],
+                x[xi].qs[j * 2 + 1],
+                x[xi].qs[j * 2 + 1 + Q80_Q40_BLOCK_SIZE / 2]
+            );
+        }
+
+        [[unroll]] for (uint dt = 0; dt < TILE_SIZE_D; dt++) {
+            const uint wi = (d + dt) * inputSizeX + threadIndex + it * N_THREADS;
+            const BlockQ40 wBlock = weight[wi];
+
+            float s = 0.0f;
             [[unroll]] for (uint j = 0; j < Q80_Q40_BLOCK_SIZE / 4; j++) {
-                xTemp[j] = vec4(
-                    x[xi].qs[j * 2],
-                    x[xi].qs[j * 2 + Q80_Q40_BLOCK_SIZE / 2],
-                    x[xi].qs[j * 2 + 1],
-                    x[xi].qs[j * 2 + 1 + Q80_Q40_BLOCK_SIZE / 2]
-                );
+                uint w0 = wBlock.qs[j * 2];
+                uint w1 = wBlock.qs[j * 2 + 1];
+                s += dot(xTemp[j], vec4(
+                    int(w0 & 0xFu) - 8,
+                    int(w0 >> 4) - 8,
+                    int(w1 & 0xFu) - 8,
+                    int(w1 >> 4) - 8
+                ));
             }
-
-            [[unroll]] for (uint dt = 0; dt < TILE_SIZE_D; dt++) {
-                const uint wi = (d + dt) * inputSizeX + (i + it);
-                const BlockQ40 wBlock = weight[wi];
-
-                float s = 0.0f;
-                [[unroll]] for (uint j = 0; j < Q80_Q40_BLOCK_SIZE / 4; j++) {
-                    uint w0 = wBlock.qs[j * 2];
-                    uint w1 = wBlock.qs[j * 2 + 1];
-                    s += dot(xTemp[j], vec4(
-                        int(w0 & 0xFu) - 8,
-                        int(w0 >> 4) - 8,
-                        int(w1 & 0xFu) - 8,
-                        int(w1 >> 4) - 8
-                    ));
-                }
-                sums[threadIndex * TILE_SIZE_D + dt] += s * xScale * wBlock.d;
-            }
+            sums[threadIndex * TILE_SIZE_D + dt] += s * xScale * wBlock.d;
         }
     }
 
     barrier();
 
-    for (uint i = nThreads / 2; i > 0; i >>= 1) {
+    uint i = N_THREADS;
+    while (i % 2 == 0) {
+        i >>= 1;
         for (uint dt = 0; dt < TILE_SIZE_D; dt++) {
             if (threadIndex < i) {
                 sums[threadIndex * TILE_SIZE_D + dt] += sums[(threadIndex + i) * TILE_SIZE_D + dt];
@@ -105,7 +98,11 @@ void main() {
         }
         barrier();
     }
-    for (uint dt = threadIndex; dt < TILE_SIZE_D; dt += nThreads) {
-        y[outputOffset + d + dt] = sums[dt];
+    for (uint dt = threadIndex; dt < TILE_SIZE_D; dt += N_THREADS) {
+        float s = 0.0;
+        for (uint j = 1; j <= i; j++) {
+            s += sums[(j - 1) * TILE_SIZE_D + dt];
+        }
+        y[outputOffset + d + dt] = float(s);
     }
 }
