@@ -1,9 +1,10 @@
 #version 450
 
-#define N_THREADS 256
 #define N_BATCHES 32
 
-layout(local_size_x = N_THREADS, local_size_y = 1, local_size_z = 1) in;
+layout(local_size_x_id = 0, local_size_y = 1, local_size_z = 1) in;
+
+layout(constant_id = 0) const uint N_THREADS = 32;
 
 struct BatchInfo {
     uint inputOffset;

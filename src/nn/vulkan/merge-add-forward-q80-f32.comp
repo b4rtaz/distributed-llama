@@ -7,7 +7,9 @@
 #define Q80_BLOCK_SIZE 32
 #define N_BATCHES 32
 
-layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+layout(local_size_x_id = 0, local_size_y = 1, local_size_z = 1) in;
+
+layout(constant_id = 0) const uint N_THREADS = 32;
 
 struct BatchInfo {
     uint inputOffset; // number of Q80 blocks
@@ -26,30 +28,32 @@ layout(binding = 1) buffer outputBuffer { float y[]; };
 layout(binding = 2) readonly uniform batchInfosBuffer { BatchInfo infos[N_BATCHES]; };
 
 void main() {
+    const uint threadIndex = gl_LocalInvocationID.x;
     const uint batchIndex = gl_WorkGroupID.y;
-    const uint i = gl_WorkGroupID.z;
 
     const BatchInfo info = infos[batchIndex];
-    const uint nBlocks = info.outputSizeX / Q80_BLOCK_SIZE; // 128
+    const uint nBlocks = info.outputSizeX / Q80_BLOCK_SIZE;
     const uint nSlices = info.inputSizeX / nBlocks;
     float16_t sums[Q80_BLOCK_SIZE];
 
-    const uint xiOffset = info.inputOffset + i;
-    const uint yiOffset = info.outputOffset + i * Q80_BLOCK_SIZE;
-
-    [[unroll]] for (uint k = 0; k < Q80_BLOCK_SIZE; k++) {
-        sums[k] = float16_t(0.0f);
-    }
-    for (uint n = 0; n < nSlices; n++) {
-        const BlockQ80 b = x[xiOffset + n * nBlocks];
-        const float16_t d = b.d;
+    for (uint i = threadIndex; i < nBlocks; i += N_THREADS) {
+        const uint xiOffset = info.inputOffset + i;
+        const uint yiOffset = info.outputOffset + i * Q80_BLOCK_SIZE;
 
         [[unroll]] for (uint k = 0; k < Q80_BLOCK_SIZE; k++) {
-            sums[k] += float16_t(b.qs[k]) * d;
+            sums[k] = float16_t(0.0f);
         }
-    }
+        for (uint n = 0; n < nSlices; n++) {
+            const BlockQ80 b = x[xiOffset + n * nBlocks];
+            const float16_t d = b.d;
 
-    [[unroll]] for (uint k = 0; k < Q80_BLOCK_SIZE; k++) {
-        y[yiOffset + k] += float(sums[k]);
+            [[unroll]] for (uint k = 0; k < Q80_BLOCK_SIZE; k++) {
+                sums[k] += float16_t(b.qs[k]) * d;
+            }
+        }
+
+        [[unroll]] for (uint k = 0; k < Q80_BLOCK_SIZE; k++) {
+            y[yiOffset + k] += float(sums[k]);
+        }
     }
 }

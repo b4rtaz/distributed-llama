@@ -417,7 +417,9 @@ NnVulkanDevice::NnVulkanDevice(NnUint gpuIndex, NnNetConfig *netConfig, NnNodeCo
     vk::CommandPoolCreateInfo commandPoolCreateInfo(vk::CommandPoolCreateFlags(vk::CommandPoolCreateFlagBits::eTransient | vk::CommandPoolCreateFlagBits::eResetCommandBuffer), context.queueFamilyIndex);
     context.commandPool = context.device.createCommandPool(commandPoolCreateInfo);
     context.queue = context.device.getQueue(context.queueFamilyIndex, 0);
+
     context.nonCoherentAtomSize = deviceProps.limits.nonCoherentAtomSize;
+    context.maxComputeWorkGroupSizeX = deviceProps.limits.maxComputeWorkGroupSize[0];
 
     VULKAN_TRACE("Context created");
     data = new NnVulkanDeviceData(&context, netConfig, nodeConfig);
@@ -538,13 +540,31 @@ static std::vector<NnVulkanBatchInfo> buildBatchInfo(NnOpConfig *opConfig, NnVul
     return offset;
 }
 
-static NnUint resolveShaderNThreads(const NnOpConfig *opConfig, const NnOpQuantType opQuant, const NnSize2D inputSize, const NnSize2D outputSize) {
+static NnUint resolveShaderNThreads(const NnOpConfig *opConfig, const NnOpQuantType opQuant, const NnSize2D inputSize, const NnSize2D outputSize, const NnUint maxComputeWorkGroupSizeX) {
     if (opConfig->code == OP_MATMUL) {
         if (opQuant == Q80_Q40_F32) {
             constexpr NnUint tileSizeX = 2; // Shader constant
             assert(inputSize.x % (Q40_BLOCK_SIZE * tileSizeX) == 0);
             return inputSize.x / (Q40_BLOCK_SIZE * tileSizeX);
         }
+    } else if (
+        opConfig->code == OP_CAST ||
+        opConfig->code == OP_EMBEDDING ||
+        opConfig->code == OP_MERGE_ADD ||
+        opConfig->code == OP_MUL ||
+        opConfig->code == OP_RMS_NORM ||
+        opConfig->code == OP_SHIFT ||
+        opConfig->code == OP_SILU ||
+        opConfig->code == OP_ROPE
+    ) {
+        NnUint n = outputSize.x / getBlockSize(outputSize.floatType);
+        if (outputSize.floatType == F_32) {
+            constexpr NnUint chunkSizeX = 8;
+            n = (n / chunkSizeX) + (n % chunkSizeX != 0 ? 1 : 0);
+        }
+        if (n < 1) n = 1;
+        else if (n > maxComputeWorkGroupSizeX) n = maxComputeWorkGroupSizeX;
+        return n;
     }
     return 0;
 }
@@ -554,20 +574,7 @@ static void resolveShaderGroups(const NnOpConfig *opConfig, const NnUint batchSi
     groupCount[1] = batchSize;
     groupCount[2] = 1;
 
-    if (opConfig->code == OP_CAST) {
-        if (outputSize.floatType == F_Q80) {
-            groupCount[2] = outputSize.x / Q80_BLOCK_SIZE;
-        } else {
-            constexpr NnUint chunkSize = 4; // Shader constant
-            groupCount[2] = outputSize.x / chunkSize;
-        }
-    } else if (opConfig->code == OP_MERGE_ADD) {
-        if (inputSize.floatType == F_Q80) {
-            groupCount[2] = outputSize.x / Q80_BLOCK_SIZE; // Yes, outputSize is used here
-        } else {
-            groupCount[2] = 32;
-        }
-    } else if (opConfig->code == OP_MATMUL) {
+    if (opConfig->code == OP_MATMUL) {
         if (opConfig->weightSize.floatType == F_Q40) {
             constexpr NnUint tileSizeD = 8; // Shader constant
             assert(opConfig->weightSize.x % tileSizeD == 0);
@@ -580,17 +587,6 @@ static void resolveShaderGroups(const NnOpConfig *opConfig, const NnUint batchSi
         groupCount[2] = ((NnMultiHeadAttOpConfig *)opConfig->config)->nHeads0;
     else if (opConfig->code == OP_INV_RMS)
         groupCount[2] = ((NnInvRmsOpConfig *)opConfig->config)->nColumns;
-    else if (
-        opConfig->code == OP_EMBEDDING ||
-        opConfig->code == OP_RMS_NORM ||
-        opConfig->code == OP_MUL ||
-        opConfig->code == OP_SILU ||
-        opConfig->code == OP_SHIFT
-    ) {
-        constexpr NnUint chunkSize = 4; // Shader constant
-        assert(outputSize.x % chunkSize == 0);
-        groupCount[2] = outputSize.x / chunkSize;
-    }
 }
 
 static std::vector<uint32_t> readShader(const char *fileName) {
@@ -711,7 +707,7 @@ NnVulkanDeviceSegment::NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanD
             code.data()
         );
 
-        nConsts[opIndex] = resolveShaderNThreads(opConfig, opQuant, inputSize, outputSize);
+        nConsts[opIndex] = resolveShaderNThreads(opConfig, opQuant, inputSize, outputSize, context->maxComputeWorkGroupSizeX);
         specEntries[opIndex] = vk::SpecializationMapEntry(0, 0, sizeof(NnUint));
         specInfos[opIndex] = vk::SpecializationInfo(1, &specEntries[opIndex], sizeof(NnUint), &nConsts[opIndex]);
 

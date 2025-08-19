@@ -14,6 +14,7 @@ typedef struct {
     vk::CommandPool commandPool;
     vk::Queue queue;
     NnSize nonCoherentAtomSize;
+    NnUint maxComputeWorkGroupSizeX;
 } NnVulkanContext;
 
 enum NnStagingVulkanCopyDirection {
