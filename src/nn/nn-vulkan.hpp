@@ -139,7 +139,7 @@ private:
     std::vector<vk::PipelineLayout> pipelineLayouts;
     std::vector<vk::Pipeline> pipelines;
     vk::PipelineCache pipelineCache;
-    std::vector<bool> isMemoryBarrierRequired;
+    std::vector<std::vector<NnVulkanBuffer *>> buffersToSync;
     vk::CommandBuffer commandBuffer;
     NnUint lastBatchSize;
 public:

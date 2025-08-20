@@ -529,29 +529,32 @@ static void buildShaderLayout(std::vector<NnOpBufferAccess> &a, NnVulkanDeviceDa
     }
 }
 
-static void resolveMemoryBarriers(std::vector<bool>& isMemoryBarrierRequired, std::vector<std::vector<NnOpBufferAccess>>& accesses) {
+static bool containsBuffer(std::vector<NnVulkanBuffer *> &buffers, NnVulkanBuffer *buffer) {
+    for (NnVulkanBuffer *b : buffers) {
+        if (b == buffer) return true;
+    }
+    return false;
+}
+
+static void resolveBuffersToSync(std::vector<std::vector<NnVulkanBuffer *>>& buffersToSync, std::vector<std::vector<NnOpBufferAccess>>& accesses) {
     std::vector<NnVulkanBuffer *> modifiedBuffers;
     for (NnUint opIndex = 0; opIndex < accesses.size(); opIndex++) {
-        if (opIndex == 0) {
-            isMemoryBarrierRequired[0] = true;
-        } else {
-            bool isRequrired = false;
+        if (opIndex > 0) {
+            bool flush = false;
             for (const NnOpBufferAccess &access : accesses[opIndex]) {
-                if (access.type == ACCESS_READONLY) {
-                    for (NnVulkanBuffer *buffer : modifiedBuffers) {
-                        if (buffer == access.buffer) {
-                            isRequrired = true;
-                            break;
-                        }
-                    }
+                if (access.type == ACCESS_READONLY && containsBuffer(modifiedBuffers, access.buffer)) {
+                    flush = true;
+                    break;
                 }
             }
-            isMemoryBarrierRequired[opIndex] = isRequrired;
-            if (isRequrired)
+            if (flush) {
+                for (NnVulkanBuffer *buffer : modifiedBuffers)
+                    buffersToSync[opIndex].push_back(buffer);
                 modifiedBuffers.clear();
+            }
         }
         for (const NnOpBufferAccess &access : accesses[opIndex]) {
-            if (access.type == ACCESS_READ_WRITE)
+            if (access.type == ACCESS_READ_WRITE && !containsBuffer(modifiedBuffers, access.buffer))
                 modifiedBuffers.push_back(access.buffer);
         }
     }
@@ -697,7 +700,7 @@ NnVulkanDeviceSegment::NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanD
     descriptorSetLayouts(segmentConfig->nOps),
     pipelineLayouts(segmentConfig->nOps),
     pipelines(segmentConfig->nOps),
-    isMemoryBarrierRequired(segmentConfig->nOps)
+    buffersToSync(segmentConfig->nOps)
 {
     this->context = context;
     this->data = data;
@@ -751,7 +754,7 @@ NnVulkanDeviceSegment::NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanD
 
         shaderModules[opIndex] = shaderModule;
         shaderCreateInfos[opIndex] = shaderCreateInfo;
-        VULKAN_TRACE("Segment %d, opIndex: %d, buffers: %zu", segmentIndex, opIndex, buffers.size());
+        VULKAN_TRACE("Segment %d, opIndex: %d, buffers: %zu", segmentIndex, opIndex, opBufferAccesses[opIndex].size());
     }
 
     NnUint nUniformBuffers = 0;
@@ -845,7 +848,7 @@ NnVulkanDeviceSegment::NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanD
     const std::vector<vk::CommandBuffer> cmdBuffers = context->device.allocateCommandBuffers(commandBufferAllocInfo);
     commandBuffer = cmdBuffers.front();
 
-    resolveMemoryBarriers(isMemoryBarrierRequired, opBufferAccesses);
+    resolveBuffersToSync(buffersToSync, opBufferAccesses);
 }
 
 NnVulkanDeviceSegment::~NnVulkanDeviceSegment() {
@@ -911,16 +914,29 @@ void NnVulkanDeviceSegment::forward(NnUint opIndex, NnUint nThreads, NnUint thre
 
             resolveShaderGroups(&segmentConfig->ops[opIndex], batchSize, opGroupCount, inputSize, outputSize);
 
-            if (isMemoryBarrierRequired[opIndex]) {
-                vk::MemoryBarrier memoryBarrier(vk::AccessFlagBits::eShaderWrite, vk::AccessFlagBits::eShaderRead);
+            std::vector<vk::BufferMemoryBarrier> memoryBarriers;
+            for (NnVulkanBuffer *buffer : buffersToSync[opIndex]) {
+                vk::BufferMemoryBarrier barrier(
+                    vk::AccessFlagBits::eShaderWrite,
+                    vk::AccessFlagBits::eShaderRead,
+                    context->queueFamilyIndex,
+                    context->queueFamilyIndex,
+                    buffer->deviceBuffer,
+                    0, 
+                    buffer->calcSliceSize(batchSize, netConfig->nBatches)
+                );
+                memoryBarriers.push_back(barrier);
+            }
+            if (!memoryBarriers.empty()) {
                 commandBuffer.pipelineBarrier(
                     vk::PipelineStageFlagBits::eComputeShader,
                     vk::PipelineStageFlagBits::eComputeShader,
                     vk::DependencyFlags(),
-                    memoryBarrier,
                     nullptr,
+                    memoryBarriers,
                     nullptr
                 );
+                VULKAN_TRACE("Created memory barrier for %zu buffers", barriers.size());
             }
 
             commandBuffer.bindPipeline(
