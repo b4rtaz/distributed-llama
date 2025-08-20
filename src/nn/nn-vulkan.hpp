@@ -110,10 +110,16 @@ public:
     NnVulkanBuffer *resolveOpConfigVulkanBuffer(NnUint opIndex);
 };
 
+enum NnOpBufferAccessType {
+    ACCESS_IMMUTABLE,
+    ACCESS_READONLY,
+    ACCESS_READ_WRITE,
+};
+
 typedef struct {
-    bool isBarrierNeeded;
+    NnOpBufferAccessType type;
     NnVulkanBuffer *buffer;
-} NnOpBufferUsage;
+} NnOpBufferAccess;
 
 class NnVulkanDeviceSegment : public NnDeviceSegment {
 private:
@@ -133,8 +139,8 @@ private:
     std::vector<vk::PipelineLayout> pipelineLayouts;
     std::vector<vk::Pipeline> pipelines;
     vk::PipelineCache pipelineCache;
+    std::vector<bool> isMemoryBarrierRequired;
     vk::CommandBuffer commandBuffer;
-    std::vector<std::vector<NnOpBufferUsage>> opBufferUsages;
     NnUint lastBatchSize;
 public:
     NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanDeviceData *data, NnNetConfig *netConfig, NnUint segmentIndex, NnSegmentConfig *segmentConfig, NnNetExecution *netExecution);
