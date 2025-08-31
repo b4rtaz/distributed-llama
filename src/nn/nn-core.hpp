@@ -76,17 +76,20 @@ enum NnOpCode {
     OP_EMBEDDING,
     OP_INV_RMS,
     OP_RMS_NORM,
+    OP_SUM_NORM,
     OP_MATMUL,
     OP_ROPE,
     OP_MULTIHEAD_ATT,
     OP_GELU,
     OP_SILU,
     OP_MUL,
+    OP_SCALE,
     OP_CAST,
-    OP_REPEAT,
+    OP_REPEAT_Z,
     OP_SHIFT,
     OP_SOFTMAX,
     OP_TOPK,
+    OP_PICK_Z,
 };
 
 enum NnOpQuantType {
@@ -206,6 +209,10 @@ typedef struct {
 } NnRmsNormOpConfig;
 
 typedef struct {
+    // empty
+} NnSumNormOpConfig;
+
+typedef struct {
     NnUint nExperts;
     NnUint nActiveExperts;
     NnUint activeExpertIndexesBufferIndex;
@@ -255,12 +262,16 @@ typedef struct {
 } NnMulOpCodeConfig;
 
 typedef struct {
+    NnUint scaleBufferIndex;
+} NnScaleOpCodeConfig;
+
+typedef struct {
     // empty
 } NnCastOpCodeConfig;
 
 typedef struct {
     // empty
-} NnRepeatOpCodeConfig;
+} NnRepeatZOpCodeConfig;
 
 typedef struct {
     NnUint indexPipeIndex;
@@ -273,6 +284,10 @@ typedef struct {
 typedef struct {
     // empty
 } NnTopKOpCodeConfig;
+
+typedef struct {
+    NnUint indexBufferIndex;
+} NnPickZOpCodeConfig;
 
 // utility functions
 

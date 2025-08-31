@@ -814,6 +814,11 @@ static void mul_F32(float *y, const float *x, const float *m, const NnUint n, co
         y[i] = x[i] * m[i];
 }
 
+static void scale_F32(const float *i, float *o, const float s, NnSize size, NnUint nThreads, NnUint threadIndex) {
+    for (NnUint x = threadIndex; x < size; x += nThreads)
+        o[x] = i[x] * s;
+}
+
 static void mul_Q80_F32(float *y, const float *x, const NnBlockQ80 *m, const NnUint n, const NnUint nThreads, const NnUint threadIndex) {
     const NnUint nBlocks = n / Q80_BLOCK_SIZE;
     SPLIT_THREADS(start, end, nBlocks, nThreads, threadIndex);
@@ -1098,6 +1103,20 @@ static void rmsNormForward_Q80_F32_F32(NnUint nThreads, NnUint threadIndex, NnUi
     }
 }
 
+static void sumNormForward_F32_F32(NnUint nThreads, NnUint threadIndex, NnUint batchSize, NnCpuOpContext *context) {
+    if (threadIndex != 0u) return; // TODO
+    assert(*context->input == *context->output);
+
+    for (NnUint batchIndex = 0; batchIndex < batchSize; batchIndex++) {
+        float *x = (float *)context->input[batchIndex];
+        float s = 0.0f;
+        for (NnUint i = 0; i < context->inputSize.x; i++)
+            s += x[i];
+        for (NnUint i = 0; i < context->inputSize.x; i++)
+            x[i] /= s;
+    }
+}
+
 static void initMatmulForward(NnCpuOpContext *context) {
     const NnMatmulOpConfig *config = (NnMatmulOpConfig *)context->opConfig;
     ASSERT_EQ(context->inputSize.y, context->nBatches);
@@ -1301,6 +1320,21 @@ static void mulForward_F32_F32(NnUint nThreads, NnUint threadIndex, NnUint batch
     }
 }
 
+static void scaleForward_F32_F32(NnUint nThreads, NnUint threadIndex, NnUint batchSize, NnCpuOpContext *context) {
+    const NnScaleOpCodeConfig *config = (NnScaleOpCodeConfig *)context->opConfig;
+    const float *scale = (float *)context->buffers[config->scaleBufferIndex];
+
+    for (NnUint z = 0u; z < context->inputSize.z; z++) {
+        for (NnUint y = 0u; y < batchSize; y++) {
+            const NnUint index = z * context->inputSize.y + y;
+            const float s = scale[index];
+            const float *i = (float *)context->input[index];
+            float *o = (float *)context->output[index];
+            scale_F32(i, o, s, context->inputSize.x, nThreads, threadIndex);
+        }
+    }
+}
+
 static void initCastForward(NnCpuOpContext *context) {
     ASSERT_EQ(context->inputSize.x, context->outputSize.x);
     ASSERT_EQ(context->inputSize.y, context->outputSize.y);
@@ -1357,14 +1391,14 @@ static void castForward_Q80_F32(NnUint nThreads, NnUint threadIndex, NnUint batc
     }
 }
 
-static void initRepeatForward(NnCpuOpContext *context) {
+static void initRepeatZForward(NnCpuOpContext *context) {
     ASSERT_EQ(context->inputSize.x, context->outputSize.x);
     ASSERT_EQ(context->inputSize.y, context->outputSize.y);
     ASSERT_EQ(context->inputSize.z, 1);
     assert(context->inputSize.z <= context->outputSize.z);
 }
 
-static void repeatForward_F32_Q80(NnUint nThreads, NnUint threadIndex, NnUint batchSize, NnCpuOpContext *context) {
+static void repeatZForward_F32_Q80(NnUint nThreads, NnUint threadIndex, NnUint batchSize, NnCpuOpContext *context) {
     ASSERT_EQ(context->inputSize.floatType, F_32);
     ASSERT_EQ(context->outputSize.floatType, F_Q80);
 
@@ -1431,6 +1465,20 @@ static void topkForward_F32_F32(NnUint nThreads, NnUint threadIndex, NnUint batc
             context->outputSize.x);
 }
 
+static void pickZForward_F32_F32(NnUint nThreads, NnUint threadIndex, NnUint batchSize, NnCpuOpContext *context) {
+    if (threadIndex != 0u) return;
+
+    ASSERT_EQ(context->inputSize.z, 1u);
+    ASSERT_EQ(context->inputSize.y, context->nBatches);
+    ASSERT_EQ(context->inputSize.y, context->outputSize.y);
+    ASSERT_EQ(context->outputSize.x, 1);
+
+    const NnPickZOpCodeConfig *config = (NnPickZOpCodeConfig *)context->opConfig;
+    const float *indexes = (float *)context->buffers[config->indexBufferIndex];
+
+    // TOODO
+}
+
 // device
 
 void printCpuInstructionSet() {
@@ -1468,8 +1516,8 @@ NnCpuOpForwardInit getCpuOpForwardInit(NnOpCode code, NnOpQuantType quantType) {
         return initMatmulForward;
     if (code == OP_CAST)
         return initCastForward;
-    if (code == OP_REPEAT)
-        return initRepeatForward;
+    if (code == OP_REPEAT_Z)
+        return initRepeatZForward;
     return nullptr;
 }
 
@@ -1492,6 +1540,9 @@ NnCpuOpForward getCpuOpForward(NnOpCode code, NnOpQuantType quantType) {
         if (quantType == F32_F32_F32) return rmsNormForward_F32_F32_F32;
         if (quantType == Q80_F32_F32) return rmsNormForward_Q80_F32_F32;
     }
+    if (code == OP_SUM_NORM) {
+        if (quantType == F32_F32_F32) return sumNormForward_F32_F32;
+    }
     if (code == OP_MATMUL) {
         if (quantType == F32_F32_F32) return matmulForward_F32_F32_F32;
         if (quantType == Q80_Q40_F32) return matmulForward_Q80_Q40_F32;
@@ -1511,14 +1562,17 @@ NnCpuOpForward getCpuOpForward(NnOpCode code, NnOpQuantType quantType) {
     if (code == OP_MUL) {
         if (quantType == F32_F32_F32) return mulForward_F32_F32;
     }
+    if (code == OP_SCALE) {
+        if (quantType == F32_F32_F32) return scaleForward_F32_F32;
+    }
     if (code == OP_CAST) {
         if (quantType == F32_F32_F32) return castForward_ANY;
         if (quantType == F32_F32_Q80) return castForward_F32_Q80;
         if (quantType == Q80_Q80_Q80) return castForward_ANY;
         if (quantType == Q80_Q80_F32) return castForward_Q80_F32;
     }
-    if (code == OP_REPEAT) {
-        if (quantType == F32_F32_Q80) return repeatForward_F32_Q80;
+    if (code == OP_REPEAT_Z) {
+        if (quantType == F32_F32_Q80) return repeatZForward_F32_Q80;
     }
     if (code == OP_SHIFT) {
         if (quantType == F32_F32_F32) return shiftForward_F32_F32;
@@ -1528,6 +1582,9 @@ NnCpuOpForward getCpuOpForward(NnOpCode code, NnOpQuantType quantType) {
     }
     if (code == OP_TOPK) {
         if (quantType == F32_F32_F32) return topkForward_F32_F32;
+    }
+    if (code == OP_PICK_Z) {
+        if (quantType == F32_F32_F32) return pickZForward_F32_F32;
     }
     return nullptr;
 }
