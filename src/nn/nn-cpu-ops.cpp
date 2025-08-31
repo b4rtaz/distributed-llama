@@ -2,6 +2,7 @@
 #include <cassert>
 #include <cstring>
 #include <cstdio>
+#include <cstdlib>
 #include <stdexcept>
 #if defined(__ARM_NEON)
     #include <arm_neon.h>
@@ -877,6 +878,37 @@ static void ropeFalcon_F32(float* x, const float *cache, bool isQ, const NnUint 
     }
 }
 
+static void mergeSum_F32(float **output, float **input, const NnSize size, const NnSize batchSize, const NnSize nBatches, const NnSize nZ, const NnUint nThreads, const NnUint threadIndex) {
+    SPLIT_THREADS(start, end, size, nThreads, threadIndex);
+
+    for (NnUint y = 0u; y < batchSize; y++) {
+        for (NnUint x = start; x < end; x++) {
+            float s = 0.0f;
+            for (NnUint z = 0u; z < nZ; z++)
+                s += input[y + z * nBatches][x];
+            output[y][x] = s;
+        }
+    }
+}
+
+static void topk_F32(const float *x, float *y, NnSize size, NnUint k) {
+    assert(k <= size);
+    assert(k > 0);
+
+    std::vector<NnUint> items(size);
+    for (NnSize i = 0; i < size; i++)
+        items[i] = i;
+
+    std::sort(items.begin(), items.end(),
+        [&x](int a, int b) {
+            return x[a] > x[b];
+        }
+    );
+
+    for (NnUint i = 0; i < k; i++)
+        y[i] = (float)items[i];
+}
+
 //
 
 static void mergeAddForward_F32_F32(NnUint nThreads, NnUint threadIndex, NnUint batchSize, NnCpuOpContext *context) {
@@ -916,6 +948,23 @@ static void mergeAddForward_Q80_F32(NnUint nThreads, NnUint threadIndex, NnUint 
                 threadIndex);
         }
     }
+}
+
+static void mergeSumForward_F32_F32(NnUint nThreads, NnUint threadIndex, NnUint batchSize, NnCpuOpContext *context) {
+    ASSERT_EQ(context->inputSize.floatType, F_32);
+    ASSERT_EQ(context->outputSize.floatType, F_32);
+    ASSERT_EQ(context->outputSize.z, 1u);
+    assert(context->inputSize.z >= 1u);
+
+    mergeSum_F32(
+        (float **)context->output,
+        (float **)context->input,
+        context->outputSize.x,
+        batchSize,
+        context->nBatches,
+        context->inputSize.z,
+        nThreads,
+        threadIndex);
 }
 
 static void initEmbeddingForward(NnCpuOpContext *context) {
@@ -1049,10 +1098,14 @@ static void rmsNormForward_Q80_F32_F32(NnUint nThreads, NnUint threadIndex, NnUi
 }
 
 static void initMatmulForward(NnCpuOpContext *context) {
+    const NnMatmulOpConfig *config = (NnMatmulOpConfig *)context->opConfig;
     ASSERT_EQ(context->inputSize.y, context->nBatches);
     ASSERT_EQ(context->outputSize.y, context->nBatches);
     ASSERT_EQ(context->inputSize.x, context->weightSize.y);
+    ASSERT_EQ(context->inputSize.z, std::max(config->nActiveExperts, 1u));
     ASSERT_EQ(context->outputSize.x, context->weightSize.x);
+    ASSERT_EQ(context->outputSize.z, std::max(config->nActiveExperts, 1u));
+    ASSERT_EQ(context->weightSize.z, std::max(config->nExperts, 1u));
 
     if (!context->hasInputContinuousMemory)
         printf("🚧 Op %s does not have contiguous memory for input\n", context->name);
@@ -1061,7 +1114,7 @@ static void initMatmulForward(NnCpuOpContext *context) {
 
 }
 
-static bool matmulForward_llamafile(NnUint nThreads, NnUint threadIndex, NnUint batchSize, NnCpuOpContext *context) {
+static bool matmulForward_llamafile(void *output, const void *input, const void *weight, NnUint nThreads, NnUint threadIndex, NnUint batchSize, NnCpuOpContext *context) {
     if (batchSize == 1 || !context->hasInputContinuousMemory || !context->hasOutputContinuousMemory)
         return false;
 
@@ -1069,9 +1122,9 @@ static bool matmulForward_llamafile(NnUint nThreads, NnUint threadIndex, NnUint 
     const NnUint d = context->weightSize.x;
     return llamafile_sgemm(
         d, batchSize, n,
-        context->weight, n,
-        context->input[0], n,
-        context->output[0], d,
+        weight, n,
+        input, n,
+        output, d,
         threadIndex, nThreads, 0,
         context->weightSize.floatType,
         context->inputSize.floatType,
@@ -1080,42 +1133,55 @@ static bool matmulForward_llamafile(NnUint nThreads, NnUint threadIndex, NnUint 
 }
 
 static void matmulForward_F32_F32_F32(NnUint nThreads, NnUint threadIndex, NnUint batchSize, NnCpuOpContext *context) {
-    if (matmulForward_llamafile(nThreads, threadIndex, batchSize, context))
-        return;
+    const NnMatmulOpConfig *config = (NnMatmulOpConfig *)context->opConfig;
+    const NnUint nActiveExpertsOr1 = std::max(config->nActiveExperts, 1u);
+    const float *activeExpertIndexes = (const float *)context->buffers[config->activeExpertIndexesBufferIndex];
 
-    const float *weight = (float *)context->weight;
-    for (NnUint batchIndex = 0; batchIndex < batchSize; batchIndex++) {
-        float *input = (float *)context->input[batchIndex];
-        float *output = (float *)context->output[batchIndex];
-        DEBUG_VECTOR(context, "input", input);
-        matmul_F32_F32_F32(
-            output,
-            input,
-            weight,
-            context->weightSize.y,
-            context->weightSize.x,
-            nThreads,
-            threadIndex);
-        DEBUG_VECTOR(context, "output", output);
+    for (NnUint e = 0; e < nActiveExpertsOr1; e++) {
+        const NnUint activeExpertIndex = config->nActiveExperts == 0u ? 0u : (NnUint)activeExpertIndexes[e];
+        const NnSize offset = e * batchSize;
+        const float *weight = (float *)&context->weight[activeExpertIndex * context->weightSize.nBytesXY];
+
+        if (matmulForward_llamafile(context->output[offset], context->input[offset], weight, nThreads, threadIndex, batchSize, context))
+            continue;
+
+        for (NnUint b = 0; b < batchSize; b++) {
+            matmul_F32_F32_F32(
+                (float *)context->output[offset + b],
+                (float *)context->input[offset + b],
+                weight,
+                context->weightSize.y,
+                context->weightSize.x,
+                nThreads,
+                threadIndex);
+            DEBUG_VECTOR(context, "output", output);
+        }
     }
 }
 
 static void matmulForward_Q80_Q40_F32(NnUint nThreads, NnUint threadIndex, NnUint batchSize, NnCpuOpContext *context) {
-    if (matmulForward_llamafile(nThreads, threadIndex, batchSize, context))
-        return;
+    const NnMatmulOpConfig *config = (NnMatmulOpConfig *)context->opConfig;
+    const NnUint nActiveExpertsOr1 = std::max(config->nActiveExperts, 1u);
+    const float *activeExpertIndexes = (const float *)context->buffers[config->activeExpertIndexesBufferIndex];
 
-    const NnBlockQ40 *weight = (NnBlockQ40 *)context->weight;
-    for (NnUint batchIndex = 0; batchIndex < batchSize; batchIndex++) {
-        NnBlockQ80 *input = (NnBlockQ80 *)context->input[batchIndex];
-        float *output = (float *)context->output[batchIndex];
-        matmul_Q80_Q40_F32(
-            output,
-            input,
-            weight,
-            context->weightSize.y,
-            context->weightSize.x,
-            nThreads,
-            threadIndex);
+    for (NnUint e = 0; e < nActiveExpertsOr1; e++) {
+        const NnUint activeExpertIndex = config->nActiveExperts == 0u ? 0u : (NnUint)activeExpertIndexes[e];
+        const NnSize offset = e * batchSize;
+        const NnBlockQ40 *weight = (NnBlockQ40 *)&context->weight[activeExpertIndex * context->weightSize.nBytesXY];
+
+        if (matmulForward_llamafile(context->output[offset], context->input[offset], weight, nThreads, threadIndex, batchSize, context))
+            continue;
+
+        for (NnUint b = 0; b < batchSize; b++) {
+            matmul_Q80_Q40_F32(
+                (float *)context->output[offset + b],
+                (NnBlockQ80 *)context->input[offset + b],
+                weight,
+                context->weightSize.y,
+                context->weightSize.x,
+                nThreads,
+                threadIndex);
+        }
     }
 }
 
@@ -1176,9 +1242,9 @@ static void initMultiHeadAttForward(NnCpuOpContext *context) {
     assert(context->weightSize.nBytes == 0);
     ASSERT_EQ(context->outputSize.x, config->qSliceD0);
     ASSERT_EQ(context->outputSize.y, context->nBatches);
-    NnSize2D *querySize = &context->bufferConfigs[config->queryBufferIndex].size;
+    NnSize3D *querySize = &context->bufferConfigs[config->queryBufferIndex].size;
     ASSERT_EQ(querySize->x, config->qSliceD0);
-    NnSize2D *posSize = &context->pipeConfigs[config->positionPipeIndex].size;
+    NnSize3D *posSize = &context->pipeConfigs[config->positionPipeIndex].size;
     ASSERT_EQ(posSize->x, 1);
     ASSERT_EQ(posSize->y, context->nBatches);
 }
@@ -1215,57 +1281,44 @@ static void mulForward_F32_F32(NnUint nThreads, NnUint threadIndex, NnUint batch
     assert(context->weightSize.nBytes == 0);
     ASSERT_EQ(context->inputSize.x, context->outputSize.x);
     ASSERT_EQ(context->inputSize.y, context->outputSize.y);
+    ASSERT_EQ(context->inputSize.z, context->outputSize.z);
 
     const NnMulOpCodeConfig *config = (NnMulOpCodeConfig *)context->opConfig;
     const float *multiplier = (float *)context->buffers[config->multiplierBufferIndex];
 
-    for (NnUint batchIndex = 0; batchIndex < batchSize; batchIndex++) {
-        float *input = (float *)context->input[batchIndex];
-        float *output = (float *)context->output[batchIndex];
-        const float *m = &multiplier[context->inputSize.x * batchIndex];
-        mul_F32(
-            output,
-            input,
-            m,
-            context->outputSize.x,
-            nThreads,
-            threadIndex);
-    }
-}
-
-static void mulForward_Q80_F32(NnUint nThreads, NnUint threadIndex, NnUint batchSize, NnCpuOpContext *context) {
-    const NnMulOpCodeConfig *config = (NnMulOpCodeConfig *)context->opConfig;
-    const NnBlockQ80 *multiplier = (NnBlockQ80 *)context->buffers[config->multiplierBufferIndex];
-
-    for (NnUint batchIndex = 0; batchIndex < batchSize; batchIndex++) {
-        float *input = (float *)context->input[batchIndex];
-        float *output = (float *)context->output[batchIndex];
-        const NnBlockQ80 *m = &multiplier[batchIndex * context->inputSize.x / Q80_BLOCK_SIZE];
-        mul_Q80_F32(
-            output,
-            input,
-            m,
-            context->outputSize.x,
-            nThreads,
-            threadIndex);
+    for (NnUint z = 0u; z < context->inputSize.z; z++) {
+        const NnUint zOffset = z * context->inputSize.y;
+        for (NnUint y = 0u; y < batchSize; y++) {
+            mul_F32(
+                (float *)context->output[zOffset + y],
+                (float *)context->input[zOffset + y],
+                &multiplier[context->inputSize.x * (zOffset + y)],
+                context->outputSize.x,
+                nThreads,
+                threadIndex);
+        }
     }
 }
 
 static void initCastForward(NnCpuOpContext *context) {
     ASSERT_EQ(context->inputSize.x, context->outputSize.x);
     ASSERT_EQ(context->inputSize.y, context->outputSize.y);
+    ASSERT_EQ(context->inputSize.z, context->outputSize.z);
 }
 
 static void castForward_ANY(NnUint nThreads, NnUint threadIndex, NnUint batchSize, NnCpuOpContext *context) {
     const NnUint rowBytes = context->outputSize.nBytes / context->outputSize.y;
 
-    for (NnUint batchIndex = 0; batchIndex < batchSize; batchIndex++) {
-        copy_UNK(
-            context->output[batchIndex],
-            context->input[batchIndex],
-            rowBytes,
-            nThreads,
-            threadIndex);
+    for (NnUint z = 0u; z < context->inputSize.z; z++) {
+        const NnUint zOffset = z * context->inputSize.y;
+        for (NnUint y = 0u; y < batchSize; y++) {
+            copy_UNK(
+                context->output[zOffset + y],
+                context->input[zOffset + y],
+                rowBytes,
+                nThreads,
+                threadIndex);
+        }
     }
 }
 
@@ -1273,15 +1326,16 @@ static void castForward_F32_Q80(NnUint nThreads, NnUint threadIndex, NnUint batc
     ASSERT_EQ(context->inputSize.floatType, F_32);
     ASSERT_EQ(context->outputSize.floatType, F_Q80);
 
-    for (NnUint batchIndex = 0; batchIndex < batchSize; batchIndex++) {
-        float *input = (float *)context->input[batchIndex];
-        NnBlockQ80 *output = (NnBlockQ80 *)context->output[batchIndex];
-        quantizeF32toQ80(
-            input,
-            output,
-            context->outputSize.x,
-            nThreads,
-            threadIndex);
+    for (NnUint z = 0u; z < context->inputSize.z; z++) {
+        const NnUint zOffset = z * context->inputSize.y;
+        for (NnUint y = 0u; y < batchSize; y++) {
+            quantizeF32toQ80(
+                (float *)context->input[zOffset + y],
+                (NnBlockQ80 *)context->output[zOffset + y],
+                context->outputSize.x,
+                nThreads,
+                threadIndex);
+        }
     }
 }
 
@@ -1289,15 +1343,48 @@ static void castForward_Q80_F32(NnUint nThreads, NnUint threadIndex, NnUint batc
     ASSERT_EQ(context->inputSize.floatType, F_Q80);
     ASSERT_EQ(context->outputSize.floatType, F_32);
 
-    for (NnUint batchIndex = 0; batchIndex < batchSize; batchIndex++) {
-        NnBlockQ80 *input = (NnBlockQ80 *)context->input[batchIndex];
-        float *output = (float *)context->output[batchIndex];
-        dequantizeQ80toF32(
-            input,
-            output,
+    for (NnUint z = 0u; z < context->inputSize.z; z++) {
+        const NnUint zOffset = z * context->inputSize.y;
+        for (NnUint y = 0u; y < batchSize; y++) {
+            dequantizeQ80toF32(
+                (NnBlockQ80 *)context->input[zOffset + y],
+                (float *)context->output[zOffset + y],
+                context->outputSize.x,
+                nThreads,
+                threadIndex);
+        }
+    }
+}
+
+static void initRepeatForward(NnCpuOpContext *context) {
+    ASSERT_EQ(context->inputSize.x, context->outputSize.x);
+    ASSERT_EQ(context->inputSize.y, context->outputSize.y);
+    ASSERT_EQ(context->inputSize.z, 1);
+    assert(context->inputSize.z <= context->outputSize.z);
+}
+
+static void repeatForward_F32_Q80(NnUint nThreads, NnUint threadIndex, NnUint batchSize, NnCpuOpContext *context) {
+    ASSERT_EQ(context->inputSize.floatType, F_32);
+    ASSERT_EQ(context->outputSize.floatType, F_Q80);
+
+    for (NnUint y = 0u; y < batchSize; y++) {
+        quantizeF32toQ80(
+            (float *)context->input[y],
+            (NnBlockQ80 *)context->output[y],
             context->outputSize.x,
             nThreads,
             threadIndex);
+    }
+    for (NnUint z = 1u; z < context->outputSize.z; z++) {
+        const NnUint zOffset = z * context->outputSize.y;
+        for (NnUint y = 0u; y < batchSize; y++) {
+            copy_UNK(
+                context->output[zOffset + y],
+                context->output[y],
+                context->outputSize.nBytes / context->outputSize.y,
+                nThreads,
+                threadIndex);
+        }
     }
 }
 
@@ -1323,6 +1410,24 @@ static void shiftForward_F32_F32(NnUint nThreads, NnUint threadIndex, NnUint bat
             nThreads,
             threadIndex);
     }
+}
+
+static void softmaxForward_F32_F32(NnUint nThreads, NnUint threadIndex, NnUint batchSize, NnCpuOpContext *context) {
+    assert(*context->input == *context->output);
+
+    for (NnUint batchIndex = threadIndex; batchIndex < batchSize; batchIndex += nThreads)
+        softmax_F32(
+            (float *)context->output[batchIndex],
+            context->outputSize.x);
+}
+
+static void topkForward_F32_F32(NnUint nThreads, NnUint threadIndex, NnUint batchSize, NnCpuOpContext *context) {
+    for (NnUint batchIndex = threadIndex; batchIndex < batchSize; batchIndex += nThreads)
+        topk_F32(
+            (float *)context->input[batchIndex],
+            (float *)context->output[batchIndex],
+            context->inputSize.x,
+            context->outputSize.x);
 }
 
 // device
@@ -1362,6 +1467,8 @@ NnCpuOpForwardInit getCpuOpForwardInit(NnOpCode code, NnOpQuantType quantType) {
         return initMatmulForward;
     if (code == OP_CAST)
         return initCastForward;
+    if (code == OP_REPEAT)
+        return initRepeatForward;
     return nullptr;
 }
 
@@ -1369,6 +1476,9 @@ NnCpuOpForward getCpuOpForward(NnOpCode code, NnOpQuantType quantType) {
     if (code == OP_MERGE_ADD) {
         if (quantType == F32_F32_F32) return mergeAddForward_F32_F32;
         if (quantType == Q80_Q80_F32) return mergeAddForward_Q80_F32;
+    }
+    if (code == OP_MERGE_SUM) {
+        if (quantType == F32_F32_F32) return mergeSumForward_F32_F32;
     }
     if (code == OP_EMBEDDING) {
         if (quantType == F32_F32_F32) return embeddingForward_F32_F32_F32;
@@ -1399,7 +1509,6 @@ NnCpuOpForward getCpuOpForward(NnOpCode code, NnOpQuantType quantType) {
     }
     if (code == OP_MUL) {
         if (quantType == F32_F32_F32) return mulForward_F32_F32;
-        if (quantType == Q80_Q80_F32) return mulForward_Q80_F32;
     }
     if (code == OP_CAST) {
         if (quantType == F32_F32_F32) return castForward_ANY;
@@ -1407,8 +1516,17 @@ NnCpuOpForward getCpuOpForward(NnOpCode code, NnOpQuantType quantType) {
         if (quantType == Q80_Q80_Q80) return castForward_ANY;
         if (quantType == Q80_Q80_F32) return castForward_Q80_F32;
     }
+    if (code == OP_REPEAT) {
+        if (quantType == F32_F32_Q80) return repeatForward_F32_Q80;
+    }
     if (code == OP_SHIFT) {
         if (quantType == F32_F32_F32) return shiftForward_F32_F32;
+    }
+    if (code == OP_SOFTMAX) {
+        if (quantType == F32_F32_F32) return softmaxForward_F32_F32;
+    }
+    if (code == OP_TOPK) {
+        if (quantType == F32_F32_F32) return topkForward_F32_F32;
     }
     return nullptr;
 }
