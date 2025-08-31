@@ -2,7 +2,7 @@
 #include <cassert>
 #include <cstring>
 #include <cstdio>
-#include <cstdlib>
+#include <vector>
 #include <stdexcept>
 #if defined(__ARM_NEON)
     #include <arm_neon.h>
