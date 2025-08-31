@@ -3,6 +3,7 @@
 #include <cstring>
 #include <cstdio>
 #include <vector>
+#include <algorithm>
 #include <stdexcept>
 #if defined(__ARM_NEON)
     #include <arm_neon.h>
