@@ -441,24 +441,11 @@ LlmNet buildLlmNet(LlmHeader *h, NnUint nNodes, NnUint nBatches) {
                     size0(),
                     NnSoftmaxOpCodeConfig{});
                 ff.addOp(
-                    OP_TOPK, "block_moe_topk", layerIndex,
-                    pointerBatchConfig(SRC_BUFFER, moeGtBufferIndex),
-                    pointerBatchConfig(SRC_BUFFER, moeExpertIndexesBufferIndex),
-                    size0(),
-                    NnTopKOpCodeConfig{});
-                ff.addOp(
-                    OP_SUM_NORM, "block_moe_sum_norm", layerIndex,
-                    pointerBatchConfig(SRC_BUFFER, moeGtBufferIndex),
-                    pointerBatchConfig(SRC_BUFFER, moeGtBufferIndex),
-                    size0(),
-                    NnSumNormOpConfig{});
-                ff.addOp(
-                    OP_PICK_Z, "block_moe_pick_z", layerIndex,
+                    OP_MOE_GATE, "block_moe_gate2", layerIndex,
                     pointerBatchConfig(SRC_BUFFER, moeGtBufferIndex),
                     pointerBatchConfig(SRC_BUFFER, moeSBufferIndex),
                     size0(),
-                    NnPickZOpCodeConfig{moeExpertIndexesBufferIndex});
-
+                    NnMoeGateOpCodeConfig{h->nActiveExperts, 1u, moeExpertIndexesBufferIndex});
                 ff.addOp(
                     OP_MATMUL, "block_matmul_w1", layerIndex,
                     pointerBatchConfig(SRC_BUFFER, moeYqBufferIndex),
@@ -642,7 +629,7 @@ void loadLlmNetWeight(const char *path, LlmNet *net, NnRootWeightLoader *loader)
         b += loader->loadRowMatmulSlices("block_matmul_k", layerIndex, 0u, &net->kSlice, b);
         b += loader->loadRowMatmulSlices("block_matmul_v", layerIndex, 0u, &net->vSlice, b);
         b += loader->loadColMatmulSlices("block_matmul_wo", layerIndex, 0u, &net->woSlice, b);
-    
+
         if (net->header->nExperts > 0u) {
             b += loader->loadAll("block_moe_gate", layerIndex, net->moeGateSize.nBytes, b);
             for (NnUint expertIndex = 0u; expertIndex < net->header->nExperts; expertIndex++) {

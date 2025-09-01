@@ -76,7 +76,6 @@ enum NnOpCode {
     OP_EMBEDDING,
     OP_INV_RMS,
     OP_RMS_NORM,
-    OP_SUM_NORM,
     OP_MATMUL,
     OP_ROPE,
     OP_MULTIHEAD_ATT,
@@ -88,8 +87,7 @@ enum NnOpCode {
     OP_REPEAT_Z,
     OP_SHIFT,
     OP_SOFTMAX,
-    OP_TOPK,
-    OP_PICK_Z,
+    OP_MOE_GATE,
 };
 
 enum NnOpQuantType {
@@ -209,10 +207,6 @@ typedef struct {
 } NnRmsNormOpConfig;
 
 typedef struct {
-    // empty
-} NnSumNormOpConfig;
-
-typedef struct {
     NnUint nExperts;
     NnUint nActiveExperts;
     NnUint activeExpertIndexesBufferIndex;
@@ -282,12 +276,10 @@ typedef struct {
 } NnSoftmaxOpCodeConfig;
 
 typedef struct {
-    // empty
-} NnTopKOpCodeConfig;
-
-typedef struct {
-    NnUint indexBufferIndex;
-} NnPickZOpCodeConfig;
+    NnUint k;
+    NnUint normTopk;
+    NnUint indexesBufferIndex;
+} NnMoeGateOpCodeConfig;
 
 // utility functions
 

@@ -76,7 +76,6 @@ const char *opCodeToString(NnOpCode code) {
     if (code == OP_EMBEDDING) return "EMBEDDING";
     if (code == OP_INV_RMS) return "INV_RMS";
     if (code == OP_RMS_NORM) return "RMS_NORM";
-    if (code == OP_SUM_NORM) return "SUM_NORM";
     if (code == OP_MATMUL) return "MATMUL";
     if (code == OP_ROPE) return "ROPE";
     if (code == OP_MULTIHEAD_ATT) return "MULTIHEAD_ATT";
@@ -87,9 +86,7 @@ const char *opCodeToString(NnOpCode code) {
     if (code == OP_CAST) return "CAST";
     if (code == OP_REPEAT_Z) return "REPEAT_Z";
     if (code == OP_SHIFT) return "SHIFT";
-    if (code == OP_SOFTMAX) return "SOFTMAX";
-    if (code == OP_TOPK) return "TOPK";
-    if (code == OP_PICK_Z) return "PICK_Z";
+    if (code == OP_MOE_GATE) return "MOE_GATE";
     throw std::invalid_argument("Unknown op code");
 }
 
