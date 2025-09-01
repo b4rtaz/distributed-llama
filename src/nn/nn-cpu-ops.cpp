@@ -911,8 +911,9 @@ static void topk_F32(const float *x, NnUint *y, NnSize size, NnUint k) {
         }
     );
 
-    for (NnUint i = 0u; i < k; i++)
+    for (NnUint i = 0u; i < k; i++) {
         y[i] = items[i];
+    }
 }
 
 //
@@ -1435,16 +1436,18 @@ static void softmaxForward_F32_F32(NnUint nThreads, NnUint threadIndex, NnUint b
             context->outputSize.x);
 }
 
-static void moeGateForward_F32_F32(NnUint nThreads, NnUint threadIndex, NnUint batchSize, NnCpuOpContext *context) {
+static void initMoeGateForward(NnCpuOpContext *context) {
     const NnMoeGateOpCodeConfig *config = (NnMoeGateOpCodeConfig *)context->opConfig;
-
     ASSERT_EQ(context->inputSize.z, 1u);
     ASSERT_EQ(context->inputSize.y, context->nBatches);
     assert(context->inputSize.x >= config->k);
     ASSERT_EQ(context->outputSize.z, config->k);
     ASSERT_EQ(context->outputSize.y, context->nBatches);
     ASSERT_EQ(context->outputSize.x, 1u);
+}
 
+static void moeGateForward_F32_F32(NnUint nThreads, NnUint threadIndex, NnUint batchSize, NnCpuOpContext *context) {
+    const NnMoeGateOpCodeConfig *config = (NnMoeGateOpCodeConfig *)context->opConfig;
     float *indexes = (float *)context->buffers[config->indexesBufferIndex];
 
     std::vector<NnUint> pos(config->k);
@@ -1510,6 +1513,8 @@ NnCpuOpForwardInit getCpuOpForwardInit(NnOpCode code, NnOpQuantType quantType) {
         return initCastForward;
     if (code == OP_REPEAT_Z)
         return initRepeatZForward;
+    if (code == OP_MOE_GATE)
+        return initMoeGateForward;
     return nullptr;
 }
 

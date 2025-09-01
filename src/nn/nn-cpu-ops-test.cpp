@@ -178,6 +178,37 @@ void testAdd(const NnUint m) {
     compare_F32("add_Q80_F32", y.data(), yTemp.data(), n, 0.01);
 }
 
+void testMergeSum() {
+    float inp[] = {
+        /* [z0, y0] */ 0.1f, 0.2f,
+        /* [z0, y1] */ 0.3f, 0.4f,
+        /* [z1, y0] */ 0.5f, 0.6f,
+        /* [z1, y1] */ 0.7f, 0.8f,
+    };
+    float out[4];
+
+    float *i[4] = {
+        &inp[0],
+        &inp[2],
+        &inp[4],
+        &inp[6],
+    };
+    float *o[2] = {
+        &out[0],
+        &out[2]
+    };
+
+    mergeSum_F32(o, i, 2u, 2u, 2u, 2u, 1u, 0u);
+
+    const float expectedOutput[4] = {
+        0.6f,
+        0.8f,
+        1.0f,
+        1.2f,
+    };
+    compare_F32("mergeSum_F32", out, expectedOutput, 4u, 0.00000001f);
+}
+
 void testSoftmax() {
     std::vector<float> y(8);
     for (NnUint i = 0; i < 8; i++)
@@ -292,6 +323,14 @@ void testLlamafileSgemm() {
 #endif
 }
 
+void testScale() {
+    float i[] = {1.0f, 2.0f, 3.0f, 4.0f};
+    float o[4];
+    scale_F32(i, o, 0.5f, 4u, 1u, 0u);
+    float expectedOutput[] = {0.5f, 1.0f, 1.5f, 2.0f};
+    compare_F32("scale_F32", o, expectedOutput, 4u, 0.00001f);
+}
+
 int main() {
     initQuants();
 
@@ -309,11 +348,13 @@ int main() {
     testAdd(32);
     testAdd(2);
     testAdd(1);
+    testMergeSum();
     testSoftmax();
     testSilu();
     testMatmul_F32_Q40_F32(32);
     testMatmul_F32_Q40_F32(2);
     testMatmul_F32_Q40_F32(1);
     testLlamafileSgemm();
+    testScale();
     return 0;
 }
