@@ -1285,12 +1285,14 @@ static void multiHeadAttForward_F32_F32(NnUint nThreads, NnUint threadIndex, NnU
     }
 }
 
-static void mulForward_F32_F32(NnUint nThreads, NnUint threadIndex, NnUint batchSize, NnCpuOpContext *context) {
+static void initMulForward(NnCpuOpContext *context) {
     assert(context->weightSize.nBytes == 0);
     ASSERT_EQ(context->inputSize.x, context->outputSize.x);
     ASSERT_EQ(context->inputSize.y, context->outputSize.y);
     ASSERT_EQ(context->inputSize.z, context->outputSize.z);
+}
 
+static void mulForward_F32_F32(NnUint nThreads, NnUint threadIndex, NnUint batchSize, NnCpuOpContext *context) {
     const NnMulOpCodeConfig *config = (NnMulOpCodeConfig *)context->opConfig;
     const float *multiplier = (float *)context->buffers[config->multiplierBufferIndex];
 
@@ -1508,6 +1510,8 @@ NnCpuOpForwardInit getCpuOpForwardInit(NnOpCode code, NnOpQuantType quantType) {
         return initMultiHeadAttForward;
     if (code == OP_MATMUL)
         return initMatmulForward;
+    if (code == OP_MUL)
+        return initMulForward;
     if (code == OP_CAST)
         return initCastForward;
     if (code == OP_REPEAT_Z)
