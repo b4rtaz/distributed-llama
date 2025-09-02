@@ -3,6 +3,11 @@
 
 // framework
 
+void printPassed(const char *name) {
+    printf("✅ %24s passed\n", name);
+    fflush(stdout);
+}
+
 void rand(float *o, const NnUint n, const NnUint seed) {
     srand(seed + 123456);
     for (NnUint i = 0; i < n; i++) {
@@ -21,8 +26,7 @@ void compare_F32(const char *name, const float *a, const float *b, const NnUint 
             exit(1);
         }
     }
-    printf("✅ %24s passed\n", name);
-    fflush(stdout);
+    printPassed(name);
 }
 
 // tests
@@ -67,7 +71,7 @@ void testSplitThreads() {
         assert(b0End == 4);
     }
 
-    printf("✅ %24s passed\n", "splitThreads");
+    printPassed("splitThreads");
 }
 
 void testConvertF32toF16() {
@@ -331,6 +335,15 @@ void testScale() {
     compare_F32("scale_F32", o, expectedOutput, 4u, 0.00001f);
 }
 
+void testTopk() {
+    float x[] = {1.0f, 4.0f, 2.0f, 3.0f};
+    std::vector<NnUint> topk(2);
+    topk_F32(x, topk.data(), 4u, 2u);
+    assert(topk[0] == 1u);
+    assert(topk[1] == 3u);
+    printPassed("testTopk");
+}
+
 int main() {
     initQuants();
 
@@ -356,5 +369,6 @@ int main() {
     testMatmul_F32_Q40_F32(1);
     testLlamafileSgemm();
     testScale();
+    testTopk();
     return 0;
 }

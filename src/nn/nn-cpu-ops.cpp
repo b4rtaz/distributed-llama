@@ -1007,31 +1007,28 @@ static void embeddingForward_F32_F32_Q80(NnUint nThreads, NnUint threadIndex, Nn
     }
 }
 
-static void initInvRmsForward_F32_F32(NnCpuOpContext *context) {
+static void initInvRmsForward(NnCpuOpContext *context) {
     NnRmsNormOpConfig *config = (NnRmsNormOpConfig *)context->opConfig;
     assert(context->outputSize.x >= config->nColumns);
+    ASSERT_EQ(context->inputSize.y, context->nBatches);
+    ASSERT_EQ(context->outputSize.y, context->nBatches);
 }
 
 static void invRmsForward_F32_F32(NnUint nThreads, NnUint threadIndex, NnUint batchSize, NnCpuOpContext *context) {
-    if (threadIndex == 0) {
-        ASSERT_EQ(context->inputSize.y, context->nBatches);
-        ASSERT_EQ(context->outputSize.y, context->nBatches);
+    const NnInvRmsOpConfig *config = (NnInvRmsOpConfig *)context->opConfig;
+    const NnUint colSize = context->inputSize.x / config->nColumns;
 
-        const NnInvRmsOpConfig *config = (NnInvRmsOpConfig *)context->opConfig;
-        const NnUint colSize = context->inputSize.x / config->nColumns;
-
-        for (NnUint batchIndex = 0; batchIndex < batchSize; batchIndex++) {
-            float *input = (float *)context->input[batchIndex];
-            float *output = (float *)context->output[batchIndex];
-            DEBUG_VECTOR(context, "input", input);
-            for (NnUint colIndex = 0; colIndex < config->nColumns; colIndex++) {
-                float rms = invRms_F32(
-                    &input[colIndex * colSize],
-                    colSize,
-                    config->epsilon);
-                output[colIndex] = rms;
-                DEBUG_SCALAR(context, "output", rms);
-            }
+    for (NnUint batchIndex = threadIndex; batchIndex < batchSize; batchIndex += nThreads) {
+        float *input = (float *)context->input[batchIndex];
+        float *output = (float *)context->output[batchIndex];
+        DEBUG_VECTOR(context, "input", input);
+        for (NnUint colIndex = 0; colIndex < config->nColumns; colIndex++) {
+            float rms = invRms_F32(
+                &input[colIndex * colSize],
+                colSize,
+                config->epsilon);
+            output[colIndex] = rms;
+            DEBUG_SCALAR(context, "output", rms);
         }
     }
 }
@@ -1055,7 +1052,7 @@ static void initRmsNormForward_ANY_F32_F32(NnCpuOpContext *context) {
 static void rmsNormForward_F32_F32_F32(NnUint nThreads, NnUint threadIndex, NnUint batchSize, NnCpuOpContext *context) {
     ASSERT_EQ(context->inputSize.floatType, F_32);
 
-    NnRmsNormOpConfig *config = (NnRmsNormOpConfig *)context->opConfig;
+    const NnRmsNormOpConfig *config = (NnRmsNormOpConfig *)context->opConfig;
     const float *weight = (float *)context->weight;
     const NnUint invRmsBatchSize = context->bufferConfigs[config->invRmsBufferIndex].size.x;
     const float *invRms = (float *)context->buffers[config->invRmsBufferIndex];
@@ -1082,7 +1079,7 @@ static void rmsNormForward_F32_F32_F32(NnUint nThreads, NnUint threadIndex, NnUi
 static void rmsNormForward_Q80_F32_F32(NnUint nThreads, NnUint threadIndex, NnUint batchSize, NnCpuOpContext *context) {
     ASSERT_EQ(context->inputSize.floatType, F_Q80);
 
-    NnRmsNormOpConfig *config = (NnRmsNormOpConfig *)context->opConfig;
+    const NnRmsNormOpConfig *config = (NnRmsNormOpConfig *)context->opConfig;
     ASSERT_EQ(config->nColumns, 1); // TODO: add support multiple columns
 
     const float *weight = (float *)context->weight;
@@ -1501,7 +1498,7 @@ NnCpuOpForwardInit getCpuOpForwardInit(NnOpCode code, NnOpQuantType quantType) {
     if (code == OP_EMBEDDING)
         return initEmbeddingForward;
     if (code == OP_INV_RMS)
-        return initInvRmsForward_F32_F32;
+        return initInvRmsForward;
     if (code == OP_RMS_NORM)
         return initRmsNormForward_ANY_F32_F32;
     if (code == OP_ROPE)
