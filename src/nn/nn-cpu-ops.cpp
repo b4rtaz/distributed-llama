@@ -911,9 +911,8 @@ static void topk_F32(const float *x, NnUint *y, NnSize size, NnUint k) {
         }
     );
 
-    for (NnUint i = 0u; i < k; i++) {
+    for (NnUint i = 0u; i < k; i++)
         y[i] = items[i];
-    }
 }
 
 //
@@ -1121,17 +1120,17 @@ static void initMatmulForward(NnCpuOpContext *context) {
 
 }
 
-static bool matmulForward_llamafile(void *output, const void *input, const void *weight, NnUint nThreads, NnUint threadIndex, NnUint batchSize, NnCpuOpContext *context) {
-    if (batchSize == 1 || !context->hasInputContinuousMemory || !context->hasOutputContinuousMemory)
+static bool matmulForward_llamafile(NnUint nThreads, NnUint threadIndex, NnUint batchSize, NnCpuOpContext *context) {
+    if (batchSize == 1u || !context->hasInputContinuousMemory || !context->hasOutputContinuousMemory || context->inputSize.z != 1u)
         return false;
 
     const NnUint n = context->weightSize.y / getBlockSize(context->inputSize.floatType);
     const NnUint d = context->weightSize.x;
     return llamafile_sgemm(
         d, batchSize, n,
-        weight, n,
-        input, n,
-        output, d,
+        context->weight, n,
+        context->input[0], n,
+        context->output[0], d,
         threadIndex, nThreads, 0,
         context->weightSize.floatType,
         context->inputSize.floatType,
@@ -1140,23 +1139,23 @@ static bool matmulForward_llamafile(void *output, const void *input, const void 
 }
 
 static void matmulForward_F32_F32_F32(NnUint nThreads, NnUint threadIndex, NnUint batchSize, NnCpuOpContext *context) {
+    if (matmulForward_llamafile(nThreads, threadIndex, batchSize, context))
+        return;
+
     const NnMatmulOpConfig *config = (NnMatmulOpConfig *)context->opConfig;
     const NnUint nActiveExpertsOr1 = std::max(config->nActiveExperts, 1u);
     const float *activeExpertIndexes = (const float *)context->buffers[config->activeExpertIndexesBufferIndex];
 
-    for (NnUint e = 0; e < nActiveExpertsOr1; e++) {
-        const NnUint activeExpertIndex = config->nActiveExperts == 0u ? 0u : (NnUint)activeExpertIndexes[e];
-        const NnSize offset = e * context->nBatches;
-        const float *weight = (float *)&context->weight[activeExpertIndex * context->weightSize.nBytesXY];
+    for (NnUint y = 0; y < batchSize; y++) {
+        for (NnUint e = 0; e < nActiveExpertsOr1; e++) {
+            const NnUint activeExpertIndex = config->nActiveExperts == 0u
+                ? 0u
+                : (NnUint)activeExpertIndexes[y * config->nActiveExperts + e];
 
-        if (matmulForward_llamafile(context->output[offset], context->input[offset], weight, nThreads, threadIndex, batchSize, context))
-            continue;
-
-        for (NnUint b = 0; b < batchSize; b++) {
             matmul_F32_F32_F32(
-                (float *)context->output[offset + b],
-                (float *)context->input[offset + b],
-                weight,
+                (float *)context->output[e * context->outputSize.y + y],
+                (float *)context->input[e * context->inputSize.y + y],
+                (float *)&context->weight[activeExpertIndex * context->weightSize.nBytesXY],
                 context->weightSize.y,
                 context->weightSize.x,
                 nThreads,
@@ -1167,23 +1166,23 @@ static void matmulForward_F32_F32_F32(NnUint nThreads, NnUint threadIndex, NnUin
 }
 
 static void matmulForward_Q80_Q40_F32(NnUint nThreads, NnUint threadIndex, NnUint batchSize, NnCpuOpContext *context) {
+    if (matmulForward_llamafile(nThreads, threadIndex, batchSize, context))
+        return;
+
     const NnMatmulOpConfig *config = (NnMatmulOpConfig *)context->opConfig;
     const NnUint nActiveExpertsOr1 = std::max(config->nActiveExperts, 1u);
     const float *activeExpertIndexes = (const float *)context->buffers[config->activeExpertIndexesBufferIndex];
 
-    for (NnUint e = 0; e < nActiveExpertsOr1; e++) {
-        const NnUint activeExpertIndex = config->nActiveExperts == 0u ? 0u : (NnUint)activeExpertIndexes[e];
-        const NnSize offset = e * context->nBatches;
-        const NnBlockQ40 *weight = (NnBlockQ40 *)&context->weight[activeExpertIndex * context->weightSize.nBytesXY];
+    for (NnUint y = 0; y < batchSize; y++) {
+        for (NnUint e = 0; e < nActiveExpertsOr1; e++) {
+            const NnUint activeExpertIndex = config->nActiveExperts == 0u
+                ? 0u
+                : (NnUint)activeExpertIndexes[y * config->nActiveExperts + e];
 
-        if (matmulForward_llamafile(context->output[offset], context->input[offset], weight, nThreads, threadIndex, batchSize, context))
-            continue;
-
-        for (NnUint b = 0; b < batchSize; b++) {
             matmul_Q80_Q40_F32(
-                (float *)context->output[offset + b],
-                (NnBlockQ80 *)context->input[offset + b],
-                weight,
+                (float *)context->output[e * context->outputSize.y + y],
+                (NnBlockQ80 *)context->input[e * context->inputSize.y + y],
+                (NnBlockQ40 *)&context->weight[activeExpertIndex * context->weightSize.nBytesXY],
                 context->weightSize.y,
                 context->weightSize.x,
                 nThreads,
@@ -1453,7 +1452,6 @@ static void moeGateForward_F32_F32(NnUint nThreads, NnUint threadIndex, NnUint b
     std::vector<NnUint> pos(config->k);
     for (NnUint y = threadIndex; y < batchSize; y += nThreads) {
         float *input = (float *)context->input[y];
-        float *yIndexes = &indexes[y * config->k];
 
         topk_F32(input, pos.data(), context->inputSize.x, config->k);
 
@@ -1466,10 +1464,11 @@ static void moeGateForward_F32_F32(NnUint nThreads, NnUint threadIndex, NnUint b
             sum = 1.0f;
         }
 
-        for (NnUint z = 0u; z < config->k; z++) {
-            yIndexes[z] = (float)pos[z];
-            float *output = (float *)context->output[z * context->outputSize.y + y];
-            *output = input[pos[z]] / sum;
+        for (NnUint k = 0u; k < config->k; k++) {
+            const NnUint p = pos[k];
+            indexes[y * config->k + k] = (float)p;
+            float *output = (float *)context->output[k * context->outputSize.y + y];
+            *output = input[p] / sum;
         }
     }
 }
