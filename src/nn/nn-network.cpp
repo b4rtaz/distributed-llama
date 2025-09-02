@@ -823,7 +823,7 @@ NnSize NnRootWeightLoader::loadAll(const char *opName, NnUint opIndex, NnSize nB
 }
 
 NnSize NnRootWeightLoader::loadRowMatmulSlices(const char *opName, const NnUint opIndex, const NnUint expertIndex, NnRowMatmulSlice *slice, NnByte *weight) {
-    const NnUint offset = expertIndex * slice->size.nBytes;
+    const NnUint offset = expertIndex * slice->sliceSize.nBytes;
     if (nNodes == 1u) {
         executor->loadWeight(opName, opIndex, offset, slice->sliceSize.nBytes, weight);
     } else {
@@ -840,7 +840,7 @@ NnSize NnRootWeightLoader::loadRowMatmulSlices(const char *opName, const NnUint 
 }
 
 NnSize NnRootWeightLoader::loadColMatmulSlices(const char *opName, const NnUint opIndex, const NnUint expertIndex, NnColMatmulSlice *slice, NnByte *weight) {
-    const NnUint offset = expertIndex * slice->size.nBytes;
+    const NnUint offset = expertIndex * slice->sliceSize.nBytes;
     if (nNodes == 1) {
         executor->loadWeight(opName, opIndex, offset, slice->sliceSize.nBytes, weight);
     } else {
