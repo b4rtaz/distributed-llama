@@ -65,6 +65,11 @@ MODELS = {
         'https://huggingface.co/b4rtaz/Qwen3-14B-Q40-Distributed-Llama/resolve/main/dllama_tokenizer_qwen3_14b.t?download=true',
         'q40', 'q80', 'chat', '--max-seq-len 4096'
     ],
+    'qwen3_30b_a3b_q40': [
+        list(map(lambda suffix : f'https://huggingface.co/b4rtaz/Qwen3-30B-A3B-Q40-Distributed-Llama/resolve/main/dllama_model_qwen3_30b_a3b_{suffix}?download=true', parts(5))),
+        'https://huggingface.co/b4rtaz/Qwen3-30B-A3B-Q40-Distributed-Llama/resolve/main/dllama_tokenizer_qwen3_30b_a3b.t?download=true',
+        'q40', 'q80', 'chat', '--max-seq-len 4096'
+    ],
 }
 
 def confirm(message: str):
