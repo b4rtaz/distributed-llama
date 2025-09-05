@@ -9,6 +9,7 @@ Connect home devices into a powerful cluster to accelerate LLM inference. More d
 Supports Linux, macOS, and Windows. Optimized for ARM and x86_64 AVX2 CPUs.
 
 **News**
+- 5 Sep 2025 - Qwen 3 MOE models are now supported on CPU.
 - 3 Aug 2025 - Qwen 3 0.6B, 1.7B, 8B and 14B models are now supported.
 - 23 Mar 2025 - [🌋 Experimental Vulkan support](https://github.com/b4rtaz/distributed-llama/releases/tag/v0.13.0)
 - 12 Feb 2025 - 🚧 Merged the [fundamental codebase refactor](https://github.com/b4rtaz/distributed-llama/releases/tag/v0.12.0)
