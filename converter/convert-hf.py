@@ -8,6 +8,7 @@ from safetensors import safe_open
 class ArchType:
     LLAMA = 0xABCD00
     QWEN3 = 0xABCD01
+    QWEN3_MOE = 0xABCD02
 
 def permute(tensor, nHeads: int, nKvHeads: int):
     if nHeads != nKvHeads:
@@ -71,22 +72,23 @@ class Processor:
                 f'model.layers.{l}.self_attn.o_proj.weight'])
 
             if (self.config['n_experts'] > 0):
+                p.append([FloatType.F32, f'model.layers.{l}.mlp.gate.weight'])
                 for e in range(self.config['n_experts']):
                     p.append([wt,
-                        f'model.layers.{l}.block_sparse_moe.experts.{e}.w3.weight']) # up
+                        f'model.layers.{l}.mlp.experts.{e}.gate_proj.weight'])
                     p.append([wt,
-                        f'model.layers.{l}.block_sparse_moe.experts.{e}.w1.weight']) # gate
+                        f'model.layers.{l}.mlp.experts.{e}.down_proj.weight'])
                     p.append([wt,
-                        f'model.layers.{l}.block_sparse_moe.experts.{e}.w2.weight']) # down
+                        f'model.layers.{l}.mlp.experts.{e}.up_proj.weight'])
             else:
                 p.append([wt,
-                    f'model.layers.{l}.mlp.gate_proj.weight']) # gate
+                    f'model.layers.{l}.mlp.gate_proj.weight'])
                 p.append([wt,
-                    f'model.layers.{l}.mlp.down_proj.weight']) # down
+                    f'model.layers.{l}.mlp.down_proj.weight'])
                 p.append([wt,
-                    f'model.layers.{l}.mlp.up_proj.weight']) # up
+                    f'model.layers.{l}.mlp.up_proj.weight'])
 
-            if (self.archType == ArchType.QWEN3):
+            if (self.archType == ArchType.QWEN3 or self.archType == ArchType.QWEN3_MOE):
                 p.append([FloatType.F32,
                     f'model.layers.{l}.self_attn.q_norm.weight'])
                 p.append([FloatType.F32,
@@ -146,6 +148,7 @@ def parseArchType(type: str):
         'llama': ArchType.LLAMA,
         'mistral': ArchType.LLAMA,
         'qwen3': ArchType.QWEN3,
+        'qwen3_moe': ArchType.QWEN3_MOE,
     }.get(type)
     if (archType is None):
         raise Exception(f'Unsupported arch type: {type}')
@@ -202,8 +205,8 @@ def loadConfig(folderPath: str, weightsFloatType: int):
         'files': files,
     }
 
-    nExperts = config.get('num_local_experts')
-    nActiveExperts = config.get('num_active_local_experts') or config.get('num_experts_per_tok')
+    nExperts = config.get('num_experts')
+    nActiveExperts = config.get('num_experts_per_tok')
     result['n_experts'] = int(nExperts) if nExperts is not None else 0
     result['n_active_experts'] = int(nActiveExperts) if nActiveExperts is not None else 0
 
@@ -226,6 +229,10 @@ def loadConfig(folderPath: str, weightsFloatType: int):
     rmsNormEps = config.get('rms_norm_eps')
     if (rmsNormEps is not None):
         result['norm_epsilon'] = parseRmsNormEpsilon(rmsNormEps)
+
+    moeHiddenDim = config.get('moe_intermediate_size')
+    if (moeHiddenDim is not None):
+        result['moe_hidden_dim'] = int(moeHiddenDim)
     return result
 
 def printUsage():

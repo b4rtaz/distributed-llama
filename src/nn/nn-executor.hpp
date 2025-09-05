@@ -9,7 +9,7 @@
 class NnDeviceSegment {
 public:
     virtual ~NnDeviceSegment() {};
-    virtual void loadWeight(NnUint opIndex, NnSize nBytes, NnByte *weight) = 0;
+    virtual void loadWeight(NnUint opIndex, NnSize offset, NnSize nBytes, NnByte *weight) = 0;
     virtual void forward(NnUint opIndex, NnUint nThreads, NnUint threadIndex, NnUint batchSize) = 0;
 };
 
@@ -95,7 +95,7 @@ private:
 public:
     NnExecutor(NnNetConfig *netConfig, NnNodeConfig *nodeConfig, std::vector<NnExecutorDevice> *device, NnNetExecution *netExecution, NnNodeSynchronizer *synchronizer, bool benchmark);
     ~NnExecutor();
-    void loadWeight(const char *name, NnUint index, NnSize nBytes, NnByte *weight);
+    void loadWeight(const char *name, NnUint opIndex, NnSize offset, NnSize nBytes, NnByte *weight);
     void forward();
     NnUint getTotalTime(NnExecutorStepType type);
 };

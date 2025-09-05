@@ -20,15 +20,15 @@ typedef struct {
     void *opConfig;
 
     NnByte **input;
-    NnSize2D inputSize;
+    NnSize3D inputSize;
     bool hasInputContinuousMemory;
 
     NnByte **output;
-    NnSize2D outputSize;
+    NnSize3D outputSize;
     bool hasOutputContinuousMemory;
 
     NnByte *weight;
-    NnSize2D weightSize;
+    NnSize3D weightSize;
 } NnCpuOpContext;
 
 typedef void (*NnCpuOpForwardInit)(NnCpuOpContext *context);

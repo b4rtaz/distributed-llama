@@ -297,7 +297,7 @@ void testEmbedding_F32_F32() {
             for (NnUint b = 0; b < N_BATCHES; b++)
                 posPipe[b] = (float)b;
 
-            executor->loadWeight("embedding", 0, EMBEDDING_DIM * EMBEDDING_LEN * sizeof(float), (NnByte *)embedding);
+            executor->loadWeight("embedding", 0u, 0u, EMBEDDING_DIM * EMBEDDING_LEN * sizeof(float), (NnByte *)embedding);
 
             // act
             executor->forward();

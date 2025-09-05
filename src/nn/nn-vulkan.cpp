@@ -283,7 +283,7 @@ NnVulkanDeviceData::~NnVulkanDeviceData() {
     internalBuffers.clear();
 }
 
-NnSize2D NnVulkanDeviceData::resolveBufferSize(NnPointerConfig *config) {
+NnSize3D NnVulkanDeviceData::resolveBufferSize(NnPointerConfig *config) {
     if (config->source == SRC_BUFFER)
         return nodeConfig->buffers[config->pointerIndex].size;
     if (config->source == SRC_PIPE)
@@ -304,7 +304,7 @@ NnUint NnVulkanDeviceData::resolveBufferBatchOffset(NnPointerConfig *config, NnU
     if (config->type == PNTR_RAW)
         return 0;
 
-    const NnSize2D bufferSize = resolveBufferSize(config);
+    const NnSize3D bufferSize = resolveBufferSize(config);
     const NnSize blockSize = getBlockSize(bufferSize.floatType);
     assert(bufferSize.x % blockSize == 0);
     const NnUint sizeX = bufferSize.x / blockSize;
@@ -320,7 +320,7 @@ NnUint NnVulkanDeviceData::resolveBufferBatchOffset(NnPointerConfig *config, NnU
 
 NnUint NnVulkanDeviceData::resolveBufferBatchWidth(NnPointerConfig *config, NnUint batchIndex) {
     assert(batchIndex < netConfig->nBatches);
-    const NnSize2D bufferSize = resolveBufferSize(config);
+    const NnSize3D bufferSize = resolveBufferSize(config);
     const NnSize blockSize = getBlockSize(bufferSize.floatType);
     assert(bufferSize.x % blockSize == 0);
     const NnUint sizeX = bufferSize.x / blockSize;
@@ -569,7 +569,7 @@ static std::vector<NnVulkanBatchInfo> buildBatchInfo(NnOpConfig *opConfig, NnVul
     return offset;
 }
 
-static NnUint resolveShaderNThreads(const NnOpConfig *opConfig, const NnOpQuantType opQuant, const NnSize2D inputSize, const NnSize2D outputSize) {
+static NnUint resolveShaderNThreads(const NnOpConfig *opConfig, const NnOpQuantType opQuant, const NnSize3D inputSize, const NnSize3D outputSize) {
     if (opConfig->code == OP_MATMUL) {
         if (opQuant == Q80_Q40_F32) {
             constexpr NnUint tileSizeX = 2; // Shader constant
@@ -580,7 +580,7 @@ static NnUint resolveShaderNThreads(const NnOpConfig *opConfig, const NnOpQuantT
     return 0;
 }
 
-static void resolveShaderGroups(const NnOpConfig *opConfig, const NnUint batchSize, NnUint *groupCount, const NnSize2D inputSize, const NnSize2D outputSize) {
+static void resolveShaderGroups(const NnOpConfig *opConfig, const NnUint batchSize, NnUint *groupCount, const NnSize3D inputSize, const NnSize3D outputSize) {
     groupCount[0] = 1;
     groupCount[1] = batchSize;
     groupCount[2] = 1;
@@ -724,8 +724,8 @@ NnVulkanDeviceSegment::NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanD
 
     for (NnUint opIndex = 0; opIndex < segmentConfig->nOps; opIndex++) {
         NnOpConfig *opConfig = &segmentConfig->ops[opIndex];
-        NnSize2D inputSize = data->resolveBufferSize(&opConfig->input);
-        NnSize2D outputSize = data->resolveBufferSize(&opConfig->output);
+        NnSize3D inputSize = data->resolveBufferSize(&opConfig->input);
+        NnSize3D outputSize = data->resolveBufferSize(&opConfig->output);
         NnOpQuantType opQuant = getOpQuantType(
             inputSize.floatType,
             opConfig->weightSize.floatType,
@@ -872,7 +872,9 @@ NnVulkanDeviceSegment::~NnVulkanDeviceSegment() {
     VULKAN_TRACE("Destroyed segment");
 }
 
-void NnVulkanDeviceSegment::loadWeight(NnUint opIndex, NnSize nBytes, NnByte *weight) {
+void NnVulkanDeviceSegment::loadWeight(NnUint opIndex, NnSize offset, NnSize nBytes, NnByte *weight) {
+    assert(offset == 0u); // TODO
+
     assert(segmentConfig->nOps > opIndex);
     assert(segmentConfig->ops[opIndex].weightSize.nBytes == nBytes);
     NnVulkanBuffer *buffer = segmentData->resolveOpWeightVulkanBuffer(opIndex);
@@ -913,8 +915,8 @@ void NnVulkanDeviceSegment::forward(NnUint opIndex, NnUint nThreads, NnUint thre
 
         NnUint opGroupCount[3];
         for (NnUint opIndex = 0; opIndex < segmentConfig->nOps; opIndex++) {
-            NnSize2D inputSize = data->resolveBufferSize(&segmentConfig->ops[opIndex].input);
-            NnSize2D outputSize = data->resolveBufferSize(&segmentConfig->ops[opIndex].output);
+            NnSize3D inputSize = data->resolveBufferSize(&segmentConfig->ops[opIndex].input);
+            NnSize3D outputSize = data->resolveBufferSize(&segmentConfig->ops[opIndex].output);
 
             resolveShaderGroups(&segmentConfig->ops[opIndex], batchSize, opGroupCount, inputSize, outputSize);
 

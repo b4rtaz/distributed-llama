@@ -105,15 +105,15 @@ NnExecutor::~NnExecutor() {
     delete[] threads;
 }
 
-void NnExecutor::loadWeight(const char *name, NnUint index, NnSize nBytes, NnByte *weight) {
+void NnExecutor::loadWeight(const char *name, NnUint opIndex, NnSize offset, NnSize nBytes, NnByte *weight) {
     for (NnUint segmentIndex = 0; segmentIndex < nodeConfig->nSegments; segmentIndex++) {
         NnSegmentConfig *segmentConfig = &nodeConfig->segments[segmentIndex];
-        for (NnUint opIndex = 0; opIndex < segmentConfig->nOps; opIndex++) {
-            NnOpConfig *opConfig = &segmentConfig->ops[opIndex];
-            if (opConfig->index == index && std::strcmp(opConfig->name, name) == 0) {
+        for (NnUint i = 0; i < segmentConfig->nOps; i++) {
+            NnOpConfig *opConfig = &segmentConfig->ops[i];
+            if (opConfig->index == opIndex && std::strcmp(opConfig->name, name) == 0) {
                 NnDeviceSegment *segment = segments[segmentIndex].get();
                 assert(segment != nullptr);
-                segment->loadWeight(opIndex, nBytes, weight);
+                segment->loadWeight(i, offset, nBytes, weight);
                 return;
             }
         }

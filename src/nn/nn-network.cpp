@@ -796,58 +796,61 @@ void NnRootWeightLoader::allocate(NnSize size) {
     }
 }
 
-void NnRootWeightLoader::writeWeight(NnUint nodeIndex, const char *opName, NnUint opIndex, NnSize nBytes, NnByte *weight) {
+void NnRootWeightLoader::writeWeight(NnUint nodeIndex, const char *opName, NnUint opIndex, NnSize offset, NnSize nBytes, NnByte *weight) {
     NnUint nameSize = std::strlen(opName) + 1;
     NnUint socketIndex = nodeIndex - 1;
     network->write(socketIndex, &nameSize, sizeof(nameSize));
     network->write(socketIndex, opName, nameSize);
     network->write(socketIndex, &opIndex, sizeof(opIndex));
+    network->write(socketIndex, &offset, sizeof(offset));
     network->write(socketIndex, &nBytes, sizeof(nBytes));
     network->write(socketIndex, weight, nBytes);
 }
 
 NnSize NnRootWeightLoader::loadRoot(const char *opName, NnUint opIndex, NnSize nBytes, NnByte *weight) {
-    executor->loadWeight(opName, opIndex, nBytes, weight);
+    executor->loadWeight(opName, opIndex, 0u, nBytes, weight);
     return nBytes;
 }
 
 NnSize NnRootWeightLoader::loadAll(const char *opName, NnUint opIndex, NnSize nBytes, NnByte *weight) {
-    executor->loadWeight(opName, opIndex, nBytes, weight);
+    executor->loadWeight(opName, opIndex, 0u, nBytes, weight);
 
-    if (nNodes > 1) {
-        for (NnUint nodeIndex = 1; nodeIndex < nNodes; nodeIndex++)
-            writeWeight(nodeIndex, opName, opIndex, nBytes, weight);
+    if (nNodes > 1u) {
+        for (NnUint nodeIndex = 1u; nodeIndex < nNodes; nodeIndex++)
+            writeWeight(nodeIndex, opName, opIndex, 0u, nBytes, weight);
     }
     return nBytes;
 }
 
-NnSize NnRootWeightLoader::loadRowMatmulSlices(const char *opName, NnUint opIndex, NnRowMatmulSlice *slice, NnByte *weight) {
-    if (nNodes == 1) {
-        executor->loadWeight(opName, opIndex, slice->sliceSize.nBytes, weight);
+NnSize NnRootWeightLoader::loadRowMatmulSlices(const char *opName, const NnUint opIndex, const NnUint expertIndex, NnRowMatmulSlice *slice, NnByte *weight) {
+    const NnUint offset = expertIndex * slice->sliceSize.nBytes;
+    if (nNodes == 1u) {
+        executor->loadWeight(opName, opIndex, offset, slice->sliceSize.nBytes, weight);
     } else {
         allocate(slice->sliceSize.nBytes);
         for (NnUint nodeIndex = 0; nodeIndex < nNodes; nodeIndex++) {
             splitRowMatmulWeight(slice, nodeIndex, weight, temp);
-            if (nodeIndex == 0)
-                executor->loadWeight(opName, opIndex, slice->sliceSize.nBytes, temp);
+            if (nodeIndex == 0u)
+                executor->loadWeight(opName, opIndex, offset, slice->sliceSize.nBytes, temp);
             else
-                writeWeight(nodeIndex, opName, opIndex, slice->sliceSize.nBytes, temp);
+                writeWeight(nodeIndex, opName, opIndex, offset, slice->sliceSize.nBytes, temp);
         }
     }
     return slice->size.nBytes;
 }
 
-NnSize NnRootWeightLoader::loadColMatmulSlices(const char *opName, NnUint opIndex, NnColMatmulSlice *slice, NnByte *weight) {
+NnSize NnRootWeightLoader::loadColMatmulSlices(const char *opName, const NnUint opIndex, const NnUint expertIndex, NnColMatmulSlice *slice, NnByte *weight) {
+    const NnUint offset = expertIndex * slice->sliceSize.nBytes;
     if (nNodes == 1) {
-        executor->loadWeight(opName, opIndex, slice->sliceSize.nBytes, weight);
+        executor->loadWeight(opName, opIndex, offset, slice->sliceSize.nBytes, weight);
     } else {
         allocate(slice->sliceSize.nBytes);
         for (NnUint nodeIndex = 0; nodeIndex < nNodes; nodeIndex++) {
             splitColMatmulWeight(slice, nodeIndex, weight, temp);
             if (nodeIndex == 0)
-                executor->loadWeight(opName, opIndex, slice->sliceSize.nBytes, temp);
+                executor->loadWeight(opName, opIndex, offset, slice->sliceSize.nBytes, temp);
             else
-                writeWeight(nodeIndex, opName, opIndex, slice->sliceSize.nBytes, temp);
+                writeWeight(nodeIndex, opName, opIndex, offset, slice->sliceSize.nBytes, temp);
         }
     }
     return slice->size.nBytes;
@@ -876,6 +879,7 @@ void NnWorkerWeightReader::allocate(NnUint size) {
 void NnWorkerWeightReader::read() {
     NnUint nameSize;
     NnUint opIndex;
+    NnSize offset;
     NnSize nBytes;
     while (true) {
         network->read(0, &nameSize, sizeof(nameSize));
@@ -891,10 +895,11 @@ void NnWorkerWeightReader::read() {
         char *opName = opNamePtr.get();
         network->read(ROOT_SOCKET_INDEX, opName, nameSize);
         network->read(ROOT_SOCKET_INDEX, &opIndex, sizeof(opIndex));
+        network->read(ROOT_SOCKET_INDEX, &offset, sizeof(offset));
         network->read(ROOT_SOCKET_INDEX, &nBytes, sizeof(nBytes));
         allocate(nBytes);
         network->read(0, temp, nBytes);
-        executor->loadWeight(opName, opIndex, nBytes, temp);
+        executor->loadWeight(opName, opIndex, offset, nBytes, temp);
         printf("💿 Loaded %22s %3d, %12zu kB\n", opName, opIndex, nBytes / 1024);
     }
     printf("💿 Weights loaded\n");

@@ -72,6 +72,7 @@ NnOpQuantType getOpQuantType(NnFloatType input, NnFloatType weight, NnFloatType 
 
 const char *opCodeToString(NnOpCode code) {
     if (code == OP_MERGE_ADD) return "MERGE_ADD";
+    if (code == OP_MERGE_SUM) return "MERGE_SUM";
     if (code == OP_EMBEDDING) return "EMBEDDING";
     if (code == OP_INV_RMS) return "INV_RMS";
     if (code == OP_RMS_NORM) return "RMS_NORM";
@@ -81,7 +82,11 @@ const char *opCodeToString(NnOpCode code) {
     if (code == OP_GELU) return "GELU";
     if (code == OP_SILU) return "SILU";
     if (code == OP_MUL) return "MUL";
+    if (code == OP_SCALE) return "SCALE";
     if (code == OP_CAST) return "CAST";
+    if (code == OP_REPEAT_Z) return "REPEAT_Z";
+    if (code == OP_SHIFT) return "SHIFT";
+    if (code == OP_MOE_GATE) return "MOE_GATE";
     throw std::invalid_argument("Unknown op code");
 }
 
@@ -97,17 +102,22 @@ const char *opQuantTypeToString(NnOpQuantType type) {
     throw std::invalid_argument("Unknown op quant type");
 }
 
-NnSize2D size0() {
-    return { F_UNK, 0, 0, 0, 0 };
+NnSize3D size0() {
+    return { F_UNK, 0, 0, 0, 0, 0 };
 }
 
-NnSize2D size1D(NnFloatType floatType, NnUint x) {
-    return size2D(floatType, 1, x);
+NnSize3D size1D(NnFloatType floatType, NnUint x) {
+    return size3D(floatType, 1, 1, x);
 }
 
-NnSize2D size2D(NnFloatType floatType, NnUint y, NnUint x) {
-    NnSize length = y * x;
-    return { floatType, y, x, length, getBytes(floatType, length) };
+NnSize3D size2D(NnFloatType floatType, NnUint y, NnUint x) {
+    return size3D(floatType, 1, y, x);
+}
+
+NnSize3D size3D(NnFloatType floatType, NnUint z, NnUint y, NnUint x) {
+    NnSize len = z * y * x;
+    NnSize lenXY = y * x;
+    return { floatType, z, y, x, len, getBytes(floatType, len), getBytes(floatType, lenXY) };
 }
 
 NnPointerConfig pointerBatchConfig(NnPointerSource source, NnUint index) {

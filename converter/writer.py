@@ -128,7 +128,8 @@ def writeHeader(file, params):
         'rope_scaling_orig_max_seq_len': 17,
         'rope_type': 18,
         'head_dim': 19,
-        'norm_epsilon': 20
+        'norm_epsilon': 20,
+        'moe_hidden_dim': 21,
     }
     header = struct.pack('i', 0xA00ABCD)
 

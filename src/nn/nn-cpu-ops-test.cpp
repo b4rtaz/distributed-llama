@@ -3,6 +3,11 @@
 
 // framework
 
+void printPassed(const char *name) {
+    printf("✅ %24s passed\n", name);
+    fflush(stdout);
+}
+
 void rand(float *o, const NnUint n, const NnUint seed) {
     srand(seed + 123456);
     for (NnUint i = 0; i < n; i++) {
@@ -21,8 +26,7 @@ void compare_F32(const char *name, const float *a, const float *b, const NnUint 
             exit(1);
         }
     }
-    printf("✅ %24s passed\n", name);
-    fflush(stdout);
+    printPassed(name);
 }
 
 // tests
@@ -67,7 +71,7 @@ void testSplitThreads() {
         assert(b0End == 4);
     }
 
-    printf("✅ %24s passed\n", "splitThreads");
+    printPassed("splitThreads");
 }
 
 void testConvertF32toF16() {
@@ -176,6 +180,37 @@ void testAdd(const NnUint m) {
     add_Q80_F32(yTemp.data(), xQ80.data(), n, 1, 0);
 
     compare_F32("add_Q80_F32", y.data(), yTemp.data(), n, 0.01);
+}
+
+void testMergeSum() {
+    float inp[] = {
+        /* [z0, y0] */ 0.1f, 0.2f,
+        /* [z0, y1] */ 0.3f, 0.4f,
+        /* [z1, y0] */ 0.5f, 0.6f,
+        /* [z1, y1] */ 0.7f, 0.8f,
+    };
+    float out[4];
+
+    float *i[4] = {
+        &inp[0],
+        &inp[2],
+        &inp[4],
+        &inp[6],
+    };
+    float *o[2] = {
+        &out[0],
+        &out[2]
+    };
+
+    mergeSum_F32(o, i, 2u, 2u, 2u, 2u, 1u, 0u);
+
+    const float expectedOutput[4] = {
+        0.6f,
+        0.8f,
+        1.0f,
+        1.2f,
+    };
+    compare_F32("mergeSum_F32", out, expectedOutput, 4u, 0.00000001f);
 }
 
 void testSoftmax() {
@@ -292,6 +327,23 @@ void testLlamafileSgemm() {
 #endif
 }
 
+void testScale() {
+    float i[] = {1.0f, 2.0f, 3.0f, 4.0f};
+    float o[4];
+    scale_F32(i, o, 0.5f, 4u, 1u, 0u);
+    float expectedOutput[] = {0.5f, 1.0f, 1.5f, 2.0f};
+    compare_F32("scale_F32", o, expectedOutput, 4u, 0.00001f);
+}
+
+void testTopk() {
+    float x[] = {1.0f, 4.0f, 2.0f, 3.0f};
+    std::vector<NnUint> topk(2);
+    topk_F32(x, topk.data(), 4u, 2u);
+    assert(topk[0] == 1u);
+    assert(topk[1] == 3u);
+    printPassed("testTopk");
+}
+
 int main() {
     initQuants();
 
@@ -309,11 +361,14 @@ int main() {
     testAdd(32);
     testAdd(2);
     testAdd(1);
+    testMergeSum();
     testSoftmax();
     testSilu();
     testMatmul_F32_Q40_F32(32);
     testMatmul_F32_Q40_F32(2);
     testMatmul_F32_Q40_F32(1);
     testLlamafileSgemm();
+    testScale();
+    testTopk();
     return 0;
 }

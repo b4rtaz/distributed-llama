@@ -11,18 +11,20 @@
 
 typedef struct {
     NnFloatType floatType;
+    NnUint z;
     NnUint y;
     NnUint x;
     NnSize length;
     NnSize nBytes;
-} NnSize2D;
+    NnSize nBytesXY;
+} NnSize3D;
 
 // slices
 
 typedef struct {
     NnUint kvDim0;
-    NnSize2D keySize;
-    NnSize2D valueSize;
+    NnSize3D keySize;
+    NnSize3D valueSize;
 } NnKvCacheSlice;
 
 typedef struct {
@@ -30,8 +32,8 @@ typedef struct {
     NnUint nNodes;
     NnUint d0;
     NnUint n;
-    NnSize2D size;
-    NnSize2D sliceSize;
+    NnSize3D size;
+    NnSize3D sliceSize;
 } NnRowMatmulSlice;
 
 typedef struct {
@@ -40,8 +42,8 @@ typedef struct {
     NnUint n;
     NnUint n0;
     NnUint d;
-    NnSize2D size;
-    NnSize2D sliceSize;
+    NnSize3D size;
+    NnSize3D sliceSize;
 } NnColMatmulSlice;
 
 typedef struct {
@@ -57,19 +59,20 @@ typedef struct {
     NnUint headDim;
     NnUint nKvHeads;
     float ropeTheta;
-    NnSize2D cacheSize;
+    NnSize3D cacheSize;
 } NnRopeSlice;
 
 typedef struct {
     NnUint nHeads;
     NnUint nHeads0;
-    NnSize2D attSize;
+    NnSize3D attSize;
 } NnMultiHeadAttSlice;
 
 // base enums
 
 enum NnOpCode {
     OP_MERGE_ADD,
+    OP_MERGE_SUM,
     OP_EMBEDDING,
     OP_INV_RMS,
     OP_RMS_NORM,
@@ -79,8 +82,12 @@ enum NnOpCode {
     OP_GELU,
     OP_SILU,
     OP_MUL,
+    OP_SCALE,
     OP_CAST,
+    OP_REPEAT_Z,
     OP_SHIFT,
+    OP_SOFTMAX,
+    OP_MOE_GATE,
 };
 
 enum NnOpQuantType {
@@ -125,12 +132,12 @@ enum NnRopeType {
 
 typedef struct {
     char *name;
-    NnSize2D size;
+    NnSize3D size;
 } NnPipeConfig;
 
 typedef struct {
     char *name;
-    NnSize2D size;
+    NnSize3D size;
 } NnBufferConfig;
 
 typedef struct {
@@ -145,7 +152,7 @@ typedef struct {
     NnUint index;
     NnPointerConfig input;
     NnPointerConfig output;
-    NnSize2D weightSize;
+    NnSize3D weightSize;
     NnByte *config;
     NnUint configSize;
 } NnOpConfig;
@@ -200,7 +207,9 @@ typedef struct {
 } NnRmsNormOpConfig;
 
 typedef struct {
-    // empty
+    NnUint nExperts;
+    NnUint nActiveExperts;
+    NnUint activeExpertIndexesBufferIndex;
 } NnMatmulOpConfig;
 
 typedef struct {
@@ -236,6 +245,10 @@ typedef struct {
 
 typedef struct {
     // empty
+} NnMergeSumOpCodeConfig;
+
+typedef struct {
+    // empty
 } NnSiluOpCodeConfig;
 
 typedef struct {
@@ -243,12 +256,30 @@ typedef struct {
 } NnMulOpCodeConfig;
 
 typedef struct {
+    NnUint scaleBufferIndex;
+} NnScaleOpCodeConfig;
+
+typedef struct {
     // empty
 } NnCastOpCodeConfig;
 
 typedef struct {
+    // empty
+} NnRepeatZOpCodeConfig;
+
+typedef struct {
     NnUint indexPipeIndex;
 } NnShiftOpCodeConfig;
+
+typedef struct {
+    // empty
+} NnSoftmaxOpCodeConfig;
+
+typedef struct {
+    NnUint k;
+    NnUint normTopk;
+    NnUint indexesBufferIndex;
+} NnMoeGateOpCodeConfig;
 
 // utility functions
 
@@ -258,9 +289,10 @@ const char *opQuantTypeToString(NnOpQuantType type);
 NnSize getBytes(NnFloatType floatType, NnSize n);
 NnSize getBlockSize(NnFloatType floatType);
 NnOpQuantType getOpQuantType(NnFloatType input, NnFloatType weight, NnFloatType output);
-NnSize2D size0();
-NnSize2D size1D(NnFloatType floatType, NnUint x);
-NnSize2D size2D(NnFloatType floatType, NnUint y, NnUint x);
+NnSize3D size0();
+NnSize3D size1D(NnFloatType floatType, NnUint x);
+NnSize3D size2D(NnFloatType floatType, NnUint y, NnUint x);
+NnSize3D size3D(NnFloatType floatType, NnUint z, NnUint y, NnUint x);
 NnPointerConfig pointerBatchConfig(NnPointerSource source, NnUint index);
 NnPointerConfig pointerBatchedSliceConfig(NnPointerSource source, NnUint index);
 NnPointerConfig pointerRawConfig(NnPointerSource source, NnUint index);

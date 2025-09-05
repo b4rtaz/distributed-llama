@@ -76,7 +76,7 @@ public:
     NnVulkanDeviceData(NnVulkanContext *context, NnNetConfig *netConfig, NnNodeConfig *nodeConfig);
     ~NnVulkanDeviceData();
 
-    NnSize2D resolveBufferSize(NnPointerConfig *config);
+    NnSize3D resolveBufferSize(NnPointerConfig *config);
     NnVulkanBuffer *resolvePointerVulkanBuffer(NnPointerConfig *config);
     NnUint resolveBufferBatchOffset(NnPointerConfig *config, NnUint batchIndex);
     NnUint resolveBufferBatchWidth(NnPointerConfig *config, NnUint batchIndex);
@@ -144,7 +144,7 @@ private:
 public:
     NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanDeviceData *data, NnNetConfig *netConfig, NnUint segmentIndex, NnSegmentConfig *segmentConfig, NnNetExecution *netExecution);
     ~NnVulkanDeviceSegment() override;
-    void loadWeight(NnUint opIndex, NnSize nBytes, NnByte *weight) override;
+    void loadWeight(NnUint opIndex, NnSize offset, NnSize nBytes, NnByte *weight) override;
     void forward(NnUint opIndex, NnUint nThreads, NnUint threadIndex, NnUint batchSize) override;
 };
 

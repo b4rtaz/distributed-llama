@@ -26,7 +26,8 @@ enum LlmHeaderKey {
     ROPE_SCALING_ORIG_MAX_SEQ_LEN = 17,
     ROPE_TYPE = 18,
     HEAD_DIM = 19,
-    NORM_EPSILON = 20
+    NORM_EPSILON = 20,
+    MOE_HIDDEN_DIM = 21,
 };
 
 enum LlmHiddenAct {
@@ -36,7 +37,8 @@ enum LlmHiddenAct {
 
 enum LlmArchType {
     LLAMA = 0xABCD00,
-    QWEN3 = 0xABCD01
+    QWEN3 = 0xABCD01,
+    QWEN3_MOE = 0xABCD02,
 };
 
 typedef struct {
@@ -54,6 +56,7 @@ typedef struct {
     NnUint origSeqLen; // Original model context length
     NnUint seqLen; // Limited context length by the `--max-seq-len` argument
     NnUint hiddenDim;
+    NnUint moeHiddenDim;
     LlmHiddenAct hiddenAct;
     NnUint qDim;
     NnUint kvDim;
@@ -86,9 +89,10 @@ typedef struct {
     NnUint tokenPipeIndex;
     NnUint xPipeIndex;
     NnUint logitsPipeIndex;
-    NnSize2D tokenEmbeddingSize;
-    NnSize2D rmsNormSize;
-    NnSize2D qkRmsNormSize;
+    NnSize3D tokenEmbeddingSize;
+    NnSize3D rmsNormSize;
+    NnSize3D qkRmsNormSize;
+    NnSize3D moeGateSize;
 } LlmNet;
 
 LlmHeader loadLlmHeader(const char* path, const unsigned int maxSeqLen, NnFloatType syncType);
