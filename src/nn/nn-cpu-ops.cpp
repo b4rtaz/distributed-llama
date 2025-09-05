@@ -1389,6 +1389,7 @@ static void initRepeatZForward(NnCpuOpContext *context) {
 static void repeatZForward_F32_Q80(NnUint nThreads, NnUint threadIndex, NnUint batchSize, NnCpuOpContext *context) {
     ASSERT_EQ(context->inputSize.floatType, F_32);
     ASSERT_EQ(context->outputSize.floatType, F_Q80);
+    const NnSize dimSize = getBytes(F_Q80, context->outputSize.x);
 
     for (NnUint z = 0u; z < context->outputSize.z; z++) {
         for (NnUint y = 0u; y < batchSize; y++) {
@@ -1404,7 +1405,7 @@ static void repeatZForward_F32_Q80(NnUint nThreads, NnUint threadIndex, NnUint b
                 copy_UNK(
                     output,
                     context->output[y],
-                    getBytes(F_Q80, context->outputSize.x),
+                    dimSize,
                     nThreads,
                     threadIndex);
             }
