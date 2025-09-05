@@ -1404,7 +1404,7 @@ static void repeatZForward_F32_Q80(NnUint nThreads, NnUint threadIndex, NnUint b
                 copy_UNK(
                     output,
                     context->output[y],
-                    context->outputSize.nBytes,
+                    context->outputSize.nBytesXY,
                     nThreads,
                     threadIndex);
             }
