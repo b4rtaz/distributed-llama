@@ -1381,8 +1381,9 @@ static void castForward_Q80_F32(NnUint nThreads, NnUint threadIndex, NnUint batc
 static void initRepeatZForward(NnCpuOpContext *context) {
     ASSERT_EQ(context->inputSize.x, context->outputSize.x);
     ASSERT_EQ(context->inputSize.y, context->outputSize.y);
-    ASSERT_EQ(context->inputSize.z, 1);
+    ASSERT_EQ(context->inputSize.z, 1u);
     assert(context->inputSize.z <= context->outputSize.z);
+    assert(context->inputSize.z > 0u);
 }
 
 static void repeatZForward_F32_Q80(NnUint nThreads, NnUint threadIndex, NnUint batchSize, NnCpuOpContext *context) {
@@ -1391,12 +1392,22 @@ static void repeatZForward_F32_Q80(NnUint nThreads, NnUint threadIndex, NnUint b
 
     for (NnUint z = 0u; z < context->outputSize.z; z++) {
         for (NnUint y = 0u; y < batchSize; y++) {
-            quantizeF32toQ80(
-                (float *)context->input[y],
-                (NnBlockQ80 *)context->output[z * context->outputSize.y + y],
-                context->outputSize.x,
-                nThreads,
-                threadIndex);
+            NnByte *output = context->output[z * context->outputSize.y + y];
+            if (z == 0u) {
+                quantizeF32toQ80(
+                    (float *)context->input[y],
+                    (NnBlockQ80 *)output,
+                    context->outputSize.x,
+                    nThreads,
+                    threadIndex);
+            } else {
+                copy_UNK(
+                    output,
+                    context->output[y],
+                    context->outputSize.nBytes,
+                    nThreads,
+                    threadIndex);
+            }
         }
     }
 }
