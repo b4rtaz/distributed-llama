@@ -9,8 +9,8 @@ Connect home devices into a powerful cluster to accelerate LLM inference. More d
 Supports Linux, macOS, and Windows. Optimized for ARM and x86_64 AVX2 CPUs.
 
 **How to Run**
-- [🍓 How to Run on Raspberry Pi](./docs/HOW_TO_RUN_RASPBERRYPI.md)
 - [💻 How to Run on Linux, MacOS or Windows](./docs/HOW_TO_RUN_LINUX_MACOS_WIN.md)
+- [🍓 How to Run on Raspberry Pi](./docs/HOW_TO_RUN_RASPBERRYPI.md)
 - [🧠 How to Run on GPU](./docs/HOW_TO_RUN_GPU.md)
 
 **News**
