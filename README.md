@@ -11,6 +11,7 @@ Supports Linux, macOS, and Windows. Optimized for ARM and x86_64 AVX2 CPUs.
 **How to Run**
 - [🍓 How to Run on Raspberry Pi](./docs/HOW_TO_RUN_RASPBERRYPI.md)
 - [💻 How to Run on Linux, MacOS or Windows](./docs/HOW_TO_RUN_LINUX_MACOS_WIN.md)
+- [🧠 How to Run on GPU](./docs/HOW_TO_RUN_GPU.md)
 
 **News**
 - 5 Sep 2025 - Qwen 3 MoE models are now supported on CPU.
