@@ -1,4 +1,4 @@
-# How to run Distributed Llama on 🍓 Raspberry Pi
+# How to Run Distributed Llama on 🍓 Raspberry Pi
 
 This article describes how to run Distributed Llama on 4 Raspberry Pi devices, but you can also run it on 1, 2, 4, 8... devices. Please adjust the commands and topology according to your configuration.
 

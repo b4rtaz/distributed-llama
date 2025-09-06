@@ -13,12 +13,11 @@ Supports Linux, macOS, and Windows. Optimized for ARM and x86_64 AVX2 CPUs.
 - [💻 How to Run on Linux, MacOS or Windows](./docs/HOW_TO_RUN_LINUX_MACOS_WIN.md)
 
 **News**
-- 5 Sep 2025 - Qwen 3 MOE models are now supported on CPU.
+- 5 Sep 2025 - Qwen 3 MoE models are now supported on CPU.
 - 3 Aug 2025 - Qwen 3 0.6B, 1.7B, 8B and 14B models are now supported.
 - 23 Mar 2025 - [🌋 Experimental Vulkan support](https://github.com/b4rtaz/distributed-llama/releases/tag/v0.13.0)
 - 12 Feb 2025 - 🚧 Merged the [fundamental codebase refactor](https://github.com/b4rtaz/distributed-llama/releases/tag/v0.12.0)
 - 9 Jan 2025 - [🍎 Llama 3.3 70B on 4 x Mac Mini M4 Pro 24GB RAM](https://github.com/b4rtaz/distributed-llama/discussions/147)
-- 28 Jul 2024 - [🌳 How to Run Llama 3.1 405B on Home Devices? Build AI Cluster!](https://medium.com/@b4rtaz/how-to-run-llama-3-405b-on-home-devices-build-ai-cluster-ad0d5ad3473b)
 
 ### 🔥 Setup Root Node by Single Command
 
@@ -40,10 +39,7 @@ Python 3 and C++ compiler required. The command will download the model and the 
 
 ### 🛠️ Convert Model Manually
 
-Supported architectures: Llama, Qwen3.
-
-* [How to Convert Llama 3.1](./docs/LLAMA.md)
-* [How to Convert Hugging Face Model](./docs/HUGGINGFACE.md)
+* [🤗 How to Convert Hugging Face Model](./docs/HOW_TO_CONVERT_HF_MODEL.md)
 
 ### 🚧 Known Limitations
 

@@ -1,4 +1,4 @@
-# How to run Distributed Llama on 💻 Linux, MacOS or Windows
+# How to Run Distributed Llama on 💻 Linux, MacOS or Windows
 
 This article describes how to run Distributed Llama on 4 devices, but you can also run it on 1, 2, 4, 8... devices. Please adjust the commands and topology according to your configuration.
 
