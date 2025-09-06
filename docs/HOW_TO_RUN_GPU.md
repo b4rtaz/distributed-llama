@@ -24,11 +24,11 @@ DLLAMA_VULKAN=1 make dllama-api
 --gpu-index <index>   Use GPU device with given index (use `0` for first device)
 ```
 
-4. You can run the root node or worker node on GPU by specifying the `--gpu-index` argument:
+4. You can run the root node or worker node on GPU by specifying the `--gpu-index` argument. Vulkan backend requires single thread, so you should also set `--nthreads 1`.
 
 ```bash
-./dllama inference ... --gpu-index 0 
-./dllama chat      ... --gpu-index 0 
-./dllama worker    ... --gpu-index 0 
-./dllama-api       ... --gpu-index 0 
+./dllama inference ... --nthreads 1 --gpu-index 0 
+./dllama chat      ... --nthreads 1 --gpu-index 0 
+./dllama worker    ... --nthreads 1 --gpu-index 0 
+./dllama-api       ... --nthreads 1 --gpu-index 0 
 ```
