@@ -8,6 +8,9 @@ Connect home devices into a powerful cluster to accelerate LLM inference. More d
 
 Supports Linux, macOS, and Windows. Optimized for ARM and x86_64 AVX2 CPUs.
 
+**How to Run**
+- [🍓 How to Run on Raspberry Pi](./docs/HOW_TO_RUN_RASPBERRYPI.md)
+
 **News**
 - 5 Sep 2025 - Qwen 3 MOE models are now supported on CPU.
 - 3 Aug 2025 - Qwen 3 0.6B, 1.7B, 8B and 14B models are now supported.
@@ -51,9 +54,19 @@ Supported architectures: Llama, Qwen3.
 
 ### 👷 Architecture
 
+````
+[🔀 SWITCH OR ROUTER]
+      | | | |
+      | | | |_______ 🔸 device1 (ROOT)     10.0.0.1
+      | | |_________ 🔹 device2 (WORKER 1) 10.0.0.2:9999
+      | |___________ 🔹 device3 (WORKER 2) 10.0.0.3:9999
+      |_____________ 🔹 device4 (WORKER 3) 10.0.0.4:9999
+                        ...
+````
+
 The project is split up into two parts:
-* **Root node** - it's responsible for loading the model and weights and forward them to workers. Also, it synchronizes the state of the neural network. The root node is also a worker, it processes own slice of the neural network.
-* **Worker node** - it processes own slice of the neural network. It doesn't require any configuration related to the model.
+* **🔸 Root node** - it's responsible for loading the model and weights and forward them to workers. Also, it synchronizes the state of the neural network. The root node is also a worker, it processes own slice of the neural network.
+* **🔹 Worker node** - it processes own slice of the neural network. It doesn't require any configuration related to the model.
 
 You always need the root node and you can add 2^n - 1 worker nodes to speed up the inference. The RAM usage of the neural network is split up across all nodes. The root node requires a bit more RAM than worker nodes.
 
