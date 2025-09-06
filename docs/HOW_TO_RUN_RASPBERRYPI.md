@@ -12,7 +12,7 @@ This article describes how to run Distributed Llama on 4 Raspberry Pi devices, b
 ````
 
 1. Install `Raspberry Pi OS Lite (64 bit)` on your **🔸🔹 ALL** Raspberry Pi devices. This OS doesn't have desktop environment but you can easily connect via SSH to manage it.
-2. Connect **🔸🔹 ALL** devices to your **🔀 SWITCH OR ROUTER** via Ethernet cable.
+2. Connect **🔸🔹 ALL** devices to your **🔀 SWITCH OR ROUTER** via Ethernet cable. If you're using only two devices, it's better to connect them directly without a switch.
 3. Connect to all devices via SSH from your computer.
 
 ```
@@ -60,7 +60,7 @@ sudo ip addr add 10.0.0.4/24 dev eth0 # 🔹 WORKER 3
 sudo nice -n -20 ./dllama worker --port 9999 --nthreads 4
 ```
 
-8. Run the inference to test if everything works fine on the **🔸 ROOT** device:
+9. Run the inference to test if everything works fine on the **🔸 ROOT** device:
 
 ```sh
 sudo nice -n -20 ./dllama inference \
@@ -74,7 +74,7 @@ sudo nice -n -20 ./dllama inference \
   --workers 10.0.0.2:9999 10.0.0.3:9999 10.0.0.4:9999
 ```
 
-9. To run the API server, start it on the **🔸 ROOT** device:
+10. To run the API server, start it on the **🔸 ROOT** device:
 
 ```sh
 sudo nice -n -20 ./dllama-api \

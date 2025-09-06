@@ -10,6 +10,7 @@ Supports Linux, macOS, and Windows. Optimized for ARM and x86_64 AVX2 CPUs.
 
 **How to Run**
 - [🍓 How to Run on Raspberry Pi](./docs/HOW_TO_RUN_RASPBERRYPI.md)
+- [💻 How to Run on Linux, MacOS or Windows](./docs/HOW_TO_RUN_LINUX_MACOS_WIN.md)
 
 **News**
 - 5 Sep 2025 - Qwen 3 MOE models are now supported on CPU.
@@ -115,117 +116,6 @@ Inference
 ## 📊 Measurements
 
 Please check the [discussions](https://github.com/b4rtaz/distributed-llama/discussions) section, where many measurements were published on different configurations.
-
-## 🚀 Setup
-
-Select and expand one of the sections below:
-
-<details>
-
-<summary>💻 MacOS, Linux, or Windows</summary>
-
-<br />You need x86_64 AVX2 CPUs or ARM CPUs. Different devices may have different CPUs.
-
-#### MacOS or Linux
-
-The below instructions are for Debian-based distributions but you can easily adapt them to your distribution, macOS.
-
-1. Install Git and GCC:
-```sh
-sudo apt install git build-essential
-```
-2. Clone this repository and compile Distributed Llama on all computers:
-```sh
-git clone https://github.com/b4rtaz/distributed-llama.git
-cd distributed-llama
-make dllama
-make dllama-api
-```
-
-Continue to point 3.
-
-#### Windows
-
-1. Install Git and Mingw (via [Chocolatey](https://chocolatey.org/install)):
-```powershell
-choco install mingw
-```
-2. Clone this repository and compile Distributed Llama on all computers:
-```sh
-git clone https://github.com/b4rtaz/distributed-llama.git
-cd distributed-llama
-make dllama
-make dllama-api
-```
-
-Continue to point 3.
-
-#### Run Cluster
-
-3. Transfer weights and the tokenizer file to the root computer.
-4. Run worker nodes on worker computers:
-```sh
-./dllama worker --port 9999 --nthreads 4
-```
-5. Run root node on the root computer:
-```sh
-./dllama inference --model dllama_model_meta-llama-3-8b_q40.m --tokenizer dllama_tokenizer_llama3.t --buffer-float-type q80 --prompt "Hello world" --steps 16 --nthreads 4 --workers 192.168.0.1:9999
-```
-
-To add more worker nodes, just add more addresses to the `--workers` argument.
-
-```
-./dllama inference ... --workers 192.168.0.1:9999 192.168.0.2:9999 192.168.0.3:9999
-```
-
-</details>
-
-<details>
-
-<summary>📟 Raspberry Pi</summary>
-
-<br />
-
-1. Install `Raspberry Pi OS Lite (64 bit)` on your Raspberry Pi devices. This OS doesn't have desktop environment.
-2. Connect all devices to your switch or router.
-3. Connect to all devices via SSH.
-```
-ssh user@raspberrypi1.local
-ssh user@raspberrypi2.local
-```
-4. Install Git:
-```sh
-sudo apt install git
-```
-5. Clone this repository and compile Distributed Llama on all devices:
-```sh
-git clone https://github.com/b4rtaz/distributed-llama.git
-cd distributed-llama
-make dllama
-make dllama-api
-```
-6. Transfer weights and the tokenizer file to the root device.
-7. Optional: assign static IP addresses.
-```sh
-sudo ip addr add 10.0.0.1/24 dev eth0 # 1th device
-sudo ip addr add 10.0.0.2/24 dev eth0 # 2th device
-```
-8. Run worker nodes on worker devices:
-```sh
-sudo nice -n -20 ./dllama worker --port 9999 --nthreads 4
-```
-9. Run root node on the root device:
-```sh
-sudo nice -n -20 ./dllama inference --model dllama_model_meta-llama-3-8b_q40.m --tokenizer dllama_tokenizer_llama3.t --buffer-float-type q80 --prompt "Hello world" --steps 16 --nthreads 4 --workers 10.0.0.2:9999
-```
-
-To add more worker nodes, just add more addresses to the `--workers` argument.
-
-```
-./dllama inference ... --workers 10.0.0.2:9999 10.0.0.3:9999 10.0.0.4:9999
-```
-
-</details>
 
 ## ✋ Contribution
 
