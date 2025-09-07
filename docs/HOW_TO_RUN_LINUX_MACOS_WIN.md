@@ -50,13 +50,13 @@ python3 launch.py llama3_2_3b_instruct_q40 # Downloads the model to the root dev
 5. Start workers on all **🔹 WORKER** devices:
 
 ```sh
-sudo nice -n -20 ./dllama worker --port 9999 --nthreads 4
+./dllama worker --port 9999 --nthreads 4
 ```
 
 6. Run the inference to test if everything works fine on the **🔸 ROOT** device:
 
 ```sh
-sudo nice -n -20 ./dllama inference \
+./dllama inference \
   --prompt "Hello world" \
   --steps 32 \
   --model models/llama3_2_3b_instruct_q40/dllama_model_llama3_2_3b_instruct_q40.m \
@@ -70,7 +70,7 @@ sudo nice -n -20 ./dllama inference \
 7. To run the API server, start it on the **🔸 ROOT** device:
 
 ```sh
-sudo nice -n -20 ./dllama-api \
+./dllama-api \
   --port 9999 \
   --model models/llama3_2_3b_instruct_q40/dllama_model_llama3_2_3b_instruct_q40.m \
   --tokenizer models/llama3_2_3b_instruct_q40/dllama_tokenizer_llama3_2_3b_instruct_q40.t \
