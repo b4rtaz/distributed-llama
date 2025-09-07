@@ -1,0 +1,23 @@
+#version 450
+
+#extension GL_EXT_control_flow_attributes : enable
+
+#define N_BATCHES 32
+#define CHUNK_SIZE 4
+
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+
+struct BatchInfo {
+    uint inputOffset;
+    uint inputSizeX;
+    uint outputOffset;
+    uint outputSizeX;
+};
+
+layout(binding = 0) readonly buffer inputBuffer { float x[]; };
+layout(binding = 1) writeonly buffer outputBuffer { float y[]; };
+layout(binding = 2) readonly uniform batchInfosBuffer { BatchInfo infos[N_BATCHES]; };
+
+void main() {
+    // TODO
+}

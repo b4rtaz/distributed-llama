@@ -446,6 +446,9 @@ static const char *getShaderFileName(const NnOpCode opCode, const NnOpQuantType 
         if (quantType == F32_F32_F32) return "merge-add-forward-f32-f32.spv";
         if (quantType == Q80_Q80_F32) return "merge-add-forward-q80-f32.spv";
     }
+    if (opCode == OP_MERGE_SUM) {
+        if (quantType == F32_F32_F32) return "merge-sum-forward-f32-f32.spv";
+    }
     if (opCode == OP_EMBEDDING) {
         if (quantType == F32_F32_F32) return "embedding-forward-f32-f32.spv";
     }
@@ -471,12 +474,24 @@ static const char *getShaderFileName(const NnOpCode opCode, const NnOpQuantType 
     if (opCode == OP_MUL) {
         if (quantType == F32_F32_F32) return "mul-forward-f32-f32.spv";
     }
+    if (opCode == OP_SCALE) {
+        if (quantType == F32_F32_F32) return "scale-forward-f32-f32.spv";
+    }
     if (opCode == OP_CAST) {
         if (quantType == F32_F32_F32) return "cast-forward-f32-f32.spv";
         if (quantType == F32_F32_Q80) return "cast-forward-f32-q80.spv";
     }
+    if (opCode == OP_REPEAT_Z) {
+        if (quantType == F32_F32_Q80) return "repeatz-forward-f32-q80.spv";
+    }
     if (opCode == OP_SHIFT) {
         if (quantType == F32_F32_F32) return "shift-forward-f32-f32.spv";
+    }
+    if (opCode == OP_SOFTMAX) {
+        if (quantType == F32_F32_F32) return "softmax-forward-f32-f32.spv";
+    }
+    if (opCode == OP_MOE_GATE) {
+        if (quantType == F32_F32_F32) return "moe-gate-forward-f32-f32.spv";
     }
     throw std::invalid_argument(std::string("Unsupported shader: ") + opCodeToString(opCode) + "/" + opQuantTypeToString(quantType));
 }
@@ -520,6 +535,10 @@ static void buildShaderLayout(std::vector<NnOpBufferAccess> &a, NnVulkanDeviceDa
             a.push_back({ACCESS_READONLY, data->buffers[config->keyCacheBufferIndex].get()});
             a.push_back({ACCESS_READONLY, data->buffers[config->valueCacheBufferIndex].get()});
             a.push_back({ACCESS_READ_WRITE, data->buffers[config->attBufferIndex].get()});
+        } break;
+        case OP_MOE_GATE: {
+            const NnMoeGateOpCodeConfig *config = (NnMoeGateOpCodeConfig *)opConfig->config;
+            a.push_back({ACCESS_READONLY, data->pipes[config->indexesBufferIndex].get()});
         } break;
         default:
             break;

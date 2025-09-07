@@ -72,7 +72,7 @@ void testRmsNorm_F32_F32_F32() {
             std::vector<float> normWeight(dim);
             for (NnUint i = 0; i < dim; i++)
                 normWeight[i] = (0.25f + (float)i) / (float)dim;
-            executor->loadWeight("rms_norm", 0, normWeight.size() * sizeof(float), (NnByte *)normWeight.data());
+            executor->loadWeight("rms_norm", 0u, 0u, normWeight.size() * sizeof(float), (NnByte *)normWeight.data());
 
             float *xPipe = (float *)execution->pipes[0];
             float expectedS[batchSize];
@@ -546,7 +546,7 @@ void testMatmul_F32_F32_F32() {
                 xPipe[i] = i * 0.0001f;
             for (NnUint i = 0; i < N * D; i++)
                 weight[i] = i * 0.000001f;
-            executor->loadWeight("matmul", 0, N * D * sizeof(float), (NnByte *)weight);
+            executor->loadWeight("matmul", 0u, 0u, N * D * sizeof(float), (NnByte *)weight);
 
             // act
             executor->forward();
@@ -601,7 +601,7 @@ void testMatmul_Q80_Q40_F32() {
             quantizeF32toQ80(x.get(), xPipe, xSize, 1, 0);
             quantizeF32toQ40(weight.get(), weightQ40.get(), weightSize, 1, 0);
 
-            executor->loadWeight("matmul", 0, weightBlocks * sizeof(NnBlockQ40), (NnByte *)weightQ40.get());
+            executor->loadWeight("matmul", 0u, 0u, weightBlocks * sizeof(NnBlockQ40), (NnByte *)weightQ40.get());
 
             // act
             executor->forward();
@@ -659,6 +659,48 @@ void testMultiheadAtt_F32_F32() {
         });
 }
 
+template <NnUint dim>
+void testSoftmax_F32_F32() {
+    execute(
+        [](NnNetConfigBuilder *netBuilder, NnNodeConfigBuilder *nodeBuilder, NnSegmentConfigBuilder *segmentBuilder) {
+            NnUint xPipeIndex = netBuilder->addPipe("X", size2D(F_32, N_BATCHES, dim));
+            segmentBuilder->addOp(OP_SOFTMAX, "softmax", 0,
+                pointerBatchConfig(SRC_PIPE, xPipeIndex),
+                pointerBatchConfig(SRC_PIPE, xPipeIndex),
+                size0(),
+                NnSoftmaxOpCodeConfig{});
+        },
+        [](NnExecutor *executor, NnNetExecution *execution, NnVulkanDevice *device) {
+            // arrange
+            execution->setBatchSize(N_BATCHES);
+
+            float *xPipe = (float *)execution->pipes[0];
+
+            for (NnUint b = 0; b < N_BATCHES; b++) {
+                const NnUint offset = b * dim;
+                for (NnUint i = 0; i < dim; i++)
+                    xPipe[offset + i] = i / (float)dim + (float)b;
+            }
+
+            // act
+            executor->forward();
+
+            // assert
+            float t = 0.00001f;
+            for (NnUint b = 0; b < N_BATCHES; b++) {
+                const NnUint offset = b * dim;
+                float max = ((dim - 1) / (float)dim) + (float)b;
+                for (NnUint i = 0; i < dim; i++) {
+                    const float v = i / (float)dim + (float)b;
+                    const float expectedOutput = expf(v - max);
+                    assertFloat(offset + i, xPipe[offset + i], expectedOutput, t);
+                }
+            }
+
+            printOk("testSoftmax_F32_F32");
+        });
+}
+
 int main() {
     initQuants();
 
@@ -705,5 +747,8 @@ int main() {
     testMatmul_Q80_Q40_F32<192, 16>();
 
     testMultiheadAtt_F32_F32();
+
+    testSoftmax_F32_F32<256>();
+    testSoftmax_F32_F32<512>();
     return 0;
 }
