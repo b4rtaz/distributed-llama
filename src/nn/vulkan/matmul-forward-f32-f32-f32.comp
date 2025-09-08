@@ -1,9 +1,11 @@
 #version 450
 
 #define N_THREADS 128
-#define N_BATCHES 32
 
 layout(local_size_x = N_THREADS, local_size_y = 1, local_size_z = 1) in;
+
+layout(constant_id = 0) const uint N_BATCHES = 32;
+layout(constant_id = 1) const uint N_Z = 1;
 
 struct BatchInfo {
     uint inputOffset;
@@ -14,7 +16,7 @@ struct BatchInfo {
 
 layout(binding = 0) readonly buffer inputBuffer { float x[]; };
 layout(binding = 1) writeonly buffer outputBuffer { float y[]; };
-layout(binding = 2) readonly uniform batchInfosBuffer { BatchInfo infos[N_BATCHES]; };
+layout(binding = 2) readonly uniform batchInfosBuffer { BatchInfo infos[N_Z * N_BATCHES]; };
 layout(binding = 3) readonly buffer weightBuffer { float weight[]; };
 
 shared BatchInfo sharedInfo;
@@ -23,13 +25,14 @@ shared uint sharedOffset;
 
 void main() {
     const uint threadIndex = gl_LocalInvocationID.x;
-    const uint workGroupIndex = gl_WorkGroupID.z;
+    const uint workGroupIndex = gl_WorkGroupID.x;
 
     if (threadIndex == 0) {
         const uint batchIndex = gl_WorkGroupID.y;
-        const uint nWorkGroups = gl_NumWorkGroups.z;
+        const uint zIndex = gl_WorkGroupID.z;
+        const uint nWorkGroups = gl_NumWorkGroups.x;
 
-        sharedInfo = infos[batchIndex];
+        sharedInfo = infos[zIndex * N_BATCHES + batchIndex];
         const uint slice = sharedInfo.outputSizeX / nWorkGroups;
         const uint rest = sharedInfo.outputSizeX % nWorkGroups;
 

@@ -2,10 +2,12 @@
 
 #extension GL_EXT_control_flow_attributes : enable
 
-#define N_BATCHES 32
 #define CHUNK_SIZE 4
 
 layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+
+layout(constant_id = 0) const uint N_BATCHES = 32;
+layout(constant_id = 1) const uint N_Z = 1;
 
 struct BatchInfo {
     uint inputOffset;
@@ -16,8 +18,26 @@ struct BatchInfo {
 
 layout(binding = 0) readonly buffer inputBuffer { float x[]; };
 layout(binding = 1) writeonly buffer outputBuffer { float y[]; };
-layout(binding = 2) readonly uniform batchInfosBuffer { BatchInfo infos[N_BATCHES]; };
+layout(binding = 2) readonly uniform batchInfosBuffer { BatchInfo infos[N_Z * N_BATCHES]; };
+layout(binding = 3) readonly buffer configBuffer {
+    uint scaleBufferIndex;
+};
+layout(binding = 4) readonly buffer scaleBuffer { float scale[]; };
 
 void main() {
-    // TODO
+    const uint batchIndex = gl_WorkGroupID.y;
+    const uint workGroupIndex = gl_WorkGroupID.x;
+    const uint zIndex = gl_WorkGroupID.z;
+
+    const uint p = zIndex * N_BATCHES + batchIndex;
+
+    const float s = scale[p];
+    const BatchInfo info = infos[p];
+    const uint offset = workGroupIndex * CHUNK_SIZE;
+    const uint xOffset = info.inputOffset + offset;
+    const uint yOffset = info.outputOffset + offset;
+
+    [[unroll]] for (uint i = 0; i < CHUNK_SIZE; i++) {
+        y[yOffset + i] = x[xOffset + i] * s;
+    }
 }

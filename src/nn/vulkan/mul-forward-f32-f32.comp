@@ -3,9 +3,10 @@
 #extension GL_EXT_control_flow_attributes : enable
 
 #define CHUNK_SIZE 4
-#define N_BATCHES 32
 
 layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+
+layout(constant_id = 0) const uint N_BATCHES = 32;
 
 struct BatchInfo {
     uint inputOffset;
@@ -24,7 +25,7 @@ layout(binding = 4) readonly buffer multiplierBuffer { float m[]; };
 
 void main() {
     const uint batchIndex = gl_WorkGroupID.y;
-    const uint chunkIndex = gl_WorkGroupID.z;
+    const uint chunkIndex = gl_WorkGroupID.x;
 
     const BatchInfo info = infos[batchIndex];
     const uint offset = chunkIndex * CHUNK_SIZE;

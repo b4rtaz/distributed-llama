@@ -78,8 +78,8 @@ public:
 
     NnSize3D resolveBufferSize(NnPointerConfig *config);
     NnVulkanBuffer *resolvePointerVulkanBuffer(NnPointerConfig *config);
-    NnUint resolveBufferBatchOffset(NnPointerConfig *config, NnUint batchIndex);
-    NnUint resolveBufferBatchWidth(NnPointerConfig *config, NnUint batchIndex);
+    NnUint resolveBufferBatchOffset(NnPointerConfig *config, NnUint batchIndex, NnUint zIndex);
+    NnUint resolveBufferBatchWidth(NnPointerConfig *config);
 };
 
 class NnVulkanDevice : public NnDevice {

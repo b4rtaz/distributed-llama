@@ -701,6 +701,57 @@ void testSoftmax_F32_F32() {
         });
 }
 
+void testScale_F32_F32() {
+    #define SCALE_F32_N_Z 4
+    #define SCALE_F32_DIM 64
+    execute(
+        [](NnNetConfigBuilder *netBuilder, NnNodeConfigBuilder *nodeBuilder, NnSegmentConfigBuilder *segmentBuilder) {
+            NnUint xPipeIndex = netBuilder->addPipe("X", size3D(F_32, SCALE_F32_N_Z, N_BATCHES, SCALE_F32_DIM));
+            NnUint scaleBufferIndex = nodeBuilder->addBuffer("scale", size3D(F_32, SCALE_F32_N_Z, SCALE_F32_DIM, 1u));
+            segmentBuilder->addOp(OP_SCALE, "scale", 0,
+                pointerBatchConfig(SRC_PIPE, xPipeIndex),
+                pointerBatchConfig(SRC_PIPE, xPipeIndex),
+                size0(),
+                NnScaleOpCodeConfig{scaleBufferIndex});
+        },
+        [](NnExecutor *executor, NnNetExecution *execution, NnVulkanDevice *device) {
+            // arrange
+            execution->setBatchSize(N_BATCHES);
+
+            float *xPipe = (float *)execution->pipes[0];
+            float scale[SCALE_F32_N_Z * SCALE_F32_DIM];
+
+            for (NnUint z = 0u; z < SCALE_F32_N_Z; z++) {
+                const NnUint zOffset = z * N_BATCHES * SCALE_F32_DIM;
+                for (NnUint y = 0u; y < N_BATCHES; y++) {
+                    scale[z * N_BATCHES + y] = 0.5f * (float)(z * 100 + y);
+                    for (NnUint i = 0; i < SCALE_F32_DIM; i++)
+                        xPipe[zOffset + y * SCALE_F32_DIM + i] = (float)(z * 10000 + y * 100 + i);
+                }
+            }
+
+            device->data->buffers[0].get()->write((NnByte *)scale);
+
+            // act
+            executor->forward();
+
+            // assert
+            for (NnUint z = 0u; z < SCALE_F32_N_Z; z++) {
+                const NnUint zOffset = z * N_BATCHES * SCALE_F32_DIM;
+                for (NnUint y = 0u; y < N_BATCHES; y++) {
+                    for (NnUint i = 0; i < SCALE_F32_DIM; i++) {
+                        const NnUint p = zOffset + y * SCALE_F32_DIM + i;
+                        const float v = xPipe[p];
+                        const float expectedOutput = (float)(z * 10000 + y * 100 + i) * 0.5f * (float)(z * 100 + y);
+                        assertFloat(p, v, expectedOutput, 0.00001f);
+                    }
+                }
+            }
+
+            printOk("testScale_F32_F32");
+        });
+}
+
 int main() {
     initQuants();
 
@@ -750,5 +801,7 @@ int main() {
 
     testSoftmax_F32_F32<256>();
     testSoftmax_F32_F32<512>();
+
+    testScale_F32_F32();
     return 0;
 }

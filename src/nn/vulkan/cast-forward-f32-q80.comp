@@ -5,9 +5,10 @@
 #extension GL_EXT_shader_explicit_arithmetic_types : enable
 
 #define Q80_BLOCK_SIZE 32
-#define N_BATCHES 32
 
 layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+
+layout(constant_id = 0) const uint N_BATCHES = 32;
 
 struct BatchInfo {
     uint inputOffset;
@@ -27,7 +28,7 @@ layout(binding = 2) readonly uniform batchInfosBuffer { BatchInfo infos[N_BATCHE
 
 void main() {
     const uint batchIndex = gl_WorkGroupID.y;
-    const uint d = gl_WorkGroupID.z;
+    const uint d = gl_WorkGroupID.x;
 
     const BatchInfo info = infos[batchIndex];
     const uint xiOffset = info.inputOffset + d * Q80_BLOCK_SIZE;
