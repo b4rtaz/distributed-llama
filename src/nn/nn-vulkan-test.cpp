@@ -72,7 +72,7 @@ void testRmsNorm_F32_F32_F32() {
             std::vector<float> normWeight(dim);
             for (NnUint i = 0; i < dim; i++)
                 normWeight[i] = (0.25f + (float)i) / (float)dim;
-            executor->loadWeight("rms_norm", 0, normWeight.size() * sizeof(float), (NnByte *)normWeight.data());
+            executor->loadWeight("rms_norm", 0u, 0u, normWeight.size() * sizeof(float), (NnByte *)normWeight.data());
 
             float *xPipe = (float *)execution->pipes[0];
             float expectedS[batchSize];
@@ -224,6 +224,68 @@ void testMergeAdd_F32_F32() {
                 }
             }
             printOk("testMergeAdd_F32_F32");
+        });
+}
+
+void testMergeSum_F32_F32() {
+    #define MERGE_SUM_F32_N_Z 2
+    #define MERGE_SUM_F32_DIM 4
+    execute(
+        [](NnNetConfigBuilder *netBuilder, NnNodeConfigBuilder *nodeBuilder, NnSegmentConfigBuilder *segmentBuilder) {
+            NnUint xPipeIndex = netBuilder->addPipe("X", size3D(F_32, MERGE_SUM_F32_N_Z, N_BATCHES, MERGE_SUM_F32_DIM));
+            NnUint yPipeIndex = netBuilder->addPipe("Y", size3D(F_32, 1u, N_BATCHES, MERGE_SUM_F32_DIM));
+            segmentBuilder->addOp(OP_MERGE_SUM, "merge_sum", 0,
+                pointerBatchConfig(SRC_PIPE, xPipeIndex),
+                pointerBatchConfig(SRC_PIPE, yPipeIndex),
+                size0(),
+                NnMergeSumOpCodeConfig{});
+        },
+        [](NnExecutor *executor, NnNetExecution *execution, NnVulkanDevice *device) {
+            // arrange
+            execution->setBatchSize(2);
+
+            float *xPipe = (float *)execution->pipes[0];
+            float *xPipeZ0 = &xPipe[0];
+            float *xPipeZ1 = &xPipe[N_BATCHES * MERGE_SUM_F32_DIM];
+            float *yPipe = (float *)execution->pipes[1];
+            xPipeZ0[0] = 1.0f;
+            xPipeZ0[1] = 1.1f;
+            xPipeZ0[2] = 1.2f;
+            xPipeZ0[3] = 1.3f;
+
+            xPipeZ0[4] = 2.0f;
+            xPipeZ0[5] = 2.1f;
+            xPipeZ0[6] = 2.2f;
+            xPipeZ0[7] = 2.3f;
+
+            xPipeZ1[0] = 0.5f;
+            xPipeZ1[1] = 0.1f;
+            xPipeZ1[2] = 0.2f;
+            xPipeZ1[3] = 0.3f;
+
+            xPipeZ1[4] = 0.4f;
+            xPipeZ1[5] = 0.3f;
+            xPipeZ1[6] = 0.2f;
+            xPipeZ1[7] = 0.1f;
+
+            // act
+            executor->forward();
+
+            for (NnUint i = 0; i < MERGE_SUM_F32_DIM * N_BATCHES; i++)
+                printf("xPipe[%d] = %f\n", i, yPipe[i]);
+
+            const float t = 0.00001f;
+            assertFloat(0, yPipe[0], 1.5f, t);
+            assertFloat(1, yPipe[1], 1.2f, t);
+            assertFloat(2, yPipe[2], 1.4f, t);
+            assertFloat(3, yPipe[3], 1.6f, t);
+
+            assertFloat(4, yPipe[4], 2.4f, t);
+            assertFloat(5, yPipe[5], 2.4f, t);
+            assertFloat(6, yPipe[6], 2.4f, t);
+            assertFloat(7, yPipe[7], 2.4f, t);
+
+            printOk("testMergeSum_F32_F32");
         });
 }
 
@@ -528,12 +590,13 @@ void testMatmul_F32_F32_F32() {
         [](NnNetConfigBuilder *netBuilder, NnNodeConfigBuilder *nodeBuilder, NnSegmentConfigBuilder *segmentBuilder) {
             NnUint xPipeIndex = netBuilder->addPipe("X", size2D(F_32, N_BATCHES, N));
             NnUint yPipeIndex = netBuilder->addPipe("Y", size2D(F_32, N_BATCHES, D));
+            NnUint nullBufferIndex = nodeBuilder->addBuffer("null", size1D(F_32, 1u));
             segmentBuilder->addOp(
                 OP_MATMUL, "matmul", 0,
                 pointerBatchConfig(SRC_PIPE, xPipeIndex),
                 pointerBatchConfig(SRC_PIPE, yPipeIndex),
                 size2D(F_32, N, D),
-                NnMatmulOpConfig{});
+                NnMatmulOpConfig{0u, 0u, nullBufferIndex});
         },
         [](NnExecutor *executor, NnNetExecution *execution, NnVulkanDevice *device) {
             // arrange
@@ -546,7 +609,7 @@ void testMatmul_F32_F32_F32() {
                 xPipe[i] = i * 0.0001f;
             for (NnUint i = 0; i < N * D; i++)
                 weight[i] = i * 0.000001f;
-            executor->loadWeight("matmul", 0, N * D * sizeof(float), (NnByte *)weight);
+            executor->loadWeight("matmul", 0u, 0u, N * D * sizeof(float), (NnByte *)weight);
 
             // act
             executor->forward();
@@ -572,12 +635,13 @@ void testMatmul_Q80_Q40_F32() {
         [](NnNetConfigBuilder *netBuilder, NnNodeConfigBuilder *nodeBuilder, NnSegmentConfigBuilder *segmentBuilder) {
             NnUint xPipeIndex = netBuilder->addPipe("X", size2D(F_Q80, N_BATCHES, N));
             NnUint yPipeIndex = netBuilder->addPipe("Y", size2D(F_32, N_BATCHES, D));
+            NnUint nullBufferIndex = nodeBuilder->addBuffer("null", size1D(F_32, 1u));
             segmentBuilder->addOp(
                 OP_MATMUL, "matmul", 0,
                 pointerBatchConfig(SRC_PIPE, xPipeIndex),
                 pointerBatchConfig(SRC_PIPE, yPipeIndex),
                 size2D(F_Q40, N, D),
-                NnMatmulOpConfig{});
+                NnMatmulOpConfig{0u, 0u, nullBufferIndex});
         },
         [](NnExecutor *executor, NnNetExecution *execution, NnVulkanDevice *device) {
             // arrange
@@ -601,7 +665,7 @@ void testMatmul_Q80_Q40_F32() {
             quantizeF32toQ80(x.get(), xPipe, xSize, 1, 0);
             quantizeF32toQ40(weight.get(), weightQ40.get(), weightSize, 1, 0);
 
-            executor->loadWeight("matmul", 0, weightBlocks * sizeof(NnBlockQ40), (NnByte *)weightQ40.get());
+            executor->loadWeight("matmul", 0u, 0u, weightBlocks * sizeof(NnBlockQ40), (NnByte *)weightQ40.get());
 
             // act
             executor->forward();
@@ -659,6 +723,156 @@ void testMultiheadAtt_F32_F32() {
         });
 }
 
+template <NnUint dim, NnUint nZ>
+void testSoftmax_F32_F32() {
+    execute(
+        [](NnNetConfigBuilder *netBuilder, NnNodeConfigBuilder *nodeBuilder, NnSegmentConfigBuilder *segmentBuilder) {
+            NnUint xPipeIndex = netBuilder->addPipe("X", size3D(F_32, nZ, N_BATCHES, dim));
+            segmentBuilder->addOp(OP_SOFTMAX, "softmax", 0,
+                pointerBatchConfig(SRC_PIPE, xPipeIndex),
+                pointerBatchConfig(SRC_PIPE, xPipeIndex),
+                size0(),
+                NnSoftmaxOpCodeConfig{});
+        },
+        [](NnExecutor *executor, NnNetExecution *execution, NnVulkanDevice *device) {
+            // arrange
+            execution->setBatchSize(N_BATCHES);
+
+            float *xPipe = (float *)execution->pipes[0];
+
+            for (NnUint z = 0u; z < nZ; z++) {
+                float *xPipeZ = &xPipe[z * N_BATCHES * dim];
+                for (NnUint b = 0; b < N_BATCHES; b++) {
+                    const NnUint offset = b * dim;
+                    for (NnUint i = 0u; i < dim; i++)
+                        xPipeZ[offset + i] = i / (float)dim + (float)b;
+                }
+            }
+
+            // act
+            executor->forward();
+
+            // assert
+            float t = 0.00001f;
+            for (NnUint z = 0u; z < nZ; z++) {
+                float *xPipeZ = &xPipe[z * N_BATCHES * dim];
+                for (NnUint b = 0; b < N_BATCHES; b++) {
+                    const NnUint offset = b * dim;
+                    float max = ((dim - 1) / (float)dim) + (float)b;
+                    for (NnUint i = 0u; i < dim; i++) {
+                        const float v = i / (float)dim + (float)b;
+                        const float expectedOutput = expf(v - max);
+                        assertFloat(offset + i, xPipeZ[offset + i], expectedOutput, t);
+                    }
+                }
+            }
+
+            printOk("testSoftmax_F32_F32");
+        });
+}
+
+void testScale_F32_F32() {
+    #define SCALE_F32_N_Z 4
+    #define SCALE_F32_DIM 64
+    execute(
+        [](NnNetConfigBuilder *netBuilder, NnNodeConfigBuilder *nodeBuilder, NnSegmentConfigBuilder *segmentBuilder) {
+            NnUint xPipeIndex = netBuilder->addPipe("X", size3D(F_32, SCALE_F32_N_Z, N_BATCHES, SCALE_F32_DIM));
+            NnUint scaleBufferIndex = nodeBuilder->addBuffer("scale", size3D(F_32, SCALE_F32_N_Z, SCALE_F32_DIM, 1u));
+            segmentBuilder->addOp(OP_SCALE, "scale", 0,
+                pointerBatchConfig(SRC_PIPE, xPipeIndex),
+                pointerBatchConfig(SRC_PIPE, xPipeIndex),
+                size0(),
+                NnScaleOpCodeConfig{scaleBufferIndex});
+        },
+        [](NnExecutor *executor, NnNetExecution *execution, NnVulkanDevice *device) {
+            // arrange
+            execution->setBatchSize(N_BATCHES);
+
+            float *xPipe = (float *)execution->pipes[0];
+            float scale[SCALE_F32_N_Z * SCALE_F32_DIM];
+
+            for (NnUint z = 0u; z < SCALE_F32_N_Z; z++) {
+                const NnUint zOffset = z * N_BATCHES * SCALE_F32_DIM;
+                for (NnUint y = 0u; y < N_BATCHES; y++) {
+                    scale[z * N_BATCHES + y] = 0.5f * (float)(z * 100 + y);
+                    for (NnUint i = 0; i < SCALE_F32_DIM; i++)
+                        xPipe[zOffset + y * SCALE_F32_DIM + i] = (float)(z * 10000 + y * 100 + i);
+                }
+            }
+
+            device->data->buffers[0].get()->write((NnByte *)scale);
+
+            // act
+            executor->forward();
+
+            // assert
+            for (NnUint z = 0u; z < SCALE_F32_N_Z; z++) {
+                const NnUint zOffset = z * N_BATCHES * SCALE_F32_DIM;
+                for (NnUint y = 0u; y < N_BATCHES; y++) {
+                    for (NnUint i = 0; i < SCALE_F32_DIM; i++) {
+                        const NnUint p = zOffset + y * SCALE_F32_DIM + i;
+                        const float v = xPipe[p];
+                        const float expectedOutput = (float)(z * 10000 + y * 100 + i) * 0.5f * (float)(z * 100 + y);
+                        assertFloat(p, v, expectedOutput, 0.00001f);
+                    }
+                }
+            }
+
+            printOk("testScale_F32_F32");
+        });
+}
+
+void testMoeGate_F32_F32() {
+    #define MOE_GATE_F32_DIM 8
+    #define MOE_GATE_F32_K 4
+    execute(
+        [](NnNetConfigBuilder *netBuilder, NnNodeConfigBuilder *nodeBuilder, NnSegmentConfigBuilder *segmentBuilder) {
+            NnUint xPipeIndex = netBuilder->addPipe("X", size2D(F_32, N_BATCHES, MOE_GATE_F32_DIM));
+            NnUint gPipeIndex = netBuilder->addPipe("g", size2D(F_32, N_BATCHES, MOE_GATE_F32_K));
+            NnUint indexesBufferIndex = nodeBuilder->addBuffer("i", size2D(F_32, N_BATCHES, MOE_GATE_F32_K));
+            segmentBuilder->addOp(OP_MOE_GATE, "moe_gate", 0,
+                pointerBatchConfig(SRC_PIPE, xPipeIndex),
+                pointerBatchConfig(SRC_PIPE, gPipeIndex),
+                size0(),
+                NnMoeGateOpCodeConfig{MOE_GATE_F32_K, 0u, indexesBufferIndex});
+        },
+        [](NnExecutor *executor, NnNetExecution *execution, NnVulkanDevice *device) {
+            // arrange
+            execution->setBatchSize(N_BATCHES);
+
+            float *xPipe = (float *)execution->pipes[0];
+            float *gPipe = (float *)execution->pipes[1];
+            xPipe[0] = 3.0f;
+            xPipe[1] = 1.0f;
+            xPipe[2] = 6.0f;
+            xPipe[3] = 5.0f;
+            xPipe[4] = 8.0f;
+            xPipe[5] = 4.0f;
+            xPipe[6] = 2.0f;
+            xPipe[7] = 7.0f;
+
+            // act
+            executor->forward();
+
+            float pos[N_BATCHES * MOE_GATE_F32_K];
+            device->data->buffers[0].get()->read((NnByte *)pos);
+
+            // assert
+            const float t = 0.00001f;
+            assertFloat(0, gPipe[0], 8.0f, t);
+            assertFloat(1, gPipe[1], 7.0f, t);
+            assertFloat(2, gPipe[2], 6.0f, t);
+            assertFloat(3, gPipe[3], 5.0f, t);
+
+            assertFloat(100, pos[0], 4.0f, t);
+            assertFloat(101, pos[1], 7.0f, t);
+            assertFloat(102, pos[2], 2.0f, t);
+            assertFloat(103, pos[3], 3.0f, t);
+
+            printOk("testMoeGate_F32_F32");
+        });
+}
+
 int main() {
     initQuants();
 
@@ -674,6 +888,8 @@ int main() {
     testMul_F32_F32<48>();
 
     testMergeAdd_F32_F32();
+
+    testMergeSum_F32_F32();
 
     testMergeAdd_Q80_F32<2, 64>();
     testMergeAdd_Q80_F32<4, 128>();
@@ -705,5 +921,12 @@ int main() {
     testMatmul_Q80_Q40_F32<192, 16>();
 
     testMultiheadAtt_F32_F32();
+
+    testSoftmax_F32_F32<256, 1>();
+    testSoftmax_F32_F32<512, 4>();
+
+    testScale_F32_F32();
+
+    testMoeGate_F32_F32();
     return 0;
 }

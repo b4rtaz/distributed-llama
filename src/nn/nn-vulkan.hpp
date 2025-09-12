@@ -29,13 +29,13 @@ private:
     vk::Buffer deviceBuffer;
     vk::Buffer hostBuffer;
     vk::DeviceMemory hostMemory;
-    void *hostPointer;
+    NnByte *hostPointer;
 public:
     NnVulkanStagingCopy(const NnVulkanContext *context, vk::Buffer& deviceBuffer, const vk::DeviceSize bufferSize, const NnStagingVulkanCopyDirection direction);
     ~NnVulkanStagingCopy();
-    void copy(NnByte *data);
-    void executeCopyCommand();
-    void addCopyCommand(vk::CommandBuffer& commandBuffer);
+    void copy(NnByte *data, const NnSize offset, const NnSize size);
+    void executeCopyCommand(const NnSize offset, const NnSize size);
+    void addCopyCommand(vk::CommandBuffer& commandBuffer, const NnSize offset, const NnSize size);
 };
 
 class NnVulkanBuffer {
@@ -43,18 +43,19 @@ private:
     bool isHostVisible;
     NnVulkanContext *context;
     vk::DeviceMemory deviceMemory;
-    void *hostPointer;
+    NnByte *hostPointer;
 public:
     const char *name;
     NnSize bufferSize;
+    bool isSliceable;
     vk::Buffer deviceBuffer;
     vk::BufferUsageFlags usageFlags;
-    NnVulkanBuffer(NnVulkanContext *context, const char *name, const NnSize bufferSize, vk::BufferUsageFlags usageFlags, bool fastAccess);
+    NnVulkanBuffer(NnVulkanContext *context, const char *name, const NnSize bufferSize, const bool isSliceable, vk::BufferUsageFlags usageFlags, bool fastAccess);
     ~NnVulkanBuffer();
     void write(const NnByte *data);
-    void write(const NnByte *data, const NnSize size);
+    void write(const NnByte *data, const NnSize offset, const NnSize size);
     void read(NnByte *data);
-    void read(NnByte *data, const NnSize size);
+    void read(NnByte *data, const NnSize offset, const NnSize size);
     NnSize calcSliceSize(const NnSize nominator, const NnSize denominator);
 };
 
@@ -78,8 +79,8 @@ public:
 
     NnSize3D resolveBufferSize(NnPointerConfig *config);
     NnVulkanBuffer *resolvePointerVulkanBuffer(NnPointerConfig *config);
-    NnUint resolveBufferBatchOffset(NnPointerConfig *config, NnUint batchIndex);
-    NnUint resolveBufferBatchWidth(NnPointerConfig *config, NnUint batchIndex);
+    NnUint resolveBufferBatchOffset(NnPointerConfig *config, NnUint batchIndex, NnUint zIndex);
+    NnUint resolveBufferBatchWidth(NnPointerConfig *config);
 };
 
 class NnVulkanDevice : public NnDevice {

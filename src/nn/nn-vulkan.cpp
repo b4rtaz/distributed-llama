@@ -88,7 +88,7 @@ NnVulkanStagingCopy::NnVulkanStagingCopy(const NnVulkanContext *context, vk::Buf
     auto b = createBuffer(context, memoryTypeIndex, bufferSize, vk::BufferUsageFlagBits::eTransferSrc | vk::BufferUsageFlagBits::eTransferDst);
     hostBuffer = b.first;
     hostMemory = b.second;
-    hostPointer = context->device.mapMemory(hostMemory, 0, bufferSize);
+    hostPointer = (NnByte *)context->device.mapMemory(hostMemory, 0, bufferSize);
 }
 
 NnVulkanStagingCopy::~NnVulkanStagingCopy() {
@@ -97,20 +97,26 @@ NnVulkanStagingCopy::~NnVulkanStagingCopy() {
     context->device.destroyBuffer(hostBuffer);
 }
 
-void NnVulkanStagingCopy::copy(NnByte *data) {
+void NnVulkanStagingCopy::copy(NnByte *data, const NnSize offset, const NnSize size) {
+    assert(offset + size <= bufferSize);
+
     switch (direction) {
     case COPY_TO_DEVICE:
-        std::memcpy(hostPointer, data, bufferSize);
+        std::memcpy(&hostPointer[offset], data, size);
         break;
     case COPY_FROM_DEVICE:
-        std::memcpy(data, hostPointer, bufferSize);
+        std::memcpy(data, &hostPointer[offset], size);
         break;
     }
 }
 
-void NnVulkanStagingCopy::addCopyCommand(vk::CommandBuffer& commandBuffer) {
-    VkBufferCopy copyRegion = { 0 };
-	copyRegion.size = bufferSize;
+void NnVulkanStagingCopy::addCopyCommand(vk::CommandBuffer& commandBuffer, const NnSize offset, const NnSize size) {
+    assert(offset + size <= bufferSize);
+
+    VkBufferCopy copyRegion;
+	copyRegion.dstOffset = offset;
+	copyRegion.srcOffset = offset;
+	copyRegion.size = size;
     switch (direction) {
     case COPY_TO_DEVICE:
         vkCmdCopyBuffer(commandBuffer, hostBuffer, deviceBuffer, 1, &copyRegion);
@@ -121,12 +127,12 @@ void NnVulkanStagingCopy::addCopyCommand(vk::CommandBuffer& commandBuffer) {
     }
 }
 
-void NnVulkanStagingCopy::executeCopyCommand() {
+void NnVulkanStagingCopy::executeCopyCommand(const NnSize offset, const NnSize size) {
     vk::CommandBufferAllocateInfo allocInfo(context->commandPool, vk::CommandBufferLevel::ePrimary, 1);
     const std::vector<vk::CommandBuffer> cmdBuffers = context->device.allocateCommandBuffers(allocInfo);
     vk::CommandBuffer commandBuffer = cmdBuffers.front();
     commandBuffer.begin({ vk::CommandBufferUsageFlags{ vk::CommandBufferUsageFlagBits::eOneTimeSubmit } });
-    addCopyCommand(commandBuffer);
+    addCopyCommand(commandBuffer, offset, size);
     commandBuffer.end();
 
     vk::Fence fence = context->device.createFence(vk::FenceCreateInfo());
@@ -138,10 +144,11 @@ void NnVulkanStagingCopy::executeCopyCommand() {
     context->device.freeCommandBuffers(context->commandPool, 1, &commandBuffer);
 }
 
-NnVulkanBuffer::NnVulkanBuffer(NnVulkanContext *context, const char *name, const NnSize bufferSize, vk::BufferUsageFlags usageFlags, bool fastAccess) {
+NnVulkanBuffer::NnVulkanBuffer(NnVulkanContext *context, const char *name, const NnSize bufferSize, const bool isSliceable, vk::BufferUsageFlags usageFlags, bool fastAccess) {
     this->context = context;
     this->name = name;
     this->bufferSize = bufferSize;
+    this->isSliceable = isSliceable;
     this->usageFlags = usageFlags;
     this->hostPointer = nullptr;
 
@@ -179,7 +186,7 @@ NnVulkanBuffer::NnVulkanBuffer(NnVulkanContext *context, const char *name, const
     deviceBuffer = b.first;
     deviceMemory = b.second;
     if (isHostVisible)
-        hostPointer = context->device.mapMemory(deviceMemory, 0, bufferSize);
+        hostPointer = (NnByte *)context->device.mapMemory(deviceMemory, 0, bufferSize);
     VULKAN_TRACE("Created buffer of size %zu (fastAccess=%d)", bufferSize, fastAccess);
 }
 
@@ -192,30 +199,30 @@ NnVulkanBuffer::~NnVulkanBuffer() {
 }
 
 void NnVulkanBuffer::write(const NnByte *data) {
-    write(data, bufferSize);
+    write(data, 0u, bufferSize);
 }
 
-void NnVulkanBuffer::write(const NnByte *data, const NnSize size) {
-    assert(size <= bufferSize);
+void NnVulkanBuffer::write(const NnByte *data, const NnSize offset, const NnSize size) {
+    assert(offset + size <= bufferSize);
 
     if (isHostVisible && hostPointer != nullptr) {
-        std::memcpy(hostPointer, data, size);
-        context->device.flushMappedMemoryRanges({ { deviceMemory, 0, (vk::DeviceSize)size } });
+        std::memcpy(&hostPointer[offset], data, size);
+        context->device.flushMappedMemoryRanges({ { deviceMemory, offset, (vk::DeviceSize)size } });
         VULKAN_TRACE("Wrote %zu bytes to host visible buffer", size);
     } else {
-        NnVulkanStagingCopy copy(context, deviceBuffer, size, COPY_TO_DEVICE);
-        copy.copy((NnByte *)data);
-        copy.executeCopyCommand();
+        NnVulkanStagingCopy copy(context, deviceBuffer, bufferSize, COPY_TO_DEVICE);
+        copy.copy((NnByte *)data, offset, size);
+        copy.executeCopyCommand(offset, size);
         VULKAN_TRACE("Wrote %zu bytes to buffer", size);
     }
 }
 
 void NnVulkanBuffer::read(NnByte *data) {
-    read(data, bufferSize);
+    read(data, 0u, bufferSize);
 }
 
-void NnVulkanBuffer::read(NnByte *data, const NnSize size) {
-    assert(size <= bufferSize);
+void NnVulkanBuffer::read(NnByte *data, const NnSize offset, const NnSize size) {
+    assert(offset + size <= bufferSize);
 
     if (isHostVisible && hostPointer != nullptr) {
         context->device.invalidateMappedMemoryRanges({ {deviceMemory, 0, (vk::DeviceSize)size} });
@@ -224,14 +231,17 @@ void NnVulkanBuffer::read(NnByte *data, const NnSize size) {
         VULKAN_TRACE("Read %zu bytes from host visible buffer", size);
     } else {
         NnVulkanStagingCopy copy(context, deviceBuffer, bufferSize, COPY_FROM_DEVICE);
-        copy.executeCopyCommand();
-        copy.copy(data);
+        copy.executeCopyCommand(offset, size);
+        copy.copy(data, offset, size);
 
         VULKAN_TRACE("Read %zu bytes from buffer", size);
     }
 }
 
 NnSize NnVulkanBuffer::calcSliceSize(const NnSize nominator, const NnSize denominator) {
+    if (!isSliceable)
+        return bufferSize;
+
     assert(bufferSize % denominator == 0);
 
     NnSize size = (bufferSize / denominator) * nominator;
@@ -262,10 +272,16 @@ NnVulkanDeviceData::NnVulkanDeviceData(NnVulkanContext *context, NnNetConfig *ne
     this->netConfig = netConfig;
     this->nodeConfig = nodeConfig;
 
-    for (NnUint i = 0; i < netConfig->nPipes; i++)
-        pipes[i].reset(new NnVulkanBuffer(context, netConfig->pipes[i].name, netConfig->pipes[i].size.nBytes, vk::BufferUsageFlagBits::eStorageBuffer, true));
-    for (NnUint i = 0; i < nodeConfig->nBuffers; i++)
-        buffers[i].reset(new NnVulkanBuffer(context, nodeConfig->buffers[i].name, nodeConfig->buffers[i].size.nBytes, vk::BufferUsageFlagBits::eStorageBuffer, false));
+    for (NnUint i = 0; i < netConfig->nPipes; i++) {
+        const NnPipeConfig *pipeConfig = &netConfig->pipes[i];
+        const bool isSliceable = pipeConfig->size.z == 1u;
+        pipes[i].reset(new NnVulkanBuffer(context, netConfig->pipes[i].name, pipeConfig->size.nBytes, isSliceable, vk::BufferUsageFlagBits::eStorageBuffer, true));
+    }
+    for (NnUint i = 0; i < nodeConfig->nBuffers; i++) {
+        const NnBufferConfig *config = &nodeConfig->buffers[i];
+        const bool isSliceable = config->size.z == 1u;
+        buffers[i].reset(new NnVulkanBuffer(context, nodeConfig->buffers[i].name, config->size.nBytes, isSliceable, vk::BufferUsageFlagBits::eStorageBuffer, false));
+    }
 
     NnRopeOpConfig *ropeLlamaOpConfig = (NnRopeOpConfig *)findFirstOpConfig(nodeConfig, OP_ROPE);
     if (ropeLlamaOpConfig != nullptr) {
@@ -299,7 +315,7 @@ NnVulkanBuffer *NnVulkanDeviceData::resolvePointerVulkanBuffer(NnPointerConfig *
     throw std::invalid_argument("Unsupported pointer config");
 }
 
-NnUint NnVulkanDeviceData::resolveBufferBatchOffset(NnPointerConfig *config, NnUint batchIndex) {
+NnUint NnVulkanDeviceData::resolveBufferBatchOffset(NnPointerConfig *config, NnUint batchIndex, NnUint zIndex) {
     assert(batchIndex < netConfig->nBatches);
     if (config->type == PNTR_RAW)
         return 0;
@@ -307,19 +323,19 @@ NnUint NnVulkanDeviceData::resolveBufferBatchOffset(NnPointerConfig *config, NnU
     const NnSize3D bufferSize = resolveBufferSize(config);
     const NnSize blockSize = getBlockSize(bufferSize.floatType);
     assert(bufferSize.x % blockSize == 0);
+    const NnUint offsetZ = bufferSize.x * netConfig->nBatches * zIndex;
     const NnUint sizeX = bufferSize.x / blockSize;
 
     if (config->type == PNTR_BATCH)
-        return sizeX * batchIndex;
+        return offsetZ + sizeX * batchIndex;
     if (config->type == PNTR_BATCHED_SLICE) {
         assert(sizeX % netConfig->nNodes == 0);
-        return sizeX * batchIndex + (sizeX / netConfig->nNodes) * nodeConfig->nodeIndex;
+        return offsetZ + sizeX * batchIndex + (sizeX / netConfig->nNodes) * nodeConfig->nodeIndex;
     }
     throw std::runtime_error("Cannot determine buffer offset");
 }
 
-NnUint NnVulkanDeviceData::resolveBufferBatchWidth(NnPointerConfig *config, NnUint batchIndex) {
-    assert(batchIndex < netConfig->nBatches);
+NnUint NnVulkanDeviceData::resolveBufferBatchWidth(NnPointerConfig *config) {
     const NnSize3D bufferSize = resolveBufferSize(config);
     const NnSize blockSize = getBlockSize(bufferSize.floatType);
     assert(bufferSize.x % blockSize == 0);
@@ -446,6 +462,9 @@ static const char *getShaderFileName(const NnOpCode opCode, const NnOpQuantType 
         if (quantType == F32_F32_F32) return "merge-add-forward-f32-f32.spv";
         if (quantType == Q80_Q80_F32) return "merge-add-forward-q80-f32.spv";
     }
+    if (opCode == OP_MERGE_SUM) {
+        if (quantType == F32_F32_F32) return "merge-sum-forward-f32-f32.spv";
+    }
     if (opCode == OP_EMBEDDING) {
         if (quantType == F32_F32_F32) return "embedding-forward-f32-f32.spv";
     }
@@ -471,12 +490,24 @@ static const char *getShaderFileName(const NnOpCode opCode, const NnOpQuantType 
     if (opCode == OP_MUL) {
         if (quantType == F32_F32_F32) return "mul-forward-f32-f32.spv";
     }
+    if (opCode == OP_SCALE) {
+        if (quantType == F32_F32_F32) return "scale-forward-f32-f32.spv";
+    }
     if (opCode == OP_CAST) {
         if (quantType == F32_F32_F32) return "cast-forward-f32-f32.spv";
         if (quantType == F32_F32_Q80) return "cast-forward-f32-q80.spv";
     }
+    if (opCode == OP_REPEAT_Z) {
+        if (quantType == F32_F32_Q80) return "repeatz-forward-f32-q80.spv";
+    }
     if (opCode == OP_SHIFT) {
         if (quantType == F32_F32_F32) return "shift-forward-f32-f32.spv";
+    }
+    if (opCode == OP_SOFTMAX) {
+        if (quantType == F32_F32_F32) return "softmax-forward-f32-f32.spv";
+    }
+    if (opCode == OP_MOE_GATE) {
+        if (quantType == F32_F32_F32) return "moe-gate-forward-f32-f32.spv";
     }
     throw std::invalid_argument(std::string("Unsupported shader: ") + opCodeToString(opCode) + "/" + opQuantTypeToString(quantType));
 }
@@ -504,6 +535,14 @@ static void buildShaderLayout(std::vector<NnOpBufferAccess> &a, NnVulkanDeviceDa
             const NnMulOpCodeConfig *config = (NnMulOpCodeConfig *)opConfig->config;
             a.push_back({ACCESS_READONLY, data->buffers[config->multiplierBufferIndex].get()});
         } break;
+        case OP_MATMUL: {
+            const NnMatmulOpConfig *config = (NnMatmulOpConfig *)opConfig->config;
+            a.push_back({ACCESS_READONLY, data->buffers[config->activeExpertIndexesBufferIndex].get()});
+        } break;
+        case OP_SCALE: {
+            const NnScaleOpCodeConfig *config = (NnScaleOpCodeConfig *)opConfig->config;
+            a.push_back({ACCESS_READONLY, data->buffers[config->scaleBufferIndex].get()});
+        } break;
         case OP_SHIFT: {
             const NnShiftOpCodeConfig *config = (NnShiftOpCodeConfig *)opConfig->config;
             a.push_back({ACCESS_READONLY, data->pipes[config->indexPipeIndex].get()});
@@ -520,6 +559,10 @@ static void buildShaderLayout(std::vector<NnOpBufferAccess> &a, NnVulkanDeviceDa
             a.push_back({ACCESS_READONLY, data->buffers[config->keyCacheBufferIndex].get()});
             a.push_back({ACCESS_READONLY, data->buffers[config->valueCacheBufferIndex].get()});
             a.push_back({ACCESS_READ_WRITE, data->buffers[config->attBufferIndex].get()});
+        } break;
+        case OP_MOE_GATE: {
+            const NnMoeGateOpCodeConfig *config = (NnMoeGateOpCodeConfig *)opConfig->config;
+            a.push_back({ACCESS_READ_WRITE, data->buffers[config->indexesBufferIndex].get()});
         } break;
         default:
             break;
@@ -558,70 +601,116 @@ static void resolveBuffersToSync(std::vector<std::vector<NnVulkanBuffer *>>& buf
     }
 }
 
-static std::vector<NnVulkanBatchInfo> buildBatchInfo(NnOpConfig *opConfig, NnVulkanDeviceData *data, NnUint nBatches) {
-    std::vector<NnVulkanBatchInfo> offset(nBatches);
-    for (NnUint batchIndex = 0; batchIndex < nBatches; batchIndex++) {
-        offset[batchIndex].inputOffset = data->resolveBufferBatchOffset(&opConfig->input, batchIndex);
-        offset[batchIndex].inputSizeX = data->resolveBufferBatchWidth(&opConfig->input, batchIndex);
-        offset[batchIndex].outputOffset = data->resolveBufferBatchOffset(&opConfig->output, batchIndex);
-        offset[batchIndex].outputSizeX = data->resolveBufferBatchWidth(&opConfig->output, batchIndex);
-    }
-    return offset;
+static NnUint resolveNumberOfBatchInfoZ(const NnSize3D inputSize, const NnSize3D outputSize) {
+    return std::max(inputSize.z, outputSize.z);
 }
 
-static NnUint resolveShaderNThreads(const NnOpConfig *opConfig, const NnOpQuantType opQuant, const NnSize3D inputSize, const NnSize3D outputSize) {
+static std::vector<NnVulkanBatchInfo> buildBatchInfo(NnOpConfig *opConfig, NnVulkanDeviceData *data, NnUint nBatches) {
+    const NnUint nZ = resolveNumberOfBatchInfoZ(
+        data->resolveBufferSize(&opConfig->input),
+        data->resolveBufferSize(&opConfig->output)
+    );
+
+    std::vector<NnVulkanBatchInfo> batchInfo(nZ * nBatches);
+    for (NnUint zIndex = 0; zIndex < nZ; zIndex++) {
+        for (NnUint batchIndex = 0; batchIndex < nBatches; batchIndex++) {
+            const NnUint i = zIndex * nBatches + batchIndex;
+            batchInfo[i].inputOffset = data->resolveBufferBatchOffset(&opConfig->input, batchIndex, zIndex);
+            batchInfo[i].inputSizeX = data->resolveBufferBatchWidth(&opConfig->input);
+            batchInfo[i].outputOffset = data->resolveBufferBatchOffset(&opConfig->output, batchIndex, zIndex);
+            batchInfo[i].outputSizeX = data->resolveBufferBatchWidth(&opConfig->output);
+        }
+    }
+    return batchInfo;
+}
+
+static std::vector<NnUint> resolveShaderConstants(const NnOpConfig *opConfig, const NnUint nBatches, const NnSize3D inputSize, const NnSize3D outputSize) {
+    std::vector<NnUint> consts;
+    consts.push_back(nBatches);
+
+    if (
+        opConfig->code == OP_MATMUL ||
+        opConfig->code == OP_MERGE_SUM ||
+        opConfig->code == OP_MUL ||
+        opConfig->code == OP_REPEAT_Z ||
+        opConfig->code == OP_SCALE ||
+        opConfig->code == OP_SILU ||
+        opConfig->code == OP_SOFTMAX
+    ) {
+        const NnUint nZ = resolveNumberOfBatchInfoZ(inputSize, outputSize);
+        consts.push_back(nZ);
+    }
     if (opConfig->code == OP_MATMUL) {
-        if (opQuant == Q80_Q40_F32) {
+        if (opConfig->weightSize.floatType == F_Q40) {
             constexpr NnUint tileSizeX = 2; // Shader constant
             assert(inputSize.x % (Q40_BLOCK_SIZE * tileSizeX) == 0);
-            return inputSize.x / (Q40_BLOCK_SIZE * tileSizeX);
+            consts.push_back(inputSize.x / (Q40_BLOCK_SIZE * tileSizeX));
         }
     }
-    return 0;
+    if (opConfig->code == OP_MOE_GATE) {
+        const NnMoeGateOpCodeConfig *config = (NnMoeGateOpCodeConfig *)opConfig->config;
+        consts.push_back(inputSize.x);
+        consts.push_back(config->k);
+    }
+    return consts;
 }
 
-static void resolveShaderGroups(const NnOpConfig *opConfig, const NnUint batchSize, NnUint *groupCount, const NnSize3D inputSize, const NnSize3D outputSize) {
-    groupCount[0] = 1;
-    groupCount[1] = batchSize;
-    groupCount[2] = 1;
-
-    if (opConfig->code == OP_CAST) {
+static NnUint resolveShaderNumberOfWorkGroupsX(const NnOpConfig *opConfig, const NnSize3D inputSize, const NnSize3D outputSize) {
+    if (
+        opConfig->code == OP_CAST ||
+        opConfig->code == OP_REPEAT_Z
+    ) {
         if (outputSize.floatType == F_Q80) {
-            groupCount[2] = outputSize.x / Q80_BLOCK_SIZE;
+            return outputSize.x / Q80_BLOCK_SIZE;
         } else {
-            constexpr NnUint chunkSize = 4; // Shader constant
-            groupCount[2] = outputSize.x / chunkSize;
-        }
-    } else if (opConfig->code == OP_MERGE_ADD) {
-        if (inputSize.floatType == F_Q80) {
-            groupCount[2] = outputSize.x / Q80_BLOCK_SIZE; // Yes, outputSize is used here
-        } else {
-            groupCount[2] = 32;
-        }
-    } else if (opConfig->code == OP_MATMUL) {
-        if (opConfig->weightSize.floatType == F_Q40) {
-            constexpr NnUint tileSizeD = 8; // Shader constant
-            assert(opConfig->weightSize.x % tileSizeD == 0);
-            groupCount[2] = opConfig->weightSize.x / tileSizeD;
-        } else {
-            groupCount[2] = 32;
+            constexpr NnUint chunkSize = 4u; // Shader constant
+            return outputSize.x / chunkSize;
         }
     }
-    else if (opConfig->code == OP_MULTIHEAD_ATT)
-        groupCount[2] = ((NnMultiHeadAttOpConfig *)opConfig->config)->nHeads0;
-    else if (opConfig->code == OP_INV_RMS)
-        groupCount[2] = ((NnInvRmsOpConfig *)opConfig->config)->nColumns;
-    else if (
+    if (opConfig->code == OP_MERGE_ADD) {
+        if (inputSize.floatType == F_Q80) {
+            return outputSize.x / Q80_BLOCK_SIZE; // Yes, outputSize is used here
+        } else {
+            return 32u;
+        }
+    }
+    if (opConfig->code == OP_MATMUL) {
+        if (opConfig->weightSize.floatType == F_Q40) {
+            constexpr NnUint tileSizeD = 8u; // Shader constant
+            assert(opConfig->weightSize.x % tileSizeD == 0u);
+            return opConfig->weightSize.x / tileSizeD;
+        } else {
+            return 32u;
+        }
+    }
+    if (opConfig->code == OP_MULTIHEAD_ATT)
+        return ((NnMultiHeadAttOpConfig *)opConfig->config)->nHeads0;
+    if (opConfig->code == OP_INV_RMS)
+        return ((NnInvRmsOpConfig *)opConfig->config)->nColumns;
+    if (
         opConfig->code == OP_EMBEDDING ||
         opConfig->code == OP_RMS_NORM ||
         opConfig->code == OP_MUL ||
+        opConfig->code == OP_SCALE ||
         opConfig->code == OP_SILU ||
-        opConfig->code == OP_SHIFT
+        opConfig->code == OP_SHIFT ||
+        opConfig->code == OP_MERGE_SUM
     ) {
-        constexpr NnUint chunkSize = 4; // Shader constant
+        constexpr NnUint chunkSize = 4u; // Shader constant
         assert(outputSize.x % chunkSize == 0);
-        groupCount[2] = outputSize.x / chunkSize;
+        return outputSize.x / chunkSize;
     }
+    return 1u;
+}
+
+static NnUint resolveShaderNumberOfWorkGroupsZ(const NnOpConfig *opConfig, const NnSize3D inputSize, const NnSize3D outputSize) {
+    if (
+        opConfig->code == OP_MERGE_SUM ||
+        opConfig->code == OP_REPEAT_Z
+    ) {
+        return 1u;
+    }
+    return resolveNumberOfBatchInfoZ(inputSize, outputSize);
 }
 
 static std::vector<uint32_t> readShader(const char *fileName) {
@@ -664,18 +753,18 @@ NnVulkanDeviceSegmentData::NnVulkanDeviceSegmentData(NnVulkanContext *context, N
 
         std::vector<NnVulkanBatchInfo> batchInfo = buildBatchInfo(opConfig, data, nBatches);
         NnSize batchInfoSize = sizeof(NnVulkanBatchInfo) * batchInfo.size();
-        NnVulkanBuffer *batchInfoBuffer = new NnVulkanBuffer(context, "batchInfo", batchInfoSize, vk::BufferUsageFlagBits::eUniformBuffer, false);
+        NnVulkanBuffer *batchInfoBuffer = new NnVulkanBuffer(context, "batchInfo", batchInfoSize, false, vk::BufferUsageFlagBits::eUniformBuffer, false);
         data->internalBuffers.push_back(std::unique_ptr<NnVulkanBuffer>(batchInfoBuffer));
         batchInfoBuffer->write((NnByte *)batchInfo.data());
         batchInfoBufferIndex[opIndex] = data->internalBuffers.size() - 1;
 
         if (opConfig->weightSize.nBytes > 0) {
-            NnVulkanBuffer *buffer = new NnVulkanBuffer(context, "weights", opConfig->weightSize.nBytes, vk::BufferUsageFlagBits::eStorageBuffer, false);
+            NnVulkanBuffer *buffer = new NnVulkanBuffer(context, "weights", opConfig->weightSize.nBytes, false, vk::BufferUsageFlagBits::eStorageBuffer, false);
             data->internalBuffers.push_back(std::unique_ptr<NnVulkanBuffer>(buffer));
             weightBufferIndex[opIndex] = data->internalBuffers.size() - 1;
         }
         if (opConfig->configSize > 0) {
-            NnVulkanBuffer *configBuffer = new NnVulkanBuffer(context, "config", opConfig->configSize, vk::BufferUsageFlagBits::eUniformBuffer, false);
+            NnVulkanBuffer *configBuffer = new NnVulkanBuffer(context, "config", opConfig->configSize, false, vk::BufferUsageFlagBits::eUniformBuffer, false);
             data->internalBuffers.push_back(std::unique_ptr<NnVulkanBuffer>(configBuffer));
             configBuffer->write(opConfig->config);
             configBufferIndex[opIndex] = data->internalBuffers.size() - 1;
@@ -719,8 +808,8 @@ NnVulkanDeviceSegment::NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanD
     std::vector<std::vector<NnOpBufferAccess>> opBufferAccesses(segmentConfig->nOps);
 
     std::vector<vk::SpecializationInfo> specInfos(segmentConfig->nOps);
-    std::vector<vk::SpecializationMapEntry> specEntries(segmentConfig->nOps);
-    std::vector<NnUint> nConsts(segmentConfig->nOps);
+    std::vector<std::vector<vk::SpecializationMapEntry>> specEntries(segmentConfig->nOps);
+    std::vector<std::vector<NnUint>> constants(segmentConfig->nOps);
 
     for (NnUint opIndex = 0; opIndex < segmentConfig->nOps; opIndex++) {
         NnOpConfig *opConfig = &segmentConfig->ops[opIndex];
@@ -743,9 +832,22 @@ NnVulkanDeviceSegment::NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanD
             code.data()
         );
 
-        nConsts[opIndex] = resolveShaderNThreads(opConfig, opQuant, inputSize, outputSize);
-        specEntries[opIndex] = vk::SpecializationMapEntry(0, 0, sizeof(NnUint));
-        specInfos[opIndex] = vk::SpecializationInfo(1, &specEntries[opIndex], sizeof(NnUint), &nConsts[opIndex]);
+        constants[opIndex] = resolveShaderConstants(opConfig, netConfig->nBatches, inputSize, outputSize);
+        const std::vector<NnUint> *opConstants = &constants[opIndex];
+
+        specEntries[opIndex].resize(opConstants->size());
+        for (NnUint i = 0; i < opConstants->size(); i++)
+            specEntries[opIndex][i] = vk::SpecializationMapEntry(
+                i,
+                i * sizeof(NnUint),
+                sizeof(NnUint)
+            );
+        specInfos[opIndex] = vk::SpecializationInfo(
+            opConstants->size(),
+            specEntries[opIndex].data(),
+            opConstants->size() * sizeof(NnUint),
+            opConstants->data()
+        );
 
         vk::ShaderModule shaderModule = context->device.createShaderModule(shaderModuleCreateInfo);
         vk::PipelineShaderStageCreateInfo shaderCreateInfo(
@@ -758,7 +860,7 @@ NnVulkanDeviceSegment::NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanD
 
         shaderModules[opIndex] = shaderModule;
         shaderCreateInfos[opIndex] = shaderCreateInfo;
-        VULKAN_TRACE("Segment %d, opIndex: %d, buffers: %zu", segmentIndex, opIndex, buffers.size());
+        VULKAN_TRACE("Segment %d, opIndex: %d, buffers: %zu", segmentIndex, opIndex, opBufferAccesses.size());
     }
 
     NnUint nUniformBuffers = 0;
@@ -873,12 +975,10 @@ NnVulkanDeviceSegment::~NnVulkanDeviceSegment() {
 }
 
 void NnVulkanDeviceSegment::loadWeight(NnUint opIndex, NnSize offset, NnSize nBytes, NnByte *weight) {
-    assert(offset == 0u); // TODO
-
-    assert(segmentConfig->nOps > opIndex);
-    assert(segmentConfig->ops[opIndex].weightSize.nBytes == nBytes);
+    assert(opIndex < segmentConfig->nOps);
+    assert(offset + nBytes <= segmentConfig->ops[opIndex].weightSize.nBytes);
     NnVulkanBuffer *buffer = segmentData->resolveOpWeightVulkanBuffer(opIndex);
-    buffer->write(weight);
+    buffer->write(weight, offset, nBytes);
 }
 
 void NnVulkanDeviceSegment::forward(NnUint opIndex, NnUint nThreads, NnUint threadIndex, NnUint batchSize)  {
@@ -895,7 +995,7 @@ void NnVulkanDeviceSegment::forward(NnUint opIndex, NnUint nThreads, NnUint thre
                 NnPreSyncConfig *preSyncConfig = &netConfig->preSyncs[i];
                 NnByte *pipeData = netExecution->pipes[preSyncConfig->pipeIndex];
                 NnVulkanBuffer *buffer = data->pipes[preSyncConfig->pipeIndex].get();
-                buffer->write(pipeData, buffer->calcSliceSize(batchSize, netConfig->nBatches));
+                buffer->write(pipeData, 0u, buffer->calcSliceSize(batchSize, netConfig->nBatches));
             }
         }
 
@@ -904,7 +1004,7 @@ void NnVulkanDeviceSegment::forward(NnUint opIndex, NnUint nThreads, NnUint thre
             if (opConfig->input.source == SRC_PIPE) {
                 NnByte *pipeData = netExecution->pipes[opConfig->input.pointerIndex];
                 NnVulkanBuffer *buffer = data->pipes[opConfig->input.pointerIndex].get();
-                buffer->write(pipeData, buffer->calcSliceSize(batchSize, netConfig->nBatches));
+                buffer->write(pipeData, 0u, buffer->calcSliceSize(batchSize, netConfig->nBatches));
             }
         }
     }
@@ -913,13 +1013,7 @@ void NnVulkanDeviceSegment::forward(NnUint opIndex, NnUint nThreads, NnUint thre
         lastBatchSize = batchSize;
         commandBuffer.begin({ vk::CommandBufferUsageFlags{} });
 
-        NnUint opGroupCount[3];
         for (NnUint opIndex = 0; opIndex < segmentConfig->nOps; opIndex++) {
-            NnSize3D inputSize = data->resolveBufferSize(&segmentConfig->ops[opIndex].input);
-            NnSize3D outputSize = data->resolveBufferSize(&segmentConfig->ops[opIndex].output);
-
-            resolveShaderGroups(&segmentConfig->ops[opIndex], batchSize, opGroupCount, inputSize, outputSize);
-
             std::vector<vk::BufferMemoryBarrier> memoryBarriers;
             for (NnVulkanBuffer *buffer : buffersToSync[opIndex]) {
                 vk::BufferMemoryBarrier barrier(
@@ -928,7 +1022,7 @@ void NnVulkanDeviceSegment::forward(NnUint opIndex, NnUint nThreads, NnUint thre
                     context->queueFamilyIndex,
                     context->queueFamilyIndex,
                     buffer->deviceBuffer,
-                    0, 
+                    0,
                     buffer->calcSliceSize(batchSize, netConfig->nBatches)
                 );
                 memoryBarriers.push_back(barrier);
@@ -942,7 +1036,7 @@ void NnVulkanDeviceSegment::forward(NnUint opIndex, NnUint nThreads, NnUint thre
                     memoryBarriers,
                     nullptr
                 );
-                VULKAN_TRACE("Created memory barrier for %zu buffers", barriers.size());
+                VULKAN_TRACE("Created memory barrier for %zu buffers", memoryBarriers.size());
             }
 
             commandBuffer.bindPipeline(
@@ -952,12 +1046,20 @@ void NnVulkanDeviceSegment::forward(NnUint opIndex, NnUint nThreads, NnUint thre
             commandBuffer.bindDescriptorSets(
                 vk::PipelineBindPoint::eCompute,
                 pipelineLayouts[opIndex],
-                0, 
+                0,
                 { descriptorSets[opIndex] },
                 {}
             );
-            commandBuffer.dispatch(opGroupCount[0], opGroupCount[1], opGroupCount[2]);
-            VULKAN_TRACE("Dispatched %d %d %d", opGroupCount[0], opGroupCount[1], opGroupCount[2]);
+
+            NnOpConfig *opConfig = &segmentConfig->ops[opIndex];
+            const NnSize3D inputSize = data->resolveBufferSize(&opConfig->input);
+            const NnSize3D outputSize = data->resolveBufferSize(&opConfig->output);
+
+            const NnUint groupCountX = resolveShaderNumberOfWorkGroupsX(opConfig, inputSize, outputSize);
+            const NnUint groupCountY = batchSize;
+            const NnUint groupCountZ = resolveShaderNumberOfWorkGroupsZ(opConfig, inputSize, outputSize);
+            commandBuffer.dispatch(groupCountX, groupCountY, groupCountZ);
+            VULKAN_TRACE("Dispatched %d %d %d", groupCountX, groupCountY, groupCountZ);
         }
         commandBuffer.end();
     }
@@ -976,7 +1078,7 @@ void NnVulkanDeviceSegment::forward(NnUint opIndex, NnUint nThreads, NnUint thre
             if (opConfig->output.source == SRC_PIPE) {
                 NnByte *pipeData = netExecution->pipes[opConfig->output.pointerIndex];
                 NnVulkanBuffer *buffer = data->pipes[opConfig->output.pointerIndex].get();
-                buffer->read(pipeData, buffer->calcSliceSize(batchSize, netConfig->nBatches));
+                buffer->read(pipeData, 0u, buffer->calcSliceSize(batchSize, netConfig->nBatches));
             }
         }
     }

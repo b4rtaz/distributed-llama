@@ -620,6 +620,7 @@ void loadLlmNetWeight(const char *path, LlmNet *net, NnRootWeightLoader *loader)
     printf("💿 Loading weights...\n");
 #endif
 
+    Timer timer;
     NnByte *data = (NnByte *)file.data;
     NnByte *b = &data[net->header->headerSize];
     b += loader->loadRoot("embedding", 0, net->tokenEmbeddingSize.nBytes, b);
@@ -650,6 +651,9 @@ void loadLlmNetWeight(const char *path, LlmNet *net, NnRootWeightLoader *loader)
 
         b += loader->loadAll("block_norm_0", layerIndex, net->rmsNormSize.nBytes, b);
         b += loader->loadAll("block_norm_1", layerIndex, net->rmsNormSize.nBytes, b);
+
+        if (timer.elapsedMiliseconds() > 10000)
+            printf("💿 Loaded %u/%u\n", layerIndex + 1, net->header->nLayers);
     }
 
     b += loader->loadAll("final_norm", 0u, net->rmsNormSize.nBytes, b);
