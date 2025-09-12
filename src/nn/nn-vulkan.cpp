@@ -860,7 +860,7 @@ NnVulkanDeviceSegment::NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanD
 
         shaderModules[opIndex] = shaderModule;
         shaderCreateInfos[opIndex] = shaderCreateInfo;
-        VULKAN_TRACE("Segment %d, opIndex: %d, buffers: %zu", segmentIndex, opIndex, buffers.size());
+        VULKAN_TRACE("Segment %d, opIndex: %d, buffers: %zu", segmentIndex, opIndex, opBufferAccesses.size());
     }
 
     NnUint nUniformBuffers = 0;
@@ -1036,7 +1036,7 @@ void NnVulkanDeviceSegment::forward(NnUint opIndex, NnUint nThreads, NnUint thre
                     memoryBarriers,
                     nullptr
                 );
-                VULKAN_TRACE("Created memory barrier for %zu buffers", barriers.size());
+                VULKAN_TRACE("Created memory barrier for %zu buffers", memoryBarriers.size());
             }
 
             commandBuffer.bindPipeline(
