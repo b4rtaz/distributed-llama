@@ -1,12 +1,15 @@
 #version 450
 
 #extension GL_EXT_control_flow_attributes : enable
+#extension GL_EXT_shader_16bit_storage : enable
+#extension GL_EXT_shader_explicit_arithmetic_types : enable
 
-#define CHUNK_SIZE 4
+#define Q80_BLOCK_SIZE 32
 
 layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
 
 layout(constant_id = 0) const uint N_BATCHES = 32;
+layout(constant_id = 1) const uint N_Z = 1;
 
 struct BatchInfo {
     uint inputOffset;
@@ -15,10 +18,42 @@ struct BatchInfo {
     uint outputSizeX;
 };
 
+struct BlockQ80 {
+    float16_t d;
+    int8_t qs[Q80_BLOCK_SIZE];
+};
+
 layout(binding = 0) readonly buffer inputBuffer { float x[]; };
-layout(binding = 1) writeonly buffer outputBuffer { float y[]; };
+layout(binding = 1) writeonly buffer outputBuffer { BlockQ80 y[]; };
 layout(binding = 2) readonly uniform batchInfosBuffer { BatchInfo infos[N_BATCHES]; };
 
 void main() {
-    // TODO
+    const uint batchIndex = gl_WorkGroupID.y;
+    const uint d = gl_WorkGroupID.x;
+
+    const BatchInfo info = infos[batchIndex];
+    const uint xiOffset = info.inputOffset + d * Q80_BLOCK_SIZE;
+
+    float amax = 0.0;
+    [[unroll]] for (uint j = 0; j < Q80_BLOCK_SIZE; ++j) {
+        amax = max(amax, abs(x[xiOffset + j]));
+    }
+
+    const float dd = amax / 127.0f;
+    const float id = dd != 0.0f ? 1.0f / dd : 0.0f;
+
+    const float16_t dd16 = float16_t(dd);
+    for (uint z = 0; z < N_Z; z++) {
+        const uint yiOffset = infos[batchIndex + z * N_BATCHES].outputOffset + d;
+        y[yiOffset].d = dd16;
+    }
+
+    [[unroll]] for (uint j = 0; j < Q80_BLOCK_SIZE; ++j) {
+        const float v = x[xiOffset + j];
+        const int8_t v8 = int8_t(clamp(round(v * id), -127.0f, 127.0f));
+        for (uint z = 0; z < N_Z; z++) {
+            const uint yiOffset = infos[batchIndex + z * N_BATCHES].outputOffset + d;
+            y[yiOffset].qs[j] = v8;
+        }
+    }
 }

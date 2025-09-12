@@ -519,6 +519,10 @@ static void buildShaderLayout(std::vector<NnOpBufferAccess> &a, NnVulkanDeviceDa
             const NnMulOpCodeConfig *config = (NnMulOpCodeConfig *)opConfig->config;
             a.push_back({ACCESS_READONLY, data->buffers[config->multiplierBufferIndex].get()});
         } break;
+        case OP_MATMUL: {
+            const NnMatmulOpConfig *config = (NnMatmulOpConfig *)opConfig->config;
+            a.push_back({ACCESS_READONLY, data->buffers[config->activeExpertIndexesBufferIndex].get()});
+        } break;
         case OP_SCALE: {
             const NnScaleOpCodeConfig *config = (NnScaleOpCodeConfig *)opConfig->config;
             a.push_back({ACCESS_READONLY, data->buffers[config->scaleBufferIndex].get()});
@@ -581,29 +585,31 @@ static void resolveBuffersToSync(std::vector<std::vector<NnVulkanBuffer *>>& buf
     }
 }
 
-static std::vector<NnVulkanBatchInfo> buildBatchInfo(NnOpConfig *opConfig, NnVulkanDeviceData *data, NnUint nBatches, NnUint nZ) {
-    std::vector<NnVulkanBatchInfo> offset(nZ * nBatches);
+static NnUint resolveNumberOfBatchInfoZ(const NnSize3D inputSize, const NnSize3D outputSize) {
+    return std::max(inputSize.z, outputSize.z);
+}
+
+static std::vector<NnVulkanBatchInfo> buildBatchInfo(NnOpConfig *opConfig, NnVulkanDeviceData *data, NnUint nBatches) {
+    const NnUint nZ = resolveNumberOfBatchInfoZ(
+        data->resolveBufferSize(&opConfig->input),
+        data->resolveBufferSize(&opConfig->output)
+    );
+
+    std::vector<NnVulkanBatchInfo> batchInfo(nZ * nBatches);
     for (NnUint zIndex = 0; zIndex < nZ; zIndex++) {
         for (NnUint batchIndex = 0; batchIndex < nBatches; batchIndex++) {
             const NnUint i = zIndex * nBatches + batchIndex;
-            offset[i].inputOffset = data->resolveBufferBatchOffset(&opConfig->input, batchIndex, zIndex);
-            offset[i].inputSizeX = data->resolveBufferBatchWidth(&opConfig->input);
-            offset[i].outputOffset = data->resolveBufferBatchOffset(&opConfig->output, batchIndex, zIndex);
-            offset[i].outputSizeX = data->resolveBufferBatchWidth(&opConfig->output);
+            batchInfo[i].inputOffset = data->resolveBufferBatchOffset(&opConfig->input, batchIndex, zIndex);
+            batchInfo[i].inputSizeX = data->resolveBufferBatchWidth(&opConfig->input);
+            batchInfo[i].outputOffset = data->resolveBufferBatchOffset(&opConfig->output, batchIndex, zIndex);
+            batchInfo[i].outputSizeX = data->resolveBufferBatchWidth(&opConfig->output);
         }
     }
-    return offset;
-}
-
-static NnUint resolveShaderNumberOfZ(const NnOpConfig *opConfig, const NnSize3D inputSize) {
-    if (opConfig->code == OP_SCALE) {
-        return inputSize.z;
-    }
-    return 1u;
+    return batchInfo;
 }
 
 static std::vector<NnUint> resolveShaderConstants(const NnOpConfig *opConfig, const NnUint nBatches, const NnSize3D inputSize, const NnSize3D outputSize) {
-    const NnUint nZ = resolveShaderNumberOfZ(opConfig, inputSize);
+    const NnUint nZ = resolveNumberOfBatchInfoZ(inputSize, outputSize);
 
     std::vector<NnUint> consts;
     consts.push_back(nBatches);
@@ -619,8 +625,11 @@ static std::vector<NnUint> resolveShaderConstants(const NnOpConfig *opConfig, co
     return consts;
 }
 
-static NnUint resolveShaderNumberOfWorkGroups(const NnOpConfig *opConfig, const NnSize3D inputSize, const NnSize3D outputSize) {
-    if (opConfig->code == OP_CAST) {
+static NnUint resolveShaderNumberOfWorkGroupsX(const NnOpConfig *opConfig, const NnSize3D inputSize, const NnSize3D outputSize) {
+    if (
+        opConfig->code == OP_CAST ||
+        opConfig->code == OP_REPEAT_Z
+    ) {
         if (outputSize.floatType == F_Q80) {
             return outputSize.x / Q80_BLOCK_SIZE;
         } else {
@@ -663,6 +672,13 @@ static NnUint resolveShaderNumberOfWorkGroups(const NnOpConfig *opConfig, const 
     return 1u;
 }
 
+static NnUint resolveShaderNumberOfWorkGroupsZ(const NnOpConfig *opConfig, const NnSize3D inputSize, const NnSize3D outputSize) {
+    if (opConfig->code == OP_REPEAT_Z) {
+        return 1u;
+    }
+    return resolveNumberOfBatchInfoZ(inputSize, outputSize);
+}
+
 static std::vector<uint32_t> readShader(const char *fileName) {
     std::vector<uint32_t> code;
     std::string path = std::string("./src/nn/vulkan/") + fileName;
@@ -701,10 +717,7 @@ NnVulkanDeviceSegmentData::NnVulkanDeviceSegmentData(NnVulkanContext *context, N
     for (NnUint opIndex = 0; opIndex < segmentConfig->nOps; opIndex++) {
         NnOpConfig *opConfig = &segmentConfig->ops[opIndex];
 
-        const NnSize3D inputSize = data->resolveBufferSize(&opConfig->input);
-        const NnUint nZ = resolveShaderNumberOfZ(opConfig, inputSize);
-
-        std::vector<NnVulkanBatchInfo> batchInfo = buildBatchInfo(opConfig, data, nBatches, nZ);
+        std::vector<NnVulkanBatchInfo> batchInfo = buildBatchInfo(opConfig, data, nBatches);
         NnSize batchInfoSize = sizeof(NnVulkanBatchInfo) * batchInfo.size();
         NnVulkanBuffer *batchInfoBuffer = new NnVulkanBuffer(context, "batchInfo", batchInfoSize, vk::BufferUsageFlagBits::eUniformBuffer, false);
         data->internalBuffers.push_back(std::unique_ptr<NnVulkanBuffer>(batchInfoBuffer));
@@ -1001,7 +1014,7 @@ void NnVulkanDeviceSegment::forward(NnUint opIndex, NnUint nThreads, NnUint thre
             commandBuffer.bindDescriptorSets(
                 vk::PipelineBindPoint::eCompute,
                 pipelineLayouts[opIndex],
-                0, 
+                0,
                 { descriptorSets[opIndex] },
                 {}
             );
@@ -1010,9 +1023,9 @@ void NnVulkanDeviceSegment::forward(NnUint opIndex, NnUint nThreads, NnUint thre
             const NnSize3D inputSize = data->resolveBufferSize(&opConfig->input);
             const NnSize3D outputSize = data->resolveBufferSize(&opConfig->output);
 
-            const NnUint groupCountX = resolveShaderNumberOfWorkGroups(opConfig, inputSize, outputSize);
+            const NnUint groupCountX = resolveShaderNumberOfWorkGroupsX(opConfig, inputSize, outputSize);
             const NnUint groupCountY = batchSize;
-            const NnUint groupCountZ = resolveShaderNumberOfZ(opConfig, inputSize);
+            const NnUint groupCountZ = resolveShaderNumberOfWorkGroupsZ(opConfig, inputSize, outputSize);
             commandBuffer.dispatch(groupCountX, groupCountY, groupCountZ);
             VULKAN_TRACE("Dispatched %d %d %d", groupCountX, groupCountY, groupCountZ);
         }

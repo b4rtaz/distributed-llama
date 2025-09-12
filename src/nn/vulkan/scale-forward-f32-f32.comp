@@ -29,10 +29,10 @@ void main() {
     const uint workGroupIndex = gl_WorkGroupID.x;
     const uint zIndex = gl_WorkGroupID.z;
 
-    const uint p = zIndex * N_BATCHES + batchIndex;
+    const uint b = zIndex * N_BATCHES + batchIndex;
 
-    const float s = scale[p];
-    const BatchInfo info = infos[p];
+    const float s = scale[b];
+    const BatchInfo info = infos[b];
     const uint offset = workGroupIndex * CHUNK_SIZE;
     const uint xOffset = info.inputOffset + offset;
     const uint yOffset = info.outputOffset + offset;

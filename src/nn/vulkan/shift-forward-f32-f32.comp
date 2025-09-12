@@ -23,8 +23,6 @@ layout(binding = 3) readonly uniform configBuffer {
 };
 layout(binding = 4) readonly buffer indexBuffer { float indexes[]; };
 
-shared uint sharedIndex;
-
 void main() {
     const uint batchIndex = gl_WorkGroupID.y;
     const uint chunkIndex = gl_WorkGroupID.x;

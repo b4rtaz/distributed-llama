@@ -36,6 +36,12 @@ layout(binding = 0) readonly buffer inputBuffer { BlockQ80 x[]; };
 layout(binding = 1) writeonly buffer outputBuffer { float y[]; };
 layout(binding = 2) readonly uniform batchInfosBuffer { BatchInfo infos[N_Z * N_BATCHES]; };
 layout(binding = 3) readonly buffer weightBuffer { BlockQ40 weight[]; };
+layout(binding = 4) readonly uniform opConfigBuffer {
+    uint nExperts;
+    uint nActiveExperts;
+    uint activeExpertIndexesBufferIndex;
+};
+layout(binding = 5) readonly buffer activeExpertIndexesBuffer { float activeExpertIndexes[]; };
 
 shared float sums[N_THREADS * TILE_SIZE_D];
 
@@ -44,7 +50,13 @@ void main() {
     const uint workGroupIndex = gl_WorkGroupID.x;
     const uint batchIndex = gl_WorkGroupID.y;
     const uint zIndex = gl_WorkGroupID.z;
-    const BatchInfo info = infos[zIndex * N_BATCHES + batchIndex];
+    const uint b = zIndex * N_BATCHES + batchIndex;
+    const BatchInfo info = infos[b];
+
+    const uint expertIndex = nExperts == 0
+        ? 0
+        : uint(activeExpertIndexes[b]);
+    const uint expertOffset = expertIndex * info.inputSizeX * info.outputSizeX;
 
     const uint inputOffset = info.inputOffset;
     const uint inputSizeX = info.inputSizeX;
@@ -70,7 +82,7 @@ void main() {
         }
 
         [[unroll]] for (uint dt = 0; dt < TILE_SIZE_D; dt++) {
-            const uint wi = (d + dt) * inputSizeX + threadIndex + it * N_THREADS;
+            const uint wi = expertOffset + (d + dt) * inputSizeX + threadIndex + it * N_THREADS;
             const BlockQ40 wBlock = weight[wi];
 
             float s = 0.0f;

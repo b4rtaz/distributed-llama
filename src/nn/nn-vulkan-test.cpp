@@ -528,12 +528,13 @@ void testMatmul_F32_F32_F32() {
         [](NnNetConfigBuilder *netBuilder, NnNodeConfigBuilder *nodeBuilder, NnSegmentConfigBuilder *segmentBuilder) {
             NnUint xPipeIndex = netBuilder->addPipe("X", size2D(F_32, N_BATCHES, N));
             NnUint yPipeIndex = netBuilder->addPipe("Y", size2D(F_32, N_BATCHES, D));
+            NnUint nullBufferIndex = nodeBuilder->addBuffer("null", size1D(F_32, 1u));
             segmentBuilder->addOp(
                 OP_MATMUL, "matmul", 0,
                 pointerBatchConfig(SRC_PIPE, xPipeIndex),
                 pointerBatchConfig(SRC_PIPE, yPipeIndex),
                 size2D(F_32, N, D),
-                NnMatmulOpConfig{});
+                NnMatmulOpConfig{0u, 0u, nullBufferIndex});
         },
         [](NnExecutor *executor, NnNetExecution *execution, NnVulkanDevice *device) {
             // arrange
@@ -572,12 +573,13 @@ void testMatmul_Q80_Q40_F32() {
         [](NnNetConfigBuilder *netBuilder, NnNodeConfigBuilder *nodeBuilder, NnSegmentConfigBuilder *segmentBuilder) {
             NnUint xPipeIndex = netBuilder->addPipe("X", size2D(F_Q80, N_BATCHES, N));
             NnUint yPipeIndex = netBuilder->addPipe("Y", size2D(F_32, N_BATCHES, D));
+            NnUint nullBufferIndex = nodeBuilder->addBuffer("null", size1D(F_32, 1u));
             segmentBuilder->addOp(
                 OP_MATMUL, "matmul", 0,
                 pointerBatchConfig(SRC_PIPE, xPipeIndex),
                 pointerBatchConfig(SRC_PIPE, yPipeIndex),
                 size2D(F_Q40, N, D),
-                NnMatmulOpConfig{});
+                NnMatmulOpConfig{0u, 0u, nullBufferIndex});
         },
         [](NnExecutor *executor, NnNetExecution *execution, NnVulkanDevice *device) {
             // arrange
@@ -659,11 +661,11 @@ void testMultiheadAtt_F32_F32() {
         });
 }
 
-template <NnUint dim>
+template <NnUint dim, NnUint nZ>
 void testSoftmax_F32_F32() {
     execute(
         [](NnNetConfigBuilder *netBuilder, NnNodeConfigBuilder *nodeBuilder, NnSegmentConfigBuilder *segmentBuilder) {
-            NnUint xPipeIndex = netBuilder->addPipe("X", size2D(F_32, N_BATCHES, dim));
+            NnUint xPipeIndex = netBuilder->addPipe("X", size3D(F_32, nZ, N_BATCHES, dim));
             segmentBuilder->addOp(OP_SOFTMAX, "softmax", 0,
                 pointerBatchConfig(SRC_PIPE, xPipeIndex),
                 pointerBatchConfig(SRC_PIPE, xPipeIndex),
@@ -676,10 +678,13 @@ void testSoftmax_F32_F32() {
 
             float *xPipe = (float *)execution->pipes[0];
 
-            for (NnUint b = 0; b < N_BATCHES; b++) {
-                const NnUint offset = b * dim;
-                for (NnUint i = 0; i < dim; i++)
-                    xPipe[offset + i] = i / (float)dim + (float)b;
+            for (NnUint z = 0u; z < nZ; z++) {
+                float *xPipeZ = &xPipe[z * N_BATCHES * dim];
+                for (NnUint b = 0; b < N_BATCHES; b++) {
+                    const NnUint offset = b * dim;
+                    for (NnUint i = 0u; i < dim; i++)
+                        xPipeZ[offset + i] = i / (float)dim + (float)b;
+                }
             }
 
             // act
@@ -687,13 +692,16 @@ void testSoftmax_F32_F32() {
 
             // assert
             float t = 0.00001f;
-            for (NnUint b = 0; b < N_BATCHES; b++) {
-                const NnUint offset = b * dim;
-                float max = ((dim - 1) / (float)dim) + (float)b;
-                for (NnUint i = 0; i < dim; i++) {
-                    const float v = i / (float)dim + (float)b;
-                    const float expectedOutput = expf(v - max);
-                    assertFloat(offset + i, xPipe[offset + i], expectedOutput, t);
+            for (NnUint z = 0u; z < nZ; z++) {
+                float *xPipeZ = &xPipe[z * N_BATCHES * dim];
+                for (NnUint b = 0; b < N_BATCHES; b++) {
+                    const NnUint offset = b * dim;
+                    float max = ((dim - 1) / (float)dim) + (float)b;
+                    for (NnUint i = 0u; i < dim; i++) {
+                        const float v = i / (float)dim + (float)b;
+                        const float expectedOutput = expf(v - max);
+                        assertFloat(offset + i, xPipeZ[offset + i], expectedOutput, t);
+                    }
                 }
             }
 
@@ -799,8 +807,8 @@ int main() {
 
     testMultiheadAtt_F32_F32();
 
-    testSoftmax_F32_F32<256>();
-    testSoftmax_F32_F32<512>();
+    testSoftmax_F32_F32<256, 1>();
+    testSoftmax_F32_F32<512, 4>();
 
     testScale_F32_F32();
     return 0;

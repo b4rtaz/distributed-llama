@@ -18,39 +18,39 @@ layout(binding = 0) readonly buffer inputBuffer { float x[]; };
 layout(binding = 1) writeonly buffer outputBuffer { float y[]; };
 layout(binding = 2) readonly uniform batchInfosBuffer { BatchInfo infos[N_Z * N_BATCHES]; };
 layout(binding = 3) readonly buffer weightBuffer { float weight[]; };
-
-shared BatchInfo sharedInfo;
-shared uint sharedDim;
-shared uint sharedOffset;
+layout(binding = 4) readonly uniform opConfigBuffer {
+    uint nExperts;
+    uint nActiveExperts;
+    uint activeExpertIndexesBufferIndex;
+};
+layout(binding = 5) readonly buffer activeExpertIndexesBuffer { float activeExpertIndexes[]; };
 
 void main() {
     const uint threadIndex = gl_LocalInvocationID.x;
+    const uint nWorkGroups = gl_NumWorkGroups.x;
     const uint workGroupIndex = gl_WorkGroupID.x;
+    const uint batchIndex = gl_WorkGroupID.y;
+    const uint zIndex = gl_WorkGroupID.z;
+    const uint b = zIndex * N_BATCHES + batchIndex;
 
-    if (threadIndex == 0) {
-        const uint batchIndex = gl_WorkGroupID.y;
-        const uint zIndex = gl_WorkGroupID.z;
-        const uint nWorkGroups = gl_NumWorkGroups.x;
+    BatchInfo info = infos[b];
+    const uint slice = info.outputSizeX / nWorkGroups;
+    const uint rest = info.outputSizeX % nWorkGroups;
+    const uint dim = slice + (workGroupIndex < rest ? 1 : 0);
+    const uint offset = workGroupIndex * slice + min(workGroupIndex, rest);
 
-        sharedInfo = infos[zIndex * N_BATCHES + batchIndex];
-        const uint slice = sharedInfo.outputSizeX / nWorkGroups;
-        const uint rest = sharedInfo.outputSizeX % nWorkGroups;
+    const uint expertIndex = nExperts == 0
+        ? 0
+        : uint(activeExpertIndexes[b]);
+    const uint expertOffset = expertIndex * info.inputSizeX * info.outputSizeX;
 
-        sharedDim = slice + (workGroupIndex < rest ? 1 : 0);
-        sharedOffset = workGroupIndex * slice + min(workGroupIndex, rest);
-    }
-
-    barrier();
-
-    const uint inputSizeX = sharedInfo.inputSizeX;
-    const uint xOffset = sharedInfo.inputOffset;
-    const uint yOffset = sharedInfo.outputOffset;
-    const uint dim = sharedDim;
-    const uint offset = sharedOffset;
+    const uint inputSizeX = info.inputSizeX;
+    const uint xOffset = info.inputOffset;
+    const uint yOffset = info.outputOffset;
 
     for (uint i = threadIndex; i < dim; i += N_THREADS) {
         const uint d = offset + i;
-        const uint wOffset = d * inputSizeX;
+        const uint wOffset = expertOffset + d * inputSizeX;
 
         float sum = 0.0f;
         for (uint j = 0; j < inputSizeX; j++) {
