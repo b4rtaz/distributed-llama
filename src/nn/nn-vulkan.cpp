@@ -88,7 +88,7 @@ NnVulkanStagingCopy::NnVulkanStagingCopy(const NnVulkanContext *context, vk::Buf
     auto b = createBuffer(context, memoryTypeIndex, bufferSize, vk::BufferUsageFlagBits::eTransferSrc | vk::BufferUsageFlagBits::eTransferDst);
     hostBuffer = b.first;
     hostMemory = b.second;
-    hostPointer = context->device.mapMemory(hostMemory, 0, bufferSize);
+    hostPointer = (NnByte *)context->device.mapMemory(hostMemory, 0, bufferSize);
 }
 
 NnVulkanStagingCopy::~NnVulkanStagingCopy() {
@@ -97,20 +97,26 @@ NnVulkanStagingCopy::~NnVulkanStagingCopy() {
     context->device.destroyBuffer(hostBuffer);
 }
 
-void NnVulkanStagingCopy::copy(NnByte *data) {
+void NnVulkanStagingCopy::copy(NnByte *data, const NnSize offset, const NnSize size) {
+    assert(offset + size <= bufferSize);
+
     switch (direction) {
     case COPY_TO_DEVICE:
-        std::memcpy(hostPointer, data, bufferSize);
+        std::memcpy(&hostPointer[offset], data, size);
         break;
     case COPY_FROM_DEVICE:
-        std::memcpy(data, hostPointer, bufferSize);
+        std::memcpy(data, &hostPointer[offset], size);
         break;
     }
 }
 
-void NnVulkanStagingCopy::addCopyCommand(vk::CommandBuffer& commandBuffer) {
-    VkBufferCopy copyRegion = { 0 };
-	copyRegion.size = bufferSize;
+void NnVulkanStagingCopy::addCopyCommand(vk::CommandBuffer& commandBuffer, const NnSize offset, const NnSize size) {
+    assert(offset + size <= bufferSize);
+
+    VkBufferCopy copyRegion;
+	copyRegion.dstOffset = offset;
+	copyRegion.srcOffset = offset;
+	copyRegion.size = size;
     switch (direction) {
     case COPY_TO_DEVICE:
         vkCmdCopyBuffer(commandBuffer, hostBuffer, deviceBuffer, 1, &copyRegion);
@@ -121,12 +127,12 @@ void NnVulkanStagingCopy::addCopyCommand(vk::CommandBuffer& commandBuffer) {
     }
 }
 
-void NnVulkanStagingCopy::executeCopyCommand() {
+void NnVulkanStagingCopy::executeCopyCommand(const NnSize offset, const NnSize size) {
     vk::CommandBufferAllocateInfo allocInfo(context->commandPool, vk::CommandBufferLevel::ePrimary, 1);
     const std::vector<vk::CommandBuffer> cmdBuffers = context->device.allocateCommandBuffers(allocInfo);
     vk::CommandBuffer commandBuffer = cmdBuffers.front();
     commandBuffer.begin({ vk::CommandBufferUsageFlags{ vk::CommandBufferUsageFlagBits::eOneTimeSubmit } });
-    addCopyCommand(commandBuffer);
+    addCopyCommand(commandBuffer, offset, size);
     commandBuffer.end();
 
     vk::Fence fence = context->device.createFence(vk::FenceCreateInfo());
@@ -180,7 +186,7 @@ NnVulkanBuffer::NnVulkanBuffer(NnVulkanContext *context, const char *name, const
     deviceBuffer = b.first;
     deviceMemory = b.second;
     if (isHostVisible)
-        hostPointer = context->device.mapMemory(deviceMemory, 0, bufferSize);
+        hostPointer = (NnByte *)context->device.mapMemory(deviceMemory, 0, bufferSize);
     VULKAN_TRACE("Created buffer of size %zu (fastAccess=%d)", bufferSize, fastAccess);
 }
 
@@ -193,30 +199,30 @@ NnVulkanBuffer::~NnVulkanBuffer() {
 }
 
 void NnVulkanBuffer::write(const NnByte *data) {
-    write(data, bufferSize);
+    write(data, 0u, bufferSize);
 }
 
-void NnVulkanBuffer::write(const NnByte *data, const NnSize size) {
-    assert(size <= bufferSize);
+void NnVulkanBuffer::write(const NnByte *data, const NnSize offset, const NnSize size) {
+    assert(offset + size <= bufferSize);
 
     if (isHostVisible && hostPointer != nullptr) {
-        std::memcpy(hostPointer, data, size);
-        context->device.flushMappedMemoryRanges({ { deviceMemory, 0, (vk::DeviceSize)size } });
+        std::memcpy(&hostPointer[offset], data, size);
+        context->device.flushMappedMemoryRanges({ { deviceMemory, offset, (vk::DeviceSize)size } });
         VULKAN_TRACE("Wrote %zu bytes to host visible buffer", size);
     } else {
-        NnVulkanStagingCopy copy(context, deviceBuffer, size, COPY_TO_DEVICE);
-        copy.copy((NnByte *)data);
-        copy.executeCopyCommand();
+        NnVulkanStagingCopy copy(context, deviceBuffer, bufferSize, COPY_TO_DEVICE);
+        copy.copy((NnByte *)data, offset, size);
+        copy.executeCopyCommand(offset, size);
         VULKAN_TRACE("Wrote %zu bytes to buffer", size);
     }
 }
 
 void NnVulkanBuffer::read(NnByte *data) {
-    read(data, bufferSize);
+    read(data, 0u, bufferSize);
 }
 
-void NnVulkanBuffer::read(NnByte *data, const NnSize size) {
-    assert(size <= bufferSize);
+void NnVulkanBuffer::read(NnByte *data, const NnSize offset, const NnSize size) {
+    assert(offset + size <= bufferSize);
 
     if (isHostVisible && hostPointer != nullptr) {
         context->device.invalidateMappedMemoryRanges({ {deviceMemory, 0, (vk::DeviceSize)size} });
@@ -225,8 +231,8 @@ void NnVulkanBuffer::read(NnByte *data, const NnSize size) {
         VULKAN_TRACE("Read %zu bytes from host visible buffer", size);
     } else {
         NnVulkanStagingCopy copy(context, deviceBuffer, bufferSize, COPY_FROM_DEVICE);
-        copy.executeCopyCommand();
-        copy.copy(data);
+        copy.executeCopyCommand(offset, size);
+        copy.copy(data, offset, size);
 
         VULKAN_TRACE("Read %zu bytes from buffer", size);
     }
@@ -969,12 +975,10 @@ NnVulkanDeviceSegment::~NnVulkanDeviceSegment() {
 }
 
 void NnVulkanDeviceSegment::loadWeight(NnUint opIndex, NnSize offset, NnSize nBytes, NnByte *weight) {
-    assert(offset == 0u); // TODO
-
-    assert(segmentConfig->nOps > opIndex);
-    assert(segmentConfig->ops[opIndex].weightSize.nBytes == nBytes);
+    assert(opIndex < segmentConfig->nOps);
+    assert(offset + nBytes <= segmentConfig->ops[opIndex].weightSize.nBytes);
     NnVulkanBuffer *buffer = segmentData->resolveOpWeightVulkanBuffer(opIndex);
-    buffer->write(weight);
+    buffer->write(weight, offset, nBytes);
 }
 
 void NnVulkanDeviceSegment::forward(NnUint opIndex, NnUint nThreads, NnUint threadIndex, NnUint batchSize)  {
@@ -991,7 +995,7 @@ void NnVulkanDeviceSegment::forward(NnUint opIndex, NnUint nThreads, NnUint thre
                 NnPreSyncConfig *preSyncConfig = &netConfig->preSyncs[i];
                 NnByte *pipeData = netExecution->pipes[preSyncConfig->pipeIndex];
                 NnVulkanBuffer *buffer = data->pipes[preSyncConfig->pipeIndex].get();
-                buffer->write(pipeData, buffer->calcSliceSize(batchSize, netConfig->nBatches));
+                buffer->write(pipeData, 0u, buffer->calcSliceSize(batchSize, netConfig->nBatches));
             }
         }
 
@@ -1000,7 +1004,7 @@ void NnVulkanDeviceSegment::forward(NnUint opIndex, NnUint nThreads, NnUint thre
             if (opConfig->input.source == SRC_PIPE) {
                 NnByte *pipeData = netExecution->pipes[opConfig->input.pointerIndex];
                 NnVulkanBuffer *buffer = data->pipes[opConfig->input.pointerIndex].get();
-                buffer->write(pipeData, buffer->calcSliceSize(batchSize, netConfig->nBatches));
+                buffer->write(pipeData, 0u, buffer->calcSliceSize(batchSize, netConfig->nBatches));
             }
         }
     }
@@ -1074,7 +1078,7 @@ void NnVulkanDeviceSegment::forward(NnUint opIndex, NnUint nThreads, NnUint thre
             if (opConfig->output.source == SRC_PIPE) {
                 NnByte *pipeData = netExecution->pipes[opConfig->output.pointerIndex];
                 NnVulkanBuffer *buffer = data->pipes[opConfig->output.pointerIndex].get();
-                buffer->read(pipeData, buffer->calcSliceSize(batchSize, netConfig->nBatches));
+                buffer->read(pipeData, 0u, buffer->calcSliceSize(batchSize, netConfig->nBatches));
             }
         }
     }
