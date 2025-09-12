@@ -822,6 +822,57 @@ void testScale_F32_F32() {
         });
 }
 
+void testMoeGate_F32_F32() {
+    #define MOE_GATE_F32_DIM 8
+    #define MOE_GATE_F32_K 4
+    execute(
+        [](NnNetConfigBuilder *netBuilder, NnNodeConfigBuilder *nodeBuilder, NnSegmentConfigBuilder *segmentBuilder) {
+            NnUint xPipeIndex = netBuilder->addPipe("X", size2D(F_32, N_BATCHES, MOE_GATE_F32_DIM));
+            NnUint gPipeIndex = netBuilder->addPipe("g", size2D(F_32, N_BATCHES, MOE_GATE_F32_K));
+            NnUint indexesBufferIndex = nodeBuilder->addBuffer("i", size2D(F_32, N_BATCHES, MOE_GATE_F32_K));
+            segmentBuilder->addOp(OP_MOE_GATE, "moe_gate", 0,
+                pointerBatchConfig(SRC_PIPE, xPipeIndex),
+                pointerBatchConfig(SRC_PIPE, gPipeIndex),
+                size0(),
+                NnMoeGateOpCodeConfig{MOE_GATE_F32_K, 0u, indexesBufferIndex});
+        },
+        [](NnExecutor *executor, NnNetExecution *execution, NnVulkanDevice *device) {
+            // arrange
+            execution->setBatchSize(N_BATCHES);
+
+            float *xPipe = (float *)execution->pipes[0];
+            float *gPipe = (float *)execution->pipes[1];
+            xPipe[0] = 3.0f;
+            xPipe[1] = 1.0f;
+            xPipe[2] = 6.0f;
+            xPipe[3] = 5.0f;
+            xPipe[4] = 8.0f;
+            xPipe[5] = 4.0f;
+            xPipe[6] = 2.0f;
+            xPipe[7] = 7.0f;
+
+            // act
+            executor->forward();
+
+            float pos[N_BATCHES * MOE_GATE_F32_K];
+            device->data->buffers[0].get()->read((NnByte *)pos);
+
+            // assert
+            const float t = 0.00001f;
+            assertFloat(0, gPipe[0], 8.0f, t);
+            assertFloat(1, gPipe[1], 7.0f, t);
+            assertFloat(2, gPipe[2], 6.0f, t);
+            assertFloat(3, gPipe[3], 5.0f, t);
+
+            assertFloat(100, pos[0], 4.0f, t);
+            assertFloat(101, pos[1], 7.0f, t);
+            assertFloat(102, pos[2], 2.0f, t);
+            assertFloat(103, pos[3], 3.0f, t);
+
+            printOk("testMoeGate_F32_F32");
+        });
+}
+
 int main() {
     initQuants();
 
@@ -875,5 +926,7 @@ int main() {
     testSoftmax_F32_F32<512, 4>();
 
     testScale_F32_F32();
+
+    testMoeGate_F32_F32();
     return 0;
 }

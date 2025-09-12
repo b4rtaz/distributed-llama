@@ -556,7 +556,7 @@ static void buildShaderLayout(std::vector<NnOpBufferAccess> &a, NnVulkanDeviceDa
         } break;
         case OP_MOE_GATE: {
             const NnMoeGateOpCodeConfig *config = (NnMoeGateOpCodeConfig *)opConfig->config;
-            a.push_back({ACCESS_READONLY, data->pipes[config->indexesBufferIndex].get()});
+            a.push_back({ACCESS_READ_WRITE, data->buffers[config->indexesBufferIndex].get()});
         } break;
         default:
             break;
@@ -619,18 +619,32 @@ static std::vector<NnVulkanBatchInfo> buildBatchInfo(NnOpConfig *opConfig, NnVul
 }
 
 static std::vector<NnUint> resolveShaderConstants(const NnOpConfig *opConfig, const NnUint nBatches, const NnSize3D inputSize, const NnSize3D outputSize) {
-    const NnUint nZ = resolveNumberOfBatchInfoZ(inputSize, outputSize);
-
     std::vector<NnUint> consts;
     consts.push_back(nBatches);
-    consts.push_back(nZ);
 
+    if (
+        opConfig->code == OP_MATMUL ||
+        opConfig->code == OP_MERGE_SUM ||
+        opConfig->code == OP_MUL ||
+        opConfig->code == OP_REPEAT_Z ||
+        opConfig->code == OP_SCALE ||
+        opConfig->code == OP_SILU ||
+        opConfig->code == OP_SOFTMAX
+    ) {
+        const NnUint nZ = resolveNumberOfBatchInfoZ(inputSize, outputSize);
+        consts.push_back(nZ);
+    }
     if (opConfig->code == OP_MATMUL) {
         if (opConfig->weightSize.floatType == F_Q40) {
             constexpr NnUint tileSizeX = 2; // Shader constant
             assert(inputSize.x % (Q40_BLOCK_SIZE * tileSizeX) == 0);
             consts.push_back(inputSize.x / (Q40_BLOCK_SIZE * tileSizeX));
         }
+    }
+    if (opConfig->code == OP_MOE_GATE) {
+        const NnMoeGateOpCodeConfig *config = (NnMoeGateOpCodeConfig *)opConfig->config;
+        consts.push_back(inputSize.x);
+        consts.push_back(config->k);
     }
     return consts;
 }
