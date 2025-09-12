@@ -138,10 +138,11 @@ void NnVulkanStagingCopy::executeCopyCommand() {
     context->device.freeCommandBuffers(context->commandPool, 1, &commandBuffer);
 }
 
-NnVulkanBuffer::NnVulkanBuffer(NnVulkanContext *context, const char *name, const NnSize bufferSize, vk::BufferUsageFlags usageFlags, bool fastAccess) {
+NnVulkanBuffer::NnVulkanBuffer(NnVulkanContext *context, const char *name, const NnSize bufferSize, const bool isSliceable, vk::BufferUsageFlags usageFlags, bool fastAccess) {
     this->context = context;
     this->name = name;
     this->bufferSize = bufferSize;
+    this->isSliceable = isSliceable;
     this->usageFlags = usageFlags;
     this->hostPointer = nullptr;
 
@@ -232,6 +233,9 @@ void NnVulkanBuffer::read(NnByte *data, const NnSize size) {
 }
 
 NnSize NnVulkanBuffer::calcSliceSize(const NnSize nominator, const NnSize denominator) {
+    if (!isSliceable)
+        return bufferSize;
+
     assert(bufferSize % denominator == 0);
 
     NnSize size = (bufferSize / denominator) * nominator;
@@ -262,10 +266,16 @@ NnVulkanDeviceData::NnVulkanDeviceData(NnVulkanContext *context, NnNetConfig *ne
     this->netConfig = netConfig;
     this->nodeConfig = nodeConfig;
 
-    for (NnUint i = 0; i < netConfig->nPipes; i++)
-        pipes[i].reset(new NnVulkanBuffer(context, netConfig->pipes[i].name, netConfig->pipes[i].size.nBytes, vk::BufferUsageFlagBits::eStorageBuffer, true));
-    for (NnUint i = 0; i < nodeConfig->nBuffers; i++)
-        buffers[i].reset(new NnVulkanBuffer(context, nodeConfig->buffers[i].name, nodeConfig->buffers[i].size.nBytes, vk::BufferUsageFlagBits::eStorageBuffer, false));
+    for (NnUint i = 0; i < netConfig->nPipes; i++) {
+        const NnPipeConfig *pipeConfig = &netConfig->pipes[i];
+        const bool isSliceable = pipeConfig->size.z == 1u;
+        pipes[i].reset(new NnVulkanBuffer(context, netConfig->pipes[i].name, pipeConfig->size.nBytes, isSliceable, vk::BufferUsageFlagBits::eStorageBuffer, true));
+    }
+    for (NnUint i = 0; i < nodeConfig->nBuffers; i++) {
+        const NnBufferConfig *config = &nodeConfig->buffers[i];
+        const bool isSliceable = config->size.z == 1u;
+        buffers[i].reset(new NnVulkanBuffer(context, nodeConfig->buffers[i].name, config->size.nBytes, isSliceable, vk::BufferUsageFlagBits::eStorageBuffer, false));
+    }
 
     NnRopeOpConfig *ropeLlamaOpConfig = (NnRopeOpConfig *)findFirstOpConfig(nodeConfig, OP_ROPE);
     if (ropeLlamaOpConfig != nullptr) {
@@ -663,7 +673,8 @@ static NnUint resolveShaderNumberOfWorkGroupsX(const NnOpConfig *opConfig, const
         opConfig->code == OP_MUL ||
         opConfig->code == OP_SCALE ||
         opConfig->code == OP_SILU ||
-        opConfig->code == OP_SHIFT
+        opConfig->code == OP_SHIFT ||
+        opConfig->code == OP_MERGE_SUM
     ) {
         constexpr NnUint chunkSize = 4u; // Shader constant
         assert(outputSize.x % chunkSize == 0);
@@ -673,7 +684,10 @@ static NnUint resolveShaderNumberOfWorkGroupsX(const NnOpConfig *opConfig, const
 }
 
 static NnUint resolveShaderNumberOfWorkGroupsZ(const NnOpConfig *opConfig, const NnSize3D inputSize, const NnSize3D outputSize) {
-    if (opConfig->code == OP_REPEAT_Z) {
+    if (
+        opConfig->code == OP_MERGE_SUM ||
+        opConfig->code == OP_REPEAT_Z
+    ) {
         return 1u;
     }
     return resolveNumberOfBatchInfoZ(inputSize, outputSize);
@@ -719,18 +733,18 @@ NnVulkanDeviceSegmentData::NnVulkanDeviceSegmentData(NnVulkanContext *context, N
 
         std::vector<NnVulkanBatchInfo> batchInfo = buildBatchInfo(opConfig, data, nBatches);
         NnSize batchInfoSize = sizeof(NnVulkanBatchInfo) * batchInfo.size();
-        NnVulkanBuffer *batchInfoBuffer = new NnVulkanBuffer(context, "batchInfo", batchInfoSize, vk::BufferUsageFlagBits::eUniformBuffer, false);
+        NnVulkanBuffer *batchInfoBuffer = new NnVulkanBuffer(context, "batchInfo", batchInfoSize, false, vk::BufferUsageFlagBits::eUniformBuffer, false);
         data->internalBuffers.push_back(std::unique_ptr<NnVulkanBuffer>(batchInfoBuffer));
         batchInfoBuffer->write((NnByte *)batchInfo.data());
         batchInfoBufferIndex[opIndex] = data->internalBuffers.size() - 1;
 
         if (opConfig->weightSize.nBytes > 0) {
-            NnVulkanBuffer *buffer = new NnVulkanBuffer(context, "weights", opConfig->weightSize.nBytes, vk::BufferUsageFlagBits::eStorageBuffer, false);
+            NnVulkanBuffer *buffer = new NnVulkanBuffer(context, "weights", opConfig->weightSize.nBytes, false, vk::BufferUsageFlagBits::eStorageBuffer, false);
             data->internalBuffers.push_back(std::unique_ptr<NnVulkanBuffer>(buffer));
             weightBufferIndex[opIndex] = data->internalBuffers.size() - 1;
         }
         if (opConfig->configSize > 0) {
-            NnVulkanBuffer *configBuffer = new NnVulkanBuffer(context, "config", opConfig->configSize, vk::BufferUsageFlagBits::eUniformBuffer, false);
+            NnVulkanBuffer *configBuffer = new NnVulkanBuffer(context, "config", opConfig->configSize, false, vk::BufferUsageFlagBits::eUniformBuffer, false);
             data->internalBuffers.push_back(std::unique_ptr<NnVulkanBuffer>(configBuffer));
             configBuffer->write(opConfig->config);
             configBufferIndex[opIndex] = data->internalBuffers.size() - 1;
@@ -990,7 +1004,7 @@ void NnVulkanDeviceSegment::forward(NnUint opIndex, NnUint nThreads, NnUint thre
                     context->queueFamilyIndex,
                     context->queueFamilyIndex,
                     buffer->deviceBuffer,
-                    0, 
+                    0,
                     buffer->calcSliceSize(batchSize, netConfig->nBatches)
                 );
                 memoryBarriers.push_back(barrier);

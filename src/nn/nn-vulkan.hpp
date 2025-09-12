@@ -47,9 +47,10 @@ private:
 public:
     const char *name;
     NnSize bufferSize;
+    bool isSliceable;
     vk::Buffer deviceBuffer;
     vk::BufferUsageFlags usageFlags;
-    NnVulkanBuffer(NnVulkanContext *context, const char *name, const NnSize bufferSize, vk::BufferUsageFlags usageFlags, bool fastAccess);
+    NnVulkanBuffer(NnVulkanContext *context, const char *name, const NnSize bufferSize, const bool isSliceable, vk::BufferUsageFlags usageFlags, bool fastAccess);
     ~NnVulkanBuffer();
     void write(const NnByte *data);
     void write(const NnByte *data, const NnSize size);

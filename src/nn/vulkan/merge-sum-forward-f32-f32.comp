@@ -7,6 +7,7 @@
 layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
 
 layout(constant_id = 0) const uint N_BATCHES = 32;
+layout(constant_id = 1) const uint N_Z = 1;
 
 struct BatchInfo {
     uint inputOffset;
@@ -17,8 +18,24 @@ struct BatchInfo {
 
 layout(binding = 0) readonly buffer inputBuffer { float x[]; };
 layout(binding = 1) writeonly buffer outputBuffer { float y[]; };
-layout(binding = 2) readonly uniform batchInfosBuffer { BatchInfo infos[N_BATCHES]; };
+layout(binding = 2) readonly uniform batchInfosBuffer { BatchInfo infos[N_Z * N_BATCHES]; };
 
 void main() {
-    // TODO
+    const uint workGroupIndex = gl_WorkGroupID.x;
+    const uint batchIndex = gl_WorkGroupID.y;
+
+    const uint chunkOffset = workGroupIndex * CHUNK_SIZE;
+
+    const BatchInfo outputInfo = infos[batchIndex];
+    const uint yOffset = outputInfo.outputOffset + chunkOffset;
+
+    [[unroll]] for (uint i = 0; i < CHUNK_SIZE; i++) {
+        float sum = 0.0f;
+        for (uint z = 0; z < N_Z; z++) {
+            const BatchInfo inputInfo = infos[batchIndex + z * N_BATCHES];
+            const uint xOffset = inputInfo.inputOffset + chunkOffset;
+            sum += x[xOffset + i];
+        }
+        y[yOffset + i] = sum;
+    }
 }
