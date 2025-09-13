@@ -76,63 +76,75 @@ static std::pair<vk::Buffer, vk::DeviceMemory> createBuffer(const NnVulkanContex
     return std::make_pair(buffer, bufferMemory);
 }
 
-NnVulkanStagingCopy::NnVulkanStagingCopy(const NnVulkanContext *context, vk::Buffer& deviceBuffer, const vk::DeviceSize bufferSize, const NnStagingVulkanCopyDirection direction) {
-    this->direction = direction;
-    this->deviceBuffer = deviceBuffer;
-    this->context = context;
-    this->bufferSize = bufferSize;
+NnVulkanStagingCopier::NnVulkanStagingCopier(const NnVulkanContext *context) :
+    context(context)
+{
+    this->allocatedSize = 0u;
 
-    uint32_t memoryTypeIndex = findMemoryTypeIndex(&context->physicalDevice, vk::MemoryPropertyFlagBits::eHostVisible);
+    memoryTypeIndex = findMemoryTypeIndex(&context->physicalDevice, vk::MemoryPropertyFlagBits::eHostVisible);
     if (memoryTypeIndex == MEMORY_TYPE_INDEX_NOT_FOUND)
         throw std::runtime_error("Cannot find host visible memory type");
-    auto b = createBuffer(context, memoryTypeIndex, bufferSize, vk::BufferUsageFlagBits::eTransferSrc | vk::BufferUsageFlagBits::eTransferDst);
-    hostBuffer = b.first;
-    hostMemory = b.second;
-    hostPointer = (NnByte *)context->device.mapMemory(hostMemory, 0, bufferSize);
 }
 
-NnVulkanStagingCopy::~NnVulkanStagingCopy() {
-    context->device.unmapMemory(hostMemory);
-    context->device.freeMemory(hostMemory);
-    context->device.destroyBuffer(hostBuffer);
+NnVulkanStagingCopier::~NnVulkanStagingCopier() {
+    tryRelease();
 }
 
-void NnVulkanStagingCopy::copy(NnByte *data, const NnSize offset, const NnSize size) {
-    assert(offset + size <= bufferSize);
+void NnVulkanStagingCopier::tryRelease() {
+    if (allocatedSize > 0u) {
+        context->device.unmapMemory(hostMemory);
+        context->device.freeMemory(hostMemory);
+        context->device.destroyBuffer(hostBuffer);
+        allocatedSize = 0u;
+    }
+}
+
+void NnVulkanStagingCopier::allocate(const NnSize size) {
+    if (allocatedSize != size) {
+        tryRelease();
+
+        auto b = createBuffer(context, memoryTypeIndex, size, vk::BufferUsageFlagBits::eTransferSrc | vk::BufferUsageFlagBits::eTransferDst);
+        hostBuffer = b.first;
+        hostMemory = b.second;
+        hostPointer = context->device.mapMemory(hostMemory, 0, size);
+        allocatedSize = size;
+    }
+}
+
+void NnVulkanStagingCopier::copy(NnByte *data, const NnSize size, const NnStagingVulkanCopyDirection direction) {
+    allocate(size);
 
     switch (direction) {
     case COPY_TO_DEVICE:
-        std::memcpy(&hostPointer[offset], data, size);
+        std::memcpy(hostPointer, data, size);
         break;
     case COPY_FROM_DEVICE:
-        std::memcpy(data, &hostPointer[offset], size);
+        std::memcpy(data, hostPointer, size);
         break;
     }
 }
 
-void NnVulkanStagingCopy::addCopyCommand(vk::CommandBuffer& commandBuffer, const NnSize offset, const NnSize size) {
-    assert(offset + size <= bufferSize);
-
+void NnVulkanStagingCopier::addCopyCommand(vk::CommandBuffer& commandBuffer, vk::Buffer& target, const NnSize offset, const NnSize size, const NnStagingVulkanCopyDirection direction) {
     VkBufferCopy copyRegion;
-	copyRegion.dstOffset = offset;
-	copyRegion.srcOffset = offset;
 	copyRegion.size = size;
+    copyRegion.srcOffset = 0u;
+    copyRegion.dstOffset = offset;
     switch (direction) {
     case COPY_TO_DEVICE:
-        vkCmdCopyBuffer(commandBuffer, hostBuffer, deviceBuffer, 1, &copyRegion);
+        vkCmdCopyBuffer(commandBuffer, hostBuffer, target, 1, &copyRegion);
         break;
     case COPY_FROM_DEVICE:
-        vkCmdCopyBuffer(commandBuffer, deviceBuffer, hostBuffer, 1, &copyRegion);
+        vkCmdCopyBuffer(commandBuffer, target, hostBuffer, 1, &copyRegion);
         break;
     }
 }
 
-void NnVulkanStagingCopy::executeCopyCommand(const NnSize offset, const NnSize size) {
+void NnVulkanStagingCopier::executeCopyCommand(vk::Buffer& target, const NnSize offset, const NnSize size, const NnStagingVulkanCopyDirection direction) {
     vk::CommandBufferAllocateInfo allocInfo(context->commandPool, vk::CommandBufferLevel::ePrimary, 1);
     const std::vector<vk::CommandBuffer> cmdBuffers = context->device.allocateCommandBuffers(allocInfo);
     vk::CommandBuffer commandBuffer = cmdBuffers.front();
     commandBuffer.begin({ vk::CommandBufferUsageFlags{ vk::CommandBufferUsageFlagBits::eOneTimeSubmit } });
-    addCopyCommand(commandBuffer, offset, size);
+    addCopyCommand(commandBuffer, target, offset, size, direction);
     commandBuffer.end();
 
     vk::Fence fence = context->device.createFence(vk::FenceCreateInfo());
@@ -144,8 +156,10 @@ void NnVulkanStagingCopy::executeCopyCommand(const NnSize offset, const NnSize s
     context->device.freeCommandBuffers(context->commandPool, 1, &commandBuffer);
 }
 
-NnVulkanBuffer::NnVulkanBuffer(NnVulkanContext *context, const char *name, const NnSize bufferSize, const bool isSliceable, vk::BufferUsageFlags usageFlags, bool fastAccess) {
-    this->context = context;
+NnVulkanBuffer::NnVulkanBuffer(NnVulkanContext *context, NnVulkanStagingCopier *copier, const char *name, const NnSize bufferSize, const bool isSliceable, vk::BufferUsageFlags usageFlags, bool fastAccess) :
+    context(context),
+    copier(copier)
+{
     this->name = name;
     this->bufferSize = bufferSize;
     this->isSliceable = isSliceable;
@@ -210,9 +224,8 @@ void NnVulkanBuffer::write(const NnByte *data, const NnSize offset, const NnSize
         context->device.flushMappedMemoryRanges({ { deviceMemory, offset, (vk::DeviceSize)size } });
         VULKAN_TRACE("Wrote %zu bytes to host visible buffer", size);
     } else {
-        NnVulkanStagingCopy copy(context, deviceBuffer, bufferSize, COPY_TO_DEVICE);
-        copy.copy((NnByte *)data, offset, size);
-        copy.executeCopyCommand(offset, size);
+        copier->copy((NnByte *)data, size, COPY_TO_DEVICE);
+        copier->executeCopyCommand(deviceBuffer, offset, size, COPY_TO_DEVICE);
         VULKAN_TRACE("Wrote %zu bytes to buffer", size);
     }
 }
@@ -230,9 +243,8 @@ void NnVulkanBuffer::read(NnByte *data, const NnSize offset, const NnSize size) 
 
         VULKAN_TRACE("Read %zu bytes from host visible buffer", size);
     } else {
-        NnVulkanStagingCopy copy(context, deviceBuffer, bufferSize, COPY_FROM_DEVICE);
-        copy.executeCopyCommand(offset, size);
-        copy.copy(data, offset, size);
+        copier->executeCopyCommand(deviceBuffer, offset, size, COPY_FROM_DEVICE);
+        copier->copy(data, size, COPY_FROM_DEVICE);
 
         VULKAN_TRACE("Read %zu bytes from buffer", size);
     }
@@ -264,7 +276,7 @@ static NnByte *findFirstOpConfig(NnNodeConfig *nodeConfig, NnOpCode opCode) {
     return nullptr;
 }
 
-NnVulkanDeviceData::NnVulkanDeviceData(NnVulkanContext *context, NnNetConfig *netConfig, NnNodeConfig *nodeConfig) :
+NnVulkanDeviceData::NnVulkanDeviceData(NnVulkanContext *context, NnVulkanStagingCopier *copier, NnNetConfig *netConfig, NnNodeConfig *nodeConfig) :
     pipes(netConfig->nPipes),
     buffers(nodeConfig->nBuffers),
     internalBuffers()
@@ -275,12 +287,12 @@ NnVulkanDeviceData::NnVulkanDeviceData(NnVulkanContext *context, NnNetConfig *ne
     for (NnUint i = 0; i < netConfig->nPipes; i++) {
         const NnPipeConfig *pipeConfig = &netConfig->pipes[i];
         const bool isSliceable = pipeConfig->size.z == 1u;
-        pipes[i].reset(new NnVulkanBuffer(context, netConfig->pipes[i].name, pipeConfig->size.nBytes, isSliceable, vk::BufferUsageFlagBits::eStorageBuffer, true));
+        pipes[i].reset(new NnVulkanBuffer(context, copier, netConfig->pipes[i].name, pipeConfig->size.nBytes, isSliceable, vk::BufferUsageFlagBits::eStorageBuffer, true));
     }
     for (NnUint i = 0; i < nodeConfig->nBuffers; i++) {
         const NnBufferConfig *config = &nodeConfig->buffers[i];
         const bool isSliceable = config->size.z == 1u;
-        buffers[i].reset(new NnVulkanBuffer(context, nodeConfig->buffers[i].name, config->size.nBytes, isSliceable, vk::BufferUsageFlagBits::eStorageBuffer, false));
+        buffers[i].reset(new NnVulkanBuffer(context, copier, nodeConfig->buffers[i].name, config->size.nBytes, isSliceable, vk::BufferUsageFlagBits::eStorageBuffer, false));
     }
 
     NnRopeOpConfig *ropeLlamaOpConfig = (NnRopeOpConfig *)findFirstOpConfig(nodeConfig, OP_ROPE);
@@ -435,12 +447,15 @@ NnVulkanDevice::NnVulkanDevice(NnUint gpuIndex, NnNetConfig *netConfig, NnNodeCo
     context.queue = context.device.getQueue(context.queueFamilyIndex, 0);
     context.nonCoherentAtomSize = deviceProps.limits.nonCoherentAtomSize;
 
+    copier = new NnVulkanStagingCopier(&context);
+
     VULKAN_TRACE("Context created");
-    data = new NnVulkanDeviceData(&context, netConfig, nodeConfig);
+    data = new NnVulkanDeviceData(&context, copier, netConfig, nodeConfig);
 }
 
 NnVulkanDevice::~NnVulkanDevice() {
     delete data;
+    delete copier;
 
     context.device.destroyCommandPool(context.commandPool);
     context.device.destroy();
@@ -454,7 +469,7 @@ NnUint NnVulkanDevice::maxNThreads() {
 
 NnDeviceSegment *NnVulkanDevice::createSegment(NnUint segmentIndex) {
     NnSegmentConfig *segmentConfig = &nodeConfig->segments[segmentIndex];
-    return new NnVulkanDeviceSegment(&context, data, netConfig, segmentIndex, segmentConfig, netExecution);
+    return new NnVulkanDeviceSegment(&context, copier, data, netConfig, segmentIndex, segmentConfig, netExecution);
 };
 
 static const char *getShaderFileName(const NnOpCode opCode, const NnOpQuantType quantType) {
@@ -741,7 +756,7 @@ static vk::DescriptorType toDescriptorType(NnVulkanBuffer *buffer) {
     throw std::invalid_argument("Unsupported buffer usage");
 }
 
-NnVulkanDeviceSegmentData::NnVulkanDeviceSegmentData(NnVulkanContext *context, NnVulkanDeviceData *data, NnSegmentConfig *segmentConfig, NnUint nBatches) :
+NnVulkanDeviceSegmentData::NnVulkanDeviceSegmentData(NnVulkanContext *context, NnVulkanStagingCopier *copier, NnVulkanDeviceData *data, NnSegmentConfig *segmentConfig, NnUint nBatches) :
     batchInfoBufferIndex(segmentConfig->nOps, UINT32_MAX),
     weightBufferIndex(segmentConfig->nOps, UINT32_MAX),
     configBufferIndex(segmentConfig->nOps, UINT32_MAX)
@@ -753,18 +768,18 @@ NnVulkanDeviceSegmentData::NnVulkanDeviceSegmentData(NnVulkanContext *context, N
 
         std::vector<NnVulkanBatchInfo> batchInfo = buildBatchInfo(opConfig, data, nBatches);
         NnSize batchInfoSize = sizeof(NnVulkanBatchInfo) * batchInfo.size();
-        NnVulkanBuffer *batchInfoBuffer = new NnVulkanBuffer(context, "batchInfo", batchInfoSize, false, vk::BufferUsageFlagBits::eUniformBuffer, false);
+        NnVulkanBuffer *batchInfoBuffer = new NnVulkanBuffer(context, copier, "batchInfo", batchInfoSize, false, vk::BufferUsageFlagBits::eUniformBuffer, false);
         data->internalBuffers.push_back(std::unique_ptr<NnVulkanBuffer>(batchInfoBuffer));
         batchInfoBuffer->write((NnByte *)batchInfo.data());
         batchInfoBufferIndex[opIndex] = data->internalBuffers.size() - 1;
 
         if (opConfig->weightSize.nBytes > 0) {
-            NnVulkanBuffer *buffer = new NnVulkanBuffer(context, "weights", opConfig->weightSize.nBytes, false, vk::BufferUsageFlagBits::eStorageBuffer, false);
+            NnVulkanBuffer *buffer = new NnVulkanBuffer(context, copier, "weights", opConfig->weightSize.nBytes, false, vk::BufferUsageFlagBits::eStorageBuffer, false);
             data->internalBuffers.push_back(std::unique_ptr<NnVulkanBuffer>(buffer));
             weightBufferIndex[opIndex] = data->internalBuffers.size() - 1;
         }
         if (opConfig->configSize > 0) {
-            NnVulkanBuffer *configBuffer = new NnVulkanBuffer(context, "config", opConfig->configSize, false, vk::BufferUsageFlagBits::eUniformBuffer, false);
+            NnVulkanBuffer *configBuffer = new NnVulkanBuffer(context, copier, "config", opConfig->configSize, false, vk::BufferUsageFlagBits::eUniformBuffer, false);
             data->internalBuffers.push_back(std::unique_ptr<NnVulkanBuffer>(configBuffer));
             configBuffer->write(opConfig->config);
             configBufferIndex[opIndex] = data->internalBuffers.size() - 1;
@@ -787,7 +802,7 @@ NnVulkanBuffer *NnVulkanDeviceSegmentData::resolveOpWeightVulkanBuffer(NnUint op
     return data->internalBuffers[weightBufferIndex[opIndex]].get();
 }
 
-NnVulkanDeviceSegment::NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanDeviceData *data, NnNetConfig *netConfig, NnUint segmentIndex, NnSegmentConfig *segmentConfig, NnNetExecution *netExecution) :
+NnVulkanDeviceSegment::NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanStagingCopier *copier, NnVulkanDeviceData *data, NnNetConfig *netConfig, NnUint segmentIndex, NnSegmentConfig *segmentConfig, NnNetExecution *netExecution) :
     shaderModules(segmentConfig->nOps),
     descriptorSets(segmentConfig->nOps),
     descriptorSetLayouts(segmentConfig->nOps),
@@ -801,7 +816,7 @@ NnVulkanDeviceSegment::NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanD
     this->segmentIndex = segmentIndex;
     this->segmentConfig = segmentConfig;
     this->netExecution = netExecution;
-    this->segmentData.reset(new NnVulkanDeviceSegmentData(context, data, segmentConfig, netExecution->nBatches));
+    this->segmentData.reset(new NnVulkanDeviceSegmentData(context, copier, data, segmentConfig, netExecution->nBatches));
     this->lastBatchSize = 0;
 
     std::vector<vk::PipelineShaderStageCreateInfo> shaderCreateInfos(segmentConfig->nOps);
@@ -983,6 +998,7 @@ void NnVulkanDeviceSegment::loadWeight(NnUint opIndex, NnSize offset, NnSize nBy
 
 void NnVulkanDeviceSegment::forward(NnUint opIndex, NnUint nThreads, NnUint threadIndex, NnUint batchSize)  {
     assert(threadIndex == 0);
+
     if (opIndex != 0) {
         // TODO: this is a design problem, executor tries to forward all ops in a segment
         return;

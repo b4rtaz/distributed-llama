@@ -21,27 +21,31 @@ enum NnStagingVulkanCopyDirection {
     COPY_FROM_DEVICE
 };
 
-class NnVulkanStagingCopy {
+class NnVulkanStagingCopier {
 private:
-    NnStagingVulkanCopyDirection direction;
     const NnVulkanContext *context;
-    vk::DeviceSize bufferSize;
-    vk::Buffer deviceBuffer;
+    uint32_t memoryTypeIndex;
+
+    vk::DeviceSize allocatedSize;
     vk::Buffer hostBuffer;
     vk::DeviceMemory hostMemory;
-    NnByte *hostPointer;
+    void *hostPointer;
 public:
-    NnVulkanStagingCopy(const NnVulkanContext *context, vk::Buffer& deviceBuffer, const vk::DeviceSize bufferSize, const NnStagingVulkanCopyDirection direction);
-    ~NnVulkanStagingCopy();
-    void copy(NnByte *data, const NnSize offset, const NnSize size);
-    void executeCopyCommand(const NnSize offset, const NnSize size);
-    void addCopyCommand(vk::CommandBuffer& commandBuffer, const NnSize offset, const NnSize size);
+    NnVulkanStagingCopier(const NnVulkanContext *context);
+    ~NnVulkanStagingCopier();
+    void copy(NnByte *data, const NnSize size, const NnStagingVulkanCopyDirection direction);
+    void executeCopyCommand(vk::Buffer& target, const NnSize offset, const NnSize size, const NnStagingVulkanCopyDirection direction);
+    void addCopyCommand(vk::CommandBuffer& commandBuffer, vk::Buffer& target, const NnSize offset, const NnSize size, const NnStagingVulkanCopyDirection direction);
+    void tryRelease();
+private:
+    void allocate(const NnSize size);
 };
 
 class NnVulkanBuffer {
 private:
     bool isHostVisible;
     NnVulkanContext *context;
+    NnVulkanStagingCopier *copier;
     vk::DeviceMemory deviceMemory;
     NnByte *hostPointer;
 public:
@@ -50,7 +54,7 @@ public:
     bool isSliceable;
     vk::Buffer deviceBuffer;
     vk::BufferUsageFlags usageFlags;
-    NnVulkanBuffer(NnVulkanContext *context, const char *name, const NnSize bufferSize, const bool isSliceable, vk::BufferUsageFlags usageFlags, bool fastAccess);
+    NnVulkanBuffer(NnVulkanContext *context, NnVulkanStagingCopier *copier, const char *name, const NnSize bufferSize, const bool isSliceable, vk::BufferUsageFlags usageFlags, bool fastAccess);
     ~NnVulkanBuffer();
     void write(const NnByte *data);
     void write(const NnByte *data, const NnSize offset, const NnSize size);
@@ -74,7 +78,7 @@ public:
     std::vector<std::unique_ptr<NnVulkanBuffer>> pipes;
     std::vector<std::unique_ptr<NnVulkanBuffer>> buffers;
     std::vector<std::unique_ptr<NnVulkanBuffer>> internalBuffers;
-    NnVulkanDeviceData(NnVulkanContext *context, NnNetConfig *netConfig, NnNodeConfig *nodeConfig);
+    NnVulkanDeviceData(NnVulkanContext *context, NnVulkanStagingCopier *copier, NnNetConfig *netConfig, NnNodeConfig *nodeConfig);
     ~NnVulkanDeviceData();
 
     NnSize3D resolveBufferSize(NnPointerConfig *config);
@@ -89,6 +93,7 @@ private:
     NnNetConfig *netConfig;
     NnNodeConfig *nodeConfig;
     NnNetExecution *netExecution;
+    NnVulkanStagingCopier *copier;
 public:
     NnVulkanDeviceData *data;
     NnVulkanDevice(NnUint gpuIndex, NnNetConfig *netConfig, NnNodeConfig *nodeConfig, NnNetExecution *netExecution);
@@ -104,7 +109,7 @@ private:
     std::vector<NnUint> weightBufferIndex;
     std::vector<NnUint> configBufferIndex;
 public:
-    NnVulkanDeviceSegmentData(NnVulkanContext *context, NnVulkanDeviceData *data, NnSegmentConfig *segmentConfig, NnUint nBatches);
+    NnVulkanDeviceSegmentData(NnVulkanContext *context, NnVulkanStagingCopier *copier, NnVulkanDeviceData *data, NnSegmentConfig *segmentConfig, NnUint nBatches);
     NnVulkanBuffer *resolveOpBatchInfoVulkanBuffer(NnUint opIndex);
     NnVulkanBuffer *resolveOpWeightVulkanBuffer(NnUint opIndex);
     NnVulkanBuffer *resolveOpConfigVulkanBuffer(NnUint opIndex);
@@ -143,7 +148,7 @@ private:
     std::vector<std::vector<NnVulkanBuffer *>> buffersToSync;
     NnUint lastBatchSize;
 public:
-    NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanDeviceData *data, NnNetConfig *netConfig, NnUint segmentIndex, NnSegmentConfig *segmentConfig, NnNetExecution *netExecution);
+    NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanStagingCopier *copier, NnVulkanDeviceData *data, NnNetConfig *netConfig, NnUint segmentIndex, NnSegmentConfig *segmentConfig, NnNetExecution *netExecution);
     ~NnVulkanDeviceSegment() override;
     void loadWeight(NnUint opIndex, NnSize offset, NnSize nBytes, NnByte *weight) override;
     void forward(NnUint opIndex, NnUint nThreads, NnUint threadIndex, NnUint batchSize) override;
