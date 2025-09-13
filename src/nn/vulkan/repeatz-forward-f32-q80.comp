@@ -25,7 +25,7 @@ struct BlockQ80 {
 
 layout(binding = 0) readonly buffer inputBuffer { float x[]; };
 layout(binding = 1) writeonly buffer outputBuffer { BlockQ80 y[]; };
-layout(binding = 2) readonly uniform batchInfosBuffer { BatchInfo infos[N_BATCHES]; };
+layout(binding = 2) readonly uniform batchInfosBuffer { BatchInfo infos[N_Z * N_BATCHES]; };
 
 void main() {
     const uint batchIndex = gl_WorkGroupID.y;

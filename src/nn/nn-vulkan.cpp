@@ -633,11 +633,11 @@ static std::vector<NnVulkanBatchInfo> buildBatchInfo(NnOpConfig *opConfig, NnVul
     std::vector<NnVulkanBatchInfo> batchInfo(nZ * nBatches);
     for (NnUint zIndex = 0; zIndex < nZ; zIndex++) {
         for (NnUint batchIndex = 0; batchIndex < nBatches; batchIndex++) {
-            const NnUint i = zIndex * nBatches + batchIndex;
-            batchInfo[i].inputOffset = data->resolveBufferBatchOffset(&opConfig->input, batchIndex, zIndex);
-            batchInfo[i].inputSizeX = data->resolveBufferBatchWidth(&opConfig->input);
-            batchInfo[i].outputOffset = data->resolveBufferBatchOffset(&opConfig->output, batchIndex, zIndex);
-            batchInfo[i].outputSizeX = data->resolveBufferBatchWidth(&opConfig->output);
+            const NnUint b = zIndex * nBatches + batchIndex;
+            batchInfo[b].inputOffset = data->resolveBufferBatchOffset(&opConfig->input, batchIndex, zIndex);
+            batchInfo[b].inputSizeX = data->resolveBufferBatchWidth(&opConfig->input);
+            batchInfo[b].outputOffset = data->resolveBufferBatchOffset(&opConfig->output, batchIndex, zIndex);
+            batchInfo[b].outputSizeX = data->resolveBufferBatchWidth(&opConfig->output);
         }
     }
     return batchInfo;
@@ -857,12 +857,14 @@ NnVulkanDeviceSegment::NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanS
         const std::vector<NnUint> *opConstants = &constants[opIndex];
 
         specEntries[opIndex].resize(opConstants->size());
-        for (NnUint i = 0; i < opConstants->size(); i++)
+        for (NnUint i = 0; i < opConstants->size(); i++) {
             specEntries[opIndex][i] = vk::SpecializationMapEntry(
                 i,
                 i * sizeof(NnUint),
                 sizeof(NnUint)
             );
+            VULKAN_TRACE("Spec constant %d: %u", i, opConstants->at(i));
+        }
         specInfos[opIndex] = vk::SpecializationInfo(
             opConstants->size(),
             specEntries[opIndex].data(),

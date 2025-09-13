@@ -152,12 +152,12 @@ void testSilu_F32_F32() {
         });
 }
 
-template <NnUint dim>
+template <NnUint dim, NnUint nZ>
 void testMul_F32_F32() {
     execute(
         [](NnNetConfigBuilder *netBuilder, NnNodeConfigBuilder *nodeBuilder, NnSegmentConfigBuilder *segmentBuilder) {
-            NnUint xPipeIndex = netBuilder->addPipe("X", size2D(F_32, N_BATCHES, dim));
-            NnUint sBufferIndex = nodeBuilder->addBuffer("s", size2D(F_32, N_BATCHES, dim));
+            NnUint xPipeIndex = netBuilder->addPipe("X", size3D(F_32, nZ, N_BATCHES, dim));
+            NnUint sBufferIndex = nodeBuilder->addBuffer("s", size3D(F_32, nZ, N_BATCHES, dim));
             segmentBuilder->addOp(OP_MUL, "mul", 0,
                 pointerBatchConfig(SRC_PIPE, xPipeIndex),
                 pointerBatchConfig(SRC_PIPE, xPipeIndex),
@@ -169,8 +169,8 @@ void testMul_F32_F32() {
             execution->setBatchSize(N_BATCHES);
 
             float *xPipe = (float *)execution->pipes[0];
-            float sBuffer[dim * N_BATCHES];
-            for (NnUint i = 0; i < dim * N_BATCHES; i++) {
+            float sBuffer[nZ * N_BATCHES * dim];
+            for (NnUint i = 0; i < nZ * N_BATCHES * dim; i++) {
                 xPipe[i] = (float)i;
                 sBuffer[i] = (i % 8) / 10.0f;
             }
@@ -181,7 +181,7 @@ void testMul_F32_F32() {
             executor->forward();
 
             // assert
-            for (NnUint i = 0; i < dim * N_BATCHES; i++)
+            for (NnUint i = 0; i < nZ * N_BATCHES * dim; i++)
                 assertFloat(i, xPipe[i], i * ((i % 8) / 10.0f), 0.000001f);
             printOk("testMul_F32_F32");
         });
@@ -270,9 +270,6 @@ void testMergeSum_F32_F32() {
 
             // act
             executor->forward();
-
-            for (NnUint i = 0; i < MERGE_SUM_F32_DIM * N_BATCHES; i++)
-                printf("xPipe[%d] = %f\n", i, yPipe[i]);
 
             const float t = 0.00001f;
             assertFloat(0, yPipe[0], 1.5f, t);
@@ -629,6 +626,69 @@ void testMatmul_F32_F32_F32() {
         });
 }
 
+void testMatmul_F32_F32_F32_expert() {
+    #define MATMUL_F32_N 4
+    #define MATMUL_F32_D 1
+    #define MATMUL_F32_E 4
+    #define MATMUL_F32_A 2
+    execute(
+        [](NnNetConfigBuilder *netBuilder, NnNodeConfigBuilder *nodeBuilder, NnSegmentConfigBuilder *segmentBuilder) {
+            NnUint xPipeIndex = netBuilder->addPipe("X", size3D(F_32, MATMUL_F32_A, N_BATCHES, MATMUL_F32_N));
+            NnUint yPipeIndex = netBuilder->addPipe("Y", size3D(F_32, MATMUL_F32_A, N_BATCHES, MATMUL_F32_D));
+            NnUint activeExpertIndexesIndex = nodeBuilder->addBuffer("indexes", size2D(F_32, N_BATCHES, MATMUL_F32_A));
+            segmentBuilder->addOp(
+                OP_MATMUL, "matmul", 0u,
+                pointerBatchConfig(SRC_PIPE, xPipeIndex),
+                pointerBatchConfig(SRC_PIPE, yPipeIndex),
+                size3D(F_32, MATMUL_F32_E, MATMUL_F32_N, MATMUL_F32_D),
+                NnMatmulOpConfig{MATMUL_F32_E, MATMUL_F32_A, activeExpertIndexesIndex});
+        },
+        [](NnExecutor *executor, NnNetExecution *execution, NnVulkanDevice *device) {
+            // arrange
+            execution->setBatchSize(N_BATCHES);
+            float *xPipe = (float *)execution->pipes[0];
+            float *yPipe = (float *)execution->pipes[1];
+
+            constexpr NnUint wSize = MATMUL_F32_N * MATMUL_F32_D;
+            constexpr NnUint wSizeBytes = wSize * sizeof(float);
+            float weight[wSize];
+            float indexes[N_BATCHES * MATMUL_F32_A];
+
+            // expert 0 - E (without 1)
+            for (NnUint i = 0u; i < wSize; i++)
+                weight[i] = 0.1f;
+            executor->loadWeight("matmul", 0u, 0u, wSizeBytes, (NnByte *)weight);
+            executor->loadWeight("matmul", 0u, wSizeBytes * 2u, wSizeBytes, (NnByte *)weight);
+            executor->loadWeight("matmul", 0u, wSizeBytes * 3u, wSizeBytes, (NnByte *)weight);
+
+            // expert 1
+            for (NnUint i = 0u; i < wSize; i++)
+                weight[i] = 0.2f;
+            executor->loadWeight("matmul", 0u, wSizeBytes, wSizeBytes, (NnByte *)weight);
+
+            for (NnUint e = 0u; e < MATMUL_F32_A; e++) {
+                for (NnUint i = 0u; i < N_BATCHES * MATMUL_F32_N; i++)
+                    xPipe[e * N_BATCHES * MATMUL_F32_N + i] = (float)((e + 1) * 10);
+                for (NnUint i = 0u; i < N_BATCHES * MATMUL_F32_A; i++)
+                    indexes[i] = (float)(i % 2);
+            }
+
+            device->data->buffers[0].get()->write((NnByte *)indexes);
+
+            execution->setBatchSize(N_BATCHES);
+            executor->forward();
+
+            float t = 0.00001f;
+            assertFloat(0, yPipe[0], 0.1f * (10.0f * 4.0f), t); // expert 0 batch 0
+            assertFloat(1, yPipe[1], 0.2f * (10.0f * 4.0f), t); // expert 0 batch 1
+
+            assertFloat(4, yPipe[4], 0.1f * (20.0f * 4.0f), t); // expert 1 batch 0
+            assertFloat(5, yPipe[5], 0.2f * (20.0f * 4.0f), t); // expert 1 batch 1
+
+            printOk("testMatmul_F32_F32_F32_expert");
+        });
+}
+
 template <NnUint N, NnUint D>
 void testMatmul_Q80_Q40_F32() {
     execute(
@@ -884,8 +944,8 @@ int main() {
     testSilu_F32_F32<32>();
     testSilu_F32_F32<104>();
 
-    testMul_F32_F32<32>();
-    testMul_F32_F32<48>();
+    testMul_F32_F32<32, 1>();
+    testMul_F32_F32<48, 4>();
 
     testMergeAdd_F32_F32();
 
@@ -912,6 +972,8 @@ int main() {
 
     testMatmul_F32_F32_F32<64, 96>();
     testMatmul_F32_F32_F32<3191, 109>();
+
+    testMatmul_F32_F32_F32_expert();
 
     testMatmul_Q80_Q40_F32<14336, 4096>();
     testMatmul_Q80_Q40_F32<4096, 14336>();
