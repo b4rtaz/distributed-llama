@@ -289,14 +289,14 @@ NnVulkanDeviceData::NnVulkanDeviceData(NnVulkanContext *context, NnVulkanStaging
     this->nodeConfig = nodeConfig;
 
     for (NnUint i = 0; i < netConfig->nPipes; i++) {
-        const NnPipeConfig *pipeConfig = &netConfig->pipes[i];
-        const bool isSliceable = pipeConfig->size.z == 1u;
-        pipes[i].reset(new NnVulkanBuffer(context, copier, netConfig->pipes[i].name, pipeConfig->size.nBytes, isSliceable, vk::BufferUsageFlagBits::eStorageBuffer, true));
+        const NnPipeConfig *config = &netConfig->pipes[i];
+        const bool isSliceable = config->size.z == 1u;
+        pipes[i].reset(new NnVulkanBuffer(context, copier, config->name, config->size.nBytes, isSliceable, vk::BufferUsageFlagBits::eStorageBuffer, true));
     }
     for (NnUint i = 0; i < nodeConfig->nBuffers; i++) {
         const NnBufferConfig *config = &nodeConfig->buffers[i];
         const bool isSliceable = config->size.z == 1u;
-        buffers[i].reset(new NnVulkanBuffer(context, copier, nodeConfig->buffers[i].name, config->size.nBytes, isSliceable, vk::BufferUsageFlagBits::eStorageBuffer, false));
+        buffers[i].reset(new NnVulkanBuffer(context, copier, config->name, config->size.nBytes, isSliceable, vk::BufferUsageFlagBits::eStorageBuffer, false));
     }
 
     NnRopeOpConfig *ropeLlamaOpConfig = (NnRopeOpConfig *)findFirstOpConfig(nodeConfig, OP_ROPE);
@@ -339,8 +339,8 @@ NnUint NnVulkanDeviceData::resolveBufferBatchOffset(NnPointerConfig *config, NnU
     const NnSize3D bufferSize = resolveBufferSize(config);
     const NnSize blockSize = getBlockSize(bufferSize.floatType);
     assert(bufferSize.x % blockSize == 0);
-    const NnUint offsetZ = bufferSize.x * netConfig->nBatches * zIndex;
     const NnUint sizeX = bufferSize.x / blockSize;
+    const NnUint offsetZ = sizeX * netConfig->nBatches * zIndex;
 
     if (config->type == PNTR_BATCH)
         return offsetZ + sizeX * batchIndex;
