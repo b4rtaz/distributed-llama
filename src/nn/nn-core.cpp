@@ -86,8 +86,9 @@ const char *opCodeToString(NnOpCode code) {
     if (code == OP_CAST) return "CAST";
     if (code == OP_REPEAT_Z) return "REPEAT_Z";
     if (code == OP_SHIFT) return "SHIFT";
+    if (code == OP_SOFTMAX) return "SOFTMAX";
     if (code == OP_MOE_GATE) return "MOE_GATE";
-    throw std::invalid_argument("Unknown op code");
+    throw std::invalid_argument("Unknown op code: " + std::to_string(code));
 }
 
 const char *opQuantTypeToString(NnOpQuantType type) {

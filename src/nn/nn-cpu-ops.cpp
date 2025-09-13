@@ -1149,10 +1149,13 @@ static void matmulForward_F32_F32_F32(NnUint nThreads, NnUint threadIndex, NnUin
                 ? 0u
                 : (NnUint)activeExpertIndexes[y * config->nActiveExperts + e];
 
+            float *output = (float *)context->output[e * context->outputSize.y + y];
+            float *input = (float *)context->input[e * context->inputSize.y + y];
+            float *weight = (float *)&context->weight[activeExpertIndex * context->weightSize.nBytesXY];
             matmul_F32_F32_F32(
-                (float *)context->output[e * context->outputSize.y + y],
-                (float *)context->input[e * context->inputSize.y + y],
-                (float *)&context->weight[activeExpertIndex * context->weightSize.nBytesXY],
+                output,
+                input,
+                weight,
                 context->weightSize.y,
                 context->weightSize.x,
                 nThreads,

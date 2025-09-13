@@ -648,6 +648,7 @@ static std::vector<NnUint> resolveShaderConstants(const NnOpConfig *opConfig, co
     consts.push_back(nBatches);
 
     if (
+        opConfig->code == OP_CAST ||
         opConfig->code == OP_MATMUL ||
         opConfig->code == OP_MERGE_SUM ||
         opConfig->code == OP_MUL ||
@@ -725,7 +726,8 @@ static NnUint resolveShaderNumberOfWorkGroupsX(const NnOpConfig *opConfig, const
 static NnUint resolveShaderNumberOfWorkGroupsZ(const NnOpConfig *opConfig, const NnSize3D inputSize, const NnSize3D outputSize) {
     if (
         opConfig->code == OP_MERGE_SUM ||
-        opConfig->code == OP_REPEAT_Z
+        opConfig->code == OP_REPEAT_Z ||
+        opConfig->code == OP_MOE_GATE
     ) {
         return 1u;
     }
@@ -1079,7 +1081,7 @@ void NnVulkanDeviceSegment::forward(NnUint opIndex, NnUint nThreads, NnUint thre
             const NnUint groupCountY = batchSize;
             const NnUint groupCountZ = resolveShaderNumberOfWorkGroupsZ(opConfig, inputSize, outputSize);
             commandBuffer.dispatch(groupCountX, groupCountY, groupCountZ);
-            VULKAN_TRACE("Dispatched %d %d %d", groupCountX, groupCountY, groupCountZ);
+            VULKAN_TRACE("Dispatched %s (%d, %d, %d)", opCodeToString(opConfig->code), groupCountX, groupCountY, groupCountZ);
         }
         commandBuffer.end();
     }

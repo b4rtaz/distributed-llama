@@ -9,6 +9,7 @@
 layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
 
 layout(constant_id = 0) const uint N_BATCHES = 32;
+layout(constant_id = 1) const uint N_Z = 1;
 
 struct BatchInfo {
     uint inputOffset;
@@ -24,13 +25,16 @@ struct BlockQ80 {
 
 layout(binding = 0) readonly buffer inputBuffer { float x[]; };
 layout(binding = 1) writeonly buffer outputBuffer { BlockQ80 y[]; };
-layout(binding = 2) readonly uniform batchInfosBuffer { BatchInfo infos[N_BATCHES]; };
+layout(binding = 2) readonly uniform batchInfosBuffer { BatchInfo infos[N_Z * N_BATCHES]; };
 
 void main() {
     const uint batchIndex = gl_WorkGroupID.y;
+    const uint zIndex = gl_WorkGroupID.z;
+    const uint b = zIndex * N_BATCHES + batchIndex;
+
     const uint d = gl_WorkGroupID.x;
 
-    const BatchInfo info = infos[batchIndex];
+    const BatchInfo info = infos[b];
     const uint xiOffset = info.inputOffset + d * Q80_BLOCK_SIZE;
     const uint yiOffset = info.outputOffset + d;
 
