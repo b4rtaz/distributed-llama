@@ -33,12 +33,11 @@ private:
 public:
     NnVulkanStagingCopier(const NnVulkanContext *context);
     ~NnVulkanStagingCopier();
+    void allocate(const NnSize size);
     void copy(NnByte *data, const NnSize size, const NnStagingVulkanCopyDirection direction);
     void executeCopyCommand(vk::Buffer& target, const NnSize offset, const NnSize size, const NnStagingVulkanCopyDirection direction);
     void addCopyCommand(vk::CommandBuffer& commandBuffer, vk::Buffer& target, const NnSize offset, const NnSize size, const NnStagingVulkanCopyDirection direction);
     void tryRelease();
-private:
-    void allocate(const NnSize size);
 };
 
 class NnVulkanBuffer {

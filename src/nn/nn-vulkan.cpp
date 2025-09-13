@@ -112,7 +112,7 @@ void NnVulkanStagingCopier::allocate(const NnSize size) {
 }
 
 void NnVulkanStagingCopier::copy(NnByte *data, const NnSize size, const NnStagingVulkanCopyDirection direction) {
-    allocate(size);
+    assert(size == allocatedSize);
 
     switch (direction) {
     case COPY_TO_DEVICE:
@@ -125,6 +125,8 @@ void NnVulkanStagingCopier::copy(NnByte *data, const NnSize size, const NnStagin
 }
 
 void NnVulkanStagingCopier::addCopyCommand(vk::CommandBuffer& commandBuffer, vk::Buffer& target, const NnSize offset, const NnSize size, const NnStagingVulkanCopyDirection direction) {
+    assert(size == allocatedSize);
+
     VkBufferCopy copyRegion;
 	copyRegion.size = size;
     copyRegion.srcOffset = 0u;
@@ -224,6 +226,7 @@ void NnVulkanBuffer::write(const NnByte *data, const NnSize offset, const NnSize
         context->device.flushMappedMemoryRanges({ { deviceMemory, offset, (vk::DeviceSize)size } });
         VULKAN_TRACE("Wrote %zu bytes to host visible buffer", size);
     } else {
+        copier->allocate(size);
         copier->copy((NnByte *)data, size, COPY_TO_DEVICE);
         copier->executeCopyCommand(deviceBuffer, offset, size, COPY_TO_DEVICE);
         VULKAN_TRACE("Wrote %zu bytes to buffer", size);
@@ -243,6 +246,7 @@ void NnVulkanBuffer::read(NnByte *data, const NnSize offset, const NnSize size) 
 
         VULKAN_TRACE("Read %zu bytes from host visible buffer", size);
     } else {
+        copier->allocate(size);
         copier->executeCopyCommand(deviceBuffer, offset, size, COPY_FROM_DEVICE);
         copier->copy(data, size, COPY_FROM_DEVICE);
 
