@@ -420,12 +420,12 @@ void testShift_F32_F32() {
         });
 }
 
-template <NnUint dim>
+template <NnUint dim, NnUint nZ>
 void testCast_F32_F32() {
     execute(
         [](NnNetConfigBuilder *netBuilder, NnNodeConfigBuilder *nodeBuilder, NnSegmentConfigBuilder *segmentBuilder) {
-            NnUint xPipeIndex = netBuilder->addPipe("X", size2D(F_32, N_BATCHES, dim));
-            NnUint yPipeIndex = netBuilder->addPipe("Y", size2D(F_32, N_BATCHES, dim));
+            NnUint xPipeIndex = netBuilder->addPipe("X", size3D(F_32, nZ, N_BATCHES, dim));
+            NnUint yPipeIndex = netBuilder->addPipe("Y", size3D(F_32, nZ, N_BATCHES, dim));
             segmentBuilder->addOp(
                 OP_CAST, "cast", 0,
                 pointerBatchConfig(SRC_PIPE, xPipeIndex),
@@ -439,14 +439,14 @@ void testCast_F32_F32() {
             float *xPipe = (float *)execution->pipes[0];
             float *yPipe = (float *)execution->pipes[1];
 
-            for (NnUint i = 0; i < N_BATCHES * dim; i++)
+            for (NnUint i = 0; i < nZ * N_BATCHES * dim; i++)
                 xPipe[i] = (float)(i + 1);
 
             // act
             executor->forward();
 
             // assert
-            for (NnUint i = 0; i < N_BATCHES * dim; i++)
+            for (NnUint i = 0; i < nZ * N_BATCHES * dim; i++)
                 assertFloat(i, yPipe[i], (float)(i + 1), 0.00001f);
             printOk("testCast_F32_F32");
         });
@@ -900,9 +900,9 @@ int main() {
     testShift_F32_F32<32>();
     testShift_F32_F32<9>();
 
-    testCast_F32_F32<128>();
-    testCast_F32_F32<32>();
-    testCast_F32_F32<8>();
+    testCast_F32_F32<128, 1>();
+    testCast_F32_F32<32, 2>();
+    testCast_F32_F32<8, 4>();
 
     testCast_F32_Q80<256, 1>();
     testCast_F32_Q80<64, 4>();
