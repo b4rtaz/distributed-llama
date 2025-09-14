@@ -1,6 +1,7 @@
 import os
 import sys
 import time
+import socket
 import multiprocessing
 from urllib.request import urlopen
 
@@ -44,9 +45,37 @@ MODELS = {
         'https://huggingface.co/b4rtaz/DeepSeek-R1-Distill-Llama-8B-Distributed-Llama/resolve/main/dllama_tokenizer_deepseek-r1-distill-llama-8b.t?download=true',
         'q40', 'q80', 'chat', '--max-seq-len 4096'
     ],
+    'qwen3_0.6b_q40': [
+        ['https://huggingface.co/b4rtaz/Qwen3-0.6B-Q40-Distributed-Llama/resolve/main/dllama_model_qwen3_0.6b_q40.m?download=true'],
+        'https://huggingface.co/b4rtaz/Qwen3-0.6B-Q40-Distributed-Llama/resolve/main/dllama_tokenizer_qwen3_0.6b.t?download=true',
+        'q40', 'q80', 'chat', '--max-seq-len 4096'
+    ],
+    'qwen3_1.7b_q40': [
+        ['https://huggingface.co/b4rtaz/Qwen3-1.7B-Q40-Distributed-Llama/resolve/main/dllama_model_qwen3_1.7b_q40.m?download=true'],
+        'https://huggingface.co/b4rtaz/Qwen3-1.7B-Q40-Distributed-Llama/resolve/main/dllama_tokenizer_qwen3_1.7b.t?download=true',
+        'q40', 'q80', 'chat', '--max-seq-len 4096'
+    ],
+    'qwen3_8b_q40': [
+        ['https://huggingface.co/b4rtaz/Qwen3-8B-Q40-Distributed-Llama/resolve/main/dllama_model_qwen3_8b_q40.m?download=true'],
+        'https://huggingface.co/b4rtaz/Qwen3-8B-Q40-Distributed-Llama/resolve/main/dllama_tokenizer_qwen3_8b.t?download=true',
+        'q40', 'q80', 'chat', '--max-seq-len 4096'
+    ],
+    'qwen3_14b_q40': [
+        list(map(lambda suffix : f'https://huggingface.co/b4rtaz/Qwen3-14B-Q40-Distributed-Llama/resolve/main/dllama_model_qwen3_14b_q40_{suffix}?download=true', parts(2))),
+        'https://huggingface.co/b4rtaz/Qwen3-14B-Q40-Distributed-Llama/resolve/main/dllama_tokenizer_qwen3_14b.t?download=true',
+        'q40', 'q80', 'chat', '--max-seq-len 4096'
+    ],
+    'qwen3_30b_a3b_q40': [
+        list(map(lambda suffix : f'https://huggingface.co/b4rtaz/Qwen3-30B-A3B-Q40-Distributed-Llama/resolve/main/dllama_model_qwen3_30b_a3b_{suffix}?download=true', parts(5))),
+        'https://huggingface.co/b4rtaz/Qwen3-30B-A3B-Q40-Distributed-Llama/resolve/main/dllama_tokenizer_qwen3_30b_a3b.t?download=true',
+        'q40', 'q80', 'chat', '--max-seq-len 4096'
+    ],
 }
 
 def confirm(message: str):
+    alwaysYes = sys.argv.count('-y') > 0
+    if alwaysYes:
+        return True
     result = input(f'❓ {message} ("Y" if yes): ').upper()
     return result == 'Y' or result == 'YES'
 
@@ -56,6 +85,7 @@ def downloadFile(urls, path: str):
         if not confirm(f'{fileName} already exists, do you want to download again?'):
             return
 
+    socket.setdefaulttimeout(30)
     lastSizeMb = 0
     with open(path, 'wb') as file:
         for url in urls:
@@ -111,8 +141,10 @@ def printUsage():
     print('Usage: python download-model.py <model>')
     print()
     print('Options:')
-    print('  <model> The name of the model to download')
-    print('  --run Run the model after download')
+    print('  <model>       The name of the model to download')
+    print('  -skip-run     Do not run the model after download')
+    print('  -skip-script  Do not create a script to run the model')
+    print('  -y            Skip confirmation prompts')
     print()
     print('Available models:')
     for model in MODELS:
@@ -129,7 +161,6 @@ if __name__ == '__main__':
     if modelName not in MODELS:
         print(f'Model is not supported: {modelName}')
         exit(1)
-    runAfterDownload = sys.argv.count('--run') > 0
 
     model = MODELS[modelName]
     (modelPath, tokenizerPath) = download(modelName, model)
@@ -150,12 +181,15 @@ if __name__ == '__main__':
     print()
     print('--- copy end -----')
 
-    runFilePath = writeRunFile(modelName, command)
-    print(f'🌻 Created {runFilePath} script to easy run')
+    skipRun = sys.argv.count('-skip-run') > 0
+    skipScript = sys.argv.count('-skip-script') > 0
 
-    if (not runAfterDownload):
-        runAfterDownload = confirm('Do you want to run Distributed Llama?')
-    if (runAfterDownload):
-        if (not os.path.isfile('dllama')):
-            os.system('make dllama')
-        os.system(command)
+    if (not skipScript):
+        runFilePath = writeRunFile(modelName, command)
+        print(f'🌻 Created {runFilePath} script to easy run')
+
+    if (not skipRun):
+        if (confirm('Do you want to run Distributed Llama?')):
+            if (not os.path.isfile('dllama')):
+                os.system('make dllama')
+            os.system(command)

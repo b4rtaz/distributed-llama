@@ -1,5 +1,8 @@
 #include "nn-vulkan.hpp"
 
+#define DEBUG_VULKAN_BUFFERS false
+#define DEBUG_VULKAN_TRACE false
+
 #if DEBUG_VULKAN_TRACE
     #define VULKAN_TRACE(...) printf("VULKAN_TRACE: "); printf(__VA_ARGS__); printf("\n");
 #else
@@ -24,6 +27,21 @@ static bool hasValidationLayer() {
             return true;
     }
     return false;
+}
+
+static void assertDeviceExtensionSupport(const vk::PhysicalDevice &physicalDevice, const std::vector<const char *> &requiredExtensions) {
+    auto availableExtensions = physicalDevice.enumerateDeviceExtensionProperties();
+    for (const auto& ext : requiredExtensions) {
+        bool found = false;
+        for (const auto& extension : availableExtensions) {
+            if (std::strcmp(extension.extensionName, ext) == 0) {
+                found = true;
+                break;
+            }
+        }
+        if (!found)
+            throw std::runtime_error(std::string("Device extension ") + ext + " is not supported");
+    }
 }
 
 #define MEMORY_TYPE_INDEX_NOT_FOUND ~0
@@ -120,13 +138,16 @@ void NnVulkanStagingCopy::executeCopyCommand() {
     context->device.freeCommandBuffers(context->commandPool, 1, &commandBuffer);
 }
 
-NnVulkanBuffer::NnVulkanBuffer(NnVulkanContext *context, const vk::DeviceSize bufferSize, vk::BufferUsageFlags usageFlags, bool fastAccess) {
+NnVulkanBuffer::NnVulkanBuffer(NnVulkanContext *context, const char *name, const NnSize bufferSize, vk::BufferUsageFlags usageFlags, bool fastAccess) {
     this->context = context;
+    this->name = name;
     this->bufferSize = bufferSize;
     this->usageFlags = usageFlags;
     this->hostPointer = nullptr;
 
     isHostVisible = false;
+
+    VULKAN_TRACE("Creating buffer of size %zu (fastAccess=%d)", bufferSize, fastAccess);
 
     uint32_t memoryTypeIndex = MEMORY_TYPE_INDEX_NOT_FOUND;
     if (fastAccess) {
@@ -159,7 +180,7 @@ NnVulkanBuffer::NnVulkanBuffer(NnVulkanContext *context, const vk::DeviceSize bu
     deviceMemory = b.second;
     if (isHostVisible)
         hostPointer = context->device.mapMemory(deviceMemory, 0, bufferSize);
-    VULKAN_TRACE("Created buffer of size %zu (fastAccess=%d)", (NnSize)bufferSize, fastAccess);
+    VULKAN_TRACE("Created buffer of size %zu (fastAccess=%d)", bufferSize, fastAccess);
 }
 
 NnVulkanBuffer::~NnVulkanBuffer() {
@@ -167,35 +188,59 @@ NnVulkanBuffer::~NnVulkanBuffer() {
         context->device.unmapMemory(deviceMemory);
     context->device.freeMemory(deviceMemory);
     context->device.destroyBuffer(deviceBuffer);
-    VULKAN_TRACE("Destroyed buffer of size %zu", (NnSize)bufferSize);
+    VULKAN_TRACE("Destroyed buffer of size %zu", bufferSize);
 }
 
 void NnVulkanBuffer::write(const NnByte *data) {
+    write(data, bufferSize);
+}
+
+void NnVulkanBuffer::write(const NnByte *data, const NnSize size) {
+    assert(size <= bufferSize);
+
     if (isHostVisible && hostPointer != nullptr) {
-        std::memcpy(hostPointer, data, bufferSize);
-        context->device.flushMappedMemoryRanges({ { deviceMemory, 0, bufferSize } });
-        VULKAN_TRACE("Wrote %zu bytes to host visible buffer", (NnSize)bufferSize);
+        std::memcpy(hostPointer, data, size);
+        context->device.flushMappedMemoryRanges({ { deviceMemory, 0, (vk::DeviceSize)size } });
+        VULKAN_TRACE("Wrote %zu bytes to host visible buffer", size);
     } else {
-        NnVulkanStagingCopy copy(context, deviceBuffer, bufferSize, COPY_TO_DEVICE);
+        NnVulkanStagingCopy copy(context, deviceBuffer, size, COPY_TO_DEVICE);
         copy.copy((NnByte *)data);
         copy.executeCopyCommand();
-        VULKAN_TRACE("Wrote %zu bytes to buffer", (NnSize)bufferSize);
+        VULKAN_TRACE("Wrote %zu bytes to buffer", size);
     }
 }
 
 void NnVulkanBuffer::read(NnByte *data) {
-    if (isHostVisible && hostPointer != nullptr) {
-        context->device.invalidateMappedMemoryRanges({ {deviceMemory, 0, bufferSize} });
-        std::memcpy(data, hostPointer, bufferSize);
+    read(data, bufferSize);
+}
 
-        VULKAN_TRACE("Read %zu bytes from host visible buffer", (NnSize)bufferSize);
+void NnVulkanBuffer::read(NnByte *data, const NnSize size) {
+    assert(size <= bufferSize);
+
+    if (isHostVisible && hostPointer != nullptr) {
+        context->device.invalidateMappedMemoryRanges({ {deviceMemory, 0, (vk::DeviceSize)size} });
+        std::memcpy(data, hostPointer, size);
+
+        VULKAN_TRACE("Read %zu bytes from host visible buffer", size);
     } else {
         NnVulkanStagingCopy copy(context, deviceBuffer, bufferSize, COPY_FROM_DEVICE);
         copy.executeCopyCommand();
         copy.copy(data);
 
-        VULKAN_TRACE("Read %zu bytes from buffer", (NnSize)bufferSize);
+        VULKAN_TRACE("Read %zu bytes from buffer", size);
     }
+}
+
+NnSize NnVulkanBuffer::calcSliceSize(const NnSize nominator, const NnSize denominator) {
+    assert(bufferSize % denominator == 0);
+
+    NnSize size = (bufferSize / denominator) * nominator;
+    if (context->nonCoherentAtomSize != 0) {
+        // TODO: this alignment is not needed for coherent memory
+        size += context->nonCoherentAtomSize - (size % context->nonCoherentAtomSize);
+        size = std::min(size, bufferSize);
+    }
+    return size;
 }
 
 static NnByte *findFirstOpConfig(NnNodeConfig *nodeConfig, NnOpCode opCode) {
@@ -218,16 +263,16 @@ NnVulkanDeviceData::NnVulkanDeviceData(NnVulkanContext *context, NnNetConfig *ne
     this->nodeConfig = nodeConfig;
 
     for (NnUint i = 0; i < netConfig->nPipes; i++)
-        pipes[i].reset(new NnVulkanBuffer(context, netConfig->pipes[i].size.nBytes, vk::BufferUsageFlagBits::eStorageBuffer, true));
+        pipes[i].reset(new NnVulkanBuffer(context, netConfig->pipes[i].name, netConfig->pipes[i].size.nBytes, vk::BufferUsageFlagBits::eStorageBuffer, true));
     for (NnUint i = 0; i < nodeConfig->nBuffers; i++)
-        buffers[i].reset(new NnVulkanBuffer(context, nodeConfig->buffers[i].size.nBytes, vk::BufferUsageFlagBits::eStorageBuffer, false));
+        buffers[i].reset(new NnVulkanBuffer(context, nodeConfig->buffers[i].name, nodeConfig->buffers[i].size.nBytes, vk::BufferUsageFlagBits::eStorageBuffer, false));
 
-    NnRopeLlamaOpConfig *ropeLlamaOpConfig = (NnRopeLlamaOpConfig *)findFirstOpConfig(nodeConfig, OP_ROPE_LLAMA);
+    NnRopeOpConfig *ropeLlamaOpConfig = (NnRopeOpConfig *)findFirstOpConfig(nodeConfig, OP_ROPE);
     if (ropeLlamaOpConfig != nullptr) {
         assert(ropeLlamaOpConfig->ropeCacheBufferIndex < nodeConfig->nBuffers);
         NnVulkanBuffer *buffer = buffers[ropeLlamaOpConfig->ropeCacheBufferIndex].get();
         std::vector<NnByte> ropeCache(ropeLlamaOpConfig->slice.cacheSize.nBytes);
-        fullfillRopeLlama3Cache(ropeLlamaOpConfig, (float *)ropeCache.data());
+        fullfillRopeCache(ropeLlamaOpConfig, (float *)ropeCache.data());
         buffer->write(ropeCache.data());
     }
 }
@@ -238,7 +283,7 @@ NnVulkanDeviceData::~NnVulkanDeviceData() {
     internalBuffers.clear();
 }
 
-NnSize2D NnVulkanDeviceData::resolveBufferSize(NnPointerConfig *config) {
+NnSize3D NnVulkanDeviceData::resolveBufferSize(NnPointerConfig *config) {
     if (config->source == SRC_BUFFER)
         return nodeConfig->buffers[config->pointerIndex].size;
     if (config->source == SRC_PIPE)
@@ -259,7 +304,7 @@ NnUint NnVulkanDeviceData::resolveBufferBatchOffset(NnPointerConfig *config, NnU
     if (config->type == PNTR_RAW)
         return 0;
 
-    const NnSize2D bufferSize = resolveBufferSize(config);
+    const NnSize3D bufferSize = resolveBufferSize(config);
     const NnSize blockSize = getBlockSize(bufferSize.floatType);
     assert(bufferSize.x % blockSize == 0);
     const NnUint sizeX = bufferSize.x / blockSize;
@@ -275,7 +320,7 @@ NnUint NnVulkanDeviceData::resolveBufferBatchOffset(NnPointerConfig *config, NnU
 
 NnUint NnVulkanDeviceData::resolveBufferBatchWidth(NnPointerConfig *config, NnUint batchIndex) {
     assert(batchIndex < netConfig->nBatches);
-    const NnSize2D bufferSize = resolveBufferSize(config);
+    const NnSize3D bufferSize = resolveBufferSize(config);
     const NnSize blockSize = getBlockSize(bufferSize.floatType);
     assert(bufferSize.x % blockSize == 0);
     const NnUint sizeX = bufferSize.x / blockSize;
@@ -312,6 +357,7 @@ NnVulkanDevice::NnVulkanDevice(NnUint gpuIndex, NnNetConfig *netConfig, NnNodeCo
     deviceExtension.push_back("VK_KHR_8bit_storage");
     deviceExtension.push_back("VK_KHR_16bit_storage");
     deviceExtension.push_back("VK_KHR_shader_float16_int8");
+    deviceExtension.push_back("VK_KHR_maintenance4");
 
     vk::ApplicationInfo appInfo {"Distributed Llama", 1, nullptr, 0, VK_API_VERSION_1_2 };
     vk::InstanceCreateInfo instanceCreateInfo(createInstanceFlags, &appInfo, instanceLayers, instanceExtensions);
@@ -322,20 +368,21 @@ NnVulkanDevice::NnVulkanDevice(NnUint gpuIndex, NnNetConfig *netConfig, NnNodeCo
     if (gpuIndex >= nDevices)
         throw std::runtime_error("Invalid GPU index, found " + std::to_string(nDevices) + " GPUs");
     context.physicalDevice = physicalDevices[gpuIndex];
+    assertDeviceExtensionSupport(context.physicalDevice, deviceExtension);
 
     vk::PhysicalDeviceProperties deviceProps = context.physicalDevice.getProperties();
     printf("🌋 Device: %s\n", (char*)deviceProps.deviceName);
     printf("🌋 DeviceApiVersion: %d.%d.%d\n", VK_VERSION_MAJOR(deviceProps.apiVersion), VK_VERSION_MINOR(deviceProps.apiVersion), VK_VERSION_PATCH(deviceProps.apiVersion));
     printf("🌋 MaxComputeSharedMemory: %d kB\n", deviceProps.limits.maxComputeSharedMemorySize / 1024);
+    printf("🌋 NonCoherentAtomSize: %lu bytes\n", (NnSize)deviceProps.limits.nonCoherentAtomSize);
 
     vk::PhysicalDeviceMemoryProperties memoryProperties = context.physicalDevice.getMemoryProperties();
     for (unsigned int h = 0; h < memoryProperties.memoryHeapCount; h++) {
         if (memoryProperties.memoryHeaps[h].flags & vk::MemoryHeapFlagBits::eDeviceLocal)
-            printf("🌋 Heap[%u]: %lu MB\n", h, ((unsigned long)memoryProperties.memoryHeaps[h].size) / (1024 * 1024));
+            printf("🌋 Heap[%u]: %lu MB\n", h, ((NnSize)memoryProperties.memoryHeaps[h].size) / (1024 * 1024));
     }
 
     vk::PhysicalDeviceFeatures deviceFeatures = context.physicalDevice.getFeatures();
-
     VkPhysicalDeviceFeatures2 deviceFeatures2;
     deviceFeatures2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
     deviceFeatures2.pNext = nullptr;
@@ -370,7 +417,9 @@ NnVulkanDevice::NnVulkanDevice(NnUint gpuIndex, NnNetConfig *netConfig, NnNodeCo
     vk::CommandPoolCreateInfo commandPoolCreateInfo(vk::CommandPoolCreateFlags(vk::CommandPoolCreateFlagBits::eTransient | vk::CommandPoolCreateFlagBits::eResetCommandBuffer), context.queueFamilyIndex);
     context.commandPool = context.device.createCommandPool(commandPoolCreateInfo);
     context.queue = context.device.getQueue(context.queueFamilyIndex, 0);
+    context.nonCoherentAtomSize = deviceProps.limits.nonCoherentAtomSize;
 
+    VULKAN_TRACE("Context created");
     data = new NnVulkanDeviceData(&context, netConfig, nodeConfig);
 }
 
@@ -400,7 +449,7 @@ static const char *getShaderFileName(const NnOpCode opCode, const NnOpQuantType 
     if (opCode == OP_EMBEDDING) {
         if (quantType == F32_F32_F32) return "embedding-forward-f32-f32.spv";
     }
-    if (opCode == OP_ROPE_LLAMA) {
+    if (opCode == OP_ROPE) {
         if (quantType == F32_F32_F32) return "rope-forward-f32-f32.spv";
     }
     if (opCode == OP_INV_RMS) {
@@ -432,48 +481,79 @@ static const char *getShaderFileName(const NnOpCode opCode, const NnOpQuantType 
     throw std::invalid_argument(std::string("Unsupported shader: ") + opCodeToString(opCode) + "/" + opQuantTypeToString(quantType));
 }
 
-static void buildShaderLayout(std::vector<NnVulkanBuffer *> &buffers, NnVulkanDeviceData *data, NnVulkanDeviceSegmentData *segmentData, NnUint opIndex, NnOpConfig *opConfig) {
+static void buildShaderLayout(std::vector<NnOpBufferAccess> &a, NnVulkanDeviceData *data, NnVulkanDeviceSegmentData *segmentData, NnUint opIndex, NnOpConfig *opConfig) {
     // input
-    buffers.push_back(data->resolvePointerVulkanBuffer(&opConfig->input));
+    a.push_back({ACCESS_READONLY, data->resolvePointerVulkanBuffer(&opConfig->input)});
     // output
-    buffers.push_back(data->resolvePointerVulkanBuffer(&opConfig->output));
+    a.push_back({ACCESS_READ_WRITE, data->resolvePointerVulkanBuffer(&opConfig->output)});
     // batch info
-    buffers.push_back(segmentData->resolveOpBatchInfoVulkanBuffer(opIndex));
+    a.push_back({ACCESS_IMMUTABLE, segmentData->resolveOpBatchInfoVulkanBuffer(opIndex)});
     // weight
     if (opConfig->weightSize.nBytes > 0)
-        buffers.push_back(segmentData->resolveOpWeightVulkanBuffer(opIndex));
+        a.push_back({ACCESS_IMMUTABLE, segmentData->resolveOpWeightVulkanBuffer(opIndex)});
     // config
     if (opConfig->configSize > 0) {
-        buffers.push_back(segmentData->resolveOpConfigVulkanBuffer(opIndex));
+        a.push_back({ACCESS_IMMUTABLE, segmentData->resolveOpConfigVulkanBuffer(opIndex)});
 
         switch (opConfig->code) {
         case OP_RMS_NORM: {
             const NnRmsNormOpConfig *config = (NnRmsNormOpConfig *)opConfig->config;
-            buffers.push_back(data->buffers[config->invRmsBufferIndex].get());
+            a.push_back({ACCESS_READONLY, data->buffers[config->invRmsBufferIndex].get()});
         } break;
         case OP_MUL: {
             const NnMulOpCodeConfig *config = (NnMulOpCodeConfig *)opConfig->config;
-            buffers.push_back(data->buffers[config->multiplierBufferIndex].get());
+            a.push_back({ACCESS_READONLY, data->buffers[config->multiplierBufferIndex].get()});
         } break;
         case OP_SHIFT: {
             const NnShiftOpCodeConfig *config = (NnShiftOpCodeConfig *)opConfig->config;
-            buffers.push_back(data->pipes[config->indexPipeIndex].get());
+            a.push_back({ACCESS_READONLY, data->pipes[config->indexPipeIndex].get()});
         } break;
-        case OP_ROPE_LLAMA: {
-            const NnRopeLlamaOpConfig *config = (NnRopeLlamaOpConfig *)opConfig->config;
-            buffers.push_back(data->pipes[config->positionPipeIndex].get());
-            buffers.push_back(data->buffers[config->ropeCacheBufferIndex].get());
+        case OP_ROPE: {
+            const NnRopeOpConfig *config = (NnRopeOpConfig *)opConfig->config;
+            a.push_back({ACCESS_READONLY, data->pipes[config->positionPipeIndex].get()});
+            a.push_back({ACCESS_IMMUTABLE, data->buffers[config->ropeCacheBufferIndex].get()});
         } break;
         case OP_MULTIHEAD_ATT: {
             const NnMultiHeadAttOpConfig *config = (NnMultiHeadAttOpConfig *)opConfig->config;
-            buffers.push_back(data->pipes[config->positionPipeIndex].get());
-            buffers.push_back(data->buffers[config->queryBufferIndex].get());
-            buffers.push_back(data->buffers[config->keyCacheBufferIndex].get());
-            buffers.push_back(data->buffers[config->valueCacheBufferIndex].get());
-            buffers.push_back(data->buffers[config->attBufferIndex].get());
+            a.push_back({ACCESS_READONLY, data->pipes[config->positionPipeIndex].get()});
+            a.push_back({ACCESS_READONLY, data->buffers[config->queryBufferIndex].get()});
+            a.push_back({ACCESS_READONLY, data->buffers[config->keyCacheBufferIndex].get()});
+            a.push_back({ACCESS_READONLY, data->buffers[config->valueCacheBufferIndex].get()});
+            a.push_back({ACCESS_READ_WRITE, data->buffers[config->attBufferIndex].get()});
         } break;
         default:
             break;
+        }
+    }
+}
+
+static bool containsBuffer(std::vector<NnVulkanBuffer *> &buffers, NnVulkanBuffer *buffer) {
+    for (NnVulkanBuffer *b : buffers) {
+        if (b == buffer) return true;
+    }
+    return false;
+}
+
+static void resolveBuffersToSync(std::vector<std::vector<NnVulkanBuffer *>>& buffersToSync, std::vector<std::vector<NnOpBufferAccess>>& accesses) {
+    std::vector<NnVulkanBuffer *> modifiedBuffers;
+    for (NnUint opIndex = 0; opIndex < accesses.size(); opIndex++) {
+        if (opIndex > 0) {
+            bool flush = false;
+            for (const NnOpBufferAccess &access : accesses[opIndex]) {
+                if (access.type == ACCESS_READONLY && containsBuffer(modifiedBuffers, access.buffer)) {
+                    flush = true;
+                    break;
+                }
+            }
+            if (flush) {
+                for (NnVulkanBuffer *buffer : modifiedBuffers)
+                    buffersToSync[opIndex].push_back(buffer);
+                modifiedBuffers.clear();
+            }
+        }
+        for (const NnOpBufferAccess &access : accesses[opIndex]) {
+            if (access.type == ACCESS_READ_WRITE && !containsBuffer(modifiedBuffers, access.buffer))
+                modifiedBuffers.push_back(access.buffer);
         }
     }
 }
@@ -489,21 +569,38 @@ static std::vector<NnVulkanBatchInfo> buildBatchInfo(NnOpConfig *opConfig, NnVul
     return offset;
 }
 
-static void resolveShaderGroups(const NnOpConfig *opConfig, const NnUint batchSize, NnUint *groupCount) {
+static NnUint resolveShaderNThreads(const NnOpConfig *opConfig, const NnOpQuantType opQuant, const NnSize3D inputSize, const NnSize3D outputSize) {
+    if (opConfig->code == OP_MATMUL) {
+        if (opQuant == Q80_Q40_F32) {
+            constexpr NnUint tileSizeX = 2; // Shader constant
+            assert(inputSize.x % (Q40_BLOCK_SIZE * tileSizeX) == 0);
+            return inputSize.x / (Q40_BLOCK_SIZE * tileSizeX);
+        }
+    }
+    return 0;
+}
+
+static void resolveShaderGroups(const NnOpConfig *opConfig, const NnUint batchSize, NnUint *groupCount, const NnSize3D inputSize, const NnSize3D outputSize) {
     groupCount[0] = 1;
     groupCount[1] = batchSize;
     groupCount[2] = 1;
 
-    if (opConfig->code == OP_CAST ||
-        opConfig->code == OP_RMS_NORM ||
-        opConfig->code == OP_MUL ||
-        opConfig->code == OP_SILU ||
-        opConfig->code == OP_SHIFT ||
-        opConfig->code == OP_MERGE_ADD)
-        groupCount[2] = 32;
-    else if (opConfig->code == OP_MATMUL) {
+    if (opConfig->code == OP_CAST) {
+        if (outputSize.floatType == F_Q80) {
+            groupCount[2] = outputSize.x / Q80_BLOCK_SIZE;
+        } else {
+            constexpr NnUint chunkSize = 4; // Shader constant
+            groupCount[2] = outputSize.x / chunkSize;
+        }
+    } else if (opConfig->code == OP_MERGE_ADD) {
+        if (inputSize.floatType == F_Q80) {
+            groupCount[2] = outputSize.x / Q80_BLOCK_SIZE; // Yes, outputSize is used here
+        } else {
+            groupCount[2] = 32;
+        }
+    } else if (opConfig->code == OP_MATMUL) {
         if (opConfig->weightSize.floatType == F_Q40) {
-            constexpr NnUint tileSizeD = 16; // Must be synced with the shader
+            constexpr NnUint tileSizeD = 8; // Shader constant
             assert(opConfig->weightSize.x % tileSizeD == 0);
             groupCount[2] = opConfig->weightSize.x / tileSizeD;
         } else {
@@ -511,7 +608,20 @@ static void resolveShaderGroups(const NnOpConfig *opConfig, const NnUint batchSi
         }
     }
     else if (opConfig->code == OP_MULTIHEAD_ATT)
-        groupCount[2] = ((NnMultiHeadAttOpConfig *)opConfig->config)->nHeads;
+        groupCount[2] = ((NnMultiHeadAttOpConfig *)opConfig->config)->nHeads0;
+    else if (opConfig->code == OP_INV_RMS)
+        groupCount[2] = ((NnInvRmsOpConfig *)opConfig->config)->nColumns;
+    else if (
+        opConfig->code == OP_EMBEDDING ||
+        opConfig->code == OP_RMS_NORM ||
+        opConfig->code == OP_MUL ||
+        opConfig->code == OP_SILU ||
+        opConfig->code == OP_SHIFT
+    ) {
+        constexpr NnUint chunkSize = 4; // Shader constant
+        assert(outputSize.x % chunkSize == 0);
+        groupCount[2] = outputSize.x / chunkSize;
+    }
 }
 
 static std::vector<uint32_t> readShader(const char *fileName) {
@@ -554,18 +664,18 @@ NnVulkanDeviceSegmentData::NnVulkanDeviceSegmentData(NnVulkanContext *context, N
 
         std::vector<NnVulkanBatchInfo> batchInfo = buildBatchInfo(opConfig, data, nBatches);
         NnSize batchInfoSize = sizeof(NnVulkanBatchInfo) * batchInfo.size();
-        NnVulkanBuffer *batchInfoBuffer = new NnVulkanBuffer(context, batchInfoSize, vk::BufferUsageFlagBits::eStorageBuffer, false);
+        NnVulkanBuffer *batchInfoBuffer = new NnVulkanBuffer(context, "batchInfo", batchInfoSize, vk::BufferUsageFlagBits::eUniformBuffer, false);
         data->internalBuffers.push_back(std::unique_ptr<NnVulkanBuffer>(batchInfoBuffer));
         batchInfoBuffer->write((NnByte *)batchInfo.data());
         batchInfoBufferIndex[opIndex] = data->internalBuffers.size() - 1;
 
         if (opConfig->weightSize.nBytes > 0) {
-            NnVulkanBuffer *buffer = new NnVulkanBuffer(context, opConfig->weightSize.nBytes, vk::BufferUsageFlagBits::eStorageBuffer, false);
+            NnVulkanBuffer *buffer = new NnVulkanBuffer(context, "weights", opConfig->weightSize.nBytes, vk::BufferUsageFlagBits::eStorageBuffer, false);
             data->internalBuffers.push_back(std::unique_ptr<NnVulkanBuffer>(buffer));
             weightBufferIndex[opIndex] = data->internalBuffers.size() - 1;
         }
         if (opConfig->configSize > 0) {
-            NnVulkanBuffer *configBuffer = new NnVulkanBuffer(context, opConfig->configSize, vk::BufferUsageFlagBits::eUniformBuffer, false);
+            NnVulkanBuffer *configBuffer = new NnVulkanBuffer(context, "config", opConfig->configSize, vk::BufferUsageFlagBits::eUniformBuffer, false);
             data->internalBuffers.push_back(std::unique_ptr<NnVulkanBuffer>(configBuffer));
             configBuffer->write(opConfig->config);
             configBufferIndex[opIndex] = data->internalBuffers.size() - 1;
@@ -593,7 +703,8 @@ NnVulkanDeviceSegment::NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanD
     descriptorSets(segmentConfig->nOps),
     descriptorSetLayouts(segmentConfig->nOps),
     pipelineLayouts(segmentConfig->nOps),
-    pipelines(segmentConfig->nOps)
+    pipelines(segmentConfig->nOps),
+    buffersToSync(segmentConfig->nOps)
 {
     this->context = context;
     this->data = data;
@@ -605,18 +716,16 @@ NnVulkanDeviceSegment::NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanD
     this->lastBatchSize = 0;
 
     std::vector<vk::PipelineShaderStageCreateInfo> shaderCreateInfos(segmentConfig->nOps);
-    std::vector<std::vector<NnVulkanBuffer *>> opBuffers(segmentConfig->nOps);
+    std::vector<std::vector<NnOpBufferAccess>> opBufferAccesses(segmentConfig->nOps);
 
-    constexpr NnUint maxConsts = 3;
-    std::vector<NnUint> nConsts(segmentConfig->nOps);
-    std::vector<int> consts(segmentConfig->nOps * maxConsts);
     std::vector<vk::SpecializationInfo> specInfos(segmentConfig->nOps);
-    std::vector<vk::SpecializationMapEntry> specMapEntries(segmentConfig->nOps * maxConsts);
-    
+    std::vector<vk::SpecializationMapEntry> specEntries(segmentConfig->nOps);
+    std::vector<NnUint> nConsts(segmentConfig->nOps);
+
     for (NnUint opIndex = 0; opIndex < segmentConfig->nOps; opIndex++) {
         NnOpConfig *opConfig = &segmentConfig->ops[opIndex];
-        NnSize2D inputSize = data->resolveBufferSize(&opConfig->input);
-        NnSize2D outputSize = data->resolveBufferSize(&opConfig->output);
+        NnSize3D inputSize = data->resolveBufferSize(&opConfig->input);
+        NnSize3D outputSize = data->resolveBufferSize(&opConfig->output);
         NnOpQuantType opQuant = getOpQuantType(
             inputSize.floatType,
             opConfig->weightSize.floatType,
@@ -625,8 +734,7 @@ NnVulkanDeviceSegment::NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanD
         const char *shaderFileName = getShaderFileName(opConfig->code, opQuant);
         std::vector<uint32_t> code = readShader(shaderFileName);
 
-        std::vector<NnVulkanBuffer *> &buffers = opBuffers[opIndex];
-        buildShaderLayout(buffers, data, segmentData.get(), opIndex, opConfig);
+        buildShaderLayout(opBufferAccesses[opIndex], data, segmentData.get(), opIndex, opConfig);
 
         VULKAN_TRACE("Loading shader: %s", shaderFileName);
         vk::ShaderModuleCreateInfo shaderModuleCreateInfo(
@@ -635,26 +743,31 @@ NnVulkanDeviceSegment::NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanD
             code.data()
         );
 
+        nConsts[opIndex] = resolveShaderNThreads(opConfig, opQuant, inputSize, outputSize);
+        specEntries[opIndex] = vk::SpecializationMapEntry(0, 0, sizeof(NnUint));
+        specInfos[opIndex] = vk::SpecializationInfo(1, &specEntries[opIndex], sizeof(NnUint), &nConsts[opIndex]);
+
         vk::ShaderModule shaderModule = context->device.createShaderModule(shaderModuleCreateInfo);
         vk::PipelineShaderStageCreateInfo shaderCreateInfo(
             vk::PipelineShaderStageCreateFlags(),
             vk::ShaderStageFlagBits::eCompute,
             shaderModule,
-            "main"
+            "main",
+            &specInfos[opIndex]
         );
 
         shaderModules[opIndex] = shaderModule;
         shaderCreateInfos[opIndex] = shaderCreateInfo;
-        VULKAN_TRACE("Segment %d, buffers: %zu", opIndex, buffers.size());
+        VULKAN_TRACE("Segment %d, opIndex: %d, buffers: %zu", segmentIndex, opIndex, buffers.size());
     }
 
     NnUint nUniformBuffers = 0;
     NnUint nStorageBuffers = 0;
     for (NnUint opIndex = 0; opIndex < segmentConfig->nOps; opIndex++) {
-        std::vector<NnVulkanBuffer *> &buffers = opBuffers[opIndex];
-        std::vector<vk::DescriptorSetLayoutBinding> descriptorSetLayoutBindings(buffers.size());
-        for (NnUint i = 0; i < buffers.size(); i++) {
-            vk::DescriptorType descriptorType = toDescriptorType(buffers.data()[i]);
+        std::vector<NnOpBufferAccess> &accesses = opBufferAccesses[opIndex];
+        std::vector<vk::DescriptorSetLayoutBinding> descriptorSetLayoutBindings(accesses.size());
+        for (NnUint i = 0; i < accesses.size(); i++) {
+            vk::DescriptorType descriptorType = toDescriptorType(accesses[i].buffer);
             descriptorSetLayoutBindings[i] = vk::DescriptorSetLayoutBinding(
                 i,
                 descriptorType,
@@ -698,9 +811,9 @@ NnVulkanDeviceSegment::NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanD
     std::vector<vk::DescriptorBufferInfo> bufferInfos(nUniformBuffers + nStorageBuffers);
     NnUint writeDescriptorSetIndex = 0;
     for (NnUint opIndex = 0; opIndex < segmentConfig->nOps; opIndex++) {
-        std::vector<NnVulkanBuffer *> &buffers = opBuffers[opIndex];
-        for (NnUint i = 0; i < buffers.size(); i++) {
-            NnVulkanBuffer *buffer = buffers.data()[i];
+        std::vector<NnOpBufferAccess> &accesses = opBufferAccesses[opIndex];
+        for (NnUint i = 0; i < accesses.size(); i++) {
+            NnVulkanBuffer *buffer = accesses[i].buffer;
             bufferInfos[writeDescriptorSetIndex] = vk::DescriptorBufferInfo(
                 buffer->deviceBuffer,
                 0,
@@ -738,6 +851,8 @@ NnVulkanDeviceSegment::NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanD
     vk::CommandBufferAllocateInfo commandBufferAllocInfo(context->commandPool, vk::CommandBufferLevel::ePrimary, 1);
     const std::vector<vk::CommandBuffer> cmdBuffers = context->device.allocateCommandBuffers(commandBufferAllocInfo);
     commandBuffer = cmdBuffers.front();
+
+    resolveBuffersToSync(buffersToSync, opBufferAccesses);
 }
 
 NnVulkanDeviceSegment::~NnVulkanDeviceSegment() {
@@ -757,7 +872,9 @@ NnVulkanDeviceSegment::~NnVulkanDeviceSegment() {
     VULKAN_TRACE("Destroyed segment");
 }
 
-void NnVulkanDeviceSegment::loadWeight(NnUint opIndex, NnSize nBytes, NnByte *weight) {
+void NnVulkanDeviceSegment::loadWeight(NnUint opIndex, NnSize offset, NnSize nBytes, NnByte *weight) {
+    assert(offset == 0u); // TODO
+
     assert(segmentConfig->nOps > opIndex);
     assert(segmentConfig->ops[opIndex].weightSize.nBytes == nBytes);
     NnVulkanBuffer *buffer = segmentData->resolveOpWeightVulkanBuffer(opIndex);
@@ -777,7 +894,8 @@ void NnVulkanDeviceSegment::forward(NnUint opIndex, NnUint nThreads, NnUint thre
             for (NnUint i = 0; i < netConfig->nPreSyncs; i++) {
                 NnPreSyncConfig *preSyncConfig = &netConfig->preSyncs[i];
                 NnByte *pipeData = netExecution->pipes[preSyncConfig->pipeIndex];
-                data->pipes[preSyncConfig->pipeIndex]->write(pipeData);
+                NnVulkanBuffer *buffer = data->pipes[preSyncConfig->pipeIndex].get();
+                buffer->write(pipeData, buffer->calcSliceSize(batchSize, netConfig->nBatches));
             }
         }
 
@@ -785,7 +903,8 @@ void NnVulkanDeviceSegment::forward(NnUint opIndex, NnUint nThreads, NnUint thre
             NnOpConfig *opConfig = &segmentConfig->ops[opIndex];
             if (opConfig->input.source == SRC_PIPE) {
                 NnByte *pipeData = netExecution->pipes[opConfig->input.pointerIndex];
-                data->pipes[opConfig->input.pointerIndex]->write(pipeData);
+                NnVulkanBuffer *buffer = data->pipes[opConfig->input.pointerIndex].get();
+                buffer->write(pipeData, buffer->calcSliceSize(batchSize, netConfig->nBatches));
             }
         }
     }
@@ -796,21 +915,34 @@ void NnVulkanDeviceSegment::forward(NnUint opIndex, NnUint nThreads, NnUint thre
 
         NnUint opGroupCount[3];
         for (NnUint opIndex = 0; opIndex < segmentConfig->nOps; opIndex++) {
-            resolveShaderGroups(&segmentConfig->ops[opIndex], batchSize, opGroupCount);
-    
-            if (opIndex > 0) {
-                vk::MemoryBarrier memoryBarrier(
+            NnSize3D inputSize = data->resolveBufferSize(&segmentConfig->ops[opIndex].input);
+            NnSize3D outputSize = data->resolveBufferSize(&segmentConfig->ops[opIndex].output);
+
+            resolveShaderGroups(&segmentConfig->ops[opIndex], batchSize, opGroupCount, inputSize, outputSize);
+
+            std::vector<vk::BufferMemoryBarrier> memoryBarriers;
+            for (NnVulkanBuffer *buffer : buffersToSync[opIndex]) {
+                vk::BufferMemoryBarrier barrier(
                     vk::AccessFlagBits::eShaderWrite,
-                    vk::AccessFlagBits::eShaderRead
+                    vk::AccessFlagBits::eShaderRead,
+                    context->queueFamilyIndex,
+                    context->queueFamilyIndex,
+                    buffer->deviceBuffer,
+                    0, 
+                    buffer->calcSliceSize(batchSize, netConfig->nBatches)
                 );
+                memoryBarriers.push_back(barrier);
+            }
+            if (!memoryBarriers.empty()) {
                 commandBuffer.pipelineBarrier(
                     vk::PipelineStageFlagBits::eComputeShader,
                     vk::PipelineStageFlagBits::eComputeShader,
                     vk::DependencyFlags(),
-                    memoryBarrier,
                     nullptr,
+                    memoryBarriers,
                     nullptr
                 );
+                VULKAN_TRACE("Created memory barrier for %zu buffers", barriers.size());
             }
 
             commandBuffer.bindPipeline(
@@ -835,7 +967,6 @@ void NnVulkanDeviceSegment::forward(NnUint opIndex, NnUint nThreads, NnUint thre
     assert(context->device.waitForFences({ fence }, true, uint64_t(-1)) == vk::Result::eSuccess);
 
     context->device.resetFences({ fence });
-    
     VULKAN_TRACE("Forwarded");
 
     // TODO: refactor this block
@@ -844,8 +975,34 @@ void NnVulkanDeviceSegment::forward(NnUint opIndex, NnUint nThreads, NnUint thre
             NnOpConfig *opConfig = &segmentConfig->ops[opIndex];
             if (opConfig->output.source == SRC_PIPE) {
                 NnByte *pipeData = netExecution->pipes[opConfig->output.pointerIndex];
-                data->pipes[opConfig->output.pointerIndex]->read(pipeData);
+                NnVulkanBuffer *buffer = data->pipes[opConfig->output.pointerIndex].get();
+                buffer->read(pipeData, buffer->calcSliceSize(batchSize, netConfig->nBatches));
             }
         }
     }
+
+#if DEBUG_VULKAN_BUFFERS
+    NnUint nBuffers = data->buffers.size();
+    for (NnUint i = 0; i < nBuffers; i++) {
+        NnVulkanBuffer *buffer = data->buffers[i].get();
+        printf("[%3d:%3d:%10s] ", segmentIndex, i, buffer->name);
+        std::vector<NnByte> data(buffer->bufferSize);
+        buffer->read(data.data());
+        if (strncmp(buffer->name, "q_", 2) == 0) {
+            NnUint nBytes = 32;
+            if (buffer->bufferSize < nBytes)
+                nBytes = buffer->bufferSize;
+            for (NnUint j = 0; j < nBytes; j++)
+                printf(" %x", data.data()[j]);
+        } else {
+            NnUint nNumbers = buffer->bufferSize / sizeof(float);
+            if (nNumbers > 16)
+                nNumbers = 16;
+            float *nums = (float *)data.data();
+            for (NnUint j = 0; j < nNumbers; j++)
+                printf(" %.4f", nums[j]);
+        }
+        printf("\n");
+    }
+#endif
 }

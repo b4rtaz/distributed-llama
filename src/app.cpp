@@ -124,6 +124,9 @@ AppCliArgs AppCliArgs::parse(int argc, char* *argv, bool requireMode) {
             throw std::runtime_error("Unknown option: " + std::string(name));
         }
     }
+
+    if (args.nThreads < 1)
+        throw std::runtime_error("Number of threads must be at least 1");
     return args;
 }
 
@@ -234,9 +237,9 @@ void runInferenceApp(AppCliArgs *args, void (*handler)(AppInferenceContext *cont
 
     Tokenizer tokenizer(args->tokenizerPath);
     if (tokenizer.vocabSize != header.vocabSize)
-        throw std::runtime_error("Tokenizer vocab size does not match the model vocab size");
+        printf("Tokenizer vocab size (%d) does not match the model vocab size (%d)\n", tokenizer.vocabSize, header.vocabSize);
 
-    Sampler sampler(header.vocabSize, args->temperature, args->topp, args->seed);
+    Sampler sampler(tokenizer.vocabSize, args->temperature, args->topp, args->seed);
 
     LlmNet net = buildLlmNet(&header, nNodes, args->nBatches);
     std::unique_ptr<LlmNet, void(*)(LlmNet *)> netPtr(&net, releaseLlmNet);

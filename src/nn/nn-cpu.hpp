@@ -21,7 +21,7 @@ public:
     ~NnCpuDevice() override;
     NnUint maxNThreads() override;
     NnDeviceSegment *createSegment(NnUint segmentIndex) override;
-    void resolvePointer(NnByte **pntr, NnSize2D *pntrSize, NnPointerConfig *pointerConfig);
+    std::vector<NnByte *> resolvePointer(NnSize3D *pntrSize, NnPointerConfig *pointerConfig);
 };
 
 class NnCpuDeviceSegment : public NnDeviceSegment {
@@ -32,7 +32,7 @@ public:
     NnCpuDeviceSegment(NnCpuOpForward *opForward, NnCpuOpContext *opContexts, NnUint nOps)
         : opForward(opForward), opContexts(opContexts), nOps(nOps) {}
     ~NnCpuDeviceSegment() override;
-    void loadWeight(NnUint opIndex, NnSize nBytes, NnByte *weight) override;
+    void loadWeight(NnUint opIndex, NnSize offset, NnSize nBytes, NnByte *weight) override;
     void forward(NnUint opIndex, NnUint nThreads, NnUint threadIndex, NnUint batchSize) override;
 };
 

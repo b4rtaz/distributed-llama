@@ -6,8 +6,6 @@
 #include "nn-executor.hpp"
 #include "nn-cpu-ops.hpp"
 
-#define DEBUG_VULKAN_TRACE false
-
 typedef struct {
     vk::Instance instance;
     vk::PhysicalDevice physicalDevice;
@@ -15,6 +13,7 @@ typedef struct {
     uint32_t queueFamilyIndex;
     vk::CommandPool commandPool;
     vk::Queue queue;
+    NnSize nonCoherentAtomSize;
 } NnVulkanContext;
 
 enum NnStagingVulkanCopyDirection {
@@ -46,13 +45,17 @@ private:
     vk::DeviceMemory deviceMemory;
     void *hostPointer;
 public:
-    vk::DeviceSize bufferSize;
+    const char *name;
+    NnSize bufferSize;
     vk::Buffer deviceBuffer;
     vk::BufferUsageFlags usageFlags;
-    NnVulkanBuffer(NnVulkanContext *context, const vk::DeviceSize bufferSize, vk::BufferUsageFlags usageFlags, bool fastAccess);
+    NnVulkanBuffer(NnVulkanContext *context, const char *name, const NnSize bufferSize, vk::BufferUsageFlags usageFlags, bool fastAccess);
     ~NnVulkanBuffer();
     void write(const NnByte *data);
+    void write(const NnByte *data, const NnSize size);
     void read(NnByte *data);
+    void read(NnByte *data, const NnSize size);
+    NnSize calcSliceSize(const NnSize nominator, const NnSize denominator);
 };
 
 typedef struct {
@@ -73,7 +76,7 @@ public:
     NnVulkanDeviceData(NnVulkanContext *context, NnNetConfig *netConfig, NnNodeConfig *nodeConfig);
     ~NnVulkanDeviceData();
 
-    NnSize2D resolveBufferSize(NnPointerConfig *config);
+    NnSize3D resolveBufferSize(NnPointerConfig *config);
     NnVulkanBuffer *resolvePointerVulkanBuffer(NnPointerConfig *config);
     NnUint resolveBufferBatchOffset(NnPointerConfig *config, NnUint batchIndex);
     NnUint resolveBufferBatchWidth(NnPointerConfig *config, NnUint batchIndex);
@@ -106,6 +109,17 @@ public:
     NnVulkanBuffer *resolveOpConfigVulkanBuffer(NnUint opIndex);
 };
 
+enum NnOpBufferAccessType {
+    ACCESS_IMMUTABLE,
+    ACCESS_READONLY,
+    ACCESS_READ_WRITE,
+};
+
+typedef struct {
+    NnOpBufferAccessType type;
+    NnVulkanBuffer *buffer;
+} NnOpBufferAccess;
+
 class NnVulkanDeviceSegment : public NnDeviceSegment {
 private:
     NnVulkanContext *context;
@@ -125,11 +139,12 @@ private:
     std::vector<vk::Pipeline> pipelines;
     vk::PipelineCache pipelineCache;
     vk::CommandBuffer commandBuffer;
+    std::vector<std::vector<NnVulkanBuffer *>> buffersToSync;
     NnUint lastBatchSize;
 public:
     NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanDeviceData *data, NnNetConfig *netConfig, NnUint segmentIndex, NnSegmentConfig *segmentConfig, NnNetExecution *netExecution);
     ~NnVulkanDeviceSegment() override;
-    void loadWeight(NnUint opIndex, NnSize nBytes, NnByte *weight) override;
+    void loadWeight(NnUint opIndex, NnSize offset, NnSize nBytes, NnByte *weight) override;
     void forward(NnUint opIndex, NnUint nThreads, NnUint threadIndex, NnUint batchSize) override;
 };
 

@@ -11,18 +11,20 @@
 
 typedef struct {
     NnFloatType floatType;
+    NnUint z;
     NnUint y;
     NnUint x;
     NnSize length;
     NnSize nBytes;
-} NnSize2D;
+    NnSize nBytesXY;
+} NnSize3D;
 
 // slices
 
 typedef struct {
     NnUint kvDim0;
-    NnSize2D keySize;
-    NnSize2D valueSize;
+    NnSize3D keySize;
+    NnSize3D valueSize;
 } NnKvCacheSlice;
 
 typedef struct {
@@ -30,8 +32,8 @@ typedef struct {
     NnUint nNodes;
     NnUint d0;
     NnUint n;
-    NnSize2D size;
-    NnSize2D sliceSize;
+    NnSize3D size;
+    NnSize3D sliceSize;
 } NnRowMatmulSlice;
 
 typedef struct {
@@ -40,8 +42,8 @@ typedef struct {
     NnUint n;
     NnUint n0;
     NnUint d;
-    NnSize2D size;
-    NnSize2D sliceSize;
+    NnSize3D size;
+    NnSize3D sliceSize;
 } NnColMatmulSlice;
 
 typedef struct {
@@ -54,33 +56,38 @@ typedef struct {
     NnUint kvDimStart;
     NnUint sliceDim;
     NnUint seqLen;
-    NnUint headSize;
+    NnUint headDim;
     NnUint nKvHeads;
     float ropeTheta;
-    NnSize2D cacheSize;
+    NnSize3D cacheSize;
 } NnRopeSlice;
 
 typedef struct {
     NnUint nHeads;
     NnUint nHeads0;
-    NnSize2D attSize;
+    NnSize3D attSize;
 } NnMultiHeadAttSlice;
 
 // base enums
 
 enum NnOpCode {
     OP_MERGE_ADD,
+    OP_MERGE_SUM,
     OP_EMBEDDING,
     OP_INV_RMS,
     OP_RMS_NORM,
     OP_MATMUL,
-    OP_ROPE_LLAMA,
+    OP_ROPE,
     OP_MULTIHEAD_ATT,
     OP_GELU,
     OP_SILU,
     OP_MUL,
+    OP_SCALE,
     OP_CAST,
+    OP_REPEAT_Z,
     OP_SHIFT,
+    OP_SOFTMAX,
+    OP_MOE_GATE,
 };
 
 enum NnOpQuantType {
@@ -125,12 +132,12 @@ enum NnRopeType {
 
 typedef struct {
     char *name;
-    NnSize2D size;
+    NnSize3D size;
 } NnPipeConfig;
 
 typedef struct {
     char *name;
-    NnSize2D size;
+    NnSize3D size;
 } NnBufferConfig;
 
 typedef struct {
@@ -145,7 +152,7 @@ typedef struct {
     NnUint index;
     NnPointerConfig input;
     NnPointerConfig output;
-    NnSize2D weightSize;
+    NnSize3D weightSize;
     NnByte *config;
     NnUint configSize;
 } NnOpConfig;
@@ -191,18 +198,23 @@ typedef struct {
 
 typedef struct {
     float epsilon;
+    NnUint nColumns;
 } NnInvRmsOpConfig;
 
 typedef struct {
     NnUint invRmsBufferIndex;
+    NnUint nColumns;
 } NnRmsNormOpConfig;
 
 typedef struct {
-    // empty
+    NnUint nExperts;
+    NnUint nActiveExperts;
+    NnUint activeExpertIndexesBufferIndex;
 } NnMatmulOpConfig;
 
 typedef struct {
-    bool isQ;
+    NnRopeType type;
+    NnUint isQ; // Cannot use `bool` here due to GPU memory alignment
     NnUint positionPipeIndex;
     NnUint ropeCacheBufferIndex;
     float ropeScalingFactor;
@@ -210,13 +222,13 @@ typedef struct {
     float ropeScalingHighFreqFactor;
     NnUint ropeScalingOrigMaxSeqLen;
     NnRopeSlice slice;
-} NnRopeLlamaOpConfig;
+} NnRopeOpConfig;
 
 typedef struct {
     NnUint nHeads;
     NnUint nHeads0;
     NnUint nKvHeads;
-    NnUint headSize;
+    NnUint headDim;
     NnUint seqLen;
     NnUint qSliceD0;
     NnUint kvDim0;
@@ -233,6 +245,10 @@ typedef struct {
 
 typedef struct {
     // empty
+} NnMergeSumOpCodeConfig;
+
+typedef struct {
+    // empty
 } NnSiluOpCodeConfig;
 
 typedef struct {
@@ -240,12 +256,30 @@ typedef struct {
 } NnMulOpCodeConfig;
 
 typedef struct {
+    NnUint scaleBufferIndex;
+} NnScaleOpCodeConfig;
+
+typedef struct {
     // empty
 } NnCastOpCodeConfig;
 
 typedef struct {
+    // empty
+} NnRepeatZOpCodeConfig;
+
+typedef struct {
     NnUint indexPipeIndex;
 } NnShiftOpCodeConfig;
+
+typedef struct {
+    // empty
+} NnSoftmaxOpCodeConfig;
+
+typedef struct {
+    NnUint k;
+    NnUint normTopk;
+    NnUint indexesBufferIndex;
+} NnMoeGateOpCodeConfig;
 
 // utility functions
 
@@ -255,9 +289,10 @@ const char *opQuantTypeToString(NnOpQuantType type);
 NnSize getBytes(NnFloatType floatType, NnSize n);
 NnSize getBlockSize(NnFloatType floatType);
 NnOpQuantType getOpQuantType(NnFloatType input, NnFloatType weight, NnFloatType output);
-NnSize2D size0();
-NnSize2D size1D(NnFloatType floatType, NnUint x);
-NnSize2D size2D(NnFloatType floatType, NnUint y, NnUint x);
+NnSize3D size0();
+NnSize3D size1D(NnFloatType floatType, NnUint x);
+NnSize3D size2D(NnFloatType floatType, NnUint y, NnUint x);
+NnSize3D size3D(NnFloatType floatType, NnUint z, NnUint y, NnUint x);
 NnPointerConfig pointerBatchConfig(NnPointerSource source, NnUint index);
 NnPointerConfig pointerBatchedSliceConfig(NnPointerSource source, NnUint index);
 NnPointerConfig pointerRawConfig(NnPointerSource source, NnUint index);
@@ -283,7 +318,7 @@ public:
 NnKvCacheSlice sliceKvCache(NnUint kvDim, NnUint seqLen, NnUint nNodes);
 NnRowMatmulSlice sliceRowMatmul(NnFloatType type, NnUint nNodes, NnUint n, NnUint d);
 NnColMatmulSlice sliceColMatmul(NnFloatType type, NnUint nNodes, NnUint n, NnUint d);
-NnRopeSlice sliceRope(NnUint dim, NnUint kvDim, NnUint nKvHeads, NnUint nNodes, NnUint seqLen, NnUint headSize, float ropeTheta, NnUint nodeIndex);
+NnRopeSlice sliceRope(NnRopeType type, NnUint qDim, NnUint kvDim, NnUint nKvHeads, NnUint nNodes, NnUint seqLen, NnUint headDim, float ropeTheta, NnUint nodeIndex);
 NnMultiHeadAttSlice sliceMultiHeadAtt(NnUint nHeads, NnUint seqLen, NnUint nNodes, NnUint nBatches);
 
 // splitters
@@ -293,6 +328,6 @@ NnUint splitColMatmulWeight(NnColMatmulSlice *slice, NnUint nodeIndex, NnByte *w
 
 // rope
 
-void fullfillRopeLlama3Cache(const NnRopeLlamaOpConfig *config, float *cache);
+void fullfillRopeCache(const NnRopeOpConfig *config, float *cache);
 
 #endif

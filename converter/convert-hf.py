@@ -7,6 +7,8 @@ from safetensors import safe_open
 
 class ArchType:
     LLAMA = 0xABCD00
+    QWEN3 = 0xABCD01
+    QWEN3_MOE = 0xABCD02
 
 def permute(tensor, nHeads: int, nKvHeads: int):
     if nHeads != nKvHeads:
@@ -16,6 +18,7 @@ def permute(tensor, nHeads: int, nKvHeads: int):
 class Processor:
     def __init__(self, config):
         self.config = config
+        self.archType = config['arch_type']
         self.currentModelIndex = None
         self.currentModel = None
         self.currentModelKeys = None
@@ -27,6 +30,7 @@ class Processor:
             del self.currentModel
             self.currentModel = None
             gc.collect()
+        self.currentModelIndex = None
 
     def __loadModel(self, index: int):
         if (self.currentModelIndex == index):
@@ -42,11 +46,15 @@ class Processor:
         print(f'Found {len(self.currentModelKeys)} layers')
         self.currentModelIndex = index
 
-    def __permuteQ(self, tensor):
-        return permute(tensor, self.config['n_heads'], self.config['n_heads'])
+    def __transformQ(self, tensor):
+        if self.archType == ArchType.LLAMA:
+            return permute(tensor, self.config['n_heads'], self.config['n_heads'])
+        return tensor
 
-    def __permuteK(self, tensor):
-        return permute(tensor, self.config['n_heads'], self.config['n_kv_heads'])
+    def __transformK(self, tensor):
+        if self.archType == ArchType.LLAMA:
+            return permute(tensor, self.config['n_heads'], self.config['n_kv_heads'])
+        return tensor
 
     def __preparePlan(self):
         wt = self.config['weights_float_type']
@@ -54,9 +62,9 @@ class Processor:
         p.append([FloatType.F32,
             'model.embed_tokens.weight'])
         for l in range(0, self.config['n_layers']):
-            p.append([wt, self.__permuteQ,
+            p.append([wt, self.__transformQ,
                 f'model.layers.{l}.self_attn.q_proj.weight'])
-            p.append([wt, self.__permuteK,
+            p.append([wt, self.__transformK,
                 f'model.layers.{l}.self_attn.k_proj.weight'])
             p.append([wt,
                 f'model.layers.{l}.self_attn.v_proj.weight'])
@@ -64,20 +72,27 @@ class Processor:
                 f'model.layers.{l}.self_attn.o_proj.weight'])
 
             if (self.config['n_experts'] > 0):
+                p.append([FloatType.F32, f'model.layers.{l}.mlp.gate.weight'])
                 for e in range(self.config['n_experts']):
                     p.append([wt,
-                        f'model.layers.{l}.block_sparse_moe.experts.{e}.w3.weight']) # up
+                        f'model.layers.{l}.mlp.experts.{e}.gate_proj.weight'])
                     p.append([wt,
-                        f'model.layers.{l}.block_sparse_moe.experts.{e}.w1.weight']) # gate
+                        f'model.layers.{l}.mlp.experts.{e}.down_proj.weight'])
                     p.append([wt,
-                        f'model.layers.{l}.block_sparse_moe.experts.{e}.w2.weight']) # down
+                        f'model.layers.{l}.mlp.experts.{e}.up_proj.weight'])
             else:
                 p.append([wt,
-                    f'model.layers.{l}.mlp.gate_proj.weight']) # gate
+                    f'model.layers.{l}.mlp.gate_proj.weight'])
                 p.append([wt,
-                    f'model.layers.{l}.mlp.down_proj.weight']) # down
+                    f'model.layers.{l}.mlp.down_proj.weight'])
                 p.append([wt,
-                    f'model.layers.{l}.mlp.up_proj.weight']) # up
+                    f'model.layers.{l}.mlp.up_proj.weight'])
+
+            if (self.archType == ArchType.QWEN3 or self.archType == ArchType.QWEN3_MOE):
+                p.append([FloatType.F32,
+                    f'model.layers.{l}.self_attn.q_norm.weight'])
+                p.append([FloatType.F32,
+                    f'model.layers.{l}.self_attn.k_norm.weight'])
 
             p.append([FloatType.F32,
                 f'model.layers.{l}.input_layernorm.weight'])
@@ -90,6 +105,11 @@ class Processor:
 
     def write(self, outputFile: str):
         self.__preparePlan()
+
+        # Loading the last model file to get the layer names
+        self.__loadModel(len(self.config['files']) - 1)
+        self.__unloadModel()
+
         for planItem in self.plan:
             lookup = planItem[1:]
             transform = None
@@ -127,6 +147,8 @@ def parseArchType(type: str):
     archType = {
         'llama': ArchType.LLAMA,
         'mistral': ArchType.LLAMA,
+        'qwen3': ArchType.QWEN3,
+        'qwen3_moe': ArchType.QWEN3_MOE,
     }.get(type)
     if (archType is None):
         raise Exception(f'Unsupported arch type: {type}')
@@ -148,6 +170,13 @@ def parseRopeType(rt: str):
     if (ropeType is None):
         raise Exception(f'Unsupported rope type: {ropeType}')
     return ropeType
+
+def parseRmsNormEpsilon(epsilon: float):
+    if (epsilon == 1e-05):
+        return 5
+    elif (epsilon == 1e-06):
+        return 6
+    raise Exception(f'Unsupported epsilon: {epsilon}')
 
 def loadConfig(folderPath: str, weightsFloatType: int):
     allFiles = os.listdir(folderPath)
@@ -176,8 +205,8 @@ def loadConfig(folderPath: str, weightsFloatType: int):
         'files': files,
     }
 
-    nExperts = config.get('num_local_experts')
-    nActiveExperts = config.get('num_active_local_experts') or config.get('num_experts_per_tok')
+    nExperts = config.get('num_experts')
+    nActiveExperts = config.get('num_experts_per_tok')
     result['n_experts'] = int(nExperts) if nExperts is not None else 0
     result['n_active_experts'] = int(nActiveExperts) if nActiveExperts is not None else 0
 
@@ -192,6 +221,18 @@ def loadConfig(folderPath: str, weightsFloatType: int):
         result['rope_scaling_high_freq_factory'] = int(ropeScaling['high_freq_factor'])
         result['rope_scaling_orig_max_seq_len'] = int(ropeScaling['original_max_position_embeddings'])
         result['rope_type'] = parseRopeType(ropeScaling['rope_type'])
+
+    headDim = config.get('head_dim')
+    if (headDim is not None):
+        result['head_dim'] = headDim
+
+    rmsNormEps = config.get('rms_norm_eps')
+    if (rmsNormEps is not None):
+        result['norm_epsilon'] = parseRmsNormEpsilon(rmsNormEps)
+
+    moeHiddenDim = config.get('moe_intermediate_size')
+    if (moeHiddenDim is not None):
+        result['moe_hidden_dim'] = int(moeHiddenDim)
     return result
 
 def printUsage():

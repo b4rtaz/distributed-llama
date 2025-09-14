@@ -24,7 +24,7 @@ public:
         this->nBatches = nBatches;
     }
 
-    NnUint addPipe(const char *name, NnSize2D size) {
+    NnUint addPipe(const char *name, NnSize3D size) {
         NnUint pipeIndex = pipes.size();
         pipes.push_back({ cloneString(name), size });
         return pipeIndex;
@@ -62,7 +62,7 @@ public:
         this->nodeIndex = nodeIndex;
     }
 
-    NnUint addBuffer(const char *name, NnSize2D size) {
+    NnUint addBuffer(const char *name, NnSize3D size) {
         NnUint bufferIndex = buffers.size();
         buffers.push_back({ cloneString(name), size });
         return bufferIndex;
@@ -98,7 +98,7 @@ private:
 
 public:
     template <typename T>
-    void addOp(NnOpCode code, const char *name, NnUint index, NnPointerConfig input, NnPointerConfig output, NnSize2D weightSize, T config) {
+    void addOp(NnOpCode code, const char *name, NnUint index, NnPointerConfig input, NnPointerConfig output, NnSize3D weightSize, T config) {
         NnUint configSize = sizeof(T);
         NnByte *configCopy = new NnByte[configSize];
         std::memcpy(configCopy, &config, configSize);

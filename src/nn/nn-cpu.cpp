@@ -74,20 +74,18 @@ NnDeviceSegment *NnCpuDevice::createSegment(NnUint segmentIndex) {
 
     std::vector<NnOpQuantType> opQuants(segmentConfig->nOps);
     std::vector<NnCpuOpForward> opForwardLocal(segmentConfig->nOps);
-    std::vector<NnSize2D> inputSizes(segmentConfig->nOps);
-    std::vector<NnSize2D> outputSizes(segmentConfig->nOps);
+    std::vector<NnSize3D> inputSizes(segmentConfig->nOps);
+    std::vector<NnSize3D> outputSizes(segmentConfig->nOps);
 
-    std::unique_ptr<NnByte *[]> inputsPtr(new NnByte *[segmentConfig->nOps * netConfig->nBatches]);
-    std::unique_ptr<NnByte *[]> outputsPtr(new NnByte *[segmentConfig->nOps * netConfig->nBatches]);
-    NnByte **inputs = inputsPtr.get();
-    NnByte **outputs = outputsPtr.get();
+    std::vector<std::vector<NnByte *>> inputsPtr(segmentConfig->nOps);
+    std::vector<std::vector<NnByte *>> outputsPtr(segmentConfig->nOps);
 
     for (NnUint opIndex = 0; opIndex < segmentConfig->nOps; opIndex++) {
         NnOpConfig *opConfig = &segmentConfig->ops[opIndex];
-        NnSize2D inputSize;
-        NnSize2D outputSize;
-        resolvePointer(&inputs[opIndex * netConfig->nBatches], &inputSize, &opConfig->input);
-        resolvePointer(&outputs[opIndex * netConfig->nBatches], &outputSize, &opConfig->output);
+        NnSize3D inputSize;
+        NnSize3D outputSize;
+        inputsPtr[opIndex] = resolvePointer(&inputSize, &opConfig->input);
+        outputsPtr[opIndex] = resolvePointer(&outputSize, &opConfig->output);
         NnOpQuantType opQuant = getOpQuantType(
             inputSize.floatType,
             opConfig->weightSize.floatType,
@@ -108,9 +106,6 @@ NnDeviceSegment *NnCpuDevice::createSegment(NnUint segmentIndex) {
         opForwardLocal[opIndex] = forward;
     }
 
-    inputsPtr.release();
-    outputsPtr.release();
-
     NnCpuOpForward *opForward = new NnCpuOpForward[segmentConfig->nOps];
     NnCpuOpContext *opContexts = new NnCpuOpContext[segmentConfig->nOps];
 
@@ -128,13 +123,15 @@ NnDeviceSegment *NnCpuDevice::createSegment(NnUint segmentIndex) {
         opContext->bufferConfigs = nodeConfig->buffers;
         opContext->bufferFlags = bufferFlags;
 
-        opContext->input = &inputs[opIndex * netConfig->nBatches];
+        opContext->input = new NnByte *[inputsPtr[opIndex].size()];
         opContext->inputSize = inputSizes[opIndex];
         opContext->hasInputContinuousMemory = hasPointerContinuousMemory(&opConfig->input);
+        std::memcpy(opContext->input, inputsPtr[opIndex].data(), inputsPtr[opIndex].size() * sizeof(NnByte *));
 
-        opContext->output = &outputs[opIndex * netConfig->nBatches];
+        opContext->output = new NnByte *[outputsPtr[opIndex].size()];
         opContext->outputSize = outputSizes[opIndex];
         opContext->hasOutputContinuousMemory = hasPointerContinuousMemory(&opConfig->output);
+        std::memcpy(opContext->output, outputsPtr[opIndex].data(), outputsPtr[opIndex].size() * sizeof(NnByte *));
 
 #if not(DEBUG_USE_MMAP_FOR_WEIGHTS)
         if (opContext->weightSize.nBytes > 0)
@@ -153,10 +150,8 @@ NnDeviceSegment *NnCpuDevice::createSegment(NnUint segmentIndex) {
 NnCpuDeviceSegment::~NnCpuDeviceSegment() {
     for (NnUint opIndex = 0; opIndex < nOps; opIndex++) {
         NnCpuOpContext *context = &opContexts[opIndex];
-        if (opIndex == 0) {
-            delete[] context->input;
-            delete[] context->output;
-        }
+        delete[] context->input;
+        delete[] context->output;
 #if not(DEBUG_USE_MMAP_FOR_WEIGHTS)
         if (context->weightSize.nBytes > 0)
             releaseAlignedBuffer(context->weight);
@@ -166,9 +161,9 @@ NnCpuDeviceSegment::~NnCpuDeviceSegment() {
     delete[] opContexts;
 }
 
-void NnCpuDevice::resolvePointer(NnByte **pntr, NnSize2D *pntrSize, NnPointerConfig *pointerConfig) {
+std::vector<NnByte *> NnCpuDevice::resolvePointer(NnSize3D *pntrSize, NnPointerConfig *pointerConfig) {
     NnByte *source;
-    NnSize2D *sourceSize;
+    NnSize3D *sourceSize;
 
     switch (pointerConfig->source) {
     case SRC_BUFFER:
@@ -185,43 +180,48 @@ void NnCpuDevice::resolvePointer(NnByte **pntr, NnSize2D *pntrSize, NnPointerCon
 
     switch (pointerConfig->type) {
     case PNTR_RAW: {
-        pntr[0] = source;
-        *pntrSize = size2D(sourceSize->floatType, 1, sourceSize->length);
-        return;
+        *pntrSize = size1D(sourceSize->floatType, sourceSize->length);
+        return std::vector<NnByte *>{source};
     }
     case PNTR_BATCH:
     case PNTR_BATCHED_SLICE: {
         ASSERT_EQ(sourceSize->y, netConfig->nBatches);
+        std::vector<NnByte *> pntr(sourceSize->z * sourceSize->y);
 
         NnSize batchBytes = getBytes(sourceSize->floatType, sourceSize->x);
-        for (NnUint batchIndex = 0; batchIndex < netConfig->nBatches; batchIndex++)
-            pntr[batchIndex] = &source[batchIndex * batchBytes];
+        for (NnUint z = 0u; z < sourceSize->z; z++) {
+            for (NnUint y = 0u; y < sourceSize->y; y++)
+                pntr[z * sourceSize->y + y] = &source[(z * sourceSize->y + y) * batchBytes];
+        }
         *pntrSize = *sourceSize;
 
         if (pointerConfig->type == PNTR_BATCHED_SLICE) {
             assert(sourceSize->x % netConfig->nNodes == 0);
             NnUint xSlice = sourceSize->x / netConfig->nNodes;
             NnSize xSliceBytes = getBytes(sourceSize->floatType, xSlice);
-            for (NnUint batchIndex = 0; batchIndex < netConfig->nBatches; batchIndex++)
-                pntr[batchIndex] = &pntr[batchIndex][xSliceBytes * nodeConfig->nodeIndex];
-            *pntrSize = size2D(sourceSize->floatType, sourceSize->y, xSlice);
+            for (NnUint z = 0; z < sourceSize->z; z++) {
+                for (NnUint y = 0; y < sourceSize->y; y++)
+                    pntr[z * sourceSize->y + y] = &pntr[z * sourceSize->y + y][xSliceBytes * nodeConfig->nodeIndex];
+            }
+            *pntrSize = size3D(sourceSize->floatType, sourceSize->z, sourceSize->y, xSlice);
         }
-        return;
+        return pntr;
     }
     default:
         throw std::invalid_argument("Unsupported pointer config");
     }
 }
 
-void NnCpuDeviceSegment::loadWeight(NnUint opIndex, NnSize nBytes, NnByte *weight) {
-    assert(opIndex >= 0);
+void NnCpuDeviceSegment::loadWeight(NnUint opIndex, NnSize offset, NnSize nBytes, NnByte *weight) {
+    assert(opIndex >= 0u);
     assert(opIndex < nOps);
     NnCpuOpContext *context = &opContexts[opIndex];
-    assert(context->weightSize.nBytes == nBytes);
+    assert(offset + nBytes <= context->weightSize.nBytes);
 #if DEBUG_USE_MMAP_FOR_WEIGHTS
+    assert(offset == 0u);
     context->weight = weight;
 #else
-    std::memcpy(context->weight, weight, nBytes);
+    std::memcpy(&context->weight[offset], weight, nBytes);
 #endif
 }
 

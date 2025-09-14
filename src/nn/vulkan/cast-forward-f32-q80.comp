@@ -5,9 +5,9 @@
 #extension GL_EXT_shader_explicit_arithmetic_types : enable
 
 #define Q80_BLOCK_SIZE 32
-#define N_THREADS 256
+#define N_BATCHES 32
 
-layout(local_size_x = N_THREADS, local_size_y = 1, local_size_z = 1) in;
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
 
 struct BatchInfo {
     uint inputOffset;
@@ -23,57 +23,28 @@ struct BlockQ80 {
 
 layout(binding = 0) readonly buffer inputBuffer { float x[]; };
 layout(binding = 1) writeonly buffer outputBuffer { BlockQ80 y[]; };
-layout(binding = 2) readonly buffer batchInfosBuffer { BatchInfo infos[]; };
-
-shared uint sharedYStart;
-shared uint sharedYEnd;
-shared uint sharedXOffset;
-shared uint sharedYOffset;
+layout(binding = 2) readonly uniform batchInfosBuffer { BatchInfo infos[N_BATCHES]; };
 
 void main() {
-    const uint threadIndex = gl_LocalInvocationID.x;
+    const uint batchIndex = gl_WorkGroupID.y;
+    const uint d = gl_WorkGroupID.z;
 
-    if (threadIndex == 0) {
-        const uint nWorkGroups = gl_NumWorkGroups.z;
-        const uint batchIndex = gl_WorkGroupID.y;
-        const uint workGroupIndex = gl_WorkGroupID.z;
+    const BatchInfo info = infos[batchIndex];
+    const uint xiOffset = info.inputOffset + d * Q80_BLOCK_SIZE;
+    const uint yiOffset = info.outputOffset + d;
 
-        const BatchInfo info = infos[batchIndex];
-
-        const uint ySlice = info.outputSizeX / nWorkGroups;
-        const uint yRest = info.outputSizeX % nWorkGroups;
-        sharedYStart = workGroupIndex * ySlice + (workGroupIndex < yRest ? workGroupIndex : yRest);
-        sharedYEnd = sharedYStart + ySlice + (workGroupIndex < yRest ? 1 : 0);
-        sharedXOffset = info.inputOffset;
-        sharedYOffset = info.outputOffset;
+    float amax = 0.0;
+    [[unroll]] for (uint j = 0; j < Q80_BLOCK_SIZE; ++j) {
+        amax = max(amax, abs(x[xiOffset + j]));
     }
 
-    barrier();
-    memoryBarrierShared();
+    const float dd = amax / 127.0f;
+    const float id = dd != 0.0f ? 1.0f / dd : 0.0f;
 
-    const uint yStart = sharedYStart + threadIndex;
-    const uint yEnd = sharedYEnd;
-    const uint xOffset = sharedXOffset;
-    const uint yOffset = sharedYOffset;
+    y[yiOffset].d = float16_t(dd);
 
-    for (uint i = yStart; i < yEnd; i += N_THREADS) {
-        const uint xiOffset = xOffset + i * Q80_BLOCK_SIZE;
-        const uint yiOffset = yOffset + i;
-
-        float amax = 0.0;
-        [[unroll]] for (uint j = 0; j < Q80_BLOCK_SIZE; ++j) {
-            const float v = abs(x[xiOffset + j]);
-            amax = max(amax, v);
-        }
-
-        const float d = amax / ((1 << 7) - 1);
-        const float id = d != 0.0 ? 1.0 / d : 0.0;
-
-        y[yiOffset].d = float16_t(d);
-
-        [[unroll]] for (uint j = 0; j < Q80_BLOCK_SIZE; ++j) {
-            const float v = x[xiOffset + j];
-            y[yiOffset].qs[j] = int8_t(clamp(round(v * id), -127.0, 127.0));
-        }
+    [[unroll]] for (uint j = 0; j < Q80_BLOCK_SIZE; ++j) {
+        const float v = x[xiOffset + j];
+        y[yiOffset].qs[j] = int8_t(clamp(round(v * id), -127.0f, 127.0f));
     }
 }

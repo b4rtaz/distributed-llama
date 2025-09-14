@@ -1,6 +1,6 @@
 import struct
 
-def writeTokenizer(file, tokens, scores, chatTemplate, bosId, eosTokens):
+def writeTokenizer(file, tokens, scores, chatTemplate, bosId, addBos, eosTokens):
     headerKeys = {
         'version': 0,
         'vocab_size': 1,
@@ -8,6 +8,7 @@ def writeTokenizer(file, tokens, scores, chatTemplate, bosId, eosTokens):
         'bos_id': 3,
         'chat_template': 7,
         'n_eos_tokens': 9,
+        'add_bos': 10,
     }
     header = struct.pack('i', 0x567124)
 
@@ -22,6 +23,7 @@ def writeTokenizer(file, tokens, scores, chatTemplate, bosId, eosTokens):
     if (chatTemplate):
         params['chat_template'] = len(chatTemplate)
     params['n_eos_tokens'] = len(eosTokens)
+    params['add_bos'] = 1 if addBos else 0
 
     data = b''
     for key in params:

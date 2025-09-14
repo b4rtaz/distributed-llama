@@ -1,6 +1,7 @@
 #version 450
 
 #define N_THREADS 256
+#define N_BATCHES 32
 
 layout(local_size_x = N_THREADS, local_size_y = 1, local_size_z = 1) in;
 
@@ -13,38 +14,24 @@ struct BatchInfo {
 
 layout(binding = 0) readonly buffer inputBuffer { float x[]; };
 layout(binding = 1) buffer outputBuffer { float y[]; };
-layout(binding = 2) readonly buffer batchInfosBuffer { BatchInfo infos[]; };
-
-shared uint sharedDim;
-shared uint sharedOutputSizeX;
-shared uint sharedParts;
-shared uint sharedXOffset;
-shared uint sharedYOffset;
+layout(binding = 2) readonly uniform batchInfosBuffer { BatchInfo infos[N_BATCHES]; };
 
 void main() {
     const uint threadIndex = gl_LocalInvocationID.x;
+    const uint nWorkGroups = gl_NumWorkGroups.z;
+    const uint batchIndex = gl_WorkGroupID.y;
+    const uint workGroupIndex = gl_WorkGroupID.z;
 
-    if (threadIndex == 0) {
-        const uint nWorkGroups = gl_NumWorkGroups.z;
-        const uint batchIndex = gl_WorkGroupID.y;
-        const uint workGroupIndex = gl_WorkGroupID.z;
+    const BatchInfo info = infos[batchIndex];
+    const uint slice = info.outputSizeX / nWorkGroups;
+    const uint rest = info.outputSizeX % nWorkGroups;
+    const uint offset = workGroupIndex * slice + min(rest, workGroupIndex);
 
-        const BatchInfo info = infos[batchIndex];
-        sharedDim = info.outputSizeX / nWorkGroups;
-        sharedOutputSizeX = info.outputSizeX;
-        sharedParts = info.inputSizeX / info.outputSizeX;
-        sharedXOffset = info.inputOffset + sharedDim * workGroupIndex;
-        sharedYOffset = info.outputOffset + sharedDim * workGroupIndex;
-    }
-
-    barrier();
-    memoryBarrierShared();
-
-    const uint dim = sharedDim;
-    const uint outputSizeX = sharedOutputSizeX;
-    const uint parts = sharedParts;
-    const uint xOffset = sharedXOffset;
-    const uint yOffset = sharedYOffset;
+    const uint dim = slice + (workGroupIndex < rest ? 1 : 0);
+    const uint outputSizeX = info.outputSizeX;
+    const uint parts = info.inputSizeX / info.outputSizeX;
+    const uint xOffset = info.inputOffset + offset;
+    const uint yOffset = info.outputOffset + offset;
 
     for (uint i = threadIndex; i < dim; i += N_THREADS) {
         float sum = 0.0;

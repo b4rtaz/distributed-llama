@@ -1,8 +1,11 @@
 #version 450
 
-#define N_THREADS 256
+#extension GL_EXT_control_flow_attributes : enable
 
-layout(local_size_x = N_THREADS, local_size_y = 1, local_size_z = 1) in;
+#define CHUNK_SIZE 4
+#define N_BATCHES 32
+
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
 
 struct BatchInfo {
     uint inputOffset;
@@ -13,29 +16,22 @@ struct BatchInfo {
 
 layout(binding = 0) readonly buffer inputBuffer { float x[]; };
 layout(binding = 1) buffer outputBuffer { float y[]; };
-layout(binding = 2) readonly buffer batchInfosBuffer { BatchInfo infos[]; };
+layout(binding = 2) readonly uniform batchInfosBuffer { BatchInfo infos[N_BATCHES]; };
 layout(binding = 3) readonly buffer weightBuffer { float weight[]; };
 
 shared uint sharedPosition;
-shared BatchInfo sharedInfo;
 
 void main() {
-    const uint threadIndex = gl_LocalInvocationID.x;
-    const uint batchIndex = gl_GlobalInvocationID.y;
+    const uint batchIndex = gl_WorkGroupID.y;
+    const uint chunkIndex = gl_WorkGroupID.z;
+    const uint position = uint(x[batchIndex]);
 
-    if (threadIndex == 0) {
-        sharedPosition = uint(x[batchIndex]);
-        sharedInfo = infos[batchIndex];
-    }
+    const BatchInfo info = infos[batchIndex];
+    const uint offset = chunkIndex * CHUNK_SIZE;
+    const uint yOffset = info.outputOffset + offset;
+    const uint wOffset = position * info.outputSizeX + offset;
 
-    barrier();
-    memoryBarrierShared();
-
-    const uint outputSizeX = sharedInfo.outputSizeX;
-    const uint yOffset = sharedInfo.outputOffset;
-    const uint wOffset = sharedPosition * outputSizeX;
-
-    for (uint i = threadIndex; i < outputSizeX; i += N_THREADS) {
+    [[unroll]] for (uint i = 0; i < CHUNK_SIZE; i++) {
         y[yOffset + i] = weight[wOffset + i];
     }
 }
