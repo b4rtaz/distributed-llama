@@ -93,7 +93,7 @@ void testRmsNorm_F32_F32_F32() {
 
             // assert
             float invRmsBuffer[N_BATCHES];
-            device->data->buffers[0].get()->read((NnByte *)invRmsBuffer);
+            device->data.buffers[0].get()->read((NnByte *)invRmsBuffer);
 
             for (NnUint b = 0; b < batchSize; b++) {
                 float *xBatchPipe = &xPipe[b * dim];
@@ -175,7 +175,7 @@ void testMul_F32_F32() {
                 sBuffer[i] = (i % 8) / 10.0f;
             }
 
-            device->data->buffers[0].get()->write((NnByte *)sBuffer);
+            device->data.buffers[0].get()->write((NnByte *)sBuffer);
 
             // act
             executor->forward();
@@ -401,7 +401,7 @@ void testShift_F32_F32() {
                     xPipe[b * dim + i] = (float)(b * 100 + i);
             }
 
-            device->data->pipes[0].get()->write((NnByte *)pos);
+            device->data.pipes[0].get()->write((NnByte *)pos);
 
             // act
             executor->forward();
@@ -522,7 +522,7 @@ void testRope_F32_F32() {
                     xPipe[b * ROPE_DIM + i] = 1.0f;
             }
 
-            device->data->pipes[1].get()->write((NnByte *)pos);
+            device->data.pipes[1].get()->write((NnByte *)pos);
 
             // act
             executor->forward();
@@ -673,7 +673,7 @@ void testMatmul_F32_F32_F32_expert() {
                     indexes[i] = (float)(i % 2);
             }
 
-            device->data->buffers[0].get()->write((NnByte *)indexes);
+            device->data.buffers[0].get()->write((NnByte *)indexes);
 
             execution->setBatchSize(N_BATCHES);
             executor->forward();
@@ -860,7 +860,7 @@ void testScale_F32_F32() {
                 }
             }
 
-            device->data->buffers[0].get()->write((NnByte *)scale);
+            device->data.buffers[0].get()->write((NnByte *)scale);
 
             // act
             executor->forward();
@@ -915,7 +915,7 @@ void testMoeGate_F32_F32() {
             executor->forward();
 
             float pos[N_BATCHES * MOE_GATE_F32_K];
-            device->data->buffers[0].get()->read((NnByte *)pos);
+            device->data.buffers[0].get()->read((NnByte *)pos);
 
             // assert
             const float t = 0.00001f;
