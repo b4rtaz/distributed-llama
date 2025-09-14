@@ -17,7 +17,7 @@ struct BatchInfo {
 
 layout(binding = 0) readonly buffer inputBuffer { float x[]; };
 layout(binding = 1) writeonly buffer outputBuffer { float y[]; };
-layout(binding = 2) readonly uniform batchInfosBuffer { BatchInfo infos[N_BATCHES]; };
+layout(binding = 2) readonly uniform batchInfosBuffer { BatchInfo infos[K * N_BATCHES]; };
 layout(binding = 3) readonly uniform opConfigBuffer {
     uint k;
     uint normTopk;
@@ -63,7 +63,7 @@ void main() {
     }
 
     for (uint k = 0; k < K; k++) {
-        y[info.outputOffset + k] = topVals[k] / sum;
         indexes[batchIndex * K + k] = float(topIdx[k]);
+        y[infos[k * N_BATCHES + batchIndex].outputOffset] = topVals[k] / sum;
     }
 }

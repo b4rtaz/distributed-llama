@@ -241,7 +241,7 @@ void NnVulkanBuffer::read(NnByte *data, const NnSize offset, const NnSize size) 
     assert(offset + size <= bufferSize);
 
     if (isHostVisible && hostPointer != nullptr) {
-        context->device.invalidateMappedMemoryRanges({ {deviceMemory, 0, (vk::DeviceSize)size} });
+        context->device.invalidateMappedMemoryRanges({ {deviceMemory, offset, (vk::DeviceSize)size} });
         std::memcpy(data, hostPointer, size);
 
         VULKAN_TRACE("Read %zu bytes from host visible buffer", size);
@@ -773,6 +773,8 @@ NnVulkanDeviceSegmentData::NnVulkanDeviceSegmentData(NnVulkanContext *context, N
         NnOpConfig *opConfig = &segmentConfig->ops[opIndex];
 
         std::vector<NnVulkanBatchInfo> batchInfo = buildBatchInfo(opConfig, data, nBatches);
+        VULKAN_TRACE("Resolved for %s %zu batch infos", opCodeToString(opConfig->code), batchInfo.size());
+
         NnSize batchInfoSize = sizeof(NnVulkanBatchInfo) * batchInfo.size();
         NnVulkanBuffer *batchInfoBuffer = new NnVulkanBuffer(context, copier, "batchInfo", batchInfoSize, false, vk::BufferUsageFlagBits::eUniformBuffer, false);
         data->internalBuffers.push_back(std::unique_ptr<NnVulkanBuffer>(batchInfoBuffer));

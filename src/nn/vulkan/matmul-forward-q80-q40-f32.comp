@@ -50,12 +50,11 @@ void main() {
     const uint workGroupIndex = gl_WorkGroupID.x;
     const uint batchIndex = gl_WorkGroupID.y;
     const uint zIndex = gl_WorkGroupID.z;
-    const uint b = zIndex * N_BATCHES + batchIndex;
-    const BatchInfo info = infos[b];
+    const BatchInfo info = infos[zIndex * N_BATCHES + batchIndex];
 
     const uint expertIndex = nExperts == 0
         ? 0
-        : uint(activeExpertIndexes[b]);
+        : uint(activeExpertIndexes[batchIndex * nActiveExperts + zIndex]);
     const uint expertOffset = expertIndex * info.inputSizeX * info.outputSizeX;
 
     const uint inputOffset = info.inputOffset;
