@@ -128,6 +128,7 @@ typedef struct {
 class NnVulkanDeviceSegment : public NnDeviceSegment {
 private:
     NnVulkanContext *context;
+    NnVulkanStagingCopier *copier;
     NnVulkanDeviceData *data;
     NnNetConfig *netConfig;
     NnUint segmentIndex;

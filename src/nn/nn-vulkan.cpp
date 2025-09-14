@@ -160,12 +160,12 @@ void NnVulkanStagingCopier::executeCopyCommand(vk::Buffer& target, const NnSize 
 
 NnVulkanBuffer::NnVulkanBuffer(NnVulkanContext *context, NnVulkanStagingCopier *copier, const char *name, const NnSize bufferSize, const bool isSliceable, vk::BufferUsageFlags usageFlags, bool fastAccess) :
     context(context),
-    copier(copier)
+    copier(copier),
+    name(name),
+    bufferSize(bufferSize),
+    isSliceable(isSliceable),
+    usageFlags(usageFlags)
 {
-    this->name = name;
-    this->bufferSize = bufferSize;
-    this->isSliceable = isSliceable;
-    this->usageFlags = usageFlags;
     this->hostPointer = nullptr;
 
     isHostVisible = false;
@@ -281,13 +281,12 @@ static NnByte *findFirstOpConfig(NnNodeConfig *nodeConfig, NnOpCode opCode) {
 }
 
 NnVulkanDeviceData::NnVulkanDeviceData(NnVulkanContext *context, NnVulkanStagingCopier *copier, NnNetConfig *netConfig, NnNodeConfig *nodeConfig) :
+    netConfig(netConfig),
+    nodeConfig(nodeConfig),
     pipes(netConfig->nPipes),
     buffers(nodeConfig->nBuffers),
     internalBuffers()
 {
-    this->netConfig = netConfig;
-    this->nodeConfig = nodeConfig;
-
     for (NnUint i = 0; i < netConfig->nPipes; i++) {
         const NnPipeConfig *config = &netConfig->pipes[i];
         const bool isSliceable = config->size.z == 1u;
@@ -368,11 +367,11 @@ NnUint NnVulkanDeviceData::resolveBufferBatchWidth(NnPointerConfig *config) {
     throw std::runtime_error("Cannot determine buffer width");
 }
 
-NnVulkanDevice::NnVulkanDevice(NnUint gpuIndex, NnNetConfig *netConfig, NnNodeConfig *nodeConfig, NnNetExecution *netExecution) {
-    this->netConfig = netConfig;
-    this->nodeConfig = nodeConfig;
-    this->netExecution = netExecution;
-
+NnVulkanDevice::NnVulkanDevice(NnUint gpuIndex, NnNetConfig *netConfig, NnNodeConfig *nodeConfig, NnNetExecution *netExecution) :
+    netConfig(netConfig),
+    nodeConfig(nodeConfig),
+    netExecution(netExecution)
+{
     vk::InstanceCreateFlags createInstanceFlags(0);
     std::vector<const char*> instanceLayers = {};
     std::vector<const char*> instanceExtensions = {};
@@ -763,12 +762,11 @@ static vk::DescriptorType toDescriptorType(NnVulkanBuffer *buffer) {
 }
 
 NnVulkanDeviceSegmentData::NnVulkanDeviceSegmentData(NnVulkanContext *context, NnVulkanStagingCopier *copier, NnVulkanDeviceData *data, NnSegmentConfig *segmentConfig, NnUint nBatches) :
+    data(data),
     batchInfoBufferIndex(segmentConfig->nOps, UINT32_MAX),
     weightBufferIndex(segmentConfig->nOps, UINT32_MAX),
     configBufferIndex(segmentConfig->nOps, UINT32_MAX)
 {
-    this->data = data;
-
     for (NnUint opIndex = 0; opIndex < segmentConfig->nOps; opIndex++) {
         NnOpConfig *opConfig = &segmentConfig->ops[opIndex];
 
@@ -811,6 +809,13 @@ NnVulkanBuffer *NnVulkanDeviceSegmentData::resolveOpWeightVulkanBuffer(NnUint op
 }
 
 NnVulkanDeviceSegment::NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanStagingCopier *copier, NnVulkanDeviceData *data, NnNetConfig *netConfig, NnUint segmentIndex, NnSegmentConfig *segmentConfig, NnNetExecution *netExecution) :
+    context(context),
+    copier(copier),
+    data(data),
+    netConfig(netConfig),
+    segmentIndex(segmentIndex),
+    segmentConfig(segmentConfig),
+    netExecution(netExecution),
     shaderModules(segmentConfig->nOps),
     descriptorSets(segmentConfig->nOps),
     descriptorSetLayouts(segmentConfig->nOps),
@@ -818,12 +823,6 @@ NnVulkanDeviceSegment::NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanS
     pipelines(segmentConfig->nOps),
     buffersToSync(segmentConfig->nOps)
 {
-    this->context = context;
-    this->data = data;
-    this->netConfig = netConfig;
-    this->segmentIndex = segmentIndex;
-    this->segmentConfig = segmentConfig;
-    this->netExecution = netExecution;
     this->segmentData.reset(new NnVulkanDeviceSegmentData(context, copier, data, segmentConfig, netExecution->nBatches));
     this->lastBatchSize = 0;
 
@@ -1013,6 +1012,9 @@ void NnVulkanDeviceSegment::forward(NnUint opIndex, NnUint nThreads, NnUint thre
         // TODO: this is a design problem, executor tries to forward all ops in a segment
         return;
     }
+
+    // TODO: this should be called only after weights loading is done
+    copier->tryRelease();
 
     // TODO: refactor this block
     {
