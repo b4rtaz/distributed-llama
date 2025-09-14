@@ -13,4 +13,5 @@ RUN make dllama && make dllama-api
 EXPOSE 5000
 EXPOSE 9999
 
+# TODO: Consider putting the binary on a smaller image layer
 CMD ["./dllama"]
