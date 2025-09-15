@@ -646,44 +646,39 @@ void testMatmul_F32_F32_F32_expert() {
         [](NnExecutor *executor, NnNetExecution *execution, NnVulkanDevice *device) {
             // arrange
             execution->setBatchSize(N_BATCHES);
-            float *xPipe = (float *)execution->pipes[0];
-            float *yPipe = (float *)execution->pipes[1];
+            float *xPipe = (float *)execution->pipes[0]; // (A, N_BATCHES, N)
+            float *yPipe = (float *)execution->pipes[1]; // (A, N_BATCHES, D)
 
             constexpr NnUint wSize = MATMUL_F32_N * MATMUL_F32_D;
             constexpr NnUint wSizeBytes = wSize * sizeof(float);
             float weight[wSize];
             float indexes[N_BATCHES * MATMUL_F32_A];
 
-            // expert 0 - E (without 1)
-            for (NnUint i = 0u; i < wSize; i++)
-                weight[i] = 0.1f;
-            executor->loadWeight("matmul", 0u, 0u, wSizeBytes, (NnByte *)weight);
-            executor->loadWeight("matmul", 0u, wSizeBytes * 2u, wSizeBytes, (NnByte *)weight);
-            executor->loadWeight("matmul", 0u, wSizeBytes * 3u, wSizeBytes, (NnByte *)weight);
-
-            // expert 1
-            for (NnUint i = 0u; i < wSize; i++)
-                weight[i] = 0.2f;
-            executor->loadWeight("matmul", 0u, wSizeBytes, wSizeBytes, (NnByte *)weight);
-
-            for (NnUint e = 0u; e < MATMUL_F32_A; e++) {
-                for (NnUint i = 0u; i < N_BATCHES * MATMUL_F32_N; i++)
-                    xPipe[e * N_BATCHES * MATMUL_F32_N + i] = (float)((e + 1) * 10);
-                for (NnUint i = 0u; i < N_BATCHES * MATMUL_F32_A; i++)
-                    indexes[i] = (float)(i % 2);
+            for (NnUint e = 0u; e < MATMUL_F32_E; e++) {
+                for (NnUint i = 0u; i < wSize; i++)
+                    weight[i] = 0.1f * (float)(e + 1);
+                executor->loadWeight("matmul", 0u, wSizeBytes * e, wSizeBytes, (NnByte *)weight);
             }
+
+            for (NnUint i = 0u; i < MATMUL_F32_A * N_BATCHES; i++)
+                indexes[i] = (float)(i % MATMUL_F32_E); // 0, 1, 2, 3, 0, 1, 2, 3, ...
+            for (NnUint i = 0; i < MATMUL_F32_A * N_BATCHES * MATMUL_F32_N; i++)
+                xPipe[i] = (float)(i / MATMUL_F32_N + 1); // 1.0, 1.0, ... 2.0, 2.0, ...
 
             device->data.buffers[0].get()->write((NnByte *)indexes);
 
-            execution->setBatchSize(N_BATCHES);
             executor->forward();
 
-            float t = 0.00001f;
-            assertFloat(0, yPipe[0], 0.1f * (10.0f * 4.0f), t); // expert 0 batch 0
-            assertFloat(1, yPipe[1], 0.2f * (10.0f * 4.0f), t); // expert 0 batch 1
+            float t = 0.0001f;
+            assertFloat(0, yPipe[0], 0.1f /* index=0, e=0 */ * (4 * 1.0f), t);
+            assertFloat(1, yPipe[1], 0.3f /* index=2, e=2 */ * (4 * 2.0f), t);
+            assertFloat(2, yPipe[2], 0.1f /* index=4, e=0 */ * (4 * 3.0f), t);
+            assertFloat(3, yPipe[3], 0.3f /* index=6, e=2 */ * (4 * 4.0f), t);
 
-            assertFloat(4, yPipe[4], 0.1f * (20.0f * 4.0f), t); // expert 1 batch 0
-            assertFloat(5, yPipe[5], 0.2f * (20.0f * 4.0f), t); // expert 1 batch 1
+            assertFloat(4, yPipe[4], 0.2f /* index=1, e=1 */ * (4 * 5.0f), t);
+            assertFloat(5, yPipe[5], 0.4f /* index=3, e=3 */ * (4 * 6.0f), t);
+            assertFloat(6, yPipe[6], 0.2f /* index=5, e=1 */ * (4 * 7.0f), t);
+            assertFloat(7, yPipe[7], 0.4f /* index=7, e=3 */ * (4 * 8.0f), t);
 
             printOk("testMatmul_F32_F32_F32_expert");
         });
@@ -888,7 +883,7 @@ void testMoeGate_F32_F32() {
     execute(
         [](NnNetConfigBuilder *netBuilder, NnNodeConfigBuilder *nodeBuilder, NnSegmentConfigBuilder *segmentBuilder) {
             NnUint xPipeIndex = netBuilder->addPipe("X", size2D(F_32, N_BATCHES, MOE_GATE_F32_DIM));
-            NnUint gPipeIndex = netBuilder->addPipe("g", size2D(F_32, N_BATCHES, MOE_GATE_F32_K));
+            NnUint gPipeIndex = netBuilder->addPipe("g", size3D(F_32, MOE_GATE_F32_K, N_BATCHES, 1u));
             NnUint indexesBufferIndex = nodeBuilder->addBuffer("i", size2D(F_32, N_BATCHES, MOE_GATE_F32_K));
             segmentBuilder->addOp(OP_MOE_GATE, "moe_gate", 0,
                 pointerBatchConfig(SRC_PIPE, xPipeIndex),
@@ -919,10 +914,10 @@ void testMoeGate_F32_F32() {
 
             // assert
             const float t = 0.00001f;
-            assertFloat(0, gPipe[0], 8.0f, t);
-            assertFloat(1, gPipe[1], 7.0f, t);
-            assertFloat(2, gPipe[2], 6.0f, t);
-            assertFloat(3, gPipe[3], 5.0f, t);
+            assertFloat(0, gPipe[0 * N_BATCHES], 8.0f, t);
+            assertFloat(1, gPipe[1 * N_BATCHES], 7.0f, t);
+            assertFloat(2, gPipe[2 * N_BATCHES], 6.0f, t);
+            assertFloat(3, gPipe[3 * N_BATCHES], 5.0f, t);
 
             assertFloat(100, pos[0], 4.0f, t);
             assertFloat(101, pos[1], 7.0f, t);
