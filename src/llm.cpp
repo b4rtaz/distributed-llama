@@ -4,6 +4,7 @@
 #include "nn/nn-network.hpp"
 #include "mmap.hpp"
 #include "llm.hpp"
+#include <cerrno>
 #include <stdexcept>
 
 static const char *hiddenActToString(LlmHiddenAct act) {
@@ -46,7 +47,7 @@ LlmHeader loadLlmHeader(const char *path, const NnUint maxSeqLen, NnFloatType sy
     std::unique_ptr<FILE, int(*)(FILE *)> fdPtr(fopen(path, "rb"), fclose);
     FILE *fd = fdPtr.get();
     if (fd == NULL)
-        throw std::runtime_error("Cannot open model file");
+        throw std::runtime_error(std::string("Cannot open model file (") + path + std::string("): ") + std::strerror(errno));
 
     int magic;
     if (fread(&magic, sizeof(int), 1, fd) != 1)
