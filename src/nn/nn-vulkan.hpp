@@ -144,6 +144,7 @@ typedef struct {
 class NnVulkanDeviceSegment : public NnDeviceSegment {
 private:
     NnVulkanContext *context;
+    NnVulkanStagingCopier *copier;
     NnVulkanDeviceData *data;
     NnNetConfig *netConfig;
     NnUint segmentIndex;
@@ -163,7 +164,7 @@ private:
     std::vector<std::vector<NnVulkanBuffer *>> buffersToSync;
     NnUint lastBatchSize;
 public:
-    NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanBufferFactory *bufferFactory, NnVulkanDeviceData *data, NnNetConfig *netConfig, NnUint segmentIndex, NnSegmentConfig *segmentConfig, NnNetExecution *netExecution);
+    NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanStagingCopier *copier, NnVulkanBufferFactory *bufferFactory, NnVulkanDeviceData *data, NnNetConfig *netConfig, NnUint segmentIndex, NnSegmentConfig *segmentConfig, NnNetExecution *netExecution);
     ~NnVulkanDeviceSegment() override;
     void loadWeight(NnUint opIndex, NnSize offset, NnSize nBytes, NnByte *weight) override;
     void forward(NnUint opIndex, NnUint nThreads, NnUint threadIndex, NnUint batchSize) override;

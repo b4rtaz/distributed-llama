@@ -493,7 +493,7 @@ NnUint NnVulkanDevice::maxNThreads() {
 
 NnDeviceSegment *NnVulkanDevice::createSegment(NnUint segmentIndex) {
     NnSegmentConfig *segmentConfig = &nodeConfig->segments[segmentIndex];
-    return new NnVulkanDeviceSegment(&context, &bufferFactory, &data, netConfig, segmentIndex, segmentConfig, netExecution);
+    return new NnVulkanDeviceSegment(&context, &copier, &bufferFactory, &data, netConfig, segmentIndex, segmentConfig, netExecution);
 };
 
 static const char *getShaderFileName(const NnOpCode opCode, const NnOpQuantType quantType) {
@@ -834,8 +834,9 @@ NnVulkanBuffer *NnVulkanDeviceSegmentData::resolveOpWeightVulkanBuffer(NnUint op
     return data->internalBuffers[weightBufferIndex[opIndex]].get();
 }
 
-NnVulkanDeviceSegment::NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanBufferFactory *bufferFactory, NnVulkanDeviceData *data, NnNetConfig *netConfig, NnUint segmentIndex, NnSegmentConfig *segmentConfig, NnNetExecution *netExecution) :
+NnVulkanDeviceSegment::NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanStagingCopier *copier, NnVulkanBufferFactory *bufferFactory, NnVulkanDeviceData *data, NnNetConfig *netConfig, NnUint segmentIndex, NnSegmentConfig *segmentConfig, NnNetExecution *netExecution) :
     context(context),
+    copier(copier),
     data(data),
     netConfig(netConfig),
     segmentIndex(segmentIndex),
@@ -1039,7 +1040,7 @@ void NnVulkanDeviceSegment::forward(NnUint opIndex, NnUint nThreads, NnUint thre
     }
 
     // TODO: this should be called only after weights loading is done
-    //copier->tryRelease();
+    copier->tryRelease();
 
     // TODO: refactor this block
     {
