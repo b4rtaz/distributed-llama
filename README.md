@@ -14,6 +14,7 @@ Supports Linux, macOS, and Windows. Optimized for ARM and x86_64 AVX2 CPUs.
 - [🧠 How to Run on GPU](./docs/HOW_TO_RUN_GPU.md)
 
 **News**
+- 16 Sep 2025 - Qwen 3 MoE models are now supported on Vulkan.
 - 5 Sep 2025 - Qwen 3 MoE models are now supported on CPU.
 - 3 Aug 2025 - Qwen 3 0.6B, 1.7B, 8B and 14B models are now supported.
 - 23 Mar 2025 - [🌋 Experimental Vulkan support](https://github.com/b4rtaz/distributed-llama/releases/tag/v0.13.0)
