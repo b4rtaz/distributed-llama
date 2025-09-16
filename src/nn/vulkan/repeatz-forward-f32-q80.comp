@@ -14,8 +14,8 @@ layout(constant_id = 1) const uint N_Z = 1;
 struct BatchInfo {
     uint inputOffset;
     uint inputSizeX;
-    uint outputOffset; // number of Q80 blocks
-    uint outputSizeX; // number of Q80 blocks
+    uint outputOffset;
+    uint outputSizeX;
 };
 
 struct BlockQ80 {
@@ -29,14 +29,10 @@ layout(binding = 2) readonly uniform batchInfosBuffer { BatchInfo infos[N_Z * N_
 
 void main() {
     const uint batchIndex = gl_WorkGroupID.y;
-    const uint zIndex = gl_WorkGroupID.z;
-    const uint b = zIndex * N_BATCHES + batchIndex;
-
     const uint d = gl_WorkGroupID.x;
 
-    const BatchInfo info = infos[b];
+    const BatchInfo info = infos[batchIndex];
     const uint xiOffset = info.inputOffset + d * Q80_BLOCK_SIZE;
-    const uint yiOffset = info.outputOffset + d;
 
     float amax = 0.0;
     [[unroll]] for (uint j = 0; j < Q80_BLOCK_SIZE; ++j) {
@@ -46,10 +42,18 @@ void main() {
     const float dd = amax / 127.0f;
     const float id = dd != 0.0f ? 1.0f / dd : 0.0f;
 
-    y[yiOffset].d = float16_t(dd);
+    const float16_t dd16 = float16_t(dd);
+    for (uint z = 0; z < N_Z; z++) {
+        const uint yiOffset = infos[batchIndex + z * N_BATCHES].outputOffset + d;
+        y[yiOffset].d = dd16;
+    }
 
     [[unroll]] for (uint j = 0; j < Q80_BLOCK_SIZE; ++j) {
         const float v = x[xiOffset + j];
-        y[yiOffset].qs[j] = int8_t(clamp(round(v * id), -127.0f, 127.0f));
+        const int8_t v8 = int8_t(clamp(round(v * id), -127.0f, 127.0f));
+        for (uint z = 0; z < N_Z; z++) {
+            const uint yiOffset = infos[batchIndex + z * N_BATCHES].outputOffset + d;
+            y[yiOffset].qs[j] = v8;
+        }
     }
 }

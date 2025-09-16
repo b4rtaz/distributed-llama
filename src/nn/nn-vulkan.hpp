@@ -6,7 +6,8 @@
 #include "nn-executor.hpp"
 #include "nn-cpu-ops.hpp"
 
-typedef struct {
+class NnVulkanContext {
+public:
     vk::Instance instance;
     vk::PhysicalDevice physicalDevice;
     vk::Device device;
@@ -14,48 +15,64 @@ typedef struct {
     vk::CommandPool commandPool;
     vk::Queue queue;
     NnSize nonCoherentAtomSize;
-} NnVulkanContext;
+    NnVulkanContext(const NnUint gpuIndex);
+    ~NnVulkanContext();
+    std::pair<vk::Buffer, vk::DeviceMemory> createRawBuffer(const uint32_t memoryTypeIndex, const vk::DeviceSize bufferSize, const vk::BufferUsageFlags usageFlags);
+};
 
-enum NnStagingVulkanCopyDirection {
+enum NnVulkanStagingCopierDirection {
     COPY_TO_DEVICE,
     COPY_FROM_DEVICE
 };
 
-class NnVulkanStagingCopy {
+class NnVulkanStagingCopier {
 private:
-    NnStagingVulkanCopyDirection direction;
-    const NnVulkanContext *context;
-    vk::DeviceSize bufferSize;
-    vk::Buffer deviceBuffer;
+    NnVulkanContext *context;
+    uint32_t memoryTypeIndex;
+
+    vk::DeviceSize allocatedSize;
     vk::Buffer hostBuffer;
     vk::DeviceMemory hostMemory;
     void *hostPointer;
 public:
-    NnVulkanStagingCopy(const NnVulkanContext *context, vk::Buffer& deviceBuffer, const vk::DeviceSize bufferSize, const NnStagingVulkanCopyDirection direction);
-    ~NnVulkanStagingCopy();
-    void copy(NnByte *data);
-    void executeCopyCommand();
-    void addCopyCommand(vk::CommandBuffer& commandBuffer);
+    NnVulkanStagingCopier(NnVulkanContext *context);
+    ~NnVulkanStagingCopier();
+    void allocate(const NnSize size);
+    void copy(NnByte *data, const NnSize size, const NnVulkanStagingCopierDirection direction);
+    void executeCopyCommand(vk::Buffer& target, const NnSize offset, const NnSize size, const NnVulkanStagingCopierDirection direction);
+    void addCopyCommand(vk::CommandBuffer& commandBuffer, vk::Buffer& target, const NnSize offset, const NnSize size, const NnVulkanStagingCopierDirection direction);
+    void tryRelease();
 };
 
 class NnVulkanBuffer {
 private:
     bool isHostVisible;
     NnVulkanContext *context;
+    NnVulkanStagingCopier *copier;
     vk::DeviceMemory deviceMemory;
-    void *hostPointer;
+    NnByte *hostPointer;
 public:
     const char *name;
     NnSize bufferSize;
+    bool isSliceable;
     vk::Buffer deviceBuffer;
     vk::BufferUsageFlags usageFlags;
-    NnVulkanBuffer(NnVulkanContext *context, const char *name, const NnSize bufferSize, vk::BufferUsageFlags usageFlags, bool fastAccess);
+    NnVulkanBuffer(NnVulkanContext *context, NnVulkanStagingCopier *copier, const char *name, const NnSize bufferSize, const bool isSliceable, vk::BufferUsageFlags usageFlags, bool fastAccess);
     ~NnVulkanBuffer();
     void write(const NnByte *data);
-    void write(const NnByte *data, const NnSize size);
+    void write(const NnByte *data, const NnSize offset, const NnSize size);
     void read(NnByte *data);
-    void read(NnByte *data, const NnSize size);
+    void read(NnByte *data, const NnSize offset, const NnSize size);
     NnSize calcSliceSize(const NnSize nominator, const NnSize denominator);
+};
+
+class NnVulkanBufferFactory {
+private:
+    NnVulkanContext *context;
+    NnVulkanStagingCopier *copier;
+public:
+    NnVulkanBufferFactory(NnVulkanContext *context, NnVulkanStagingCopier *copier);
+    std::unique_ptr<NnVulkanBuffer> create(const char *name, const NnSize bufferSize, const bool isSliceable, vk::BufferUsageFlags usageFlags, bool fastAccess);
 };
 
 typedef struct {
@@ -73,23 +90,27 @@ public:
     std::vector<std::unique_ptr<NnVulkanBuffer>> pipes;
     std::vector<std::unique_ptr<NnVulkanBuffer>> buffers;
     std::vector<std::unique_ptr<NnVulkanBuffer>> internalBuffers;
-    NnVulkanDeviceData(NnVulkanContext *context, NnNetConfig *netConfig, NnNodeConfig *nodeConfig);
+    NnVulkanDeviceData(NnVulkanBufferFactory *bufferFactory, NnNetConfig *netConfig, NnNodeConfig *nodeConfig);
     ~NnVulkanDeviceData();
 
     NnSize3D resolveBufferSize(NnPointerConfig *config);
     NnVulkanBuffer *resolvePointerVulkanBuffer(NnPointerConfig *config);
-    NnUint resolveBufferBatchOffset(NnPointerConfig *config, NnUint batchIndex);
-    NnUint resolveBufferBatchWidth(NnPointerConfig *config, NnUint batchIndex);
+    NnUint resolveBufferBatchOffset(NnPointerConfig *config, NnUint batchIndex, NnUint zIndex);
+    NnUint resolveBufferBatchWidth(NnPointerConfig *config);
+    NnVulkanBuffer *resolvePipeByIndex(NnUint pipeIndex);
+    NnVulkanBuffer *resolveBufferByIndex(NnUint bufferIndex);
 };
 
 class NnVulkanDevice : public NnDevice {
 private:
     NnVulkanContext context;
+    NnVulkanStagingCopier copier;
+    NnVulkanBufferFactory bufferFactory;
     NnNetConfig *netConfig;
     NnNodeConfig *nodeConfig;
     NnNetExecution *netExecution;
 public:
-    NnVulkanDeviceData *data;
+    NnVulkanDeviceData data;
     NnVulkanDevice(NnUint gpuIndex, NnNetConfig *netConfig, NnNodeConfig *nodeConfig, NnNetExecution *netExecution);
     ~NnVulkanDevice() override;
     NnUint maxNThreads() override;
@@ -103,7 +124,7 @@ private:
     std::vector<NnUint> weightBufferIndex;
     std::vector<NnUint> configBufferIndex;
 public:
-    NnVulkanDeviceSegmentData(NnVulkanContext *context, NnVulkanDeviceData *data, NnSegmentConfig *segmentConfig, NnUint nBatches);
+    NnVulkanDeviceSegmentData(NnVulkanBufferFactory *bufferFactory, NnVulkanDeviceData *data, NnSegmentConfig *segmentConfig, NnUint nBatches);
     NnVulkanBuffer *resolveOpBatchInfoVulkanBuffer(NnUint opIndex);
     NnVulkanBuffer *resolveOpWeightVulkanBuffer(NnUint opIndex);
     NnVulkanBuffer *resolveOpConfigVulkanBuffer(NnUint opIndex);
@@ -123,6 +144,7 @@ typedef struct {
 class NnVulkanDeviceSegment : public NnDeviceSegment {
 private:
     NnVulkanContext *context;
+    NnVulkanStagingCopier *copier;
     NnVulkanDeviceData *data;
     NnNetConfig *netConfig;
     NnUint segmentIndex;
@@ -142,7 +164,7 @@ private:
     std::vector<std::vector<NnVulkanBuffer *>> buffersToSync;
     NnUint lastBatchSize;
 public:
-    NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanDeviceData *data, NnNetConfig *netConfig, NnUint segmentIndex, NnSegmentConfig *segmentConfig, NnNetExecution *netExecution);
+    NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanStagingCopier *copier, NnVulkanBufferFactory *bufferFactory, NnVulkanDeviceData *data, NnNetConfig *netConfig, NnUint segmentIndex, NnSegmentConfig *segmentConfig, NnNetExecution *netExecution);
     ~NnVulkanDeviceSegment() override;
     void loadWeight(NnUint opIndex, NnSize offset, NnSize nBytes, NnByte *weight) override;
     void forward(NnUint opIndex, NnUint nThreads, NnUint threadIndex, NnUint batchSize) override;

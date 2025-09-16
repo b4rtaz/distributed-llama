@@ -1,9 +1,10 @@
 #version 450
 
 #define N_THREADS 256
-#define N_BATCHES 32
 
 layout(local_size_x = N_THREADS, local_size_y = 1, local_size_z = 1) in;
+
+layout(constant_id = 0) const uint N_BATCHES = 32;
 
 struct BatchInfo {
     uint inputOffset;
@@ -49,7 +50,7 @@ shared uint sharedPosition;
 
 void main() {
     const uint threadIndex = gl_LocalInvocationID.x;
-    const uint batchIndex = gl_GlobalInvocationID.y;
+    const uint batchIndex = gl_WorkGroupID.y;
 
     if (threadIndex == 0) {
         sharedPosition = uint(positions[batchIndex]);

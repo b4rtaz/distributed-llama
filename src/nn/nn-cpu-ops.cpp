@@ -1149,8 +1149,9 @@ static void matmulForward_F32_F32_F32(NnUint nThreads, NnUint threadIndex, NnUin
                 ? 0u
                 : (NnUint)activeExpertIndexes[y * config->nActiveExperts + e];
 
+            float *output = (float *)context->output[e * context->outputSize.y + y];
             matmul_F32_F32_F32(
-                (float *)context->output[e * context->outputSize.y + y],
+                output,
                 (float *)context->input[e * context->inputSize.y + y],
                 (float *)&context->weight[activeExpertIndex * context->weightSize.nBytesXY],
                 context->weightSize.y,
@@ -1176,14 +1177,16 @@ static void matmulForward_Q80_Q40_F32(NnUint nThreads, NnUint threadIndex, NnUin
                 ? 0u
                 : (NnUint)activeExpertIndexes[y * config->nActiveExperts + e];
 
+            float *output = (float *)context->output[e * context->outputSize.y + y];
             matmul_Q80_Q40_F32(
-                (float *)context->output[e * context->outputSize.y + y],
+                output,
                 (NnBlockQ80 *)context->input[e * context->inputSize.y + y],
                 (NnBlockQ40 *)&context->weight[activeExpertIndex * context->weightSize.nBytesXY],
                 context->weightSize.y,
                 context->weightSize.x,
                 nThreads,
                 threadIndex);
+            DEBUG_VECTOR(context, "output", output);
         }
     }
 }
@@ -1478,9 +1481,13 @@ static void moeGateForward_F32_F32(NnUint nThreads, NnUint threadIndex, NnUint b
         for (NnUint k = 0u; k < config->k; k++) {
             const NnUint p = pos[k];
             indexes[y * config->k + k] = (float)p;
+
+            // (nActiveExperts, nBatches, 1)
             float *output = (float *)context->output[k * context->outputSize.y + y];
             *output = input[p] / sum;
         }
+
+        DEBUG_VECTOR(context, "indexes", (&indexes[y * config->k]));
     }
 }
 

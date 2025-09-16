@@ -4,15 +4,16 @@
 #extension GL_EXT_shader_16bit_storage : enable
 #extension GL_EXT_shader_explicit_arithmetic_types : enable
 
-#define N_BATCHES 32
 #define TILE_SIZE_X 2
 #define TILE_SIZE_D 8
 
 #define Q80_Q40_BLOCK_SIZE 32
 
-layout(local_size_x_id = 0, local_size_y = 1, local_size_z = 1) in;
+layout(local_size_x_id = 2, local_size_y = 1, local_size_z = 1) in;
 
-layout(constant_id = 0) const uint N_THREADS = 32;
+layout(constant_id = 0) const uint N_BATCHES = 32;
+layout(constant_id = 1) const uint N_Z = 1;
+layout(constant_id = 2) const uint N_THREADS = 32;
 
 struct BatchInfo {
     uint inputOffset;
@@ -33,16 +34,28 @@ struct BlockQ40 {
 
 layout(binding = 0) readonly buffer inputBuffer { BlockQ80 x[]; };
 layout(binding = 1) writeonly buffer outputBuffer { float y[]; };
-layout(binding = 2) readonly uniform batchInfosBuffer { BatchInfo infos[N_BATCHES]; };
+layout(binding = 2) readonly uniform batchInfosBuffer { BatchInfo infos[N_Z * N_BATCHES]; };
 layout(binding = 3) readonly buffer weightBuffer { BlockQ40 weight[]; };
+layout(binding = 4) readonly uniform opConfigBuffer {
+    uint nExperts;
+    uint nActiveExperts;
+    uint activeExpertIndexesBufferIndex;
+};
+layout(binding = 5) readonly buffer activeExpertIndexesBuffer { float activeExpertIndexes[]; };
 
 shared float sums[N_THREADS * TILE_SIZE_D];
 
 void main() {
     const uint threadIndex = gl_LocalInvocationID.x;
+    const uint workGroupIndex = gl_WorkGroupID.x;
     const uint batchIndex = gl_WorkGroupID.y;
-    const uint workGroupIndex = gl_WorkGroupID.z;
-    const BatchInfo info = infos[batchIndex];
+    const uint zIndex = gl_WorkGroupID.z;
+    const BatchInfo info = infos[zIndex * N_BATCHES + batchIndex];
+
+    const uint expertIndex = nExperts == 0
+        ? 0
+        : uint(activeExpertIndexes[batchIndex * nActiveExperts + zIndex]);
+    const uint expertOffset = expertIndex * info.inputSizeX * info.outputSizeX;
 
     const uint inputOffset = info.inputOffset;
     const uint inputSizeX = info.inputSizeX;
@@ -68,7 +81,7 @@ void main() {
         }
 
         [[unroll]] for (uint dt = 0; dt < TILE_SIZE_D; dt++) {
-            const uint wi = (d + dt) * inputSizeX + threadIndex + it * N_THREADS;
+            const uint wi = expertOffset + (d + dt) * inputSizeX + threadIndex + it * N_THREADS;
             const BlockQ40 wBlock = weight[wi];
 
             float s = 0.0f;
