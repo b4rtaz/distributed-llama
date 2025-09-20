@@ -73,7 +73,6 @@ NnVulkanContext::NnVulkanContext(const NnUint gpuIndex) {
     }
     deviceExtension.push_back("VK_KHR_8bit_storage");
     deviceExtension.push_back("VK_KHR_16bit_storage");
-    deviceExtension.push_back("VK_KHR_shader_float16_int8");
     deviceExtension.push_back("VK_KHR_maintenance4");
 
     vk::ApplicationInfo appInfo {"Distributed Llama", 1, nullptr, 0, VK_API_VERSION_1_2 };
