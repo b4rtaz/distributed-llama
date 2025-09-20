@@ -51,7 +51,9 @@ void main() {
     const uint workGroupIndex = gl_WorkGroupID.x;
     const uint batchIndex = gl_WorkGroupID.y;
     const uint zIndex = gl_WorkGroupID.z;
-    const BatchInfo info = infos[zIndex * N_BATCHES + batchIndex];
+
+    const uint b = zIndex * N_BATCHES + batchIndex;
+    const BatchInfo info = infos[b];
 
     const uint expertIndex = nExperts == 0
         ? 0
@@ -60,7 +62,6 @@ void main() {
 
     const uint inputOffset = info.inputOffset;
     const uint inputSizeX = info.inputSizeX;
-    const uint outputOffset = info.outputOffset;
     const uint d = TILE_SIZE_D * workGroupIndex;
 
     vec4 xTemp[Q80_Q40_BLOCK_SIZE / 4];
@@ -101,6 +102,8 @@ void main() {
     }
 
     barrier();
+
+    const uint outputOffset = infos[b].outputOffset; // Hoisting fix for Raspberry PI
 
     uint i = N_THREADS;
     while (i % 2 == 0) {
