@@ -92,3 +92,5 @@ Now you can connect to the API server from your computer:
 ```
 http://raspberrypi1.local:9999/v1/models
 ```
+
+11. When the API server is running, you can open the web chat in your browser, open [llama-ui.js.org](https://llama-ui.js.org/), go to the settings and set the base URL to: `http://raspberrypi1.local:9999`. Press the "save" button and start chatting!
