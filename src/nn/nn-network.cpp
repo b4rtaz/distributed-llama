@@ -222,7 +222,11 @@ int createServerSocket(int port) {
 
 void closeServerSocket(int serverSocket) {
     shutdown(serverSocket, 2);
+    #ifdef _WIN32
+    closesocket(serverSocket);
+    #else
     close(serverSocket);
+    #endif
 }
 
 int acceptSocket(int serverSocket) {
@@ -313,7 +317,11 @@ std::unique_ptr<NnNetwork> NnNetwork::serve(int port) {
     delete[] ports;
 
     shutdown(serverSocket, 2);
+    #ifdef _WIN32
+    closesocket(serverSocket);
+    #else
     close(serverSocket);
+    #endif
     printf("⭕ Network is initialized\n");
     return std::unique_ptr<NnNetwork>(new NnNetwork(nSockets, sockets));
 }
@@ -359,7 +367,11 @@ NnNetwork::~NnNetwork() {
     delete[] recvBytes;
     for (NnUint i = 0; i < nSockets; i++) {
         shutdown(sockets[i], 2);
+        #ifdef _WIN32
+        closesocket(sockets[i]);
+        #else
         close(sockets[i]);
+        #endif
     }
     delete[] sockets;
     printf("⭕ Network is closed\n");
