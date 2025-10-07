@@ -6,7 +6,7 @@
 // 2. Run this script: `node examples/chat-api-client.js`
 
 const HOST = process.env.HOST ? process.env.HOST : '127.0.0.1';
-const PORT = process.env.PORT ? Number(process.env.PORT) : 5000;
+const PORT = process.env.PORT ? Number(process.env.PORT) : 9990;
 
 async function chat(messages, maxTokens) {
     const response = await fetch(`http://${HOST}:${PORT}/v1/chat/completions`, {

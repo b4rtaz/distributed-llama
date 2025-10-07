@@ -560,11 +560,7 @@ static void server(AppInferenceContext *context) {
             HttpRequest request = HttpRequest::read(clientSocket);
             printf("🔷 %s %s\n", request.getMethod().c_str(), request.path.c_str());
             Router::resolve(request, routes);
-            #ifdef _WIN32
-            closesocket(clientSocket);
-            #else
-            close(clientSocket);
-            #endif
+            destroySocket(clientSocket);
         } catch (NnReadNetworkException& ex) {
             printf("Read socket error: %d %s\n", ex.code, ex.message);
         } catch (NnWriteNetworkException& ex) {
@@ -572,7 +568,7 @@ static void server(AppInferenceContext *context) {
         }
     }
 
-    closeServerSocket(serverSocket);
+    destroySocket(serverSocket);
 }
 
 #ifdef _WIN32

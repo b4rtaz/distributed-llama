@@ -12,7 +12,7 @@ void setReuseAddr(int socket);
 void writeSocket(int socket, const void* data, NnSize size);
 void readSocket(int socket, void* data, NnSize size);
 int createServerSocket(int port);
-void closeServerSocket(int serverSocket);
+void destroySocket(int serverSocket);
 
 class NnReadNetworkException : public std::exception {
 public:
