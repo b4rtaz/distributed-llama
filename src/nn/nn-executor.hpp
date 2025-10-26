@@ -4,6 +4,7 @@
 #include "nn-core.hpp"
 #include <atomic>
 #include <vector>
+#include <stdexcept>
 #include "pthread.h"
 
 class NnDeviceSegment {

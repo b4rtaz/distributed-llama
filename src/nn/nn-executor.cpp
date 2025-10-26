@@ -1,6 +1,5 @@
 #include <cassert>
 #include <cstring>
-#include <stdexcept>
 #include "nn-executor.hpp"
 
 void NnFakeNodeSynchronizer::sync(NnUint segmentIndex, NnUint nThreads, NnUint threadIndex) {

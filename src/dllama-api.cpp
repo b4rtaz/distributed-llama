@@ -615,7 +615,7 @@ int main(int argc, char *argv[]) {
         } catch (const NnConnectionSocketException &e) {
             printf("🚨 Connection error: %s\n", e.what());
         } catch (const NnExecutorException &e) {
-            printf("🚨 Inference failed: %s\n", e.what());
+            printf("🚨 Inference error: %s\n", e.what());
         }
 
         printf("🔄 Retrying in 3 seconds...\n");

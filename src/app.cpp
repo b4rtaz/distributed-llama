@@ -351,10 +351,10 @@ void runWorkerApp(AppCliArgs *args) {
                 executor.forward();
                 isFirstAttempt = true;
             } catch (const NnTransferSocketException &e) {
-                printf("🚨 Network exception: %s\n", e.what());
+                printf("🚨 Network error: %s\n", e.what());
                 break;
             } catch (const NnExecutorException &e) {
-                printf("🚨 Inference failed: %s\n", e.what());
+                printf("🚨 Inference error: %s\n", e.what());
                 break;
             }
         }
