@@ -275,7 +275,7 @@ int main(int argc, char **argv) {
             runWorkerApp(&args);
         else
             throw std::runtime_error("Unsupported mode");
-    } catch (std::exception &e) {
+    } catch (const std::exception &e) {
         printf("🚨 Critical error: %s\n", e.what());
         returnCode = EXIT_FAILURE;
     }

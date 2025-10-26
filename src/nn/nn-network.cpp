@@ -88,9 +88,9 @@ void writeSocket(int socket, const void *data, NnSize size) {
             if (isEagainError()) {
                 continue;
             }
-            throw NnWriteNetworkException(0, "Error writing to socket");
+            throw NnTransferSocketException(0, "Error writing to socket");
         } else if (s == 0) {
-            throw NnWriteNetworkException(0, "Socket closed");
+            throw NnTransferSocketException(0, "Socket closed");
         }
         size -= s;
         data = (const char*)data + s;
@@ -112,9 +112,9 @@ static inline bool tryReadSocket(int socket, void *data, NnSize size, unsigned l
                 }
                 continue;
             }
-            throw NnReadNetworkException(0, "Error reading from socket");
+            throw NnTransferSocketException(0, "Error reading from socket");
         } else if (r == 0) {
-            throw NnReadNetworkException(0, "Socket closed");
+            throw NnTransferSocketException(0, "Socket closed");
         }
         data = (char*)data + r;
         s -= r;
@@ -154,7 +154,7 @@ static inline int connectSocket(char *host, int port) {
     int addrinfoError = getaddrinfo(host, portStr, &hints, &addr);
     if (addrinfoError != 0 || addr == NULL) {
         printf("Cannot resolve target %s (%s)\n", host, gai_strerror(addrinfoError));
-        throw std::runtime_error("Cannot resolve address");
+        throw NnConnectionSocketException("Cannot resolve address");
     }
 
     int sock = ::socket(addr->ai_family, addr->ai_socktype, addr->ai_protocol);
@@ -164,7 +164,7 @@ static inline int connectSocket(char *host, int port) {
     int connectResult = ::connect(sock, addr->ai_addr, addr->ai_addrlen);
     if (connectResult != 0) {
         printf("Cannot connect to %s:%d (%s)\n", host, port, SOCKET_LAST_ERROR);
-        throw std::runtime_error("Cannot connect");
+        throw NnConnectionSocketException("Cannot connect");
     }
 
     setNoDelay(sock);
@@ -255,104 +255,131 @@ void cleanupSockets() {
 #endif
 }
 
-NnReadNetworkException::NnReadNetworkException(int code, const char *message) {
-    this->code = code;
-    this->message = message;
+NnConnectionSocketException::NnConnectionSocketException(const std::string message)
+    : std::runtime_error(message)
+{}
+
+NnTransferSocketException::NnTransferSocketException(int code, const std::string message)
+    : code(code), std::runtime_error(message)
+{}
+
+NnSocket::NnSocket() {
+    this->fd = -1;
 }
 
-NnWriteNetworkException::NnWriteNetworkException(int code, const char *message) {
-    this->code = code;
-    this->message = message;
+NnSocket::NnSocket(int fd) : NnSocket() {
+    assign(fd);
+}
+
+NnSocket::~NnSocket() {
+    if (this->fd >= 0)
+        destroySocket(this->fd);
+}
+
+void NnSocket::assign(int fd) {
+    assert(this->fd == -1);
+    assert(fd >= 0);
+    this->fd = fd;
+}
+
+int NnSocket::release() {
+    assert(this->fd >= 0);
+    int fd = this->fd;
+    this->fd = -1;
+    return fd;
 }
 
 std::unique_ptr<NnNetwork> NnNetwork::serve(int port) {
-    int serverSocket = createServerSocket(port);
+    NnSocket socketSocket(createServerSocket(port));
 
     NnUint nSockets;
     NnUint nodeIndex;
-    int rootSocket = acceptSocket(serverSocket);
+    int rootSocketFd = acceptSocket(socketSocket.fd);
+    NnSocket rootSocket(rootSocketFd);
     printf("⭕ The root node has connected\n");
 
-    readSocket(rootSocket, &nSockets, sizeof(nSockets));
+    readSocket(rootSocketFd, &nSockets, sizeof(nSockets));
     NnUint nNodes = nSockets - 1; // nSockets - 1 root node
     printf("⭕ nNodes: %d\n", nNodes);
-    readSocket(rootSocket, &nodeIndex, sizeof(nodeIndex));
+    readSocket(rootSocketFd, &nodeIndex, sizeof(nodeIndex));
     printf("⭕ NodeIndex: %d\n", nodeIndex);
 
-    int *sockets = new int[nSockets];
-    sockets[0] = rootSocket;
-    char* *hosts = new char*[nNodes];
-    int *ports = new int[nNodes];
+    std::vector<NnSocket> sockets(nSockets);
+    sockets[0].assign(rootSocket.release());
+
     printf("⭕ Socket[0]: accepted root node\n");
+    std::vector<std::unique_ptr<char[]>> hosts(nNodes);
+    std::vector<int> ports(nNodes);
 
     NnUint hostLen;
     for (NnUint i = 0; i < nNodes; i++) {
-        readSocket(rootSocket, &hostLen, sizeof(hostLen));
-        hosts[i] = new char[hostLen];
-        readSocket(rootSocket, hosts[i], hostLen);
-        readSocket(rootSocket, &ports[i], sizeof(ports[i]));
+        readSocket(rootSocketFd, &hostLen, sizeof(hostLen));
+
+        std::unique_ptr<char[]> host(new char[hostLen]);
+        readSocket(rootSocketFd, host.get(), hostLen);
+        hosts[i] = std::move(host);
+
+        readSocket(rootSocketFd, &ports[i], sizeof(ports[i]));
     }
 
-    writeAckPacket(rootSocket);
+    writeAckPacket(rootSocketFd);
 
     // We need to wait here until the root node will send a "root is ready" packet
-    readAckPacket(rootSocket);
+    readAckPacket(rootSocketFd);
 
     for (NnUint i = 0; i < nNodes; i++) {
+        char *host = hosts[i].get();
+        int port = ports[i];
         NnUint socketIndex = i + 1;
         if (i >= nodeIndex) {
-            printf("⭕ Socket[%d]: connecting to %s:%d worker\n", socketIndex, hosts[i], ports[i]);
-            sockets[socketIndex] = connectSocket(hosts[i], ports[i]);
+            printf("⭕ Socket[%d]: connecting to %s:%d worker\n", socketIndex, host, port);
+            sockets[socketIndex].assign(connectSocket(host, port));
             printf("⭕ Socket[%d]: connected\n", socketIndex);
         } else {
-            printf("⭕ Socket[%d]: wait for %s:%d worker\n", socketIndex, hosts[i], ports[i]);
-            sockets[socketIndex] = acceptSocket(serverSocket);
+            printf("⭕ Socket[%d]: wait for %s:%d worker\n", socketIndex, host, port);
+            sockets[socketIndex].assign(acceptSocket(socketSocket.fd));
             printf("⭕ Socket[%d]: accepted\n", socketIndex);
         }
     }
 
-    for (NnUint i = 0; i < nNodes; i++)
-        delete[] hosts[i];
-    delete[] hosts;
-    delete[] ports;
-
-    destroySocket(serverSocket);
     printf("⭕ Network is initialized\n");
-    return std::unique_ptr<NnNetwork>(new NnNetwork(nSockets, sockets));
+    return std::unique_ptr<NnNetwork>(new NnNetwork(&sockets));
 }
 
 std::unique_ptr<NnNetwork> NnNetwork::connect(NnUint nSockets, char **hosts, NnUint *ports) {
     assert(nSockets > 0);
 
-    int *sockets = new int[nSockets];
+    std::vector<NnSocket> sockets(nSockets);
     struct sockaddr_in addr;
     for (NnUint i = 0; i < nSockets; i++) {
         printf("⭕ Socket[%d]: connecting to %s:%d worker\n", i, hosts[i], ports[i]);
-        int socket = connectSocket(hosts[i], ports[i]);
-        sockets[i] = socket;
-        writeSocket(socket, &nSockets, sizeof(nSockets));
-        writeSocket(socket, &i, sizeof(i)); // send node index
+        int fd = connectSocket(hosts[i], ports[i]);
+        sockets[i].assign(fd);
+        writeSocket(fd, &nSockets, sizeof(nSockets));
+        writeSocket(fd, &i, sizeof(i)); // send node index
         for (NnUint j = 0; j < nSockets; j++) {
             if (j == i)
                 continue;
             NnUint hostLen = strlen(hosts[j]) + 1;
-            writeSocket(socket, &hostLen, sizeof(hostLen));
-            writeSocket(socket, hosts[j], hostLen);
-            writeSocket(socket, &ports[j], sizeof(ports[j]));
+            writeSocket(fd, &hostLen, sizeof(hostLen));
+            writeSocket(fd, hosts[j], hostLen);
+            writeSocket(fd, &ports[j], sizeof(ports[j]));
         }
-        readAckPacket(socket);
+        readAckPacket(fd);
         printf("⭕ Socket[%d]: connected\n", i);
     }
     for (NnUint i = 0; i < nSockets; i++) {
-        writeAckPacket(sockets[i]);
+        writeAckPacket(sockets[i].fd);
     }
     printf("⭕ Network is initialized\n");
-    return std::unique_ptr<NnNetwork>(new NnNetwork(nSockets, sockets));
+    return std::unique_ptr<NnNetwork>(new NnNetwork(&sockets));
 }
 
-NnNetwork::NnNetwork(NnUint nSockets, int *sockets) {
-    this->nSockets = nSockets;
-    this->sockets = sockets;
+NnNetwork::NnNetwork(std::vector<NnSocket> *sockets) {
+    this->nSockets = sockets->size();
+    this->sockets = new int[nSockets];
+    for (NnUint i = 0; i < nSockets; i++)
+        this->sockets[i] = sockets->at(i).release();
     this->sentBytes = new NnSize[nSockets];
     this->recvBytes = new NnSize[nSockets];
 }
@@ -438,9 +465,9 @@ void NnNetwork::writeMany(NnUint n, NnSocketIo *ios) {
                     if (isEagainError()) {
                         continue;
                     }
-                    throw NnWriteNetworkException(SOCKET_LAST_ERRCODE, SOCKET_LAST_ERROR);
+                    throw NnTransferSocketException(SOCKET_LAST_ERRCODE, SOCKET_LAST_ERROR);
                 } else if (s == 0) {
-                    throw NnWriteNetworkException(0, "Socket closed");
+                    throw NnTransferSocketException(0, "Socket closed");
                 }
                 io->size -= s;
                 io->data = (char*)io->data + s;
@@ -480,9 +507,9 @@ void NnNetwork::readMany(NnUint n, NnSocketIo *ios) {
                     if (isEagainError()) {
                         continue;
                     }
-                    throw NnReadNetworkException(SOCKET_LAST_ERRCODE, SOCKET_LAST_ERROR);
+                    throw NnTransferSocketException(SOCKET_LAST_ERRCODE, SOCKET_LAST_ERROR);
                 } else if (r == 0) {
-                    throw NnReadNetworkException(0, "Socket closed");
+                    throw NnTransferSocketException(0, "Socket closed");
                 }
                 io->size -= r;
                 io->data = (char*)io->data + r;

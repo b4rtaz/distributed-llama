@@ -57,6 +57,7 @@ public:
 
     Tokenizer(const char *tokenizer_path);
     ~Tokenizer();
+    void printHeader();
     int findSpecialTokenStartWith(char *piece);
     int findRegularToken(char *piece);
     void encode(char *text, int *tokens, int *nTokens, bool isStart, bool addSpecialTokens);

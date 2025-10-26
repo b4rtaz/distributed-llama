@@ -23,6 +23,7 @@ static ChatTemplateType parseChatTemplateType(char *val) {
 
 AppCliArgs AppCliArgs::parse(int argc, char* *argv, bool requireMode) {
     AppCliArgs args;
+    args.info = true;
     args.help = false;
     args.mode = nullptr;
     args.nBatches = 32;
@@ -236,7 +237,7 @@ void runInferenceApp(AppCliArgs *args, void (*handler)(AppInferenceContext *cont
         throw std::runtime_error("This version supports only Q40 weights with Q80 sync type");
 
     Tokenizer tokenizer(args->tokenizerPath);
-    if (tokenizer.vocabSize != header.vocabSize)
+    if (args->info && tokenizer.vocabSize != header.vocabSize)
         printf("Tokenizer vocab size (%d) does not match the model vocab size (%d)\n", tokenizer.vocabSize, header.vocabSize);
 
     Sampler sampler(tokenizer.vocabSize, args->temperature, args->topp, args->seed);
@@ -246,8 +247,11 @@ void runInferenceApp(AppCliArgs *args, void (*handler)(AppInferenceContext *cont
 
     NnNodeConfig *rootNodeConfig = &net.nodeConfigs[0];
 
-    printLlmHeader(&header);
-    printNodeRequiredMemory(&net.netConfig, rootNodeConfig);
+    if (args->info) {
+        tokenizer.printHeader();
+        printLlmHeader(&header);
+        printNodeRequiredMemory(&net.netConfig, rootNodeConfig);
+    }
 
     NnNetExecution execution(args->nThreads, &net.netConfig);
 
@@ -346,11 +350,11 @@ void runWorkerApp(AppCliArgs *args) {
                 }
                 executor.forward();
                 isFirstAttempt = true;
-            } catch (const NnReadNetworkException &e) {
-                printf("Read network exception: %s\n", e.message);
+            } catch (const NnTransferSocketException &e) {
+                printf("🚨 Network error: %s\n", e.what());
                 break;
-            } catch (const NnWriteNetworkException &e) {
-                printf("Write network exception: %s\n", e.message);
+            } catch (const NnExecutorException &e) {
+                printf("🚨 Inference error: %s\n", e.what());
                 break;
             }
         }

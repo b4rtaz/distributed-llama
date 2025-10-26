@@ -145,6 +145,8 @@ void releaseNetConfig(NnNetConfig *netConfig) {
     for (NnUint pipeIndex = 0; pipeIndex < netConfig->nPipes; pipeIndex++) {
         delete[] netConfig->pipes[pipeIndex].name;
     }
+    if (netConfig->nPreSyncs > 0)
+        delete[] netConfig->preSyncs;
     delete[] netConfig->pipes;
 }
 

@@ -1,6 +1,5 @@
 #include <cassert>
 #include <cstring>
-#include <stdexcept>
 #include "nn-executor.hpp"
 
 void NnFakeNodeSynchronizer::sync(NnUint segmentIndex, NnUint nThreads, NnUint threadIndex) {
@@ -38,6 +37,10 @@ NnExecutorDevice::NnExecutorDevice(NnDevice *device, int segmentFrom, int segmen
     this->segmentFrom = segmentFrom;
     this->segmentTo = segmentTo;
 }
+
+NnExecutorException::NnExecutorException(const std::string message)
+    : std::runtime_error(message) 
+{}
 
 NnExecutor::NnExecutor(NnNetConfig *netConfig, NnNodeConfig *nodeConfig, std::vector<NnExecutorDevice> *devices, NnNetExecution *netExecution, NnNodeSynchronizer *synchronizer, bool benchmark)
     : segments(nodeConfig->nSegments), steps()
@@ -137,13 +140,19 @@ static inline void *executorThreadHandler(void *arg) {
     NnUint nThreads = context->nThreads;
     NnUint doneCount = nThreads - 1;
 
-    while (true) {
+    while (context->isAlive.load()) {
         const unsigned int currentStepIndex = context->currentStepIndex.load();
         if (currentStepIndex == context->nSteps)
             break;
 
         NnExecutorStep *step = &context->steps[currentStepIndex];
-        executeStep(step, nThreads, thread, context);
+        try {
+            executeStep(step, nThreads, thread, context);
+        } catch (const std::runtime_error &e) {
+            context->isAlive.store(false);
+            printf("🚨 Execution error: %s\n", e.what());
+            break;
+        }
 
         NnUint currentCount = context->doneThreadCount.fetch_add(1);
         if (currentCount == doneCount) {
@@ -156,7 +165,10 @@ static inline void *executorThreadHandler(void *arg) {
             context->doneThreadCount.store(0);
             context->currentStepIndex.fetch_add(1);
         } else {
-            while (context->currentStepIndex.load() == currentStepIndex);
+            while (
+                context->currentStepIndex.load() == currentStepIndex &&
+                context->isAlive.load()
+            );
         }
     }
     return nullptr;
@@ -166,6 +178,7 @@ void NnExecutor::forward() {
     assert(netExecution->batchSize > 0);
 
     NnUint nThreads = netExecution->nThreads;
+    context.isAlive.exchange(true);
     context.currentStepIndex.exchange(0);
     context.doneThreadCount.exchange(0);
     context.batchSize = netExecution->batchSize;
@@ -178,12 +191,14 @@ void NnExecutor::forward() {
     NnUint threadIndex;
     for (threadIndex = 1; threadIndex < nThreads; threadIndex++) {
         int result = pthread_create(&threads[threadIndex].handler, NULL, (PthreadFunc)executorThreadHandler, (void *)&threads[threadIndex]);
-        if (result != 0)
-            throw std::runtime_error("Failed to create thread");
+        assert(result == 0 && "Failed to create thread");
     }
     executorThreadHandler((void *)&threads[0]);
     for (threadIndex = 1; threadIndex < nThreads; threadIndex++)
         pthread_join(threads[threadIndex].handler, NULL);
+
+    if (!context.isAlive.load())
+        throw NnExecutorException("Execution failed in one of the threads");
 }
 
 NnUint NnExecutor::getTotalTime(NnExecutorStepType type) {

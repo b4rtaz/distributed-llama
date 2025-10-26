@@ -160,20 +160,6 @@ Tokenizer::Tokenizer(const char* tokenizerPath)
     strBuffer = new char[strBufferSize];
     utf8Buffer = new char[strBufferSize];
 
-    if (bosId >= 0) {
-        printf("📄 AddBos: %d\n", addBos ? 1 : 0);
-        printf("📄 BosId: %d (%s)\n", bosId, vocab[bosId]);
-    }
-    if (eosTokenIds.size() > 0) {
-        printf("📄 EosId: ");
-        for (unsigned int i = 0; i < eosTokenIds.size(); i++) {
-            printf("%d (%s) ", eosTokenIds[i], vocab[eosTokenIds[i]]);
-        }
-        printf("\n");
-    }
-    printf("📄 RegularVocabSize: %d\n", regularVocabSize);
-    printf("📄 SpecialVocabSize: %d\n", specialVocabSize);
-
     fclose(file);
 }
 
@@ -189,6 +175,22 @@ Tokenizer::~Tokenizer() {
     delete[] specialVocab;
     delete[] strBuffer;
     delete[] utf8Buffer;
+}
+
+void Tokenizer::printHeader() {
+    if (bosId >= 0) {
+        printf("📄 AddBos: %d\n", addBos ? 1 : 0);
+        printf("📄 BosId: %d (%s)\n", bosId, vocab[bosId]);
+    }
+    if (eosTokenIds.size() > 0) {
+        printf("📄 EosId: ");
+        for (unsigned int i = 0; i < eosTokenIds.size(); i++) {
+            printf("%d (%s) ", eosTokenIds[i], vocab[eosTokenIds[i]]);
+        }
+        printf("\n");
+    }
+    printf("📄 RegularVocabSize: %d\n", regularVocabSize);
+    printf("📄 SpecialVocabSize: %d\n", specialVocabSize);
 }
 
 int Tokenizer::findSpecialTokenStartWith(char *piece) {

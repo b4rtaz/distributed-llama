@@ -12,6 +12,7 @@ public:
     char *mode;
     NnUint nThreads;
     NnUint nBatches;
+    bool info;
     bool help;
 
     // inference
