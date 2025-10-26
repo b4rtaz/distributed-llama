@@ -73,6 +73,7 @@ typedef struct {
     NnNodeSynchronizer *synchronizer;
     std::atomic_uint currentStepIndex;
     std::atomic_uint doneThreadCount;
+    std::atomic_bool isAlive;
     NnUint batchSize;
     Timer *timer;
     NnUint totalTime[N_STEP_TYPES];
@@ -83,6 +84,11 @@ typedef struct {
     NnExecutorContext *context;
     PthreadHandler handler;
 } NnExecutorThread;
+
+class NnExecutorException : public std::runtime_error {
+public:
+    NnExecutorException(const std::string message);
+};
 
 class NnExecutor {
 private:

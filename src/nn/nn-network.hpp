@@ -14,18 +14,25 @@ void readSocket(int socket, void* data, NnSize size);
 int createServerSocket(int port);
 void destroySocket(int serverSocket);
 
-class NnReadNetworkException : public std::exception {
+class NnConnectionSocketException : public std::runtime_error {
 public:
-    int code;
-    const char *message;
-    NnReadNetworkException(int code, const char *message);
+    NnConnectionSocketException(const std::string message);
 };
 
-class NnWriteNetworkException : public std::exception {
+class NnTransferSocketException : public std::runtime_error {
 public:
     int code;
-    const char *message;
-    NnWriteNetworkException(int code, const char *message);
+    NnTransferSocketException(int code, const std::string message);
+};
+
+class NnSocket {
+public:
+    int fd;
+    NnSocket();
+    NnSocket(int fd);
+    ~NnSocket();
+    void assign(int fd);
+    int release();
 };
 
 struct NnSocketIo {
@@ -46,7 +53,7 @@ public:
 
     NnUint nSockets;
 
-    NnNetwork(NnUint nSockets, int *sockets);
+    NnNetwork(std::vector<NnSocket> *sockets);
     ~NnNetwork();
 
     void setTurbo(bool enabled);

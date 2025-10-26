@@ -9,6 +9,8 @@
 #include <vector>
 #include <string>
 #include <csignal>
+#include <thread>
+#include <chrono>
 
 #ifdef _WIN32
 #include <winsock2.h>
@@ -532,7 +534,7 @@ void handleModelsRequest(HttpRequest& request, const char* modelPath) {
 }
 
 static void server(AppInferenceContext *context) {
-    int serverSocket = createServerSocket(context->args->port);
+    NnSocket serverSocket(createServerSocket(context->args->port));
 
     TokenizerChatStops stops(context->tokenizer);
     ChatTemplateGenerator templateGenerator(context->args->chatTemplateType, context->tokenizer->chatTemplate, stops.stops[0]);
@@ -556,19 +558,16 @@ static void server(AppInferenceContext *context) {
 
     while (true) {
         try {
-            int clientSocket = acceptSocket(serverSocket);
-            HttpRequest request = HttpRequest::read(clientSocket);
+            NnSocket clientSocket(acceptSocket(serverSocket.fd));
+            HttpRequest request = HttpRequest::read(clientSocket.fd);
             printf("🔷 %s %s\n", request.getMethod().c_str(), request.path.c_str());
             Router::resolve(request, routes);
-            destroySocket(clientSocket);
-        } catch (NnReadNetworkException& ex) {
-            printf("Read socket error: %d %s\n", ex.code, ex.message);
-        } catch (NnWriteNetworkException& ex) {
-            printf("Write socket error: %d %s\n", ex.code, ex.message);
+        } catch (const NnTransferSocketException& e) {
+            printf("Socket error: %d %s\n", e.code, e.what());
+        } catch (const NnExecutorException &e) {
+            throw;
         }
     }
-
-    destroySocket(serverSocket);
 }
 
 #ifdef _WIN32
@@ -601,22 +600,29 @@ int main(int argc, char *argv[]) {
     std::signal(SIGPIPE, SIG_IGN);
 #endif
 
+    AppCliArgs args = AppCliArgs::parse(argc, argv, false);
+    if (args.help) {
+        usage();
+        return EXIT_SUCCESS;
+    }
+
     initQuants();
     initSockets();
 
-    int returnCode = EXIT_SUCCESS;
-    try {
-        AppCliArgs args = AppCliArgs::parse(argc, argv, false);
-        if (args.help) {
-            usage();
-        } else {
+    while (true) {
+        try {
             runInferenceApp(&args, server);
+        } catch (const NnConnectionSocketException &e) {
+            printf("🚨 Connection error: %s\n", e.what());
+        } catch (const NnExecutorException &e) {
+            printf("🚨 Inference failed: %s\n", e.what());
         }
-    } catch (std::exception &e) {
-        printf("🚨 Critical error: %s\n", e.what());
-        returnCode = EXIT_FAILURE;
+
+        printf("🔄 Retrying in 3 seconds...\n");
+        std::this_thread::sleep_for(std::chrono::seconds(3));
+        args.info = false;
     }
 
     cleanupSockets();
-    return returnCode;
+    return EXIT_SUCCESS;
 }
