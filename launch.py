@@ -70,6 +70,11 @@ MODELS = {
         'https://huggingface.co/b4rtaz/Qwen3-30B-A3B-Q40-Distributed-Llama/resolve/main/dllama_tokenizer_qwen3_30b_a3b.t?download=true',
         'q40', 'q80', 'chat', '--max-seq-len 4096'
     ],
+    'minimax_m2_q40': [
+        list(map(lambda suffix : f'https://huggingface.co/b4rtaz/MiniMax-M2-Q40-Distributed-Llama/blob/main/dllama_model_minmax_m2_q40.m.part_{suffix}', parts(25))),
+        'https://huggingface.co/b4rtaz/MiniMax-M2-Q40-Distributed-Llama/blob/main/dllama_tokenizer_minimax-m2.t',
+        'q40', 'q80', 'chat', '--max-seq-len 4096'
+    ],
 }
 
 def confirm(message: str):
