@@ -24,6 +24,7 @@ static const char *archTypeToString(LlmArchType type) {
     if (type == LLAMA) return "Llama";
     if (type == QWEN3) return "Qwen3";
     if (type == QWEN3_MOE) return "Qwen3 MoE";
+    if (type == MINIMAX_MOE) return "MiniMax MoE";
     throw std::runtime_error("Unsupported architecture");
 }
 
@@ -110,7 +111,7 @@ LlmHeader loadLlmHeader(const char *path, const NnUint maxSeqLen, NnFloatType sy
     header.syncType = syncType;
     header.fileSize = (NnSize)seekToEnd(fd);
 
-    if (header.archType == QWEN3 || header.archType == QWEN3_MOE)
+    if (header.archType == QWEN3 || header.archType == QWEN3_MOE || header.archType == MINIMAX_MOE)
         header.ropeType = ROPE_FALCON;
     return header;
 }
@@ -178,7 +179,11 @@ LlmNet buildLlmNet(LlmHeader *h, NnUint nNodes, NnUint nBatches) {
     NnUint nQNormColumns = 1;
     NnUint nKNormColumns = 1;
     NnUint nInvBufferColumns = 1;
-    if (h->archType == QWEN3 || h->archType == QWEN3_MOE) {
+    if (
+        h->archType == QWEN3 ||
+        h->archType == QWEN3_MOE ||
+        h->archType == MINIMAX_MOE
+    ) {
         ASSERT_EQ(n.qSlice.d0 % h->headDim, 0);
         ASSERT_EQ(n.kSlice.d0 % h->headDim, 0);
         nQNormColumns = n.qSlice.d0 / h->headDim;
@@ -319,7 +324,11 @@ LlmNet buildLlmNet(LlmHeader *h, NnUint nNodes, NnUint nBatches) {
                 size2D(h->weightType, n.vSlice.n, n.vSlice.d0),
                 NnMatmulOpConfig{0, 0, moeExpertIndexesBufferIndex});
 
-            if (h->archType == QWEN3 || h->archType == QWEN3_MOE) {
+            if (
+                h->archType == QWEN3 ||
+                h->archType == QWEN3_MOE ||
+                h->archType == MINIMAX_MOE
+            ) {
                 att.addOp(OP_INV_RMS, "block_norm_pre_q", layerIndex,
                     pointerBatchConfig(SRC_BUFFER, qBufferIndex),
                     pointerBatchConfig(SRC_BUFFER, invRmsBufferIndex),
@@ -422,7 +431,7 @@ LlmNet buildLlmNet(LlmHeader *h, NnUint nNodes, NnUint nBatches) {
                 n.rmsNormSize,
                 NnRmsNormOpConfig{invRmsBufferIndex, 1});
 
-            if (h->archType == QWEN3_MOE) {
+            if (h->nExperts > 0) {
                 ff.addOp(
                     OP_REPEAT_Z, "block_moe_y_repeat", layerIndex,
                     pointerBatchConfig(SRC_BUFFER, yBufferIndex),
@@ -435,6 +444,14 @@ LlmNet buildLlmNet(LlmHeader *h, NnUint nNodes, NnUint nBatches) {
                     pointerBatchConfig(SRC_BUFFER, moeGtBufferIndex),
                     n.moeGateSize,
                     NnMatmulOpConfig{0, 0, moeExpertIndexesBufferIndex});
+                if (h->archType == MINIMAX_MOE) {
+                    ff.addOp(
+                        OP_ADD, "block_moe_gate_bias", layerIndex,
+                        pointerBatchConfig(SRC_BUFFER, moeGtBufferIndex),
+                        pointerBatchConfig(SRC_BUFFER, moeGtBufferIndex),
+                        size1D(F_32, nExpertsOr1),
+                        NnAddOpCodeConfig{});
+                }
                 ff.addOp(
                     OP_SOFTMAX, "block_moe_softmax", layerIndex,
                     pointerBatchConfig(SRC_BUFFER, moeGtBufferIndex),
@@ -634,6 +651,9 @@ void loadLlmNetWeight(const char *path, LlmNet *net, NnRootWeightLoader *loader)
 
         if (net->header->nExperts > 0u) {
             b += loader->loadAll("block_moe_gate", layerIndex, net->moeGateSize.nBytes, b);
+            if (net->header->archType == MINIMAX_MOE) {
+                b += loader->loadAll("block_moe_gate_bias", layerIndex, net->header->nExperts * sizeof(float), b);
+            }
             for (NnUint expertIndex = 0u; expertIndex < net->header->nExperts; expertIndex++) {
                 b += loader->loadRowMatmulSlices("block_matmul_w1", layerIndex, expertIndex, &net->w1Slice, b);
                 b += loader->loadColMatmulSlices("block_matmul_w2", layerIndex, expertIndex, &net->w2Slice, b);
@@ -645,7 +665,11 @@ void loadLlmNetWeight(const char *path, LlmNet *net, NnRootWeightLoader *loader)
             b += loader->loadRowMatmulSlices("block_matmul_w3", layerIndex, 0u, &net->w3Slice, b);
         }
 
-        if (net->header->archType == QWEN3 || net->header->archType == QWEN3_MOE) {
+        if (
+            net->header->archType == QWEN3 ||
+            net->header->archType == QWEN3_MOE ||
+            net->header->archType == MINIMAX_MOE
+        ) {
             b += loader->loadAll("block_norm_q", layerIndex, net->qkRmsNormSize.nBytes, b);
             b += loader->loadAll("block_norm_k", layerIndex, net->qkRmsNormSize.nBytes, b);
         }

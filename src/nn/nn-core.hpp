@@ -81,6 +81,7 @@ enum NnOpCode {
     OP_MULTIHEAD_ATT,
     OP_GELU,
     OP_SILU,
+    OP_ADD,
     OP_MUL,
     OP_SCALE,
     OP_CAST,
@@ -250,6 +251,10 @@ typedef struct {
 typedef struct {
     // empty
 } NnSiluOpCodeConfig;
+
+typedef struct {
+    // empty
+} NnAddOpCodeConfig;
 
 typedef struct {
     NnUint multiplierBufferIndex;

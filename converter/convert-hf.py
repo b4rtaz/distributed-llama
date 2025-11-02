@@ -9,11 +9,15 @@ class ArchType:
     LLAMA = 0xABCD00
     QWEN3 = 0xABCD01
     QWEN3_MOE = 0xABCD02
+    MINIMAX_MOE = 0xABCD03
 
 def permute(tensor, nHeads: int, nKvHeads: int):
     if nHeads != nKvHeads:
         nHeads = nKvHeads
     return (tensor.reshape(nHeads, 2, tensor.shape[0] // nHeads // 2, *tensor.shape[1:]).swapaxes(1, 2).reshape(tensor.shape))
+
+def isArch(types: list, archType: int):
+    return types.count(archType) > 0
 
 class Processor:
     def __init__(self, config):
@@ -72,14 +76,21 @@ class Processor:
                 f'model.layers.{l}.self_attn.o_proj.weight'])
 
             if (self.config['n_experts'] > 0):
-                p.append([FloatType.F32, f'model.layers.{l}.mlp.gate.weight'])
+                p.append([FloatType.F32,
+                    f'model.layers.{l}.mlp.gate.weight',
+                    f'model.layers.{l}.block_sparse_moe.gate.weight'])
+                if (isArch([ArchType.MINIMAX_MOE], self.archType)):
+                    p.append([FloatType.F32, f'model.layers.{l}.block_sparse_moe.e_score_correction_bias'])
                 for e in range(self.config['n_experts']):
                     p.append([wt,
-                        f'model.layers.{l}.mlp.experts.{e}.gate_proj.weight'])
+                        f'model.layers.{l}.mlp.experts.{e}.gate_proj.weight',
+                        f'model.layers.{l}.block_sparse_moe.experts.{e}.w1.weight'])
                     p.append([wt,
-                        f'model.layers.{l}.mlp.experts.{e}.down_proj.weight'])
+                        f'model.layers.{l}.mlp.experts.{e}.down_proj.weight',
+                        f'model.layers.{l}.block_sparse_moe.experts.{e}.w2.weight'])
                     p.append([wt,
-                        f'model.layers.{l}.mlp.experts.{e}.up_proj.weight'])
+                        f'model.layers.{l}.mlp.experts.{e}.up_proj.weight',
+                        f'model.layers.{l}.block_sparse_moe.experts.{e}.w3.weight'])
             else:
                 p.append([wt,
                     f'model.layers.{l}.mlp.gate_proj.weight'])
@@ -88,7 +99,7 @@ class Processor:
                 p.append([wt,
                     f'model.layers.{l}.mlp.up_proj.weight'])
 
-            if (self.archType == ArchType.QWEN3 or self.archType == ArchType.QWEN3_MOE):
+            if (isArch([ArchType.QWEN3, ArchType.QWEN3_MOE, ArchType.MINIMAX_MOE], self.archType)):
                 p.append([FloatType.F32,
                     f'model.layers.{l}.self_attn.q_norm.weight'])
                 p.append([FloatType.F32,
@@ -106,9 +117,10 @@ class Processor:
     def write(self, outputFile: str):
         self.__preparePlan()
 
-        # Loading the last model file to get the layer names
-        self.__loadModel(len(self.config['files']) - 1)
-        self.__unloadModel()
+        # Loading all models to build layer map
+        for i in range(len(self.config['files']) - 1):
+            self.__loadModel(i)
+            self.__unloadModel()
 
         for planItem in self.plan:
             lookup = planItem[1:]
@@ -149,6 +161,7 @@ def parseArchType(type: str):
         'mistral': ArchType.LLAMA,
         'qwen3': ArchType.QWEN3,
         'qwen3_moe': ArchType.QWEN3_MOE,
+        'minimax': ArchType.MINIMAX_MOE,
     }.get(type)
     if (archType is None):
         raise Exception(f'Unsupported arch type: {type}')
@@ -205,7 +218,7 @@ def loadConfig(folderPath: str, weightsFloatType: int):
         'files': files,
     }
 
-    nExperts = config.get('num_experts')
+    nExperts = config.get('num_experts') or config.get('num_local_experts')
     nActiveExperts = config.get('num_experts_per_tok')
     result['n_experts'] = int(nExperts) if nExperts is not None else 0
     result['n_active_experts'] = int(nActiveExperts) if nActiveExperts is not None else 0

@@ -105,6 +105,7 @@ enum ChatTemplateType {
     TEMPLATE_LLAMA3 = 2,
     TEMPLATE_DEEP_SEEK3 = 3,
     TEMPLATE_CHATML = 4,
+    TEMPLATE_MINIMAX = 5,
 };
 
 struct ChatItem {

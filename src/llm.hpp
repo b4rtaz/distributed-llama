@@ -39,6 +39,7 @@ enum LlmArchType {
     LLAMA = 0xABCD00,
     QWEN3 = 0xABCD01,
     QWEN3_MOE = 0xABCD02,
+    MINIMAX_MOE = 0xABCD03,
 };
 
 typedef struct {

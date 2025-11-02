@@ -1285,6 +1285,20 @@ static void multiHeadAttForward_F32_F32(NnUint nThreads, NnUint threadIndex, NnU
     }
 }
 
+static void addForward_F32_F32(NnUint nThreads, NnUint threadIndex, NnUint batchSize, NnCpuOpContext *context) {
+    const NnAddOpCodeConfig *config = (NnAddOpCodeConfig *)context->opConfig;
+    const float *value = (float *)context->weight;
+
+    for (NnUint y = 0u; y < batchSize; y++) {
+        add_F32(
+            (float *)context->output[y],
+            value,
+            context->outputSize.x,
+            nThreads,
+            threadIndex);
+    }
+}
+
 static void initMulForward(NnCpuOpContext *context) {
     assert(context->weightSize.nBytes == 0);
     ASSERT_EQ(context->inputSize.x, context->outputSize.x);
@@ -1571,6 +1585,9 @@ NnCpuOpForward getCpuOpForward(NnOpCode code, NnOpQuantType quantType) {
     }
     if (code == OP_SILU) {
         if (quantType == F32_F32_F32) return siluForward_F32_F32;
+    }
+    if (code == OP_ADD) {
+        if (quantType == F32_F32_F32) return addForward_F32_F32;
     }
     if (code == OP_MUL) {
         if (quantType == F32_F32_F32) return mulForward_F32_F32;

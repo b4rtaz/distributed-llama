@@ -543,6 +543,7 @@ static const char *chatTemplateTypeToString(const ChatTemplateType type) {
     if (type == TEMPLATE_LLAMA3) return "llama3";
     if (type == TEMPLATE_DEEP_SEEK3) return "deepSeek3";
     if (type == TEMPLATE_CHATML) return "chatml";
+    if (type == TEMPLATE_MINIMAX) return "minimax";
     return "unknown";
 }
 
@@ -560,6 +561,8 @@ ChatTemplateGenerator::ChatTemplateGenerator(const ChatTemplateType type, const 
             this->type = TEMPLATE_DEEP_SEEK3;
         } else if (strstr(chatTemplate, "<|im_start|>") != NULL) {
             this->type = TEMPLATE_CHATML;
+        } else if (strstr(chatTemplate, "]~!b[") != NULL) {
+            this->type = TEMPLATE_MINIMAX;
         } else {
             throw std::runtime_error("Not supported chat template");
         }
@@ -622,6 +625,19 @@ GeneratedChat ChatTemplateGenerator::generate(unsigned int nItems, ChatItem* ite
             }
             if (appendGenerationPrompt)
                 buffer += "<|im_start|>assistant\n";
+        }
+    } else if (type == TEMPLATE_MINIMAX) {
+        for (unsigned int i = 0; i < nItems; i++) {
+            if (items[i].role == "system") {
+                buffer += "]~b]system\n" + items[i].message + eos + "\n";
+            } else if (items[i].role == "user") {
+                buffer += "]~b]user\n" + items[i].message + eos + "\n";
+            } else if (items[i].role == "assistant") {
+                buffer += "]~b]ai\n" + items[i].message + eos + "\n";
+            }
+        }
+        if (appendGenerationPrompt) {
+            buffer += "]~b]ai\n<think>\n";
         }
     }
 

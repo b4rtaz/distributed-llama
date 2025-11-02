@@ -54,11 +54,18 @@ class TokensResolver:
             if (self.bosId is None):
                 self.bosId = config['bos_token_id']
             if (self.eosIds is None):
-                self.eosIds = config['eos_token_id']
-                if isinstance(self.eosIds, list):
-                    self.eosIds = self.eosIds
-                else:
-                    self.eosIds = [self.eosIds]
+                eosIds = config['eos_token_id']
+                if isinstance(eosIds, list):
+                    self.eosIds = eosIds
+                elif isinstance(eosIds, int):
+                    self.eosIds = [eosIds]
+        if (self.bosId is None or self.eosId is None):
+            config = openJson(os.path.join(self.dirPath, 'tokenizer_config.json'))
+            eosToken = config['eos_token']
+            bosToken = config['bos_token']
+            if (isinstance(eosToken, str) and isinstance(bosToken, str)):
+                self.eosIds = [tokenizer.convert_tokens_to_ids(eosToken)]
+                self.bosId = tokenizer.convert_tokens_to_ids(bosToken)
 
     def resolveLlamaTokenizer(self):
         modelPath = os.path.join(self.dirPath, 'tokenizer.model')
@@ -85,7 +92,8 @@ class TokensResolver:
         cls = self.tokenizerConfig['tokenizer_class']
         if (cls == 'PreTrainedTokenizerFast' or
             cls == 'LlamaTokenizerFast' or
-            cls == 'Qwen2Tokenizer'):
+            cls == 'Qwen2Tokenizer' or
+            cls == 'GPT2Tokenizer'):
             return self.resolvePreTrainedTokenizerFast()
         if (cls == 'LlamaTokenizer'):
             return self.resolveLlamaTokenizer()
@@ -119,6 +127,11 @@ if __name__ == '__main__':
     chatTemplate = None
     if ('chat_template' in tokenizerConfig):
         chatTemplate = tokenizerConfig['chat_template'].encode('utf-8')
+    if (chatTemplate is None):
+        ninjaPath = os.path.join(dirPath, 'chat_template.jinja')
+        if (os.path.exists(ninjaPath)):
+            with open(ninjaPath, 'r', encoding='utf-8') as f:
+                chatTemplate = f.read().encode('utf-8')
 
     addBos = True
     if ('add_bos_token' in tokenizerConfig):
