@@ -95,6 +95,47 @@ typedef struct {
     NnSize3D moeGateSize;
 } LlmNet;
 
+typedef struct {
+    LlmHeader *header;
+    NnNetConfig netConfig;
+    NnNodeConfig *nodeConfigs;      // [nNodes]
+
+    // Attention 前投影（行切：按输入维 D_in 切）
+    NnRowMatmulSliceUneven *qSlices;      // [nNodes] for W_q
+    NnRowMatmulSliceUneven *kSlices;      // [nNodes] for W_k
+    NnRowMatmulSliceUneven *vSlices;      // [nNodes] for W_v
+
+    // Attention 输出投影（列切：按输出维 D_out 切）
+    NnColMatmulSliceUneven *woSlices;     // [nNodes] for W_o
+
+    // FFN（w1/w3 行切；w2 列切）
+    NnRowMatmulSliceUneven *w1Slices;     // [nNodes] for W1 (D_in -> ffDim)
+    NnColMatmulSliceUneven *w2Slices;     // [nNodes] for W2 (ffDim -> D_out)
+    NnRowMatmulSliceUneven *w3Slices;     // [nNodes] for W3 (D_in -> ffDim)
+
+    // 词表投影（通常按行切 vocab 维）
+    NnRowMatmulSliceUneven *wclsSlices;   // [nNodes] for W_cls
+
+    // 多头注意力与缓存的分片（按 head/kv 维非均匀）
+    NnMultiHeadAttSliceUneven *mhaSlices; // [nNodes]  每个节点的 headStart / nHeads_node / attSize 等
+    NnKvCacheSliceUneven     *kvSlices;   // [nNodes]  每个节点的 KV 维/容量切片
+    NnRopeSliceUneven        *ropeSlices; // [nNodes]  每个节点的 RoPE cache 切片（由 head 切映射得到）
+
+    // ---------- ② Pipe 索引（保持原有） ----------
+    NnUint positionPipeIndex;
+    NnUint tokenPipeIndex;
+    NnUint xPipeIndex;
+    NnUint logitsPipeIndex;
+
+    NnUint zqPipeIndex;
+    NnSize3D tokenEmbeddingSize;
+    NnSize3D rmsNormSize;
+    NnSize3D qkRmsNormSize;
+    NnSize3D moeGateSize;
+
+} LlmNetUneven;  
+
+
 LlmHeader loadLlmHeader(const char* path, const unsigned int maxSeqLen, NnFloatType syncType);
 void printLlmHeader(LlmHeader *header);
 LlmNet buildLlmNet(LlmHeader *h, NnUint nNodes, NnUint nBatches);

@@ -275,6 +275,7 @@ NnRopeSlice sliceRope(NnRopeType type, NnUint qDim, NnUint kvDim, NnUint nKvHead
     return s;
 }
 
+
 NnMultiHeadAttSlice sliceMultiHeadAtt(NnUint nHeads, NnUint seqLen, NnUint nNodes, NnUint nBatches) {
     NnMultiHeadAttSlice s;
     assert(nHeads % nNodes == 0);

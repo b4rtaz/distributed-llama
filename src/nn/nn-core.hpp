@@ -6,6 +6,7 @@
 #include <memory>
 #include <cstdint>
 #include "nn-quants.hpp"
+#include <vector>
 
 // primitives
 
@@ -67,6 +68,89 @@ typedef struct {
     NnUint nHeads0;
     NnSize3D attSize;
 } NnMultiHeadAttSlice;
+
+//Uneven slice
+typedef struct {
+    NnUint kvStart;   // 在 kv 维上的起点（本节点）
+    NnUint kvLen;     // 在 kv 维上的长度（本节点）
+ 
+    NnUint kvDim0;    // 本节点的 kvDim 局部（可与 kvLen 对齐；保留以兼容旧逻辑）
+    NnSize3D keySize;    // 本节点局部 K 缓冲尺寸
+    NnSize3D valueSize;  // 本节点局部 V 缓冲尺寸
+} NnKvCacheSliceUneven;
+
+typedef struct {
+    NnFloatType type;
+
+
+    NnUint inStart;   // 在输入维 D_in 上的起点（本节点）
+    NnUint inLen;     // 在输入维 D_in 上的长度（本节点）
+
+    // —— 语义收敛为“本节点局部” —— 
+    // 原来用于均匀切的 nNodes 建议删除；若保留请忽略
+    // NnUint nNodes;  // <- 不再使用，或在构图时仅作信息提示
+
+    // d0：本节点 matmul 结果的列数（对 Wq/Wk/Wv，等于本节点参与乘积后的输出列）
+    NnUint d0;
+    NnUint n;
+    NnSize3D size;
+
+    // 本节点局部权重切片的 size（保持原字段名，但明确“局部化”）
+    NnSize3D sliceSize;
+} NnRowMatmulSliceUneven; 
+
+typedef struct {
+    NnFloatType type;
+
+    // —— 新增：非均匀所需（本节点负责的“被切维度”区间）——
+    NnUint outStart;  // 在输出维 D_out 上的起点（本节点）
+    NnUint outLen;    // 在输出维 D_out 上的长度（本节点）
+
+    // —— 语义收敛为“本节点局部” —— 
+    // NnUint nNodes;  // <- 不再使用，或忽略
+    NnUint n;         
+    NnUint n0;        
+    NnUint d;         
+    NnSize3D size;        
+    NnSize3D sliceSize;   // 本节点权重切片 size（局部）
+} NnColMatmulSliceUneven;   // 每个节点一份（数组使用）
+
+typedef struct {
+    // —— Q 侧 —— 
+    NnUint qDim0;       // 本节点的 q 局部总宽（可保留）
+    NnUint qDimStart;   // 本节点在 Q 维的起点
+    NnUint qDimLen;     // 新增：本节点在 Q 维的长度（明确代替/补充 qDim0）
+
+    // —— 针对缓存/移位，用于定位 —— 
+    NnUint qShift;
+
+    // —— KV 侧 —— 
+    NnUint kvDim;       // 全局 kv 维（可保留）
+    NnUint kvDim0;      // 本节点 kv 局部（可保留）
+    NnUint kvDimStart;  // 起点
+    NnUint kvDimLen;    // 新增：长度（替代/补充 kvDim0）
+
+    // —— 其它参数 —— 
+    NnUint sliceDim;    // 若你在用它表达“本地处理宽度”，可保留；建议在注释中注明其与 *Len 的关系
+    NnUint seqLen;
+    NnUint headDim;
+    NnUint nKvHeads;
+    float  ropeTheta;
+
+    // —— 本节点的 RoPE cache 分配 —— 
+    NnSize3D cacheSize; // 局部 cache 尺寸（由上面长度推导）
+} NnRopeSliceUneven;
+
+typedef struct {
+    // —— 新增：非均匀所需 —— 
+    NnUint headStart;  // 本节点负责的 head 起点（全局编号）
+    NnUint headLen;    // 本节点负责的 head 数量
+
+    // —— 保留：兼容旧语义 —— 
+    NnUint nHeads;     // 全局 head 数
+    NnUint nHeads0;    // 本节点 head 局部（可与 headLen 等价；保留以兼容旧 kernel）
+    NnSize3D attSize;  // 本节点的注意力中间缓冲尺寸（局部）
+} NnMultiHeadAttSliceUneven;
 
 // base enums
 

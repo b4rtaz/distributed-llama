@@ -162,7 +162,7 @@ LlmNet buildLlmNet(LlmHeader *h, NnUint nNodes, NnUint nBatches) {
     n.qkRmsNormSize = size1D(F_32, h->headDim);
     n.moeGateSize = size2D(F_32, h->dim, h->nExperts);
 
-    NnKvCacheSlice kvCacheSlice = sliceKvCache(h->kvDim, h->seqLen, nNodes);
+    NnKvCacheSlice kvCacheSlice = sliceKvCache(h->kvDim, h->seqLen, nNodes); //KVslice
     NnMultiHeadAttSlice multiHeadAttSlice = sliceMultiHeadAtt(h->nHeads, h->seqLen, nNodes, nBatches);
 
     n.qSlice = sliceRowMatmul(h->weightType, nNodes, h->dim, h->qDim);
@@ -602,6 +602,12 @@ LlmNet buildLlmNet(LlmHeader *h, NnUint nNodes, NnUint nBatches) {
         n.nodeConfigs[nodeIndex] = nodeBuilder.build();
     }
     return n;
+}
+
+LlmNet buildLlmNetUneven(LlmHeader *h, NnUint nNodes, NnUint nBatches) {
+    //TODO implement uneven slicing
+    LlmNet n;
+    return  n;
 }
 
 void releaseLlmNet(LlmNet *net) {
