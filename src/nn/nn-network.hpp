@@ -11,7 +11,7 @@ int acceptSocket(int serverSocket);
 void setReuseAddr(int socket);
 void writeSocket(int socket, const void* data, NnSize size);
 void readSocket(int socket, void* data, NnSize size);
-int createServerSocket(int port);
+int createServerSocket(const char *host, const int port);
 void destroySocket(int serverSocket);
 
 class NnConnectionSocketException : public std::runtime_error {
@@ -48,7 +48,7 @@ private:
     NnSize *recvBytes;
 
 public:
-    static std::unique_ptr<NnNetwork> serve(int port);
+    static std::unique_ptr<NnNetwork> serve(const char *host, const int port);
     static std::unique_ptr<NnNetwork> connect(NnUint nSockets, char **hosts, NnUint *ports);
 
     NnUint nSockets;

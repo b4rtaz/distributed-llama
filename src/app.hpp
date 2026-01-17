@@ -35,7 +35,8 @@ public:
     int gpuSegmentFrom;
     int gpuSegmentTo;
 
-    // worker
+    // binding
+    const char *host;
     NnUint port;
 
     static AppCliArgs parse(int argc, char **argv, bool hasMode);

@@ -78,6 +78,7 @@ sudo nice -n -20 ./dllama inference \
 
 ```sh
 sudo nice -n -20 ./dllama-api \
+  --host 0.0.0.0 \
   --port 9999 \
   --model models/llama3_2_3b_instruct_q40/dllama_model_llama3_2_3b_instruct_q40.m \
   --tokenizer models/llama3_2_3b_instruct_q40/dllama_tokenizer_llama3_2_3b_instruct_q40.t \

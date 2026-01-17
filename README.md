@@ -100,6 +100,7 @@ Worker, API
 
 | Argument                     | Description                       | Example           |
 | ---------------------------- | --------------------------------- | ----------------- |
+| `--host <addr>`              | Binding address.                  | `127.0.0.1`       |
 | `--port <port>`              | Binding port.                     | `9999`            |
 
 Inference

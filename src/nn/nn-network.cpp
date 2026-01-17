@@ -172,8 +172,7 @@ static inline int connectSocket(char *host, int port) {
     return sock;
 }
 
-int createServerSocket(int port) {
-    const char *host = "0.0.0.0";
+int createServerSocket(const char *host, const int port) {
     struct sockaddr_in serverAddr;
 
     int serverSocket = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
@@ -185,6 +184,10 @@ int createServerSocket(int port) {
     serverAddr.sin_family = AF_INET;
     serverAddr.sin_port = htons(port);
     serverAddr.sin_addr.s_addr = inet_addr(host);
+    if (serverAddr.sin_addr.s_addr == INADDR_NONE) {
+        destroySocket(serverSocket);
+        throw std::runtime_error("Invalid bind host");
+    }
 
     int bindResult;
     #ifdef _WIN32
@@ -289,8 +292,8 @@ int NnSocket::release() {
     return fd;
 }
 
-std::unique_ptr<NnNetwork> NnNetwork::serve(int port) {
-    NnSocket socketSocket(createServerSocket(port));
+std::unique_ptr<NnNetwork> NnNetwork::serve(const char *host, const int port) {
+    NnSocket socketSocket(createServerSocket(host, port));
 
     NnUint nSockets;
     NnUint nodeIndex;
