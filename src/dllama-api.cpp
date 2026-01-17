@@ -534,14 +534,16 @@ void handleModelsRequest(HttpRequest& request, const char* modelPath) {
 }
 
 static void server(AppInferenceContext *context) {
-    NnSocket serverSocket(createServerSocket(context->args->port));
+    NnSocket serverSocket(createServerSocket(context->args->host, context->args->port));
 
     TokenizerChatStops stops(context->tokenizer);
     ChatTemplateGenerator templateGenerator(context->args->chatTemplateType, context->tokenizer->chatTemplate, stops.stops[0]);
     EosDetector eosDetector(stops.nStops, context->tokenizer->eosTokenIds.data(), stops.stops, stops.maxStopLength, stops.maxStopLength);
     ApiServer api(context->inference, context->tokenizer, context->sampler, context->args, context->header, &eosDetector, &templateGenerator);
 
-    printf("Server URL: http://127.0.0.1:%d/v1/\n", context->args->port);
+    if (strcmp(context->args->host, "0.0.0.0") == 0 ||
+        strcmp(context->args->host, "127.0.0.1") == 0)
+        printf("Server URL: http://localhost:%d/v1/\n", context->args->port);
 
     std::vector<Route> routes = {
         {
@@ -577,7 +579,7 @@ static void server(AppInferenceContext *context) {
 #endif
 
 void usage() {
-    fprintf(stderr, "Usage: %s {--model <path>} {--tokenizer <path>} [--port <p>]\n", EXECUTABLE_NAME);
+    fprintf(stderr, "Usage: %s {--model <path>} {--tokenizer <path>} [--host <addr>] [--port <p>]\n", EXECUTABLE_NAME);
     fprintf(stderr, "        [--buffer-float-type {f32|f16|q40|q80}]\n");
     fprintf(stderr, "        [--weights-float-type {f32|f16|q40|q80}]\n");
     fprintf(stderr, "        [--max-seq-len <max>]\n");

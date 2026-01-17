@@ -35,6 +35,7 @@ AppCliArgs AppCliArgs::parse(int argc, char* *argv, bool requireMode) {
     args.nWorkers = 0;
     args.workerHosts = nullptr;
     args.workerPorts = nullptr;
+    args.host = "0.0.0.0";
     args.port = 9990;
     args.temperature = 0.8f;
     args.topp = 0.9f;
@@ -97,6 +98,8 @@ AppCliArgs AppCliArgs::parse(int argc, char* *argv, bool requireMode) {
             i += count - 1;
         } else if (std::strcmp(name, "--port") == 0) {
             args.port = atoi(value);
+        } else if (std::strcmp(name, "--host") == 0) {
+            args.host = value;
         } else if (std::strcmp(name, "--nthreads") == 0) {
             args.nThreads = atoi(value);
         } else if (std::strcmp(name, "--steps") == 0) {
@@ -302,7 +305,7 @@ void runInferenceApp(AppCliArgs *args, void (*handler)(AppInferenceContext *cont
 
 void runWorkerApp(AppCliArgs *args) {
     while (true) {
-        std::unique_ptr<NnNetwork> networkPtr = NnNetwork::serve(args->port);
+        std::unique_ptr<NnNetwork> networkPtr = NnNetwork::serve(args->host, args->port);
         NnNetwork *network = networkPtr.get();
 
         NnWorkerConfigReader configReader(network);
