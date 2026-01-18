@@ -26,9 +26,10 @@ struct ChatMessage {
 struct ChunkChoice {
     int index;
     ChatMessageDelta delta;
+    bool has_delta;
     std::string finish_reason;
 
-    ChunkChoice() : index(0) {}
+    ChunkChoice() : index(0), delta(), has_delta(false) {}
 };
 
 
@@ -121,7 +122,10 @@ void to_json(json& j, const ChatMessage& msg) {
 }
 
 void to_json(json& j, const ChunkChoice& choice) {
-    j = json{{"index", choice.index}, {"delta", choice.delta}, {"finish_reason", choice.finish_reason}};
+    j = json{{"index", choice.index}, {"finish_reason", choice.finish_reason}};
+    if (choice.has_delta) {
+        j["delta"] = choice.delta;
+    }
 }
 
 void to_json(json& j, const Choice& choice) {
