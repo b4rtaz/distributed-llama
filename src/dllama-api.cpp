@@ -114,10 +114,8 @@ public:
 
         // First, read all headers
         std::string headerData;
-        size_t headerEnd;
-        bool headerDone = false;
         std::string extraReadPastHeader;
-        while (!headerDone) {
+        for (;;) {
             bytesRead = recv(serverSocket, buffer, sizeof(buffer) - 1, 0);
             if (bytesRead <= 0) {
                 throw std::runtime_error("Error while reading headers from socket");
@@ -125,14 +123,17 @@ public:
             buffer[bytesRead] = '\0';
             headerData.append(buffer);
 
-            // Check for end of headers (http header says "\r\n\r\n")
-            headerEnd = headerData.find("\r\n\r\n");
-            if (headerEnd != std::string::npos) {
-                headerDone = true;
-                if (headerEnd < headerData.size()-4) {
-                    // We read something past the header
-                    extraReadPastHeader = headerData.substr(headerEnd+4);
-                }
+            const size_t endRnRn = headerData.find("\r\n\r\n");
+            if (endRnRn != std::string::npos) {
+                if (endRnRn < headerData.size() - 4)
+                    extraReadPastHeader = headerData.substr(endRnRn + 4);
+                break;
+            }
+            const size_t endNN = headerData.find("\n\n");
+            if (endNN != std::string::npos) {
+                if (endNN < headerData.size() - 2)
+                    extraReadPastHeader = headerData.substr(endNN + 2);
+                break;
             }
         }
 
@@ -142,7 +143,7 @@ public:
         std::istringstream headerStream(headerData);
         std::string line;
         ssize_t contentLength = 0;
-        while (std::getline(headerStream, line) && line != "\r") {
+        while (std::getline(headerStream, line) && line != "\r" && line != "\n") {
             size_t pos = line.find(':');
             if (pos != std::string::npos) {
                 std::string key = line.substr(0, pos);
@@ -280,6 +281,7 @@ void writeChatCompletionChunk(HttpRequest &request, const std::string &delta, co
         choice.finish_reason = "stop";
     } else {
         choice.delta = ChatMessageDelta("assistant", delta);
+        choice.has_delta = true;
     }
     ChatCompletionChunk chunk = ChatCompletionChunk(choice);
 
