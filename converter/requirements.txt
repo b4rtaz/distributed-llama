@@ -3,3 +3,4 @@ numpy==1.23.5
 torch==2.0.1+cpu --index-url https://download.pytorch.org/whl/cpu
 safetensors==0.4.2
 sentencepiece==0.1.99
+transformers==4.57.6
