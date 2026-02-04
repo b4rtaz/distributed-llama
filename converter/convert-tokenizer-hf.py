@@ -46,10 +46,21 @@ class TokensResolver:
             self.tokens.append(bytes(tokenBytes))
             self.scores.append(-float(i))
 
+        # Pad tokenizer vocab to match model vocab_size if needed
+        configPath = os.path.join(self.dirPath, 'config.json')
+        if os.path.exists(configPath):
+            config = openJson(configPath)
+            targetVocabSize = config.get('vocab_size', vocabLen)
+            if targetVocabSize > vocabLen:
+                print(f'⚠️ Padding tokenizer vocab from {vocabLen} to {targetVocabSize}')
+                for i in range(vocabLen, targetVocabSize):
+                    self.tokens.append(f'<|reserved_{i}|>'.encode('utf-8'))
+                    self.scores.append(-float(i))
+
         self.bosId = tokenizer.bos_token_id
         if (tokenizer.eos_token_id):
             self.eosIds = [tokenizer.eos_token_id]
-        if (self.bosId is None or self.eosId is None):
+        if (self.bosId is None or self.eosIds is None):
             config = openJson(os.path.join(self.dirPath, 'config.json'))
             if (self.bosId is None):
                 self.bosId = config['bos_token_id']
