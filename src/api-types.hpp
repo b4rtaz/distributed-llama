@@ -264,6 +264,8 @@ void to_json(json& j, const ModelList& models) {
         {"data", models.data}};
 }
 
+static std::string normalizeMessageContent(const json &content);
+
 std::vector<ChatMessage> parseChatMessages(json &json){
     std::vector<ChatMessage> messages;
     messages.reserve(json.size());
@@ -272,7 +274,7 @@ std::vector<ChatMessage> parseChatMessages(json &json){
         ChatMessage msg;
         msg.role = item["role"].template get<std::string>();
         if (item.contains("content") && !item["content"].is_null())
-            msg.content = item["content"].template get<std::string>();
+            msg.content = normalizeMessageContent(item["content"]);
         if (item.contains("tool_call_id"))
             msg.tool_call_id = item["tool_call_id"].template get<std::string>();
         if (item.contains("tool_calls") && item["tool_calls"].is_array()) {
@@ -299,6 +301,43 @@ std::vector<ChatMessage> parseChatMessages(json &json){
         messages.emplace_back(msg);
     }
     return messages;
+}
+
+static std::string normalizeMessageContent(const json &content) {
+    if (content.is_null())
+        return "";
+    if (content.is_string())
+        return content.template get<std::string>();
+    if (content.is_array()) {
+        std::string result;
+        for (const auto &part : content) {
+            std::string piece;
+            if (part.is_string()) {
+                piece = part.template get<std::string>();
+            } else if (part.is_object()) {
+                if (part.contains("type") && part["type"].is_string()) {
+                    const std::string type = part["type"].template get<std::string>();
+                    if ((type == "text" || type == "input_text") && part.contains("text") && part["text"].is_string()) {
+                        piece = part["text"].template get<std::string>();
+                    } else if (type == "text" && part.contains("content") && part["content"].is_string()) {
+                        piece = part["content"].template get<std::string>();
+                    }
+                } else if (part.contains("text") && part["text"].is_string()) {
+                    piece = part["text"].template get<std::string>();
+                }
+            }
+
+            if (piece.empty())
+                continue;
+            if (!result.empty() && result.back() != '\n')
+                result += ' ';
+            result += piece;
+        }
+        return result;
+    }
+    if (content.is_object())
+        return content.dump();
+    return content.dump();
 }
 
 InferenceParams parseInferenceParams(json &json, float defaultTemperature, float defaultTopp, unsigned long long defaultSeed) {
@@ -361,7 +400,11 @@ InferenceParams parseInferenceParams(json &json, float defaultTemperature, float
         }
     }
     if (json.contains("stop")) {
-        params.stop = json["stop"].template get<std::vector<std::string>>();
+        if (json["stop"].is_string()) {
+            params.stop = std::vector<std::string>{json["stop"].template get<std::string>()};
+        } else {
+            params.stop = json["stop"].template get<std::vector<std::string>>();
+        }
     } else {
         const std::string defaultStop = "<|eot_id|>";
         params.stop = std::vector<std::string>{defaultStop};
