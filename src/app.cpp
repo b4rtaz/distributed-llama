@@ -322,6 +322,7 @@ void runWorkerApp(AppCliArgs *args) {
         NnNetworkNodeSynchronizer synchronizer(network, &execution, &netConfig, &nodeConfig);
         NnExecutor executor(&netConfig, &nodeConfig, &devices, &execution, &synchronizer, false);
 
+        // modify the worker's weight loading method to get the weight from disk.
         NnWorkerWeightReader weightReader(&executor, network);
         weightReader.read();
 
