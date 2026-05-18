@@ -323,8 +323,26 @@ void runWorkerApp(AppCliArgs *args) {
         NnExecutor executor(&netConfig, &nodeConfig, &devices, &execution, &synchronizer, false);
 
         // modify the worker's weight loading method to get the weight from disk.
-        NnWorkerWeightReader weightReader(&executor, network);
-        weightReader.read();
+        if (args->modelPath == nullptr) {
+            throw std::runtime_error("Worker needs --model argument to load weights locally!");
+        }
+
+        printf("💿 Worker is loading weights locally from %s...\n", args->modelPath);
+
+        // header for loading weights.
+        LlmHeader header = loadLlmHeader(args->modelPath, args->maxSeqLen, args->syncType);
+
+        // build a temporary net to load the weights, the net will be released right after loading the weights.
+        LlmNet localNet = buildLlmNet(&header, netConfig.nNodes, netConfig.nBatches);
+
+        // load weights from disk to the executor.
+        NnRootWeightLoader localWeightLoader(&executor, nullptr, netConfig.nNodes); 
+        loadLlmNetWeight(args->modelPath, &localNet, &localWeightLoader);
+
+        // release the temporary net to free memory, since the weights have been loaded into the executor.
+        releaseLlmNet(&localNet);
+
+        printf("✅ Worker local weights loaded successfully.\n");
 
         WorkerLlmInference inference(&execution, network);
         bool isFirstAttempt = true;

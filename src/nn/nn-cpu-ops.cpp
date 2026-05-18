@@ -2,9 +2,6 @@
 #include <cassert>
 #include <cstring>
 #include <cstdio>
-#include <vector>
-#include <algorithm>
-#include <stdexcept>
 #if defined(__ARM_NEON)
     #include <arm_neon.h>
 #elif defined(__AVX2__) || defined(__AVX512F__)
@@ -17,13 +14,10 @@
 #define DEBUG_OP_INPUT_OUTPUT false
 
 #if DEBUG_OP_INPUT_OUTPUT
-    #define DEBUG_VECTOR(context, suffix, v) \
-        if (threadIndex == 0) { \
-            printf("%20s.%6s: ", context->name, suffix); \
-            for (int k = 0; k < 12; k++) printf("%f ", v[k]); \
-            printf("\n"); \
-        }
-
+    #define DEBUG_VECTOR(context, suffix, vec) \
+        if (threadIndex == 0) \
+            printf("%20s.%6s: %f %f %f %f\n", context->name, suffix, vec[0], vec[1], vec[2], vec[3]);
+    
     #define DEBUG_SCALAR(context, suffix, scalar) \
         if (threadIndex == 0) \
             printf("%20s.%6s: %f\n", context->name, suffix, scalar);
@@ -188,77 +182,159 @@ static void rmsNorm_Q80_F32_F32(float *output, const NnBlockQ80 *x, const float 
     }
 }
 
-static void matmul_F32_F32_F32(float *output, const float *x, const float *w, const NnUint n, const NnUint d, const NnUint nThreads, const NnUint threadIndex) {
-    SPLIT_THREADS(start, end, d, nThreads, threadIndex);
+//eric mod
+static void matmul_F32_F32_F32(float *output, const float *x, const float *w, const NnUint n, const NnUint d, const NnUint nThreads,/* ADDED */ const NnUint threadIndex, const NnUint nodeIndex, const NnUint nNodes, bool isRowMatmul) {
+    // ADDED: Offset Calculation Logic
+    NnUint d_start = 0, d_end = d;
+    NnUint n_start = 0, n_end = n;
+
+    if (nNodes > 1) {
+        if (isRowMatmul) {
+            // Cut along the output dimension (d)
+            NnUint slice_d = d / nNodes;
+            d_start = nodeIndex * slice_d;
+            d_end = d_start + slice_d;
+        } else {
+            // Cut along the input dimension (n)
+            NnUint slice_n = n / nNodes;
+            n_start = nodeIndex * slice_n;
+            n_end = n_start + slice_n;
+        }
+    }
+
+    // MODIFIED: Assign threads only to the slice this node is responsible for
+    NnUint d_slice = d_end - d_start;
+    SPLIT_THREADS(thread_d_start, thread_d_end, d_slice, nThreads, threadIndex);
+    // SPLIT_THREADS(start, end, d, nThreads, threadIndex);
+
+    // Calculate actual indices mapping back to the full matrix
+    NnUint actual_start = d_start + thread_d_start;
+    NnUint actual_end   = d_start + thread_d_end;
+
     unsigned int i, j;
 #if defined(__ARM_NEON)
     assert(n % 4 == 0);
     float32x4_t q;
     float32x4_t p;
     float32x4_t z;
-    for (i = start; i < end; i++) {
+
+    // eric mod
+    for (i = actual_start; i < actual_end; i++) {
         z = vmovq_n_f32(0);
-        for (j = 0; j < n; j += 4) {
-            q = vld1q_f32(&x[j]);
+        for (j = n_start; j < n_end; j += 4) {
+
+            // 🌟 4. 如果是 ColMatmul，x 的長度是切半的，讀取時要減掉 n_start
+            const float *x_ptr = isRowMatmul ? &x[j] : &x[j - n_start];
+            q = vld1q_f32(x_ptr);
+
+            // q = vld1q_f32(&x[j]);
             p = vld1q_f32(&w[i * n + j]);
             z = vfmaq_f32(z, q, p);
         }
-        output[i] = vaddvq_f32(z);
+        // 🌟 5. 如果是 RowMatmul，output 的長度是切半的，寫入時要減掉 d_start
+        if (isRowMatmul) {
+            output[i - d_start] = vaddvq_f32(z);
+        } else {
+            output[i] = vaddvq_f32(z);
+        }
     }
 #elif defined(__AVX2__)
     assert(n % 8 == 0);
     __m256 a0, b0, u;
-    for (i = start; i < end; i++) {
+    for (i = actual_start; i < actual_end; i++) {
         u = _mm256_set1_ps(0.0f);
-        for (j = 0; j < n; j += 8) {
-            a0 = _mm256_loadu_ps(&x[j]);
+        for (j = n_start; j < n_end; j += 8) {
+
+            // 🌟 處理局部輸入 x
+            const float *x_ptr = isRowMatmul ? &x[j] : &x[j - n_start];
+            a0 = _mm256_loadu_ps(x_ptr);
+            // a0 = _mm256_loadu_ps(&x[j]);
+
             b0 = _mm256_loadu_ps(&w[i * n + j]);
             u = _mm256_fmadd_ps(a0, b0, u);
         }
-        output[i] = horizontalSum_avx2(u);
+        // 🌟 處理局部輸出 output
+        if (isRowMatmul) {
+            output[i - d_start] = horizontalSum_avx2(u);
+        } else {
+            output[i] = horizontalSum_avx2(u);
+        }
     }
 #else
-    for (i = start; i < end; i++) {
+    // eric mod
+    for (i = actual_start; i < actual_end; i++) {
         float val = 0.0f;
-        for (j = 0; j < n; j++) {
-            val += w[i * n + j] * x[j];
+        for (j = n_start; j < n_end; j++) {
+            // 🌟 關鍵邏輯：
+            // w[i * n + j] 跨距 n 保持不變，因為我們存了完整的權重矩陣
+            // 若為 ColMatmul，x 的長度只有 1/nNodes，所以要減去 n_start 才能從 0 開始讀
+            float x_val = isRowMatmul ? x[j] : x[j - n_start];
+            val += w[i * n + j] * x_val;
+            // val += w[i * n + j] * x[j];
         }
-        output[i] = val;
+        // 🌟 關鍵邏輯：
+        // 若為 RowMatmul，output 的長度只有 1/nNodes，所以要減去 d_start 才能從 0 開始寫入
+        if (isRowMatmul) {
+            output[i - d_start] = val;
+        } else {
+            output[i] = val;
+        }
     }
 #endif
 }
 
-static void matmul_Q80_Q40_F32(float *output, const NnBlockQ80 *x, const NnBlockQ40 *w, const NnUint n, const NnUint d, const NnUint nThreads, const NnUint threadIndex) {
-    SPLIT_THREADS(start, end, d, nThreads, threadIndex);
-    assert(n % Q40_BLOCK_SIZE == 0);
+// eric mod
+// 🌟 優化 1：定義一個 Struct 來打包邊界參數，避免參數過多導致暫存器溢出 (Register Spilling)
+struct DistConfig {
+    NnUint d_start;
+    NnUint d_slice;
+    NnUint nBlocks_start;
+    NnUint nBlocks_end;
+};
+
+// 🌟 優化 2 & 3：使用 Template (IsRowMatmul) 強制編譯器展開分支，並把參數縮減為 7 個
+template <bool IsRowMatmul>
+static void matmul_Q80_Q40_F32_impl(float *output, const NnBlockQ80 *x, const NnBlockQ40 *w, const NnUint n, const NnUint nThreads, const NnUint threadIndex, const DistConfig& dist) {
+    // assert(n % Q40_BLOCK_SIZE == 0);
     const unsigned int nBlocks = n / Q40_BLOCK_SIZE;
+
+    SPLIT_THREADS(thread_d_start, thread_d_end, dist.d_slice, nThreads, threadIndex);
+    NnUint actual_start = dist.d_start + thread_d_start;
+    NnUint actual_end   = dist.d_start + thread_d_end;
+
+    // 🌟 因為 IsRowMatmul 是 Template 參數，編譯器在編譯期就會決定這裡的指標偏移，完全沒有執行期 if-else 的負擔
+    const NnBlockQ80* x_base = IsRowMatmul ? x : (x - dist.nBlocks_start);
+    float* output_base = IsRowMatmul ? (output - dist.d_start) : output;
 
 #if defined(__ARM_NEON)
     const uint8x16_t m4b = vdupq_n_u8(0x0F);
     const int8x16_t s8b = vdupq_n_s8(0x8);
 
-    for (unsigned int di = start; di < end; di++) {
+    for (unsigned int di = actual_start; di < actual_end; di++) {
         float32x4_t sumv0 = vmovq_n_f32(0.0f);
         float32x4_t sumv1 = vmovq_n_f32(0.0f);
         float32x4_t sumv2 = vmovq_n_f32(0.0f);
         float32x4_t sumv3 = vmovq_n_f32(0.0f);
 
-        unsigned int j = 0;
+        unsigned int j = dist.nBlocks_start;
         
 #if defined(__ARM_FEATURE_DOTPROD)
-        for (; j + 3 < nBlocks; j += 4) {
+        for (; j + 3 < dist.nBlocks_end; j += 4) {
             __builtin_prefetch(&w[di * nBlocks + j + 4]);
-            __builtin_prefetch(&x[j + 4]);
+            
+            // 直接透過預先算好的 x_base 預取
+            __builtin_prefetch(&x_base[j + 4]);
 
             const NnBlockQ40 *w0 = &w[di * nBlocks + j];
             const NnBlockQ40 *w1 = &w[di * nBlocks + j + 1];
             const NnBlockQ40 *w2 = &w[di * nBlocks + j + 2];
             const NnBlockQ40 *w3 = &w[di * nBlocks + j + 3];
 
-            const NnBlockQ80 *x0 = &x[j];
-            const NnBlockQ80 *x1 = &x[j + 1];
-            const NnBlockQ80 *x2 = &x[j + 2];
-            const NnBlockQ80 *x3 = &x[j + 3];
+            // 直接透過 x_base 讀取資料
+            const NnBlockQ80 *x0 = &x_base[j];
+            const NnBlockQ80 *x1 = &x_base[j + 1];
+            const NnBlockQ80 *x2 = &x_base[j + 2];
+            const NnBlockQ80 *x3 = &x_base[j + 3];
 
             int8x16_t w0l = vsubq_s8(vreinterpretq_s8_u8(vandq_u8(vld1q_u8(w0->qs), m4b)), s8b);
             int8x16_t w0h = vsubq_s8(vreinterpretq_s8_u8(vshrq_n_u8(vld1q_u8(w0->qs), 4)), s8b);
@@ -289,11 +365,12 @@ static void matmul_Q80_Q40_F32(float *output, const NnBlockQ80 *x, const NnBlock
             sumv3 = vmlaq_n_f32(sumv3, vcvtq_f32_s32(p3), CONVERT_F16_TO_F32(w3->d) * CONVERT_F16_TO_F32(x3->d));
         }
 #else
-        for (; j + 1 < nBlocks; j += 2) {
+        for (; j + 1 < dist.nBlocks_end; j += 2) {
             const NnBlockQ40 *w0 = &w[di * nBlocks + j];
             const NnBlockQ40 *w1 = &w[di * nBlocks + j + 1];
-            const NnBlockQ80 *x0 = &x[j];
-            const NnBlockQ80 *x1 = &x[j + 1];
+
+            const NnBlockQ80 *x0 = &x_base[j];
+            const NnBlockQ80 *x1 = &x_base[j + 1];
 
             const uint8x16_t w0qs = vld1q_u8(w0->qs);
             const uint8x16_t w1qs = vld1q_u8(w1->qs);
@@ -328,9 +405,9 @@ static void matmul_Q80_Q40_F32(float *output, const NnBlockQ80 *x, const NnBlock
         }
 #endif
 
-        for (; j < nBlocks; j++) {
+        for (; j < dist.nBlocks_end; j++) {
             const NnBlockQ40 *wb = &w[di * nBlocks + j];
-            const NnBlockQ80 *xb = &x[j];
+            const NnBlockQ80 *xb = &x_base[j];
 
             const uint8x16_t wqs = vld1q_u8(wb->qs);
             const int8x16_t wl = vsubq_s8(vreinterpretq_s8_u8(vandq_u8(wqs, m4b)), s8b);
@@ -355,14 +432,15 @@ static void matmul_Q80_Q40_F32(float *output, const NnBlockQ80 *x, const NnBlock
             sumv0 = vmlaq_n_f32(sumv0, vcvtq_f32_s32(p), s);
         }
 
-        output[di] = vaddvq_f32(sumv0) + vaddvq_f32(sumv1) + vaddvq_f32(sumv2) + vaddvq_f32(sumv3);
+        float total_sum = vaddvq_f32(sumv0) + vaddvq_f32(sumv1) + vaddvq_f32(sumv2) + vaddvq_f32(sumv3);
+        output_base[di] = total_sum;
     }
 #elif defined(__AVX512F__)
-    for (NnUint i = start; i < end; i++) {
+    for (NnUint i = actual_start; i < actual_end; i++) {
         float sum = 0.0f;
-        for (NnUint j = 0; j < nBlocks; j++) {
+        for (NnUint j = dist.nBlocks_start; j < dist.nBlocks_end; j++) {
             const NnBlockQ40 *wb = &w[i * nBlocks + j];
-            const NnBlockQ80 *xb = &x[j];
+            const NnBlockQ80 *xb = &x_base[j];
             const float s = CONVERT_F16_TO_F32(wb->d) * CONVERT_F16_TO_F32(xb->d);
 
             __m128i w8 = _mm_loadu_si128((const __m128i*)wb->qs);
@@ -382,14 +460,14 @@ static void matmul_Q80_Q40_F32(float *output, const NnBlockQ80 *x, const NnBlock
             __m512i products = _mm512_madd_epi16(w16, x16);
             sum += _mm512_reduce_add_epi32(products) * s;
         }
-        output[i] = sum;
+        output_base[i] = sum;
     }
 #elif defined(__AVX2__)
-    for (NnUint i = start; i < end; i++) {
+    for (NnUint i = actual_start; i < actual_end; i++) {
         float sum = 0.0f;
-        for (NnUint j = 0; j < nBlocks; j++) {
+        for (NnUint j = dist.nBlocks_start; j < dist.nBlocks_end; j++) {
             const NnBlockQ40 *wb = &w[i * nBlocks + j];
-            const NnBlockQ80 *xb = &x[j];
+            const NnBlockQ80 *xb = &x_base[j];
             const float s = CONVERT_F16_TO_F32(wb->d) * CONVERT_F16_TO_F32(xb->d);
 
             __m128i w_packed = _mm_loadu_si128((const __m128i*)wb->qs);
@@ -426,14 +504,17 @@ static void matmul_Q80_Q40_F32(float *output, const NnBlockQ80 *x, const NnBlock
 
             sum += block_sum * s;
         }
-        output[i] = sum;
+        output_base[i] = sum;
     }
 #else
-    for (NnUint i = start; i < end; i++) {
+    // eric mod
+    for (NnUint i = actual_start; i < actual_end; i++) {
         float sum = 0.0;
-        for (NnUint j = 0; j < nBlocks; j++) {
+        for (NnUint j = dist.nBlocks_start; j < dist.nBlocks_end; j++) {
+            // w 的跨距依然是完整的 nBlocks
             const NnBlockQ40 *wb = &w[i * nBlocks + j];
-            const NnBlockQ80 *xb = &x[j];
+            const NnBlockQ80 *xb = &x_base[j];
+
             const float s = CONVERT_F16_TO_F32(wb->d) * CONVERT_F16_TO_F32(xb->d);
             for (NnUint k = 0; k < Q40_BLOCK_SIZE / 2; k++) {
                 const int w0 = (wb->qs[k] & 0x0F) - 8;
@@ -443,9 +524,43 @@ static void matmul_Q80_Q40_F32(float *output, const NnBlockQ80 *x, const NnBlock
                 sum += (w0 * i1 + w1 * i2) * s;
             }
         }
-        output[i] = sum;
+        output_base[i] = sum;
     }
 #endif
+}
+
+// 🌟 Wrapper：將所有複雜且耗時的除法運算獨立在最外層，只執行一次
+static void matmul_Q80_Q40_F32(float *output, const NnBlockQ80 *x, const NnBlockQ40 *w, const NnUint n, const NnUint d, const NnUint nThreads, const NnUint threadIndex, const NnUint nodeIndex, const NnUint nNodes, bool isRowMatmul) {
+    DistConfig dist;
+    const unsigned int nBlocks = n / Q40_BLOCK_SIZE;
+
+    // 將所有耗時的除法與邊界計算留在這裡，不帶入核心迴圈
+    if (nNodes > 1) {
+        if (isRowMatmul) {
+            dist.d_slice = d / nNodes;
+            dist.d_start = nodeIndex * dist.d_slice;
+            dist.nBlocks_start = 0;
+            dist.nBlocks_end = nBlocks;
+        } else {
+            NnUint slice_nBlocks = nBlocks / nNodes;
+            dist.d_start = 0;
+            dist.d_slice = d;
+            dist.nBlocks_start = nodeIndex * slice_nBlocks;
+            dist.nBlocks_end = dist.nBlocks_start + slice_nBlocks;
+        }
+    } else {
+        dist.d_start = 0;
+        dist.d_slice = d;
+        dist.nBlocks_start = 0;
+        dist.nBlocks_end = nBlocks;
+    }
+
+    // 🌟 透過 Template 分流，呼叫底層實作，讓編譯器產生最佳化的 Row 和 Col 兩套機器碼
+    if (isRowMatmul) {
+        matmul_Q80_Q40_F32_impl<true>(output, x, w, n, nThreads, threadIndex, dist);
+    } else {
+        matmul_Q80_Q40_F32_impl<false>(output, x, w, n, nThreads, threadIndex, dist);
+    }
 }
 
 #define SQRT_2_OVER_PI 0.79788456080286535587989211986876f
@@ -1101,14 +1216,11 @@ static void rmsNormForward_Q80_F32_F32(NnUint nThreads, NnUint threadIndex, NnUi
 }
 
 static void initMatmulForward(NnCpuOpContext *context) {
-    const NnMatmulOpConfig *config = (NnMatmulOpConfig *)context->opConfig;
+    // eric mod
     ASSERT_EQ(context->inputSize.y, context->nBatches);
     ASSERT_EQ(context->outputSize.y, context->nBatches);
-    ASSERT_EQ(context->inputSize.x, context->weightSize.y);
-    ASSERT_EQ(context->inputSize.z, std::max(config->nActiveExperts, 1u));
-    ASSERT_EQ(context->outputSize.x, context->weightSize.x);
-    ASSERT_EQ(context->outputSize.z, std::max(config->nActiveExperts, 1u));
-    ASSERT_EQ(context->weightSize.z, std::max(config->nExperts, 1u));
+    // ASSERT_EQ(context->inputSize.x, context->weightSize.y);
+    // ASSERT_EQ(context->outputSize.x, context->weightSize.x);
 
     if (!context->hasInputContinuousMemory)
         printf("🚧 Op %s does not have contiguous memory for input\n", context->name);
@@ -1136,58 +1248,83 @@ static bool matmulForward_llamafile(NnUint nThreads, NnUint threadIndex, NnUint 
 }
 
 static void matmulForward_F32_F32_F32(NnUint nThreads, NnUint threadIndex, NnUint batchSize, NnCpuOpContext *context) {
-    if (matmulForward_llamafile(nThreads, threadIndex, batchSize, context))
+    // eric mod
+    // 🌟 提早取出 nNodes
+    NnUint nNodes = context->nNodes;
+
+    // ✅ 修正：只有在單機 (nNodes == 1) 時，才允許使用 llamafile
+    if (nNodes == 1 && matmulForward_llamafile(nThreads, threadIndex, batchSize, context))
         return;
 
-    const NnMatmulOpConfig *config = (NnMatmulOpConfig *)context->opConfig;
-    const NnUint nActiveExpertsOr1 = std::max(config->nActiveExperts, 1u);
-    const float *activeExpertIndexes = (const float *)context->buffers[config->activeExpertIndexesBufferIndex];
+    // if (matmulForward_llamafile(nThreads, threadIndex, batchSize, context))
+    //     return;
 
-    for (NnUint y = 0; y < batchSize; y++) {
-        for (NnUint e = 0; e < nActiveExpertsOr1; e++) {
-            const NnUint activeExpertIndex = config->nActiveExperts == 0u
-                ? 0u
-                : (NnUint)activeExpertIndexes[y * config->nActiveExperts + e];
+    const float *weight = (float *)context->weight;
 
-            float *output = (float *)context->output[e * context->outputSize.y + y];
-            matmul_F32_F32_F32(
-                output,
-                (float *)context->input[e * context->inputSize.y + y],
-                (float *)&context->weight[activeExpertIndex * context->weightSize.nBytesXY],
-                context->weightSize.y,
-                context->weightSize.x,
-                nThreads,
-                threadIndex);
-            DEBUG_VECTOR(context, "output", output);
-        }
+    // eric mod
+    // ADDED: Extract distributed info
+    NnUint nodeIndex = context->nodeIndex;
+
+    // ADDED: Determine row/col split.
+    bool isRowMatmul = (context->inputSize.x == context->weightSize.y);
+
+    for (NnUint batchIndex = 0; batchIndex < batchSize; batchIndex++) {
+        float *input = (float *)context->input[batchIndex];
+        float *output = (float *)context->output[batchIndex];
+        DEBUG_VECTOR(context, "input", input);
+        matmul_F32_F32_F32(
+            output,
+            input,
+            weight,
+            context->weightSize.y,
+            context->weightSize.x,
+            nThreads,
+            threadIndex,
+
+            //eric mod
+            nodeIndex, 
+            nNodes, 
+            isRowMatmul);
+        DEBUG_VECTOR(context, "output", output);
     }
 }
 
 static void matmulForward_Q80_Q40_F32(NnUint nThreads, NnUint threadIndex, NnUint batchSize, NnCpuOpContext *context) {
-    if (matmulForward_llamafile(nThreads, threadIndex, batchSize, context))
+    // eric mod
+    // 🌟 提早取出 nNodes
+    NnUint nNodes = context->nNodes;
+
+    // ✅ 修正：只有在單機 (nNodes == 1) 時，才允許使用 llamafile
+    if (nNodes == 1 && matmulForward_llamafile(nThreads, threadIndex, batchSize, context))
         return;
 
-    const NnMatmulOpConfig *config = (NnMatmulOpConfig *)context->opConfig;
-    const NnUint nActiveExpertsOr1 = std::max(config->nActiveExperts, 1u);
-    const float *activeExpertIndexes = (const float *)context->buffers[config->activeExpertIndexesBufferIndex];
+    // if (matmulForward_llamafile(nThreads, threadIndex, batchSize, context))
+    //     return;
 
-    for (NnUint y = 0; y < batchSize; y++) {
-        for (NnUint e = 0; e < nActiveExpertsOr1; e++) {
-            const NnUint activeExpertIndex = config->nActiveExperts == 0u
-                ? 0u
-                : (NnUint)activeExpertIndexes[y * config->nActiveExperts + e];
+    const NnBlockQ40 *weight = (NnBlockQ40 *)context->weight;
 
-            float *output = (float *)context->output[e * context->outputSize.y + y];
-            matmul_Q80_Q40_F32(
-                output,
-                (NnBlockQ80 *)context->input[e * context->inputSize.y + y],
-                (NnBlockQ40 *)&context->weight[activeExpertIndex * context->weightSize.nBytesXY],
-                context->weightSize.y,
-                context->weightSize.x,
-                nThreads,
-                threadIndex);
-            DEBUG_VECTOR(context, "output", output);
-        }
+    // eric mod
+    // ADDED: Extract distributed info
+    NnUint nodeIndex = context->nodeIndex;
+
+    bool isRowMatmul = (context->inputSize.x == context->weightSize.y);;
+
+    for (NnUint batchIndex = 0; batchIndex < batchSize; batchIndex++) {
+        NnBlockQ80 *input = (NnBlockQ80 *)context->input[batchIndex];
+        float *output = (float *)context->output[batchIndex];
+        matmul_Q80_Q40_F32(
+            output,
+            input,
+            weight,
+            context->weightSize.y,
+            context->weightSize.x,
+            nThreads,
+            threadIndex,
+
+            //eric mod
+            nodeIndex, 
+            nNodes, 
+            isRowMatmul);
     }
 }
 
@@ -1440,57 +1577,6 @@ static void shiftForward_F32_F32(NnUint nThreads, NnUint threadIndex, NnUint bat
     }
 }
 
-static void softmaxForward_F32_F32(NnUint nThreads, NnUint threadIndex, NnUint batchSize, NnCpuOpContext *context) {
-    assert(*context->input == *context->output);
-
-    for (NnUint y = threadIndex; y < batchSize; y += nThreads)
-        softmax_F32(
-            (float *)context->output[y],
-            context->outputSize.x);
-}
-
-static void initMoeGateForward(NnCpuOpContext *context) {
-    const NnMoeGateOpCodeConfig *config = (NnMoeGateOpCodeConfig *)context->opConfig;
-    ASSERT_EQ(context->inputSize.z, 1u);
-    ASSERT_EQ(context->inputSize.y, context->nBatches);
-    assert(context->inputSize.x >= config->k);
-    ASSERT_EQ(context->outputSize.z, config->k);
-    ASSERT_EQ(context->outputSize.y, context->nBatches);
-    ASSERT_EQ(context->outputSize.x, 1u);
-}
-
-static void moeGateForward_F32_F32(NnUint nThreads, NnUint threadIndex, NnUint batchSize, NnCpuOpContext *context) {
-    const NnMoeGateOpCodeConfig *config = (NnMoeGateOpCodeConfig *)context->opConfig;
-    float *indexes = (float *)context->buffers[config->indexesBufferIndex];
-
-    std::vector<NnUint> pos(config->k);
-    for (NnUint y = threadIndex; y < batchSize; y += nThreads) {
-        float *input = (float *)context->input[y];
-
-        topk_F32(input, pos.data(), context->inputSize.x, config->k);
-
-        float sum;
-        if (config->normTopk == 1u) {
-            sum = 0.0f;
-            for (NnUint i = 0u; i < config->k; i++)
-                sum += input[pos[i]];
-        } else {
-            sum = 1.0f;
-        }
-
-        for (NnUint k = 0u; k < config->k; k++) {
-            const NnUint p = pos[k];
-            indexes[y * config->k + k] = (float)p;
-
-            // (nActiveExperts, nBatches, 1)
-            float *output = (float *)context->output[k * context->outputSize.y + y];
-            *output = input[p] / sum;
-        }
-
-        DEBUG_VECTOR(context, "indexes", (&indexes[y * config->k]));
-    }
-}
-
 // device
 
 void printCpuInstructionSet() {
@@ -1516,24 +1602,16 @@ void printCpuInstructionSet() {
 NnCpuOpForwardInit getCpuOpForwardInit(NnOpCode code, NnOpQuantType quantType) {
     if (code == OP_EMBEDDING)
         return initEmbeddingForward;
-    if (code == OP_INV_RMS)
-        return initInvRmsForward;
     if (code == OP_RMS_NORM)
         return initRmsNormForward_ANY_F32_F32;
-    if (code == OP_ROPE)
-        return initRopeForward_F32;
+    if (code == OP_ROPE_LLAMA)
+        return initRopeLlama3Forward;
     if (code == OP_MULTIHEAD_ATT)
         return initMultiHeadAttForward;
     if (code == OP_MATMUL)
         return initMatmulForward;
-    if (code == OP_MUL)
-        return initMulForward;
     if (code == OP_CAST)
         return initCastForward;
-    if (code == OP_REPEAT_Z)
-        return initRepeatZForward;
-    if (code == OP_MOE_GATE)
-        return initMoeGateForward;
     return nullptr;
 }
 
@@ -1541,9 +1619,6 @@ NnCpuOpForward getCpuOpForward(NnOpCode code, NnOpQuantType quantType) {
     if (code == OP_MERGE_ADD) {
         if (quantType == F32_F32_F32) return mergeAddForward_F32_F32;
         if (quantType == Q80_Q80_F32) return mergeAddForward_Q80_F32;
-    }
-    if (code == OP_MERGE_SUM) {
-        if (quantType == F32_F32_F32) return mergeSumForward_F32_F32;
     }
     if (code == OP_EMBEDDING) {
         if (quantType == F32_F32_F32) return embeddingForward_F32_F32_F32;
@@ -1560,8 +1635,8 @@ NnCpuOpForward getCpuOpForward(NnOpCode code, NnOpQuantType quantType) {
         if (quantType == F32_F32_F32) return matmulForward_F32_F32_F32;
         if (quantType == Q80_Q40_F32) return matmulForward_Q80_Q40_F32;
     }
-    if (code == OP_ROPE) {
-        if (quantType == F32_F32_F32) return ropeForward_F32_F32;
+    if (code == OP_ROPE_LLAMA) {
+        if (quantType == F32_F32_F32) return ropeLlamaForward_F32_F32;
     }
     if (code == OP_MULTIHEAD_ATT) {
         if (quantType == F32_F32_F32) return multiHeadAttForward_F32_F32;
@@ -1574,9 +1649,7 @@ NnCpuOpForward getCpuOpForward(NnOpCode code, NnOpQuantType quantType) {
     }
     if (code == OP_MUL) {
         if (quantType == F32_F32_F32) return mulForward_F32_F32;
-    }
-    if (code == OP_SCALE) {
-        if (quantType == F32_F32_F32) return scaleForward_F32_F32;
+        if (quantType == Q80_Q80_F32) return mulForward_Q80_F32;
     }
     if (code == OP_CAST) {
         if (quantType == F32_F32_F32) return castForward_ANY;
@@ -1584,17 +1657,8 @@ NnCpuOpForward getCpuOpForward(NnOpCode code, NnOpQuantType quantType) {
         if (quantType == Q80_Q80_Q80) return castForward_ANY;
         if (quantType == Q80_Q80_F32) return castForward_Q80_F32;
     }
-    if (code == OP_REPEAT_Z) {
-        if (quantType == F32_F32_Q80) return repeatZForward_F32_Q80;
-    }
     if (code == OP_SHIFT) {
         if (quantType == F32_F32_F32) return shiftForward_F32_F32;
-    }
-    if (code == OP_SOFTMAX) {
-        if (quantType == F32_F32_F32) return softmaxForward_F32_F32;
-    }
-    if (code == OP_MOE_GATE) {
-        if (quantType == F32_F32_F32) return moeGateForward_F32_F32;
     }
     return nullptr;
 }

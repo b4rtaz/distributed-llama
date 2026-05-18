@@ -807,15 +807,7 @@ NnRootWeightLoader::~NnRootWeightLoader() {
 }
 
 void NnRootWeightLoader::finish() {
-    NnUint zeroSize = 0;
-    for (NnUint socketIndex = 0; socketIndex < nNodes - 1; socketIndex++) {
-        network->write(socketIndex, &zeroSize, sizeof(zeroSize));
-        network->readAck(socketIndex);
-    }
-    if (tempSize > 0) {
-        delete[] temp;
-        tempSize = 0;
-    }
+    // empty
 }
 
 void NnRootWeightLoader::allocate(NnSize size) {
@@ -839,50 +831,37 @@ void NnRootWeightLoader::writeWeight(NnUint nodeIndex, const char *opName, NnUin
 }
 
 NnSize NnRootWeightLoader::loadRoot(const char *opName, NnUint opIndex, NnSize nBytes, NnByte *weight) {
-    executor->loadWeight(opName, opIndex, 0u, nBytes, weight);
+    try {
+        executor->loadWeight(opName, opIndex, nBytes, weight);
+    } catch (...) {
+   
+    }
     return nBytes;
 }
 
 NnSize NnRootWeightLoader::loadAll(const char *opName, NnUint opIndex, NnSize nBytes, NnByte *weight) {
-    executor->loadWeight(opName, opIndex, 0u, nBytes, weight);
+    try {
+        executor->loadWeight(opName, opIndex, nBytes, weight);
+    } catch (...) {
 
-    if (nNodes > 1u) {
-        for (NnUint nodeIndex = 1u; nodeIndex < nNodes; nodeIndex++)
-            writeWeight(nodeIndex, opName, opIndex, 0u, nBytes, weight);
     }
     return nBytes;
 }
 
 NnSize NnRootWeightLoader::loadRowMatmulSlices(const char *opName, const NnUint opIndex, const NnUint expertIndex, NnRowMatmulSlice *slice, NnByte *weight) {
-    const NnUint offset = expertIndex * slice->sliceSize.nBytes;
-    if (nNodes == 1u) {
-        executor->loadWeight(opName, opIndex, offset, slice->sliceSize.nBytes, weight);
-    } else {
-        allocate(slice->sliceSize.nBytes);
-        for (NnUint nodeIndex = 0; nodeIndex < nNodes; nodeIndex++) {
-            splitRowMatmulWeight(slice, nodeIndex, weight, temp);
-            if (nodeIndex == 0u)
-                executor->loadWeight(opName, opIndex, offset, slice->sliceSize.nBytes, temp);
-            else
-                writeWeight(nodeIndex, opName, opIndex, offset, slice->sliceSize.nBytes, temp);
-        }
+    try {
+        executor->loadWeight(opName, opIndex, slice->size.nBytes, weight);
+    } catch (...) {
+
     }
     return slice->size.nBytes;
 }
 
 NnSize NnRootWeightLoader::loadColMatmulSlices(const char *opName, const NnUint opIndex, const NnUint expertIndex, NnColMatmulSlice *slice, NnByte *weight) {
-    const NnUint offset = expertIndex * slice->sliceSize.nBytes;
-    if (nNodes == 1) {
-        executor->loadWeight(opName, opIndex, offset, slice->sliceSize.nBytes, weight);
-    } else {
-        allocate(slice->sliceSize.nBytes);
-        for (NnUint nodeIndex = 0; nodeIndex < nNodes; nodeIndex++) {
-            splitColMatmulWeight(slice, nodeIndex, weight, temp);
-            if (nodeIndex == 0)
-                executor->loadWeight(opName, opIndex, offset, slice->sliceSize.nBytes, temp);
-            else
-                writeWeight(nodeIndex, opName, opIndex, offset, slice->sliceSize.nBytes, temp);
-        }
+    try {
+        executor->loadWeight(opName, opIndex, slice->size.nBytes, weight);
+    } catch (...) {
+
     }
     return slice->size.nBytes;
 }

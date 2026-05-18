@@ -304,19 +304,21 @@ LlmNet buildLlmNet(LlmHeader *h, NnUint nNodes, NnUint nBatches) {
                 OP_MATMUL, "block_matmul_q", layerIndex,
                 pointerBatchConfig(SRC_BUFFER, yqBufferIndex),
                 pointerBatchConfig(SRC_BUFFER, qBufferIndex),
-                size2D(h->weightType, n.qSlice.n, n.qSlice.d0),
+
+                // modify the net config to fit the whole weight.
+                size2D(h->weightType, h->dim, h->dim),
                 NnMatmulOpConfig{0, 0, moeExpertIndexesBufferIndex});
             att.addOp(
                 OP_MATMUL, "block_matmul_k", layerIndex,
                 pointerBatchConfig(SRC_BUFFER, yqBufferIndex),
                 pointerBatchConfig(SRC_BUFFER, kTempBufferIndex),
-                size2D(h->weightType, n.kSlice.n, n.kSlice.d0),
+                size2D(h->weightType, h->dim, h->kvDim),
                 NnMatmulOpConfig{0, 0, moeExpertIndexesBufferIndex});
             att.addOp(
                 OP_MATMUL, "block_matmul_v", layerIndex,
                 pointerBatchConfig(SRC_BUFFER, yqBufferIndex),
                 pointerBatchConfig(SRC_BUFFER, vTempBufferIndex),
-                size2D(h->weightType, n.vSlice.n, n.vSlice.d0),
+                size2D(h->weightType, h->dim, h->kvDim),
                 NnMatmulOpConfig{0, 0, moeExpertIndexesBufferIndex});
 
             if (h->archType == QWEN3 || h->archType == QWEN3_MOE) {
@@ -392,7 +394,7 @@ LlmNet buildLlmNet(LlmHeader *h, NnUint nNodes, NnUint nBatches) {
                 OP_MATMUL, "block_matmul_wo", layerIndex,
                 pointerBatchConfig(SRC_BUFFER, zqSliceBufferIndex),
                 pointerBatchConfig(SRC_BUFFER, yBufferIndex),
-                size2D(h->weightType, n.woSlice.n0, n.woSlice.d),
+                size2D(h->weightType, h->dim, h->dim),
                 NnMatmulOpConfig{0, 0, moeExpertIndexesBufferIndex});
             att.addOp(
                 OP_CAST, "block_cast_d", layerIndex,
@@ -510,13 +512,13 @@ LlmNet buildLlmNet(LlmHeader *h, NnUint nNodes, NnUint nBatches) {
                     OP_MATMUL, "block_matmul_w1", layerIndex,
                     pointerBatchConfig(SRC_BUFFER, yqBufferIndex),
                     pointerBatchConfig(SRC_BUFFER, dBufferIndex),
-                    size2D(h->weightType, n.w1Slice.n, n.w1Slice.d0),
+                    size2D(h->weightType, h->dim, h->hiddenDim),
                     NnMatmulOpConfig{0, 0, moeExpertIndexesBufferIndex});
                 ff.addOp(
                     OP_MATMUL, "block_matmul_w3", layerIndex,
                     pointerBatchConfig(SRC_BUFFER, yqBufferIndex),
                     pointerBatchConfig(SRC_BUFFER, lBufferIndex),
-                    size2D(h->weightType, n.w3Slice.n, n.w3Slice.d0),
+                    size2D(h->weightType, h->dim, h->hiddenDim),
                     NnMatmulOpConfig{0, 0, moeExpertIndexesBufferIndex});
                 ff.addOp(
                     OP_SILU, "block_act", layerIndex,
@@ -542,7 +544,7 @@ LlmNet buildLlmNet(LlmHeader *h, NnUint nNodes, NnUint nBatches) {
                     OP_MATMUL, "block_matmul_w2", layerIndex,
                     pointerBatchConfig(SRC_BUFFER, dqBufferIndex),
                     pointerBatchConfig(SRC_BUFFER, yBufferIndex),
-                    size2D(h->weightType, n.w2Slice.n0, n.w2Slice.d),
+                    size2D(h->weightType, h->hiddenDim, h->dim),
                     NnMatmulOpConfig{0, 0, moeExpertIndexesBufferIndex});
             }
             ff.addOp(
@@ -588,7 +590,7 @@ LlmNet buildLlmNet(LlmHeader *h, NnUint nNodes, NnUint nBatches) {
             OP_MATMUL, "final_matmul_logits", 0,
             pointerBatchConfig(SRC_BUFFER, yqBufferIndex),
             pointerBatchConfig(SRC_BUFFER, logitsSliceBufferIndex),
-            size2D(h->weightType, n.wclsSlice.n, n.wclsSlice.d0),
+            size2D(h->weightType, h->dim, h->vocabSize),
             NnMatmulOpConfig{});
         end.addOp(
             OP_CAST, "final_cast_logits", 0,
