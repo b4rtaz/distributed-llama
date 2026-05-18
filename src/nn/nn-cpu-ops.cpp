@@ -2,6 +2,9 @@
 #include <cassert>
 #include <cstring>
 #include <cstdio>
+#include <vector>
+#include <algorithm>
+#include <stdexcept>
 #if defined(__ARM_NEON)
     #include <arm_neon.h>
 #elif defined(__AVX2__) || defined(__AVX512F__)
@@ -14,10 +17,13 @@
 #define DEBUG_OP_INPUT_OUTPUT false
 
 #if DEBUG_OP_INPUT_OUTPUT
-    #define DEBUG_VECTOR(context, suffix, vec) \
-        if (threadIndex == 0) \
-            printf("%20s.%6s: %f %f %f %f\n", context->name, suffix, vec[0], vec[1], vec[2], vec[3]);
-    
+    #define DEBUG_VECTOR(context, suffix, v) \
+        if (threadIndex == 0) { \
+            printf("%20s.%6s: ", context->name, suffix); \
+            for (int k = 0; k < 12; k++) printf("%f ", v[k]); \
+            printf("\n"); \
+        }
+
     #define DEBUG_SCALAR(context, suffix, scalar) \
         if (threadIndex == 0) \
             printf("%20s.%6s: %f\n", context->name, suffix, scalar);
@@ -182,7 +188,7 @@ static void rmsNorm_Q80_F32_F32(float *output, const NnBlockQ80 *x, const float 
     }
 }
 
-//eric mod
+//MODIFY: Added parameters for distributed execution and logic to calculate local slice boundaries
 static void matmul_F32_F32_F32(float *output, const float *x, const float *w, const NnUint n, const NnUint d, const NnUint nThreads,/* ADDED */ const NnUint threadIndex, const NnUint nodeIndex, const NnUint nNodes, bool isRowMatmul) {
     // ADDED: Offset Calculation Logic
     NnUint d_start = 0, d_end = d;
@@ -202,10 +208,9 @@ static void matmul_F32_F32_F32(float *output, const float *x, const float *w, co
         }
     }
 
-    // MODIFIED: Assign threads only to the slice this node is responsible for
+    // Assign threads only to the slice this node is responsible for
     NnUint d_slice = d_end - d_start;
     SPLIT_THREADS(thread_d_start, thread_d_end, d_slice, nThreads, threadIndex);
-    // SPLIT_THREADS(start, end, d, nThreads, threadIndex);
 
     // Calculate actual indices mapping back to the full matrix
     NnUint actual_start = d_start + thread_d_start;
@@ -218,20 +223,17 @@ static void matmul_F32_F32_F32(float *output, const float *x, const float *w, co
     float32x4_t p;
     float32x4_t z;
 
-    // eric mod
     for (i = actual_start; i < actual_end; i++) {
         z = vmovq_n_f32(0);
         for (j = n_start; j < n_end; j += 4) {
 
-            // 🌟 4. 如果是 ColMatmul，x 的長度是切半的，讀取時要減掉 n_start
             const float *x_ptr = isRowMatmul ? &x[j] : &x[j - n_start];
             q = vld1q_f32(x_ptr);
 
-            // q = vld1q_f32(&x[j]);
             p = vld1q_f32(&w[i * n + j]);
             z = vfmaq_f32(z, q, p);
         }
-        // 🌟 5. 如果是 RowMatmul，output 的長度是切半的，寫入時要減掉 d_start
+
         if (isRowMatmul) {
             output[i - d_start] = vaddvq_f32(z);
         } else {
@@ -245,15 +247,13 @@ static void matmul_F32_F32_F32(float *output, const float *x, const float *w, co
         u = _mm256_set1_ps(0.0f);
         for (j = n_start; j < n_end; j += 8) {
 
-            // 🌟 處理局部輸入 x
             const float *x_ptr = isRowMatmul ? &x[j] : &x[j - n_start];
             a0 = _mm256_loadu_ps(x_ptr);
-            // a0 = _mm256_loadu_ps(&x[j]);
 
             b0 = _mm256_loadu_ps(&w[i * n + j]);
             u = _mm256_fmadd_ps(a0, b0, u);
         }
-        // 🌟 處理局部輸出 output
+
         if (isRowMatmul) {
             output[i - d_start] = horizontalSum_avx2(u);
         } else {
@@ -261,19 +261,13 @@ static void matmul_F32_F32_F32(float *output, const float *x, const float *w, co
         }
     }
 #else
-    // eric mod
     for (i = actual_start; i < actual_end; i++) {
         float val = 0.0f;
         for (j = n_start; j < n_end; j++) {
-            // 🌟 關鍵邏輯：
-            // w[i * n + j] 跨距 n 保持不變，因為我們存了完整的權重矩陣
-            // 若為 ColMatmul，x 的長度只有 1/nNodes，所以要減去 n_start 才能從 0 開始讀
             float x_val = isRowMatmul ? x[j] : x[j - n_start];
             val += w[i * n + j] * x_val;
-            // val += w[i * n + j] * x[j];
         }
-        // 🌟 關鍵邏輯：
-        // 若為 RowMatmul，output 的長度只有 1/nNodes，所以要減去 d_start 才能從 0 開始寫入
+
         if (isRowMatmul) {
             output[i - d_start] = val;
         } else {
@@ -284,7 +278,7 @@ static void matmul_F32_F32_F32(float *output, const float *x, const float *w, co
 }
 
 // eric mod
-// 🌟 優化 1：定義一個 Struct 來打包邊界參數，避免參數過多導致暫存器溢出 (Register Spilling)
+// define a struct to hold the distribution configuration for matmul operations, which can be reused across different matmul implementations
 struct DistConfig {
     NnUint d_start;
     NnUint d_slice;
@@ -292,17 +286,15 @@ struct DistConfig {
     NnUint nBlocks_end;
 };
 
-// 🌟 優化 2 & 3：使用 Template (IsRowMatmul) 強制編譯器展開分支，並把參數縮減為 7 個
+// use template to generate both row and column matmul implementations without runtime branching, and pass the distribution configuration as a parameter
 template <bool IsRowMatmul>
 static void matmul_Q80_Q40_F32_impl(float *output, const NnBlockQ80 *x, const NnBlockQ40 *w, const NnUint n, const NnUint nThreads, const NnUint threadIndex, const DistConfig& dist) {
-    // assert(n % Q40_BLOCK_SIZE == 0);
     const unsigned int nBlocks = n / Q40_BLOCK_SIZE;
 
     SPLIT_THREADS(thread_d_start, thread_d_end, dist.d_slice, nThreads, threadIndex);
     NnUint actual_start = dist.d_start + thread_d_start;
     NnUint actual_end   = dist.d_start + thread_d_end;
 
-    // 🌟 因為 IsRowMatmul 是 Template 參數，編譯器在編譯期就會決定這裡的指標偏移，完全沒有執行期 if-else 的負擔
     const NnBlockQ80* x_base = IsRowMatmul ? x : (x - dist.nBlocks_start);
     float* output_base = IsRowMatmul ? (output - dist.d_start) : output;
 
@@ -322,7 +314,6 @@ static void matmul_Q80_Q40_F32_impl(float *output, const NnBlockQ80 *x, const Nn
         for (; j + 3 < dist.nBlocks_end; j += 4) {
             __builtin_prefetch(&w[di * nBlocks + j + 4]);
             
-            // 直接透過預先算好的 x_base 預取
             __builtin_prefetch(&x_base[j + 4]);
 
             const NnBlockQ40 *w0 = &w[di * nBlocks + j];
@@ -330,7 +321,6 @@ static void matmul_Q80_Q40_F32_impl(float *output, const NnBlockQ80 *x, const Nn
             const NnBlockQ40 *w2 = &w[di * nBlocks + j + 2];
             const NnBlockQ40 *w3 = &w[di * nBlocks + j + 3];
 
-            // 直接透過 x_base 讀取資料
             const NnBlockQ80 *x0 = &x_base[j];
             const NnBlockQ80 *x1 = &x_base[j + 1];
             const NnBlockQ80 *x2 = &x_base[j + 2];
@@ -507,11 +497,10 @@ static void matmul_Q80_Q40_F32_impl(float *output, const NnBlockQ80 *x, const Nn
         output_base[i] = sum;
     }
 #else
-    // eric mod
     for (NnUint i = actual_start; i < actual_end; i++) {
         float sum = 0.0;
         for (NnUint j = dist.nBlocks_start; j < dist.nBlocks_end; j++) {
-            // w 的跨距依然是完整的 nBlocks
+
             const NnBlockQ40 *wb = &w[i * nBlocks + j];
             const NnBlockQ80 *xb = &x_base[j];
 
@@ -529,12 +518,11 @@ static void matmul_Q80_Q40_F32_impl(float *output, const NnBlockQ80 *x, const Nn
 #endif
 }
 
-// 🌟 Wrapper：將所有複雜且耗時的除法運算獨立在最外層，只執行一次
+// wrapper function
 static void matmul_Q80_Q40_F32(float *output, const NnBlockQ80 *x, const NnBlockQ40 *w, const NnUint n, const NnUint d, const NnUint nThreads, const NnUint threadIndex, const NnUint nodeIndex, const NnUint nNodes, bool isRowMatmul) {
     DistConfig dist;
     const unsigned int nBlocks = n / Q40_BLOCK_SIZE;
 
-    // 將所有耗時的除法與邊界計算留在這裡，不帶入核心迴圈
     if (nNodes > 1) {
         if (isRowMatmul) {
             dist.d_slice = d / nNodes;
@@ -555,7 +543,6 @@ static void matmul_Q80_Q40_F32(float *output, const NnBlockQ80 *x, const NnBlock
         dist.nBlocks_end = nBlocks;
     }
 
-    // 🌟 透過 Template 分流，呼叫底層實作，讓編譯器產生最佳化的 Row 和 Col 兩套機器碼
     if (isRowMatmul) {
         matmul_Q80_Q40_F32_impl<true>(output, x, w, n, nThreads, threadIndex, dist);
     } else {
@@ -1216,11 +1203,9 @@ static void rmsNormForward_Q80_F32_F32(NnUint nThreads, NnUint threadIndex, NnUi
 }
 
 static void initMatmulForward(NnCpuOpContext *context) {
-    // eric mod
+
     ASSERT_EQ(context->inputSize.y, context->nBatches);
     ASSERT_EQ(context->outputSize.y, context->nBatches);
-    // ASSERT_EQ(context->inputSize.x, context->weightSize.y);
-    // ASSERT_EQ(context->outputSize.x, context->weightSize.x);
 
     if (!context->hasInputContinuousMemory)
         printf("🚧 Op %s does not have contiguous memory for input\n", context->name);
@@ -1248,24 +1233,18 @@ static bool matmulForward_llamafile(NnUint nThreads, NnUint threadIndex, NnUint 
 }
 
 static void matmulForward_F32_F32_F32(NnUint nThreads, NnUint threadIndex, NnUint batchSize, NnCpuOpContext *context) {
-    // eric mod
-    // 🌟 提早取出 nNodes
+
     NnUint nNodes = context->nNodes;
 
-    // ✅ 修正：只有在單機 (nNodes == 1) 時，才允許使用 llamafile
     if (nNodes == 1 && matmulForward_llamafile(nThreads, threadIndex, batchSize, context))
         return;
 
-    // if (matmulForward_llamafile(nThreads, threadIndex, batchSize, context))
-    //     return;
-
     const float *weight = (float *)context->weight;
 
-    // eric mod
-    // ADDED: Extract distributed info
+    // extract node index for distributed execution
     NnUint nodeIndex = context->nodeIndex;
 
-    // ADDED: Determine row/col split.
+    // determine row/col split.
     bool isRowMatmul = (context->inputSize.x == context->weightSize.y);
 
     for (NnUint batchIndex = 0; batchIndex < batchSize; batchIndex++) {
@@ -1280,8 +1259,6 @@ static void matmulForward_F32_F32_F32(NnUint nThreads, NnUint threadIndex, NnUin
             context->weightSize.x,
             nThreads,
             threadIndex,
-
-            //eric mod
             nodeIndex, 
             nNodes, 
             isRowMatmul);
@@ -1290,21 +1267,14 @@ static void matmulForward_F32_F32_F32(NnUint nThreads, NnUint threadIndex, NnUin
 }
 
 static void matmulForward_Q80_Q40_F32(NnUint nThreads, NnUint threadIndex, NnUint batchSize, NnCpuOpContext *context) {
-    // eric mod
-    // 🌟 提早取出 nNodes
+
     NnUint nNodes = context->nNodes;
 
-    // ✅ 修正：只有在單機 (nNodes == 1) 時，才允許使用 llamafile
     if (nNodes == 1 && matmulForward_llamafile(nThreads, threadIndex, batchSize, context))
         return;
 
-    // if (matmulForward_llamafile(nThreads, threadIndex, batchSize, context))
-    //     return;
-
     const NnBlockQ40 *weight = (NnBlockQ40 *)context->weight;
 
-    // eric mod
-    // ADDED: Extract distributed info
     NnUint nodeIndex = context->nodeIndex;
 
     bool isRowMatmul = (context->inputSize.x == context->weightSize.y);;
@@ -1320,8 +1290,6 @@ static void matmulForward_Q80_Q40_F32(NnUint nThreads, NnUint threadIndex, NnUin
             context->weightSize.x,
             nThreads,
             threadIndex,
-
-            //eric mod
             nodeIndex, 
             nNodes, 
             isRowMatmul);
@@ -1577,6 +1545,57 @@ static void shiftForward_F32_F32(NnUint nThreads, NnUint threadIndex, NnUint bat
     }
 }
 
+static void softmaxForward_F32_F32(NnUint nThreads, NnUint threadIndex, NnUint batchSize, NnCpuOpContext *context) {
+    assert(*context->input == *context->output);
+
+    for (NnUint y = threadIndex; y < batchSize; y += nThreads)
+        softmax_F32(
+            (float *)context->output[y],
+            context->outputSize.x);
+}
+
+static void initMoeGateForward(NnCpuOpContext *context) {
+    const NnMoeGateOpCodeConfig *config = (NnMoeGateOpCodeConfig *)context->opConfig;
+    ASSERT_EQ(context->inputSize.z, 1u);
+    ASSERT_EQ(context->inputSize.y, context->nBatches);
+    assert(context->inputSize.x >= config->k);
+    ASSERT_EQ(context->outputSize.z, config->k);
+    ASSERT_EQ(context->outputSize.y, context->nBatches);
+    ASSERT_EQ(context->outputSize.x, 1u);
+}
+
+static void moeGateForward_F32_F32(NnUint nThreads, NnUint threadIndex, NnUint batchSize, NnCpuOpContext *context) {
+    const NnMoeGateOpCodeConfig *config = (NnMoeGateOpCodeConfig *)context->opConfig;
+    float *indexes = (float *)context->buffers[config->indexesBufferIndex];
+
+    std::vector<NnUint> pos(config->k);
+    for (NnUint y = threadIndex; y < batchSize; y += nThreads) {
+        float *input = (float *)context->input[y];
+
+        topk_F32(input, pos.data(), context->inputSize.x, config->k);
+
+        float sum;
+        if (config->normTopk == 1u) {
+            sum = 0.0f;
+            for (NnUint i = 0u; i < config->k; i++)
+                sum += input[pos[i]];
+        } else {
+            sum = 1.0f;
+        }
+
+        for (NnUint k = 0u; k < config->k; k++) {
+            const NnUint p = pos[k];
+            indexes[y * config->k + k] = (float)p;
+
+            // (nActiveExperts, nBatches, 1)
+            float *output = (float *)context->output[k * context->outputSize.y + y];
+            *output = input[p] / sum;
+        }
+
+        DEBUG_VECTOR(context, "indexes", (&indexes[y * config->k]));
+    }
+}
+
 // device
 
 void printCpuInstructionSet() {
@@ -1602,16 +1621,24 @@ void printCpuInstructionSet() {
 NnCpuOpForwardInit getCpuOpForwardInit(NnOpCode code, NnOpQuantType quantType) {
     if (code == OP_EMBEDDING)
         return initEmbeddingForward;
+    if (code == OP_INV_RMS)
+        return initInvRmsForward;
     if (code == OP_RMS_NORM)
         return initRmsNormForward_ANY_F32_F32;
-    if (code == OP_ROPE_LLAMA)
-        return initRopeLlama3Forward;
+    if (code == OP_ROPE)
+        return initRopeForward_F32;
     if (code == OP_MULTIHEAD_ATT)
         return initMultiHeadAttForward;
     if (code == OP_MATMUL)
         return initMatmulForward;
+    if (code == OP_MUL)
+        return initMulForward;
     if (code == OP_CAST)
         return initCastForward;
+    if (code == OP_REPEAT_Z)
+        return initRepeatZForward;
+    if (code == OP_MOE_GATE)
+        return initMoeGateForward;
     return nullptr;
 }
 
@@ -1619,6 +1646,9 @@ NnCpuOpForward getCpuOpForward(NnOpCode code, NnOpQuantType quantType) {
     if (code == OP_MERGE_ADD) {
         if (quantType == F32_F32_F32) return mergeAddForward_F32_F32;
         if (quantType == Q80_Q80_F32) return mergeAddForward_Q80_F32;
+    }
+    if (code == OP_MERGE_SUM) {
+        if (quantType == F32_F32_F32) return mergeSumForward_F32_F32;
     }
     if (code == OP_EMBEDDING) {
         if (quantType == F32_F32_F32) return embeddingForward_F32_F32_F32;
@@ -1635,8 +1665,8 @@ NnCpuOpForward getCpuOpForward(NnOpCode code, NnOpQuantType quantType) {
         if (quantType == F32_F32_F32) return matmulForward_F32_F32_F32;
         if (quantType == Q80_Q40_F32) return matmulForward_Q80_Q40_F32;
     }
-    if (code == OP_ROPE_LLAMA) {
-        if (quantType == F32_F32_F32) return ropeLlamaForward_F32_F32;
+    if (code == OP_ROPE) {
+        if (quantType == F32_F32_F32) return ropeForward_F32_F32;
     }
     if (code == OP_MULTIHEAD_ATT) {
         if (quantType == F32_F32_F32) return multiHeadAttForward_F32_F32;
@@ -1649,7 +1679,9 @@ NnCpuOpForward getCpuOpForward(NnOpCode code, NnOpQuantType quantType) {
     }
     if (code == OP_MUL) {
         if (quantType == F32_F32_F32) return mulForward_F32_F32;
-        if (quantType == Q80_Q80_F32) return mulForward_Q80_F32;
+    }
+    if (code == OP_SCALE) {
+        if (quantType == F32_F32_F32) return scaleForward_F32_F32;
     }
     if (code == OP_CAST) {
         if (quantType == F32_F32_F32) return castForward_ANY;
@@ -1657,8 +1689,17 @@ NnCpuOpForward getCpuOpForward(NnOpCode code, NnOpQuantType quantType) {
         if (quantType == Q80_Q80_Q80) return castForward_ANY;
         if (quantType == Q80_Q80_F32) return castForward_Q80_F32;
     }
+    if (code == OP_REPEAT_Z) {
+        if (quantType == F32_F32_Q80) return repeatZForward_F32_Q80;
+    }
     if (code == OP_SHIFT) {
         if (quantType == F32_F32_F32) return shiftForward_F32_F32;
+    }
+    if (code == OP_SOFTMAX) {
+        if (quantType == F32_F32_F32) return softmaxForward_F32_F32;
+    }
+    if (code == OP_MOE_GATE) {
+        if (quantType == F32_F32_F32) return moeGateForward_F32_F32;
     }
     return nullptr;
 }

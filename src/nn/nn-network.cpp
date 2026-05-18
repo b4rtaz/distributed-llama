@@ -831,8 +831,9 @@ void NnRootWeightLoader::writeWeight(NnUint nodeIndex, const char *opName, NnUin
 }
 
 NnSize NnRootWeightLoader::loadRoot(const char *opName, NnUint opIndex, NnSize nBytes, NnByte *weight) {
+    //set offset to 0 for loading the whole weight.
     try {
-        executor->loadWeight(opName, opIndex, nBytes, weight);
+        executor->loadWeight(opName, opIndex, 0, nBytes, weight);
     } catch (...) {
    
     }
@@ -840,8 +841,9 @@ NnSize NnRootWeightLoader::loadRoot(const char *opName, NnUint opIndex, NnSize n
 }
 
 NnSize NnRootWeightLoader::loadAll(const char *opName, NnUint opIndex, NnSize nBytes, NnByte *weight) {
+    //set offset to 0 for loading the whole weight.
     try {
-        executor->loadWeight(opName, opIndex, nBytes, weight);
+        executor->loadWeight(opName, opIndex, 0, nBytes, weight);
     } catch (...) {
 
     }
@@ -849,8 +851,9 @@ NnSize NnRootWeightLoader::loadAll(const char *opName, NnUint opIndex, NnSize nB
 }
 
 NnSize NnRootWeightLoader::loadRowMatmulSlices(const char *opName, const NnUint opIndex, const NnUint expertIndex, NnRowMatmulSlice *slice, NnByte *weight) {
+    //set offset to 0 for loading the whole weight.
     try {
-        executor->loadWeight(opName, opIndex, slice->size.nBytes, weight);
+        executor->loadWeight(opName, opIndex, 0, slice->size.nBytes, weight);
     } catch (...) {
 
     }
@@ -858,8 +861,9 @@ NnSize NnRootWeightLoader::loadRowMatmulSlices(const char *opName, const NnUint 
 }
 
 NnSize NnRootWeightLoader::loadColMatmulSlices(const char *opName, const NnUint opIndex, const NnUint expertIndex, NnColMatmulSlice *slice, NnByte *weight) {
+    //set offset to 0 for loading the whole weight.
     try {
-        executor->loadWeight(opName, opIndex, slice->size.nBytes, weight);
+        executor->loadWeight(opName, opIndex, 0, slice->size.nBytes, weight);
     } catch (...) {
 
     }

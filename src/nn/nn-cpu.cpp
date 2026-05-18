@@ -123,7 +123,7 @@ NnDeviceSegment *NnCpuDevice::createSegment(NnUint segmentIndex) {
         opContext->bufferConfigs = nodeConfig->buffers;
         opContext->bufferFlags = bufferFlags;
 
-        // ADDED: Inject nodeIndex and nNodes into the context
+        // Inject nodeIndex and nNodes into the context
         opContext->nodeIndex = this->nodeConfig->nodeIndex;
         opContext->nNodes = this->netConfig->nNodes;
 

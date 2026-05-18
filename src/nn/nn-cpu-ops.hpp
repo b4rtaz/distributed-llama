@@ -29,7 +29,8 @@ typedef struct {
 
     NnByte *weight;
     NnSize3D weightSize;
-    // ADDED: Distributed execution parameters
+    
+    // distributed execution parameters
     NnUint nodeIndex;
     NnUint nNodes;
     
