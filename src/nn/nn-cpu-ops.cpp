@@ -277,7 +277,6 @@ static void matmul_F32_F32_F32(float *output, const float *x, const float *w, co
 #endif
 }
 
-// eric mod
 // define a struct to hold the distribution configuration for matmul operations, which can be reused across different matmul implementations
 struct DistConfig {
     NnUint d_start;
