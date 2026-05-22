@@ -188,142 +188,77 @@ static void rmsNorm_Q80_F32_F32(float *output, const NnBlockQ80 *x, const float 
     }
 }
 
-//MODIFY: Added parameters for distributed execution and logic to calculate local slice boundaries
-static void matmul_F32_F32_F32(float *output, const float *x, const float *w, const NnUint n, const NnUint d, const NnUint nThreads,/* ADDED */ const NnUint threadIndex, const NnUint nodeIndex, const NnUint nNodes, bool isRowMatmul) {
-    // ADDED: Offset Calculation Logic
-    NnUint d_start = 0, d_end = d;
-    NnUint n_start = 0, n_end = n;
-
-    if (nNodes > 1) {
-        if (isRowMatmul) {
-            // Cut along the output dimension (d)
-            NnUint slice_d = d / nNodes;
-            d_start = nodeIndex * slice_d;
-            d_end = d_start + slice_d;
-        } else {
-            // Cut along the input dimension (n)
-            NnUint slice_n = n / nNodes;
-            n_start = nodeIndex * slice_n;
-            n_end = n_start + slice_n;
-        }
-    }
-
-    // Assign threads only to the slice this node is responsible for
-    NnUint d_slice = d_end - d_start;
-    SPLIT_THREADS(thread_d_start, thread_d_end, d_slice, nThreads, threadIndex);
-
-    // Calculate actual indices mapping back to the full matrix
-    NnUint actual_start = d_start + thread_d_start;
-    NnUint actual_end   = d_start + thread_d_end;
-
+static void matmul_F32_F32_F32(float *output, const float *x, const float *w, const NnUint n, const NnUint d, const NnUint nThreads, const NnUint threadIndex) {
+    SPLIT_THREADS(start, end, d, nThreads, threadIndex);
     unsigned int i, j;
 #if defined(__ARM_NEON)
     assert(n % 4 == 0);
     float32x4_t q;
     float32x4_t p;
     float32x4_t z;
-
-    for (i = actual_start; i < actual_end; i++) {
+    for (i = start; i < end; i++) {
         z = vmovq_n_f32(0);
-        for (j = n_start; j < n_end; j += 4) {
-
-            const float *x_ptr = isRowMatmul ? &x[j] : &x[j - n_start];
-            q = vld1q_f32(x_ptr);
-
+        for (j = 0; j < n; j += 4) {
+            q = vld1q_f32(&x[j]);
             p = vld1q_f32(&w[i * n + j]);
             z = vfmaq_f32(z, q, p);
         }
-
-        if (isRowMatmul) {
-            output[i - d_start] = vaddvq_f32(z);
-        } else {
-            output[i] = vaddvq_f32(z);
-        }
+        output[i] = vaddvq_f32(z);
     }
 #elif defined(__AVX2__)
     assert(n % 8 == 0);
     __m256 a0, b0, u;
-    for (i = actual_start; i < actual_end; i++) {
+    for (i = start; i < end; i++) {
         u = _mm256_set1_ps(0.0f);
-        for (j = n_start; j < n_end; j += 8) {
-
-            const float *x_ptr = isRowMatmul ? &x[j] : &x[j - n_start];
-            a0 = _mm256_loadu_ps(x_ptr);
-
+        for (j = 0; j < n; j += 8) {
+            a0 = _mm256_loadu_ps(&x[j]);
             b0 = _mm256_loadu_ps(&w[i * n + j]);
             u = _mm256_fmadd_ps(a0, b0, u);
         }
-
-        if (isRowMatmul) {
-            output[i - d_start] = horizontalSum_avx2(u);
-        } else {
-            output[i] = horizontalSum_avx2(u);
-        }
+        output[i] = horizontalSum_avx2(u);
     }
 #else
-    for (i = actual_start; i < actual_end; i++) {
+    for (i = start; i < end; i++) {
         float val = 0.0f;
-        for (j = n_start; j < n_end; j++) {
-            float x_val = isRowMatmul ? x[j] : x[j - n_start];
-            val += w[i * n + j] * x_val;
+        for (j = 0; j < n; j++) {
+            val += w[i * n + j] * x[j];
         }
-
-        if (isRowMatmul) {
-            output[i - d_start] = val;
-        } else {
-            output[i] = val;
-        }
+        output[i] = val;
     }
 #endif
 }
 
-// define a struct to hold the distribution configuration for matmul operations, which can be reused across different matmul implementations
-struct DistConfig {
-    NnUint d_start;
-    NnUint d_slice;
-    NnUint nBlocks_start;
-    NnUint nBlocks_end;
-};
-
-// use template to generate both row and column matmul implementations without runtime branching, and pass the distribution configuration as a parameter
-template <bool IsRowMatmul>
-static void matmul_Q80_Q40_F32_impl(float *output, const NnBlockQ80 *x, const NnBlockQ40 *w, const NnUint n, const NnUint nThreads, const NnUint threadIndex, const DistConfig& dist) {
+static void matmul_Q80_Q40_F32(float *output, const NnBlockQ80 *x, const NnBlockQ40 *w, const NnUint n, const NnUint d, const NnUint nThreads, const NnUint threadIndex) {
+    SPLIT_THREADS(start, end, d, nThreads, threadIndex);
+    assert(n % Q40_BLOCK_SIZE == 0);
     const unsigned int nBlocks = n / Q40_BLOCK_SIZE;
-
-    SPLIT_THREADS(thread_d_start, thread_d_end, dist.d_slice, nThreads, threadIndex);
-    NnUint actual_start = dist.d_start + thread_d_start;
-    NnUint actual_end   = dist.d_start + thread_d_end;
-
-    const NnBlockQ80* x_base = IsRowMatmul ? x : (x - dist.nBlocks_start);
-    float* output_base = IsRowMatmul ? (output - dist.d_start) : output;
 
 #if defined(__ARM_NEON)
     const uint8x16_t m4b = vdupq_n_u8(0x0F);
     const int8x16_t s8b = vdupq_n_s8(0x8);
 
-    for (unsigned int di = actual_start; di < actual_end; di++) {
+    for (unsigned int di = start; di < end; di++) {
         float32x4_t sumv0 = vmovq_n_f32(0.0f);
         float32x4_t sumv1 = vmovq_n_f32(0.0f);
         float32x4_t sumv2 = vmovq_n_f32(0.0f);
         float32x4_t sumv3 = vmovq_n_f32(0.0f);
 
-        unsigned int j = dist.nBlocks_start;
+        unsigned int j = 0;
         
 #if defined(__ARM_FEATURE_DOTPROD)
-        for (; j + 3 < dist.nBlocks_end; j += 4) {
+        for (; j + 3 < nBlocks; j += 4) {
             __builtin_prefetch(&w[di * nBlocks + j + 4]);
-            
-            __builtin_prefetch(&x_base[j + 4]);
+            __builtin_prefetch(&x[j + 4]);
 
             const NnBlockQ40 *w0 = &w[di * nBlocks + j];
             const NnBlockQ40 *w1 = &w[di * nBlocks + j + 1];
             const NnBlockQ40 *w2 = &w[di * nBlocks + j + 2];
             const NnBlockQ40 *w3 = &w[di * nBlocks + j + 3];
 
-            const NnBlockQ80 *x0 = &x_base[j];
-            const NnBlockQ80 *x1 = &x_base[j + 1];
-            const NnBlockQ80 *x2 = &x_base[j + 2];
-            const NnBlockQ80 *x3 = &x_base[j + 3];
+            const NnBlockQ80 *x0 = &x[j];
+            const NnBlockQ80 *x1 = &x[j + 1];
+            const NnBlockQ80 *x2 = &x[j + 2];
+            const NnBlockQ80 *x3 = &x[j + 3];
 
             int8x16_t w0l = vsubq_s8(vreinterpretq_s8_u8(vandq_u8(vld1q_u8(w0->qs), m4b)), s8b);
             int8x16_t w0h = vsubq_s8(vreinterpretq_s8_u8(vshrq_n_u8(vld1q_u8(w0->qs), 4)), s8b);
@@ -354,12 +289,11 @@ static void matmul_Q80_Q40_F32_impl(float *output, const NnBlockQ80 *x, const Nn
             sumv3 = vmlaq_n_f32(sumv3, vcvtq_f32_s32(p3), CONVERT_F16_TO_F32(w3->d) * CONVERT_F16_TO_F32(x3->d));
         }
 #else
-        for (; j + 1 < dist.nBlocks_end; j += 2) {
+        for (; j + 1 < nBlocks; j += 2) {
             const NnBlockQ40 *w0 = &w[di * nBlocks + j];
             const NnBlockQ40 *w1 = &w[di * nBlocks + j + 1];
-
-            const NnBlockQ80 *x0 = &x_base[j];
-            const NnBlockQ80 *x1 = &x_base[j + 1];
+            const NnBlockQ80 *x0 = &x[j];
+            const NnBlockQ80 *x1 = &x[j + 1];
 
             const uint8x16_t w0qs = vld1q_u8(w0->qs);
             const uint8x16_t w1qs = vld1q_u8(w1->qs);
@@ -394,9 +328,9 @@ static void matmul_Q80_Q40_F32_impl(float *output, const NnBlockQ80 *x, const Nn
         }
 #endif
 
-        for (; j < dist.nBlocks_end; j++) {
+        for (; j < nBlocks; j++) {
             const NnBlockQ40 *wb = &w[di * nBlocks + j];
-            const NnBlockQ80 *xb = &x_base[j];
+            const NnBlockQ80 *xb = &x[j];
 
             const uint8x16_t wqs = vld1q_u8(wb->qs);
             const int8x16_t wl = vsubq_s8(vreinterpretq_s8_u8(vandq_u8(wqs, m4b)), s8b);
@@ -421,15 +355,14 @@ static void matmul_Q80_Q40_F32_impl(float *output, const NnBlockQ80 *x, const Nn
             sumv0 = vmlaq_n_f32(sumv0, vcvtq_f32_s32(p), s);
         }
 
-        float total_sum = vaddvq_f32(sumv0) + vaddvq_f32(sumv1) + vaddvq_f32(sumv2) + vaddvq_f32(sumv3);
-        output_base[di] = total_sum;
+        output[di] = vaddvq_f32(sumv0) + vaddvq_f32(sumv1) + vaddvq_f32(sumv2) + vaddvq_f32(sumv3);
     }
 #elif defined(__AVX512F__)
-    for (NnUint i = actual_start; i < actual_end; i++) {
+    for (NnUint i = start; i < end; i++) {
         float sum = 0.0f;
-        for (NnUint j = dist.nBlocks_start; j < dist.nBlocks_end; j++) {
+        for (NnUint j = 0; j < nBlocks; j++) {
             const NnBlockQ40 *wb = &w[i * nBlocks + j];
-            const NnBlockQ80 *xb = &x_base[j];
+            const NnBlockQ80 *xb = &x[j];
             const float s = CONVERT_F16_TO_F32(wb->d) * CONVERT_F16_TO_F32(xb->d);
 
             __m128i w8 = _mm_loadu_si128((const __m128i*)wb->qs);
@@ -449,14 +382,14 @@ static void matmul_Q80_Q40_F32_impl(float *output, const NnBlockQ80 *x, const Nn
             __m512i products = _mm512_madd_epi16(w16, x16);
             sum += _mm512_reduce_add_epi32(products) * s;
         }
-        output_base[i] = sum;
+        output[i] = sum;
     }
 #elif defined(__AVX2__)
-    for (NnUint i = actual_start; i < actual_end; i++) {
+    for (NnUint i = start; i < end; i++) {
         float sum = 0.0f;
-        for (NnUint j = dist.nBlocks_start; j < dist.nBlocks_end; j++) {
+        for (NnUint j = 0; j < nBlocks; j++) {
             const NnBlockQ40 *wb = &w[i * nBlocks + j];
-            const NnBlockQ80 *xb = &x_base[j];
+            const NnBlockQ80 *xb = &x[j];
             const float s = CONVERT_F16_TO_F32(wb->d) * CONVERT_F16_TO_F32(xb->d);
 
             __m128i w_packed = _mm_loadu_si128((const __m128i*)wb->qs);
@@ -493,16 +426,14 @@ static void matmul_Q80_Q40_F32_impl(float *output, const NnBlockQ80 *x, const Nn
 
             sum += block_sum * s;
         }
-        output_base[i] = sum;
+        output[i] = sum;
     }
 #else
-    for (NnUint i = actual_start; i < actual_end; i++) {
+    for (NnUint i = start; i < end; i++) {
         float sum = 0.0;
-        for (NnUint j = dist.nBlocks_start; j < dist.nBlocks_end; j++) {
-
+        for (NnUint j = 0; j < nBlocks; j++) {
             const NnBlockQ40 *wb = &w[i * nBlocks + j];
-            const NnBlockQ80 *xb = &x_base[j];
-
+            const NnBlockQ80 *xb = &x[j];
             const float s = CONVERT_F16_TO_F32(wb->d) * CONVERT_F16_TO_F32(xb->d);
             for (NnUint k = 0; k < Q40_BLOCK_SIZE / 2; k++) {
                 const int w0 = (wb->qs[k] & 0x0F) - 8;
@@ -512,41 +443,9 @@ static void matmul_Q80_Q40_F32_impl(float *output, const NnBlockQ80 *x, const Nn
                 sum += (w0 * i1 + w1 * i2) * s;
             }
         }
-        output_base[i] = sum;
+        output[i] = sum;
     }
 #endif
-}
-
-// wrapper function
-static void matmul_Q80_Q40_F32(float *output, const NnBlockQ80 *x, const NnBlockQ40 *w, const NnUint n, const NnUint d, const NnUint nThreads, const NnUint threadIndex, const NnUint nodeIndex, const NnUint nNodes, bool isRowMatmul) {
-    DistConfig dist;
-    const unsigned int nBlocks = n / Q40_BLOCK_SIZE;
-
-    if (nNodes > 1) {
-        if (isRowMatmul) {
-            dist.d_slice = d / nNodes;
-            dist.d_start = nodeIndex * dist.d_slice;
-            dist.nBlocks_start = 0;
-            dist.nBlocks_end = nBlocks;
-        } else {
-            NnUint slice_nBlocks = nBlocks / nNodes;
-            dist.d_start = 0;
-            dist.d_slice = d;
-            dist.nBlocks_start = nodeIndex * slice_nBlocks;
-            dist.nBlocks_end = dist.nBlocks_start + slice_nBlocks;
-        }
-    } else {
-        dist.d_start = 0;
-        dist.d_slice = d;
-        dist.nBlocks_start = 0;
-        dist.nBlocks_end = nBlocks;
-    }
-
-    if (isRowMatmul) {
-        matmul_Q80_Q40_F32_impl<true>(output, x, w, n, nThreads, threadIndex, dist);
-    } else {
-        matmul_Q80_Q40_F32_impl<false>(output, x, w, n, nThreads, threadIndex, dist);
-    }
 }
 
 #define SQRT_2_OVER_PI 0.79788456080286535587989211986876f
@@ -1202,9 +1101,14 @@ static void rmsNormForward_Q80_F32_F32(NnUint nThreads, NnUint threadIndex, NnUi
 }
 
 static void initMatmulForward(NnCpuOpContext *context) {
-
+    const NnMatmulOpConfig *config = (NnMatmulOpConfig *)context->opConfig;
     ASSERT_EQ(context->inputSize.y, context->nBatches);
     ASSERT_EQ(context->outputSize.y, context->nBatches);
+    ASSERT_EQ(context->inputSize.x, context->weightSize.y);
+    ASSERT_EQ(context->inputSize.z, std::max(config->nActiveExperts, 1u));
+    ASSERT_EQ(context->outputSize.x, context->weightSize.x);
+    ASSERT_EQ(context->outputSize.z, std::max(config->nActiveExperts, 1u));
+    ASSERT_EQ(context->weightSize.z, std::max(config->nExperts, 1u));
 
     if (!context->hasInputContinuousMemory)
         printf("🚧 Op %s does not have contiguous memory for input\n", context->name);
@@ -1232,66 +1136,58 @@ static bool matmulForward_llamafile(NnUint nThreads, NnUint threadIndex, NnUint 
 }
 
 static void matmulForward_F32_F32_F32(NnUint nThreads, NnUint threadIndex, NnUint batchSize, NnCpuOpContext *context) {
-
-    NnUint nNodes = context->nNodes;
-
-    if (nNodes == 1 && matmulForward_llamafile(nThreads, threadIndex, batchSize, context))
+    if (matmulForward_llamafile(nThreads, threadIndex, batchSize, context))
         return;
 
-    const float *weight = (float *)context->weight;
+    const NnMatmulOpConfig *config = (NnMatmulOpConfig *)context->opConfig;
+    const NnUint nActiveExpertsOr1 = std::max(config->nActiveExperts, 1u);
+    const float *activeExpertIndexes = (const float *)context->buffers[config->activeExpertIndexesBufferIndex];
 
-    // extract node index for distributed execution
-    NnUint nodeIndex = context->nodeIndex;
+    for (NnUint y = 0; y < batchSize; y++) {
+        for (NnUint e = 0; e < nActiveExpertsOr1; e++) {
+            const NnUint activeExpertIndex = config->nActiveExperts == 0u
+                ? 0u
+                : (NnUint)activeExpertIndexes[y * config->nActiveExperts + e];
 
-    // determine row/col split.
-    bool isRowMatmul = (context->inputSize.x == context->weightSize.y);
-
-    for (NnUint batchIndex = 0; batchIndex < batchSize; batchIndex++) {
-        float *input = (float *)context->input[batchIndex];
-        float *output = (float *)context->output[batchIndex];
-        DEBUG_VECTOR(context, "input", input);
-        matmul_F32_F32_F32(
-            output,
-            input,
-            weight,
-            context->weightSize.y,
-            context->weightSize.x,
-            nThreads,
-            threadIndex,
-            nodeIndex, 
-            nNodes, 
-            isRowMatmul);
-        DEBUG_VECTOR(context, "output", output);
+            float *output = (float *)context->output[e * context->outputSize.y + y];
+            matmul_F32_F32_F32(
+                output,
+                (float *)context->input[e * context->inputSize.y + y],
+                (float *)&context->weight[activeExpertIndex * context->weightSize.nBytesXY],
+                context->weightSize.y,
+                context->weightSize.x,
+                nThreads,
+                threadIndex);
+            DEBUG_VECTOR(context, "output", output);
+        }
     }
 }
 
 static void matmulForward_Q80_Q40_F32(NnUint nThreads, NnUint threadIndex, NnUint batchSize, NnCpuOpContext *context) {
-
-    NnUint nNodes = context->nNodes;
-
-    if (nNodes == 1 && matmulForward_llamafile(nThreads, threadIndex, batchSize, context))
+    if (matmulForward_llamafile(nThreads, threadIndex, batchSize, context))
         return;
 
-    const NnBlockQ40 *weight = (NnBlockQ40 *)context->weight;
+    const NnMatmulOpConfig *config = (NnMatmulOpConfig *)context->opConfig;
+    const NnUint nActiveExpertsOr1 = std::max(config->nActiveExperts, 1u);
+    const float *activeExpertIndexes = (const float *)context->buffers[config->activeExpertIndexesBufferIndex];
 
-    NnUint nodeIndex = context->nodeIndex;
+    for (NnUint y = 0; y < batchSize; y++) {
+        for (NnUint e = 0; e < nActiveExpertsOr1; e++) {
+            const NnUint activeExpertIndex = config->nActiveExperts == 0u
+                ? 0u
+                : (NnUint)activeExpertIndexes[y * config->nActiveExperts + e];
 
-    bool isRowMatmul = (context->inputSize.x == context->weightSize.y);;
-
-    for (NnUint batchIndex = 0; batchIndex < batchSize; batchIndex++) {
-        NnBlockQ80 *input = (NnBlockQ80 *)context->input[batchIndex];
-        float *output = (float *)context->output[batchIndex];
-        matmul_Q80_Q40_F32(
-            output,
-            input,
-            weight,
-            context->weightSize.y,
-            context->weightSize.x,
-            nThreads,
-            threadIndex,
-            nodeIndex, 
-            nNodes, 
-            isRowMatmul);
+            float *output = (float *)context->output[e * context->outputSize.y + y];
+            matmul_Q80_Q40_F32(
+                output,
+                (NnBlockQ80 *)context->input[e * context->inputSize.y + y],
+                (NnBlockQ40 *)&context->weight[activeExpertIndex * context->weightSize.nBytesXY],
+                context->weightSize.y,
+                context->weightSize.x,
+                nThreads,
+                threadIndex);
+            DEBUG_VECTOR(context, "output", output);
+        }
     }
 }
 

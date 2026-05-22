@@ -276,8 +276,14 @@ void runInferenceApp(AppCliArgs *args, void (*handler)(AppInferenceContext *cont
     std::vector<NnExecutorDevice> devices = resolveDevices(args, &net.netConfig, rootNodeConfig, &execution);
     NnExecutor executor(&net.netConfig, rootNodeConfig, &devices, &execution, synchronizer.get(), args->benchmark);
 
-    NnRootWeightLoader weightLoader(&executor, network, nNodes);
+    NnLocalWeightLoader weightLoader(&executor, 0, nNodes);
     loadLlmNetWeight(args->modelPath, &net, &weightLoader);
+    if (network != nullptr) {
+        printf("💿 Waiting for workers to load weights...\n");
+        for (NnUint socketIndex = 0; socketIndex < nNodes - 1; socketIndex++)
+            network->readAck(socketIndex);
+        printf("💿 All workers ready\n");
+    }
 
     RootLlmInference inference(&net, &execution, &executor, network);
 
@@ -322,27 +328,26 @@ void runWorkerApp(AppCliArgs *args) {
         NnNetworkNodeSynchronizer synchronizer(network, &execution, &netConfig, &nodeConfig);
         NnExecutor executor(&netConfig, &nodeConfig, &devices, &execution, &synchronizer, false);
 
-        // modify the worker's weight loading method to get the weight from disk.
-        if (args->modelPath == nullptr) {
-            throw std::runtime_error("Worker needs --model argument to load weights locally!");
+        if (args->modelPath == nullptr)
+            throw std::runtime_error("--model is required for worker mode");
+
+        NnFloatType syncType = F_32;
+        for (NnUint i = 0; i < netConfig.nPipes; i++) {
+            if (std::strcmp(netConfig.pipes[i].name, "ZQ") == 0) {
+                syncType = netConfig.pipes[i].size.floatType;
+                break;
+            }
         }
 
-        printf("💿 Worker is loading weights locally from %s...\n", args->modelPath);
+        {
+            LlmHeader workerHeader = loadLlmHeader(args->modelPath, 0, syncType);
+            LlmNet workerNet = buildLlmNet(&workerHeader, netConfig.nNodes, netConfig.nBatches);
+            std::unique_ptr<LlmNet, void(*)(LlmNet *)> workerNetPtr(&workerNet, releaseLlmNet);
+            NnLocalWeightLoader weightLoader(&executor, nodeConfig.nodeIndex, netConfig.nNodes);
+            loadLlmNetWeight(args->modelPath, &workerNet, &weightLoader);
+        }
 
-        // header for loading weights.
-        LlmHeader header = loadLlmHeader(args->modelPath, args->maxSeqLen, args->syncType);
-
-        // build a temporary net to load the weights, the net will be released right after loading the weights.
-        LlmNet localNet = buildLlmNet(&header, netConfig.nNodes, netConfig.nBatches);
-
-        // load weights from disk to the executor.
-        NnRootWeightLoader localWeightLoader(&executor, nullptr, netConfig.nNodes); 
-        loadLlmNetWeight(args->modelPath, &localNet, &localWeightLoader);
-
-        // release the temporary net to free memory, since the weights have been loaded into the executor.
-        releaseLlmNet(&localNet);
-
-        printf("✅ Worker local weights loaded successfully.\n");
+        network->writeAck(ROOT_SOCKET_INDEX);
 
         WorkerLlmInference inference(&execution, network);
         bool isFirstAttempt = true;

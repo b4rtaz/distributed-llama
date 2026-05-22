@@ -123,10 +123,6 @@ NnDeviceSegment *NnCpuDevice::createSegment(NnUint segmentIndex) {
         opContext->bufferConfigs = nodeConfig->buffers;
         opContext->bufferFlags = bufferFlags;
 
-        // Inject nodeIndex and nNodes into the context
-        opContext->nodeIndex = this->nodeConfig->nodeIndex;
-        opContext->nNodes = this->netConfig->nNodes;
-
         opContext->input = new NnByte *[inputsPtr[opIndex].size()];
         opContext->inputSize = inputSizes[opIndex];
         opContext->hasInputContinuousMemory = hasPointerContinuousMemory(&opConfig->input);

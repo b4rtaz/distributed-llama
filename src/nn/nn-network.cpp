@@ -807,7 +807,15 @@ NnRootWeightLoader::~NnRootWeightLoader() {
 }
 
 void NnRootWeightLoader::finish() {
-    // empty
+    NnUint zeroSize = 0;
+    for (NnUint socketIndex = 0; socketIndex < nNodes - 1; socketIndex++) {
+        network->write(socketIndex, &zeroSize, sizeof(zeroSize));
+        network->readAck(socketIndex);
+    }
+    if (tempSize > 0) {
+        delete[] temp;
+        tempSize = 0;
+    }
 }
 
 void NnRootWeightLoader::allocate(NnSize size) {
@@ -831,41 +839,50 @@ void NnRootWeightLoader::writeWeight(NnUint nodeIndex, const char *opName, NnUin
 }
 
 NnSize NnRootWeightLoader::loadRoot(const char *opName, NnUint opIndex, NnSize nBytes, NnByte *weight) {
-    //set offset to 0 for loading the whole weight.
-    try {
-        executor->loadWeight(opName, opIndex, 0, nBytes, weight);
-    } catch (...) {
-   
-    }
+    executor->loadWeight(opName, opIndex, 0u, nBytes, weight);
     return nBytes;
 }
 
 NnSize NnRootWeightLoader::loadAll(const char *opName, NnUint opIndex, NnSize nBytes, NnByte *weight) {
-    //set offset to 0 for loading the whole weight.
-    try {
-        executor->loadWeight(opName, opIndex, 0, nBytes, weight);
-    } catch (...) {
+    executor->loadWeight(opName, opIndex, 0u, nBytes, weight);
 
+    if (nNodes > 1u) {
+        for (NnUint nodeIndex = 1u; nodeIndex < nNodes; nodeIndex++)
+            writeWeight(nodeIndex, opName, opIndex, 0u, nBytes, weight);
     }
     return nBytes;
 }
 
 NnSize NnRootWeightLoader::loadRowMatmulSlices(const char *opName, const NnUint opIndex, const NnUint expertIndex, NnRowMatmulSlice *slice, NnByte *weight) {
-    //set offset to 0 for loading the whole weight.
-    try {
-        executor->loadWeight(opName, opIndex, 0, slice->size.nBytes, weight);
-    } catch (...) {
-
+    const NnUint offset = expertIndex * slice->sliceSize.nBytes;
+    if (nNodes == 1u) {
+        executor->loadWeight(opName, opIndex, offset, slice->sliceSize.nBytes, weight);
+    } else {
+        allocate(slice->sliceSize.nBytes);
+        for (NnUint nodeIndex = 0; nodeIndex < nNodes; nodeIndex++) {
+            splitRowMatmulWeight(slice, nodeIndex, weight, temp);
+            if (nodeIndex == 0u)
+                executor->loadWeight(opName, opIndex, offset, slice->sliceSize.nBytes, temp);
+            else
+                writeWeight(nodeIndex, opName, opIndex, offset, slice->sliceSize.nBytes, temp);
+        }
     }
     return slice->size.nBytes;
 }
 
 NnSize NnRootWeightLoader::loadColMatmulSlices(const char *opName, const NnUint opIndex, const NnUint expertIndex, NnColMatmulSlice *slice, NnByte *weight) {
-    //set offset to 0 for loading the whole weight.
-    try {
-        executor->loadWeight(opName, opIndex, 0, slice->size.nBytes, weight);
-    } catch (...) {
-
+    const NnUint offset = expertIndex * slice->sliceSize.nBytes;
+    if (nNodes == 1) {
+        executor->loadWeight(opName, opIndex, offset, slice->sliceSize.nBytes, weight);
+    } else {
+        allocate(slice->sliceSize.nBytes);
+        for (NnUint nodeIndex = 0; nodeIndex < nNodes; nodeIndex++) {
+            splitColMatmulWeight(slice, nodeIndex, weight, temp);
+            if (nodeIndex == 0)
+                executor->loadWeight(opName, opIndex, offset, slice->sliceSize.nBytes, temp);
+            else
+                writeWeight(nodeIndex, opName, opIndex, offset, slice->sliceSize.nBytes, temp);
+        }
     }
     return slice->size.nBytes;
 }
@@ -917,4 +934,62 @@ void NnWorkerWeightReader::read() {
         printf("💿 Loaded %22s %3d, %12zu kB\n", opName, opIndex, nBytes / 1024);
     }
     printf("💿 Weights loaded\n");
+}
+
+NnLocalWeightLoader::NnLocalWeightLoader(NnExecutor *executor, NnUint nodeIndex, NnUint nNodes) {
+    this->executor = executor;
+    this->nodeIndex = nodeIndex;
+    this->nNodes = nNodes;
+    this->tempSize = 0;
+}
+
+NnLocalWeightLoader::~NnLocalWeightLoader() {
+    if (tempSize > 0)
+        delete[] temp;
+}
+
+void NnLocalWeightLoader::finish() {}
+
+void NnLocalWeightLoader::allocate(NnSize size) {
+    if (tempSize < size) {
+        if (tempSize > 0)
+            delete[] temp;
+        tempSize = size;
+        temp = new NnByte[size];
+    }
+}
+
+NnSize NnLocalWeightLoader::loadRoot(const char *opName, NnUint opIndex, NnSize nBytes, NnByte *weight) {
+    if (nodeIndex == 0)
+        executor->loadWeight(opName, opIndex, 0u, nBytes, weight);
+    return nBytes;
+}
+
+NnSize NnLocalWeightLoader::loadAll(const char *opName, NnUint opIndex, NnSize nBytes, NnByte *weight) {
+    executor->loadWeight(opName, opIndex, 0u, nBytes, weight);
+    return nBytes;
+}
+
+NnSize NnLocalWeightLoader::loadRowMatmulSlices(const char *opName, const NnUint opIndex, const NnUint expertIndex, NnRowMatmulSlice *slice, NnByte *weight) {
+    const NnUint offset = expertIndex * slice->sliceSize.nBytes;
+    if (nNodes == 1u) {
+        executor->loadWeight(opName, opIndex, offset, slice->sliceSize.nBytes, weight);
+        return slice->size.nBytes;
+    }
+    allocate(slice->sliceSize.nBytes);
+    splitRowMatmulWeight(slice, nodeIndex, weight, temp);
+    executor->loadWeight(opName, opIndex, offset, slice->sliceSize.nBytes, temp);
+    return slice->size.nBytes;
+}
+
+NnSize NnLocalWeightLoader::loadColMatmulSlices(const char *opName, const NnUint opIndex, const NnUint expertIndex, NnColMatmulSlice *slice, NnByte *weight) {
+    const NnUint offset = expertIndex * slice->sliceSize.nBytes;
+    if (nNodes == 1u) {
+        executor->loadWeight(opName, opIndex, offset, slice->sliceSize.nBytes, weight);
+        return slice->size.nBytes;
+    }
+    allocate(slice->sliceSize.nBytes);
+    splitColMatmulWeight(slice, nodeIndex, weight, temp);
+    executor->loadWeight(opName, opIndex, offset, slice->sliceSize.nBytes, temp);
+    return slice->size.nBytes;
 }

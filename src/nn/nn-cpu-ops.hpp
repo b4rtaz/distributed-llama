@@ -29,11 +29,6 @@ typedef struct {
 
     NnByte *weight;
     NnSize3D weightSize;
-    
-    // distributed execution parameters
-    NnUint nodeIndex;
-    NnUint nNodes;
-    
 } NnCpuOpContext;
 
 typedef void (*NnCpuOpForwardInit)(NnCpuOpContext *context);
