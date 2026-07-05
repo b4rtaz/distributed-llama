@@ -22,6 +22,7 @@ typedef SSIZE_T ssize_t;
 
 #define ACK 23571114
 #define MAX_CHUNK_SIZE 4096
+#define MAX_WIRE_STRING 4096
 
 static inline bool isEagainError() {
     #ifdef _WIN32
@@ -640,9 +641,13 @@ static void writeString(NnNetwork *network, NnUint socketIndex, char *str) {
 static char *readString(NnNetwork *network, NnUint socketIndex) {
     NnUint bytes;
     network->read(socketIndex, &bytes, sizeof(NnUint));
-    char *str = new char[bytes];
-    network->read(socketIndex, str, bytes);
-    return str;
+    if (bytes == 0 || bytes > MAX_WIRE_STRING)
+        throw std::runtime_error("readString: invalid string length");
+    std::unique_ptr<char[]> str(new char[bytes]);
+    network->read(socketIndex, str.get(), bytes);
+    if (str[bytes - 1] != '\0')
+        throw std::runtime_error("readString: unterminated string");
+    return str.release();
 }
 
 NnRootConfigWriter::NnRootConfigWriter(NnNetwork *network) {
@@ -922,9 +927,13 @@ void NnWorkerWeightReader::read() {
             }
             break;
         }
+        if (nameSize > MAX_WIRE_STRING)
+            throw std::runtime_error("read: op name too long");
         std::unique_ptr<char[]> opNamePtr(new char[nameSize]);
         char *opName = opNamePtr.get();
         network->read(ROOT_SOCKET_INDEX, opName, nameSize);
+        if (opName[nameSize - 1] != '\0')
+            throw std::runtime_error("read: unterminated op name");
         network->read(ROOT_SOCKET_INDEX, &opIndex, sizeof(opIndex));
         network->read(ROOT_SOCKET_INDEX, &offset, sizeof(offset));
         network->read(ROOT_SOCKET_INDEX, &nBytes, sizeof(nBytes));
