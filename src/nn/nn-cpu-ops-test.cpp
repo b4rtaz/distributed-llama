@@ -525,8 +525,8 @@ void testSelectiveScan() {
         qkv[2 * ssmKeyDim + i] = (float)(i + 1);  // [1, 2, 3, 4, 5, 6, 7, 8]
 
     // Weight: A_log and dt_bias per head
-    // Weight: [A_log × nHeads] [dt_bias × nHeads] [norm_weight × (stateDim × nHeads)]
-    float weight[2 * nHeads + stateDim * nHeads];
+    // Weight: [A_log × nHeads] [dt_bias × nHeads] [norm_weight × stateDim]
+    float weight[2 * nHeads + stateDim];
     // A_log = [-2.0, -1.0] → A = exp(-exp(A_log))
     weight[0] = -2.0f;
     weight[1] = -1.0f;
@@ -534,7 +534,7 @@ void testSelectiveScan() {
     weight[2] = 0.0f;
     weight[3] = 0.0f;
     // norm_weight: all 1.0 so norm is a no-op (no effect on output)
-    for (NnUint i = 0; i < stateDim * nHeads; i++)
+    for (NnUint i = 0; i < stateDim; i++)
         weight[4 + i] = 1.0f;
 
     // a_buf and b_buf: per-head per-token scalar (set to 0 so sigmoid = 0.5)
@@ -589,11 +589,6 @@ void testSelectiveScan() {
     for (NnUint i = 0; i < valueDim; i++)
         sumSq += qkv[2 * ssmKeyDim + i] * qkv[2 * ssmKeyDim + i];
     float invRms = 1.0f / sqrtf(sumSq / (float)valueDim + config.normEpsilon);
-
-    // Norm weight is all 1.0
-    float normWeight[stateDim * nHeads];
-    for (NnUint i = 0; i < stateDim * nHeads; i++)
-        normWeight[i] = 1.0f;
 
     // Expected state (before z-gate)
     float expectedState[valueDim];

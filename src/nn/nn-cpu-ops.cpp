@@ -1625,8 +1625,8 @@ static void selectiveScanForward_F32_F32(NnUint nThreads, NnUint threadIndex, Nn
     ASSERT_EQ(nChannelsTotal, 2 * config->ssmKeyDim + valueDim);
     const NnUint valueOff = 2 * config->ssmKeyDim;
 
-    // A_log, dt_bias, norm from weight:
-    // [0..nHeads-1]: A_log, [nHeads..2*nHeads-1]: dt_bias, [2*nHeads..]: norm (stateDim × nHeads)
+    // A_log, dt_bias, norm from weight (shared across heads):
+    // [0..nHeads-1]: A_log, [nHeads..2*nHeads-1]: dt_bias, [2*nHeads..]: norm (stateDim, shared)
     float *params = (float *)context->weight;
     float *normWeight = params + 2 * nHeads;
 
@@ -1655,7 +1655,7 @@ static void selectiveScanForward_F32_F32(NnUint nThreads, NnUint threadIndex, Nn
 
             float *hState = &ssmState[h * stateDim];
             float *x = &value[h * stateDim];
-            float *nw = &normWeight[h * stateDim];
+            float *nw = normWeight;
 
             for (NnUint d = 0; d < stateDim; d++) {
                 float normed = x[d] * invRms * nw[d];

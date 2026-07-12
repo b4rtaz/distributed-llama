@@ -899,13 +899,12 @@ void loadLlmNetWeight(const char *path, LlmNet *net, NnRootWeightLoader *loader)
                 b += loader->loadRowMatmulSlices("block_matmul_z", layerIndex, 0u, &net->inProjZSlice, b);
                 b += loader->loadRowMatmulSlices("block_matmul_a", layerIndex, 0u, &net->inProjASlice, b);
                 b += loader->loadRowMatmulSlices("block_matmul_b", layerIndex, 0u, &net->inProjBSlice, b);
-                // 8. post-conv norm.weight (HF shape: ssmHeadVDim, not per-head)
+                // 8. post-conv norm.weight (shared across heads, HF shape: ssmHeadVDim)
                 NnSize normF32 = size1D(F_32, net->ssmDimM).nBytes;
-                for (NnUint nIdx = 0u; nIdx < net->netConfig.nNodes; nIdx++) {
+                {
                     NnSize offsetInOp = 2 * paramF32;
-                    if (nIdx == 0u)
-                        loader->loadRootWithOffset("block_selective_scan", layerIndex, offsetInOp, normF32, b);
-                    else
+                    loader->loadRootWithOffset("block_selective_scan", layerIndex, offsetInOp, normF32, b);
+                    for (NnUint nIdx = 1u; nIdx < net->netConfig.nNodes; nIdx++)
                         loader->writeWeight(nIdx, "block_selective_scan", layerIndex, offsetInOp, normF32, b);
                     b += normF32;
                 }
