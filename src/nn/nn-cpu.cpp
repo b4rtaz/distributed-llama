@@ -50,6 +50,7 @@ NnCpuDevice::NnCpuDevice(NnNetConfig *netConfig, NnNodeConfig *nodeConfig, NnNet
     for (NnUint bufferIndex = 0; bufferIndex < nBuffers; bufferIndex++) {
         NnBufferConfig *config = &nodeConfig->buffers[bufferIndex];
         NnByte *buffer = allocAlignedBuffer(config->size.nBytes);
+        std::memset(buffer, 0, config->size.nBytes);
         buffers[bufferIndex] = buffer;
     }
 

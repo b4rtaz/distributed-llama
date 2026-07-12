@@ -246,16 +246,18 @@ NnColMatmulSlice sliceColMatmul(NnFloatType type, NnUint nNodes, NnUint n, NnUin
     return s;
 }
 
-NnRopeSlice sliceRope(NnRopeType type, NnUint qDim, NnUint kvDim, NnUint nKvHeads, NnUint nNodes, NnUint seqLen, NnUint headDim, float ropeTheta, NnUint nodeIndex) {
+NnRopeSlice sliceRope(NnRopeType type, NnUint qDim, NnUint kvDim, NnUint nKvHeads, NnUint nNodes, NnUint seqLen, NnUint headDim, float ropeTheta, float partialRotaryFactor, NnUint nodeIndex) {
     NnRopeSlice s;
     assert(qDim >= kvDim);
     assert(qDim % nNodes == 0);
     assert(kvDim % nNodes == 0);
-
     s.kvDim = kvDim;
-    s.nKvHeads = nKvHeads;
+    s.qDim0 = qDim / nNodes;
+    s.kvDim0 = kvDim / nNodes;
     s.seqLen = seqLen;
     s.headDim = headDim;
+    s.rotatedHeadDim = (NnUint)((float)headDim * partialRotaryFactor + 0.5f);
+    s.nKvHeads = nKvHeads;
     s.ropeTheta = ropeTheta;
 
     s.qDim0 = qDim / nNodes;
@@ -349,10 +351,13 @@ static inline float scaleFrequencyLlama3(const float freq, const NnRopeOpConfig 
 static inline void fullfillRopeLlamaCache(const NnRopeOpConfig *config, float *cache) {
     assert((config->slice.qDimEnd - config->slice.kvDimStart) % 2 == 0);
 
+    const NnUint rotatedHeadDim = config->slice.rotatedHeadDim;
     const bool applyScaling = config->ropeScalingFactor != 1.0f;
     for (NnUint pos = 0; pos < config->slice.seqLen; pos++) {
         for (NnUint i = config->slice.kvDimStart; i < config->slice.qDimEnd; i += 2) {
             const NnUint h = i % config->slice.headDim;
+            if (h >= rotatedHeadDim)
+                continue;
             float freq = 1.0f / powf(config->slice.ropeTheta, h / (float)config->slice.headDim);
             if (applyScaling)
                 freq = scaleFrequencyLlama3(freq, config);

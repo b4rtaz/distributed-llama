@@ -881,15 +881,24 @@ static void copy_UNK(NnByte *output, const NnByte *x, NnSize size, const NnUint 
 
 
 static void ropeLlama_F32(float* x, const float *cache, bool isQ, const NnUint pos, const NnRopeSlice *slice, const NnUint nThreads, const NnUint threadIndex) {
-    const NnUint dim0Half = (isQ ? slice->qDim0 : slice->kvDim0) / 2;
+    const NnUint headDim = slice->headDim;
+    const NnUint rotatedHeadDim = slice->rotatedHeadDim;
+    const NnUint dim0Total = (isQ ? slice->qDim0 : slice->kvDim0);
+    const NnUint nHeads = dim0Total / headDim;
+    const NnUint rotatedPairs = nHeads * rotatedHeadDim / 2;
     const NnUint shift = isQ ? slice->qShift : 0;
-    SPLIT_THREADS(s, e, dim0Half, nThreads, threadIndex);
-    const NnUint iStart = s * 2;
-    const NnUint iEnd = e * 2;
+
+    if (rotatedPairs == 0)
+        return;
+
+    SPLIT_THREADS(s, e, rotatedPairs, nThreads, threadIndex);
 
     const float *posCache = &cache[pos * slice->sliceDim + shift];
 
-    for (NnUint i = iStart; i < iEnd; i += 2) {
+    for (NnUint idx = s; idx < e; idx++) {
+        const NnUint h = idx / (rotatedHeadDim / 2);
+        const NnUint p = idx % (rotatedHeadDim / 2);
+        const NnUint i = h * headDim + p * 2;
         const float fcr = posCache[i];
         const float fci = posCache[i + 1];
         const float v0 = x[i];
