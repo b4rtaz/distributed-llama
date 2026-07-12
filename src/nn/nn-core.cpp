@@ -88,6 +88,10 @@ const char *opCodeToString(NnOpCode code) {
     if (code == OP_SHIFT) return "SHIFT";
     if (code == OP_SOFTMAX) return "SOFTMAX";
     if (code == OP_MOE_GATE) return "MOE_GATE";
+    if (code == OP_SSM_CONV) return "SSM_CONV";
+    if (code == OP_SELECTIVE_SCAN) return "SELECTIVE_SCAN";
+    if (code == OP_MUL_SILU) return "MUL_SILU";
+    if (code == OP_MROPE) return "MROPE";
     throw std::invalid_argument("Unknown op code: " + std::to_string(code));
 }
 
@@ -259,7 +263,10 @@ NnRopeSlice sliceRope(NnRopeType type, NnUint qDim, NnUint kvDim, NnUint nKvHead
     assert(s.qDim0 % 2 == 0);
     assert(s.kvDim0 % 2 == 0);
 
-    if (type == ROPE_LLAMA || type == ROPE_LLAMA3_1) {
+    // For text-only inputs, multimodal-RoPE (Qwen3.5 / Qwen-VL) reduces to standard 1D RoPE
+    // because the three position components (t, h, w) are equal. We therefore share LLaMA's
+    // cache layout and per-node slicing with ROPE_MULTIMODAL.
+    if (type == ROPE_LLAMA || type == ROPE_LLAMA3_1 || type == ROPE_MULTIMODAL) {
         s.kvDimStart = s.kvDim0 * nodeIndex;
         s.qDimStart = s.qDim0 * nodeIndex;
         s.qDimEnd = s.qDimStart + s.qDim0;
@@ -374,7 +381,7 @@ static inline void fullfillRopeFalconCache(const NnRopeOpConfig *config, float *
 }
 
 void fullfillRopeCache(const NnRopeOpConfig *config, float *cache) {
-    if (config->type == ROPE_LLAMA || config->type == ROPE_LLAMA3_1)
+    if (config->type == ROPE_LLAMA || config->type == ROPE_LLAMA3_1 || config->type == ROPE_MULTIMODAL)
         fullfillRopeLlamaCache(config, cache);
     else if (config->type == ROPE_FALCON)
         fullfillRopeFalconCache(config, cache);

@@ -448,6 +448,46 @@ static void matmul_Q80_Q40_F32(float *output, const NnBlockQ80 *x, const NnBlock
 #endif
 }
 
+static void matmul_Q80_F32_F32(float *output, const NnBlockQ80 *x, const float *w, const NnUint n, const NnUint d, const NnUint nThreads, const NnUint threadIndex) {
+    const NnUint nBlocks = n / Q80_BLOCK_SIZE;
+    SPLIT_THREADS(start, end, d, nThreads, threadIndex);
+    for (NnUint i = start; i < end; i++) {
+        float sum = 0.0f;
+        for (NnUint j = 0; j < nBlocks; j++) {
+            const NnBlockQ80 *xb = &x[j];
+            const float *wb = &w[i * n + j * Q80_BLOCK_SIZE];
+            const float xd = CONVERT_F16_TO_F32(xb->d);
+            for (NnUint k = 0; k < Q80_BLOCK_SIZE; k++) {
+                sum += xb->qs[k] * xd * wb[k];
+            }
+        }
+        output[i] = sum;
+    }
+}
+
+static void matmulForward_Q80_F32_F32(NnUint nThreads, NnUint threadIndex, NnUint batchSize, NnCpuOpContext *context) {
+    const NnMatmulOpConfig *config = (NnMatmulOpConfig *)context->opConfig;
+    const NnUint nActiveExpertsOr1 = std::max(config->nActiveExperts, 1u);
+    const float *activeExpertIndexes = (const float *)context->buffers[config->activeExpertIndexesBufferIndex];
+    for (NnUint y = 0; y < batchSize; y++) {
+        for (NnUint e = 0; e < nActiveExpertsOr1; e++) {
+            const NnUint activeExpertIndex = config->nActiveExperts == 0u
+                ? 0u
+                : (NnUint)activeExpertIndexes[y * config->nActiveExperts + e];
+            float *output = (float *)context->output[e * context->outputSize.y + y];
+            matmul_Q80_F32_F32(
+                output,
+                (NnBlockQ80 *)context->input[e * context->inputSize.y + y],
+                (float *)&context->weight[activeExpertIndex * context->weightSize.nBytesXY],
+                context->weightSize.y,
+                context->weightSize.x,
+                nThreads,
+                threadIndex);
+            DEBUG_VECTOR(context, "output", output);
+        }
+    }
+}
+
 #define SQRT_2_OVER_PI 0.79788456080286535587989211986876f
 #define GELU_COEF_A 0.044715f
 
@@ -1135,6 +1175,46 @@ static bool matmulForward_llamafile(NnUint nThreads, NnUint threadIndex, NnUint 
     );
 }
 
+static void matmul_F32_Q40_F32(float *output, const float *x, const NnBlockQ40 *w, const NnUint n, const NnUint d, const NnUint nThreads, const NnUint threadIndex) {
+    const NnUint nBlocks = n / Q40_BLOCK_SIZE;
+    SPLIT_THREADS(start, end, d, nThreads, threadIndex);
+    for (NnUint i = start; i < end; i++) {
+        float sum = 0.0f;
+        for (NnUint j = 0; j < nBlocks; j++) {
+            const NnBlockQ40 *wb = &w[i * nBlocks + j];
+            const float ds = CONVERT_F16_TO_F32(wb->d);
+            for (NnUint k = 0; k < Q40_BLOCK_SIZE / 2; k++) {
+                const NnUint off = j * Q40_BLOCK_SIZE + k * 2;
+                sum += ds * (((int)(wb->qs[k] & 0x0F) - 8) * x[off] + ((int)(wb->qs[k] >> 4) - 8) * x[off + 1]);
+            }
+        }
+        output[i] = sum;
+    }
+}
+
+static void matmulForward_F32_Q40_F32(NnUint nThreads, NnUint threadIndex, NnUint batchSize, NnCpuOpContext *context) {
+    const NnMatmulOpConfig *config = (NnMatmulOpConfig *)context->opConfig;
+    const NnUint nActiveExpertsOr1 = std::max(config->nActiveExperts, 1u);
+    const float *activeExpertIndexes = (const float *)context->buffers[config->activeExpertIndexesBufferIndex];
+    for (NnUint y = 0; y < batchSize; y++) {
+        for (NnUint e = 0; e < nActiveExpertsOr1; e++) {
+            const NnUint activeExpertIndex = config->nActiveExperts == 0u
+                ? 0u
+                : (NnUint)activeExpertIndexes[y * config->nActiveExperts + e];
+            float *output = (float *)context->output[e * context->outputSize.y + y];
+            matmul_F32_Q40_F32(
+                output,
+                (float *)context->input[e * context->inputSize.y + y],
+                (NnBlockQ40 *)&context->weight[activeExpertIndex * context->weightSize.nBytesXY],
+                context->weightSize.y,
+                context->weightSize.x,
+                nThreads,
+                threadIndex);
+            DEBUG_VECTOR(context, "output", output);
+        }
+    }
+}
+
 static void matmulForward_F32_F32_F32(NnUint nThreads, NnUint threadIndex, NnUint batchSize, NnCpuOpContext *context) {
     if (matmulForward_llamafile(nThreads, threadIndex, batchSize, context))
         return;
@@ -1235,7 +1315,9 @@ static void ropeForward_F32_F32(NnUint nThreads, NnUint threadIndex, NnUint batc
     for (NnUint batchIndex = 0; batchIndex < batchSize; batchIndex++) {
         float *x = (float *)context->input[batchIndex];
         const NnUint pos = (NnUint)positions[batchIndex];
-        if (config->type == ROPE_LLAMA || config->type == ROPE_LLAMA3_1)
+        // ROPE_MULTIMODAL shares ROPE_LLAMA's implementation for text-only inputs
+        // (mrope degenerates to standard RoPE when t == h == w == pos).
+        if (config->type == ROPE_LLAMA || config->type == ROPE_LLAMA3_1 || config->type == ROPE_MULTIMODAL)
             ropeLlama_F32(x, cache, isQ, pos, slice, nThreads, threadIndex);
         else if (config->type == ROPE_FALCON)
             ropeFalcon_F32(x, cache, isQ, pos, slice, nThreads, threadIndex);
@@ -1459,6 +1541,169 @@ static void initMoeGateForward(NnCpuOpContext *context) {
     ASSERT_EQ(context->outputSize.x, 1u);
 }
 
+// ========== SSM depthwise conv1d ==========
+
+static void initSsmConvForward_F32(NnCpuOpContext *context) {
+    const NnSsmConvOpConfig *config = (NnSsmConvOpConfig *)context->opConfig;
+    assert(config->convKernelDim == 4);
+    assert(context->weightSize.nBytes > 0);
+}
+
+static void ssmConvForward_F32_F32(NnUint nThreads, NnUint threadIndex, NnUint batchSize, NnCpuOpContext *context) {
+    const NnSsmConvOpConfig *config = (NnSsmConvOpConfig *)context->opConfig;
+    const NnUint kernelDim = config->convKernelDim;
+    const NnUint nChannels = context->inputSize.x;
+    const NnUint nState = kernelDim - 1;
+    const NnFloatType weightType = context->weightSize.floatType;
+
+    float *convState = (float *)context->buffers[config->stateBufferIndex];
+
+    for (NnUint batchIndex = 0; batchIndex < batchSize; batchIndex++) {
+        float *x = (float *)context->input[batchIndex];
+        float *y = (float *)context->output[batchIndex];
+
+        for (NnUint c = threadIndex; c < nChannels; c += nThreads) {
+            float kernel[4];
+            NnSize elemOff = c * kernelDim;
+            if (weightType == F_32) {
+                float *kw = (float *)context->weight;
+                for (NnUint k = 0; k < kernelDim; k++)
+                    kernel[k] = kw[elemOff + k];
+            } else if (weightType == F_Q40) {
+                for (NnUint k = 0; k < kernelDim; k++) {
+                    NnUint gIdx = elemOff + k;
+                    NnUint bIdx = gIdx / Q40_BLOCK_SIZE;
+                    NnUint bOff = gIdx % Q40_BLOCK_SIZE;
+                    NnBlockQ40 *block = &((NnBlockQ40 *)context->weight)[bIdx];
+                    float d = CONVERT_F16_TO_F32(block->d);
+                    int q;
+                    if (bOff < Q40_BLOCK_SIZE / 2)
+                        q = (block->qs[bOff] & 0x0F) - 8;
+                    else
+                        q = (block->qs[bOff - Q40_BLOCK_SIZE / 2] >> 4) - 8;
+                    kernel[k] = d * q;
+                }
+            } else {
+                throw std::runtime_error("Unsupported SSM conv weight type");
+            }
+
+            float sum = kernel[kernelDim - 1] * x[c];
+            for (NnUint k = 0; k < nState; k++)
+                sum += kernel[k] * convState[c * nState + k];
+            y[c] = sum;
+
+            for (NnUint k = 0; k < nState - 1; k++)
+                convState[c * nState + k] = convState[c * nState + k + 1];
+            convState[c * nState + nState - 1] = x[c];
+        }
+    }
+}
+
+// ========== Selective scan (GatedDeltaNet) ==========
+
+static void initSelectiveScanForward_F32(NnCpuOpContext *context) {
+    const NnSelectiveScanOpConfig *config = (NnSelectiveScanOpConfig *)context->opConfig;
+    assert(config->stateDim > 0);
+    assert(config->nHeads > 0);
+}
+
+static void selectiveScanForward_F32_F32(NnUint nThreads, NnUint threadIndex, NnUint batchSize, NnCpuOpContext *context) {
+    const NnSelectiveScanOpConfig *config = (NnSelectiveScanOpConfig *)context->opConfig;
+    const NnUint stateDim = config->stateDim;
+    const NnUint nHeads = config->nHeads;
+    const NnUint kernelDim = 4;
+
+    float *aBuf = (float *)context->buffers[config->aBufferIndex];
+    float *bBuf = (float *)context->buffers[config->bBufferIndex];
+    float *zBuf = (float *)context->buffers[config->zBufferIndex];
+    float *ssmState = (float *)context->buffers[config->stateBufferIndex];
+
+    // The input qkv buffer contains [query, key, value] = [keyDim, keyDim, valueDim]
+    // The value portion starts at offset 2*keyDim and has length nHeads * stateDim
+    const NnUint nChannelsTotal = context->inputSize.x; // qkvChannel = n.inProjQkvSlice.d0
+    const NnUint valueDim = nHeads * stateDim;
+    ASSERT_EQ(nChannelsTotal, 2 * config->ssmKeyDim + valueDim);
+    const NnUint valueOff = 2 * config->ssmKeyDim;
+
+    // A_log, dt_bias, norm from weight:
+    // [0..nHeads-1]: A_log, [nHeads..2*nHeads-1]: dt_bias, [2*nHeads..]: norm (stateDim × nHeads)
+    float *params = (float *)context->weight;
+    float *normWeight = params + 2 * nHeads;
+
+    for (NnUint batchIndex = 0; batchIndex < batchSize; batchIndex++) {
+        float *qkv = (float *)context->input[batchIndex];  // full qkv buffer
+        float *value = qkv + valueOff;
+        float *y = (float *)context->output[batchIndex];
+
+        // Compute RMS norm over the value portion (each thread independently, redundant but correct)
+        float sumSq = 0.0f;
+        for (NnUint i = 0; i < (NnUint)valueDim; i++)
+            sumSq += value[i] * value[i];
+        float invRms = 1.0f / sqrtf(sumSq / (float)valueDim + config->normEpsilon);
+
+        for (NnUint h = threadIndex; h < nHeads; h += nThreads) {
+            float A_log = params[h];
+            float dt_bias = params[nHeads + h];
+            float a_val = aBuf[batchIndex * nHeads + h];
+            float b_val = bBuf[batchIndex * nHeads + h];
+
+            float A = expf(-expf(A_log));
+            float alpha = 1.0f / (1.0f + expf(-a_val));
+            float f = A * alpha;
+
+            float iGate = 1.0f / (1.0f + expf(-b_val));
+
+            float *hState = &ssmState[h * stateDim];
+            float *x = &value[h * stateDim];
+            float *nw = &normWeight[h * stateDim];
+
+            for (NnUint d = 0; d < stateDim; d++) {
+                float normed = x[d] * invRms * nw[d];
+                hState[d] = f * hState[d] + iGate * normed;
+                y[h * stateDim + d] = hState[d];
+            }
+        }
+
+        // Apply z gate: output *= silu(z)
+        float *z = &zBuf[batchIndex * valueDim];
+        for (NnUint i = threadIndex; i < (NnUint)valueDim; i += nThreads) {
+            float zv = z[i];
+            float silu_z = zv / (1.0f + expf(-zv));
+            y[i] *= silu_z;
+        }
+    }
+}
+
+// ========== MUL + SiLU fused ==========
+
+static void initMulSiluForward_F32(NnCpuOpContext *context) {
+    assert(context->weightSize.nBytes == 0);
+    ASSERT_EQ(context->inputSize.x, context->outputSize.x);
+    ASSERT_EQ(context->inputSize.y, context->outputSize.y);
+    ASSERT_EQ(context->inputSize.z, context->outputSize.z);
+}
+
+static void mulSiluForward_F32_F32(NnUint nThreads, NnUint threadIndex, NnUint batchSize, NnCpuOpContext *context) {
+    const NnMulSiluOpConfig *config = (NnMulSiluOpConfig *)context->opConfig;
+    const float *multiplier = (float *)context->buffers[config->multiplierBufferIndex];
+
+    for (NnUint z = 0u; z < context->inputSize.z; z++) {
+        const NnUint zOffset = z * context->inputSize.y;
+        for (NnUint y = 0u; y < batchSize; y++) {
+            float *output = (float *)context->output[zOffset + y];
+            float *input = (float *)context->input[zOffset + y];
+            const float *m = &multiplier[context->outputSize.x * (zOffset + y)];
+
+            SPLIT_THREADS(start, end, context->outputSize.x, nThreads, threadIndex);
+            for (NnUint i = start; i < end; i++) {
+                float mv = m[i];
+                float silu_m = mv / (1.0f + expf(-mv));
+                output[i] = input[i] * silu_m;
+            }
+        }
+    }
+}
+
 static void moeGateForward_F32_F32(NnUint nThreads, NnUint threadIndex, NnUint batchSize, NnCpuOpContext *context) {
     const NnMoeGateOpCodeConfig *config = (NnMoeGateOpCodeConfig *)context->opConfig;
     float *indexes = (float *)context->buffers[config->indexesBufferIndex];
@@ -1534,6 +1779,12 @@ NnCpuOpForwardInit getCpuOpForwardInit(NnOpCode code, NnOpQuantType quantType) {
         return initRepeatZForward;
     if (code == OP_MOE_GATE)
         return initMoeGateForward;
+    if (code == OP_SSM_CONV)
+        return initSsmConvForward_F32;
+    if (code == OP_SELECTIVE_SCAN)
+        return initSelectiveScanForward_F32;
+    if (code == OP_MUL_SILU)
+        return initMulSiluForward_F32;
     return nullptr;
 }
 
@@ -1558,7 +1809,9 @@ NnCpuOpForward getCpuOpForward(NnOpCode code, NnOpQuantType quantType) {
     }
     if (code == OP_MATMUL) {
         if (quantType == F32_F32_F32) return matmulForward_F32_F32_F32;
+        if (quantType == F32_Q40_F32) return matmulForward_F32_Q40_F32;
         if (quantType == Q80_Q40_F32) return matmulForward_Q80_Q40_F32;
+        if (quantType == Q80_F32_F32) return matmulForward_Q80_F32_F32;
     }
     if (code == OP_ROPE) {
         if (quantType == F32_F32_F32) return ropeForward_F32_F32;
@@ -1595,6 +1848,16 @@ NnCpuOpForward getCpuOpForward(NnOpCode code, NnOpQuantType quantType) {
     }
     if (code == OP_MOE_GATE) {
         if (quantType == F32_F32_F32) return moeGateForward_F32_F32;
+    }
+    if (code == OP_SSM_CONV) {
+        if (quantType == F32_F32_F32) return ssmConvForward_F32_F32;
+        if (quantType == F32_Q40_F32) return ssmConvForward_F32_F32;
+    }
+    if (code == OP_SELECTIVE_SCAN) {
+        if (quantType == F32_F32_F32) return selectiveScanForward_F32_F32;
+    }
+    if (code == OP_MUL_SILU) {
+        if (quantType == F32_F32_F32) return mulSiluForward_F32_F32;
     }
     return nullptr;
 }

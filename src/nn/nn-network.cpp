@@ -848,6 +848,10 @@ NnSize NnRootWeightLoader::loadRoot(const char *opName, NnUint opIndex, NnSize n
     return nBytes;
 }
 
+void NnRootWeightLoader::loadRootWithOffset(const char *opName, NnUint opIndex, NnSize offset, NnSize nBytes, NnByte *weight) {
+    executor->loadWeight(opName, opIndex, offset, nBytes, weight);
+}
+
 NnSize NnRootWeightLoader::loadAll(const char *opName, NnUint opIndex, NnSize nBytes, NnByte *weight) {
     executor->loadWeight(opName, opIndex, 0u, nBytes, weight);
 
