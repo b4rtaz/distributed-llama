@@ -112,6 +112,7 @@ public:
     ~NnRootWeightLoader();
     void writeWeight(NnUint nodeIndex, const char *opName, NnUint opIndex, NnSize offset, NnSize nBytes, NnByte *weight);
     NnSize loadRoot(const char *opName, NnUint opIndex, NnSize nBytes, NnByte *weight);
+    void loadRootWithOffset(const char *opName, NnUint opIndex, NnSize offset, NnSize nBytes, NnByte *weight);
     NnSize loadAll(const char *opName, NnUint opIndex, NnSize nBytes, NnByte *weight);
     NnSize loadRowMatmulSlices(const char *opName, const NnUint opIndex, const NnUint expertIndex, NnRowMatmulSlice *slice, NnByte *weight);
     NnSize loadColMatmulSlices(const char *opName, const NnUint opIndex, const NnUint expertIndex, NnColMatmulSlice *slice, NnByte *weight);

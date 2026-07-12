@@ -34,8 +34,23 @@ class TokensResolver:
     def resolvePreTrainedTokenizerFast(self):
         utb = unicodeToBytes()
         tokenizer = PreTrainedTokenizerFast(tokenizer_file = os.path.join(self.dirPath, 'tokenizer.json'))
-        config = openJson(os.path.join(self.dirPath, 'config.json'))
-        vocabLen = len(tokenizer.get_vocab())
+        tokenConfig = openJson(os.path.join(self.dirPath, 'config.json'))
+        tokenizerConfig = self.tokenizerConfig
+
+        # Register special tokens from tokenizer_config.json if not already set
+        specialTokens = {}
+        for st in ['eos_token', 'pad_token', 'unk_token', 'bos_token']:
+            if st in tokenizerConfig and tokenizerConfig[st] is not None:
+                specialTokens[st] = tokenizerConfig[st]
+        if specialTokens:
+            tokenizer.add_special_tokens(specialTokens)
+
+        # Enumerate main vocab + added tokens
+        tokenizerJson = openJson(os.path.join(self.dirPath, 'tokenizer.json'))
+        addedTokens = tokenizerJson.get('added_tokens', [])
+        maxAddedId = max((t['id'] for t in addedTokens if 'id' in t), default=-1)
+        vocabLen = max(len(tokenizer.get_vocab()), maxAddedId + 1)
+
         for i in range(vocabLen):
             tokenChars = list(tokenizer.convert_ids_to_tokens([i])[0])
             tokenBytes = []
@@ -47,26 +62,44 @@ class TokensResolver:
             self.tokens.append(bytes(tokenBytes))
             self.scores.append(-float(i))
 
-        # Pad tokenizer vocab to match model vocab_size if needed
-        targetVocabSize = config.get('vocab_size', vocabLen)
+        # Determine target vocab size from model config (top-level or text_config)
+        targetVocabSize = tokenConfig.get('vocab_size')
+        if targetVocabSize is None:
+            tc = tokenConfig.get('text_config', {})
+            targetVocabSize = tc.get('vocab_size', vocabLen)
+
         if targetVocabSize > vocabLen:
             print(f'⚠️ Padding tokenizer vocab from {vocabLen} to {targetVocabSize}')
             for i in range(vocabLen, targetVocabSize):
                 self.tokens.append(f'<|reserved_{i}|>'.encode('utf-8'))
                 self.scores.append(-float(i))
 
+        # Resolve BOS: tokenizer → tokenizer_config → model config → text_config
         self.bosId = tokenizer.bos_token_id
-        if (tokenizer.eos_token_id):
+        if self.bosId is None:
+            self.bosId = tokenizerConfig.get('bos_token_id')
+        if self.bosId is None:
+            self.bosId = tokenConfig.get('bos_token_id')
+        if self.bosId is None:
+            tc = tokenConfig.get('text_config', {})
+            self.bosId = tc.get('bos_token_id')
+
+        # Resolve EOS: tokenizer → model config (eos_token_id) → tokenizer_config string
+        if tokenizer.eos_token_id is not None:
             self.eosIds = [tokenizer.eos_token_id]
-        if (self.bosId is None or self.eosIds is None):
-            if (self.bosId is None):
-                self.bosId = config['bos_token_id']
-            if (self.eosIds is None):
-                self.eosIds = config['eos_token_id']
-                if isinstance(self.eosIds, list):
-                    self.eosIds = self.eosIds
-                else:
-                    self.eosIds = [self.eosIds]
+        else:
+            eos = tokenConfig.get('eos_token_id')
+            if eos is None:
+                tc = tokenConfig.get('text_config', {})
+                eos = tc.get('eos_token_id')
+            if eos is None:
+                eosStr = tokenizerConfig.get('eos_token')
+                if eosStr is not None:
+                    eos = tokenizer.convert_tokens_to_ids(eosStr)
+            if isinstance(eos, list):
+                self.eosIds = eos
+            elif eos is not None:
+                self.eosIds = [eos]
 
     def resolveLlamaTokenizer(self):
         modelPath = os.path.join(self.dirPath, 'tokenizer.model')
@@ -119,19 +152,29 @@ if __name__ == '__main__':
     resolver = TokensResolver(dirPath, tokenizerConfig)
     resolver.resolve()
 
-    if (resolver.bosId is None or resolver.eosIds is None):
-        raise Exception('Cannot resolve bosId or eosIds')
-    print(f'bosId: {resolver.bosId} ({resolver.tokens[resolver.bosId]})')
+    if (resolver.eosIds is None):
+        raise Exception('Cannot resolve eosIds')
+    if (resolver.bosId is None):
+        print('⚠️ No BOS token found, disabling add_bos')
+    else:
+        print(f'bosId: {resolver.bosId} ({resolver.tokens[resolver.bosId]})')
     for eosId in resolver.eosIds:
         print(f'eosId: {eosId} ({resolver.tokens[eosId]})')
 
     chatTemplate = None
     if ('chat_template' in tokenizerConfig):
         chatTemplate = tokenizerConfig['chat_template'].encode('utf-8')
+    if chatTemplate is None:
+        jinjaPath = os.path.join(dirPath, 'chat_template.jinja')
+        if os.path.exists(jinjaPath):
+            with open(jinjaPath, 'r', encoding='utf-8') as f:
+                chatTemplate = f.read().encode('utf-8')
 
     addBos = True
     if ('add_bos_token' in tokenizerConfig):
         addBos = tokenizerConfig['add_bos_token']
+    if (resolver.bosId is None):
+        addBos = False
 
     outputFileName = f'dllama_tokenizer_{name}.t'
     with open(outputFileName, 'wb') as outputFile:

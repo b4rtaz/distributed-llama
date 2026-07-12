@@ -1,7 +1,9 @@
+import datetime
 import gc
 import json
-import sys
 import os
+import sys
+import traceback
 from writer import parseFloatType, writeTensor, writeHeader, FloatType
 from safetensors import safe_open
 
@@ -9,6 +11,7 @@ class ArchType:
     LLAMA = 0xABCD00
     QWEN3 = 0xABCD01
     QWEN3_MOE = 0xABCD02
+    QWEN3_5 = 0xABCD03
 
 def permute(tensor, nHeads: int, nKvHeads: int):
     if nHeads != nKvHeads:
@@ -57,51 +60,116 @@ class Processor:
         return tensor
 
     def __preparePlan(self):
+        if self.archType == ArchType.QWEN3_5:
+            return self.__preparePlanQwen3_5()
+
         wt = self.config['weights_float_type']
         p = self.plan
+        prefix = self.config.get('prefix', 'model')
         p.append([FloatType.F32,
-            'model.embed_tokens.weight'])
+            f'{prefix}.embed_tokens.weight'])
         for l in range(0, self.config['n_layers']):
             p.append([wt, self.__transformQ,
-                f'model.layers.{l}.self_attn.q_proj.weight'])
+                f'{prefix}.layers.{l}.self_attn.q_proj.weight'])
             p.append([wt, self.__transformK,
-                f'model.layers.{l}.self_attn.k_proj.weight'])
+                f'{prefix}.layers.{l}.self_attn.k_proj.weight'])
             p.append([wt,
-                f'model.layers.{l}.self_attn.v_proj.weight'])
+                f'{prefix}.layers.{l}.self_attn.v_proj.weight'])
             p.append([wt,
-                f'model.layers.{l}.self_attn.o_proj.weight'])
+                f'{prefix}.layers.{l}.self_attn.o_proj.weight'])
 
             if (self.config['n_experts'] > 0):
-                p.append([FloatType.F32, f'model.layers.{l}.mlp.gate.weight'])
+                p.append([FloatType.F32, f'{prefix}.layers.{l}.mlp.gate.weight'])
                 for e in range(self.config['n_experts']):
                     p.append([wt,
-                        f'model.layers.{l}.mlp.experts.{e}.gate_proj.weight'])
+                        f'{prefix}.layers.{l}.mlp.experts.{e}.gate_proj.weight'])
                     p.append([wt,
-                        f'model.layers.{l}.mlp.experts.{e}.down_proj.weight'])
+                        f'{prefix}.layers.{l}.mlp.experts.{e}.down_proj.weight'])
                     p.append([wt,
-                        f'model.layers.{l}.mlp.experts.{e}.up_proj.weight'])
+                        f'{prefix}.layers.{l}.mlp.experts.{e}.up_proj.weight'])
             else:
                 p.append([wt,
-                    f'model.layers.{l}.mlp.gate_proj.weight'])
+                    f'{prefix}.layers.{l}.mlp.gate_proj.weight'])
                 p.append([wt,
-                    f'model.layers.{l}.mlp.down_proj.weight'])
+                    f'{prefix}.layers.{l}.mlp.down_proj.weight'])
                 p.append([wt,
-                    f'model.layers.{l}.mlp.up_proj.weight'])
+                    f'{prefix}.layers.{l}.mlp.up_proj.weight'])
 
             if (self.archType == ArchType.QWEN3 or self.archType == ArchType.QWEN3_MOE):
                 p.append([FloatType.F32,
-                    f'model.layers.{l}.self_attn.q_norm.weight'])
+                    f'{prefix}.layers.{l}.self_attn.q_norm.weight'])
                 p.append([FloatType.F32,
-                    f'model.layers.{l}.self_attn.k_norm.weight'])
+                    f'{prefix}.layers.{l}.self_attn.k_norm.weight'])
 
             p.append([FloatType.F32,
-                f'model.layers.{l}.input_layernorm.weight'])
+                f'{prefix}.layers.{l}.input_layernorm.weight'])
             p.append([FloatType.F32,
-                f'model.layers.{l}.post_attention_layernorm.weight'])
+                f'{prefix}.layers.{l}.post_attention_layernorm.weight'])
         p.append([FloatType.F32,
-            'model.norm.weight'])
+            f'{prefix}.norm.weight'])
         p.append([wt,
-            'lm_head.weight', 'model.embed_tokens.weight'])
+            'lm_head.weight', f'{prefix}.embed_tokens.weight'])
+
+    def __preparePlanQwen3_5(self):
+        wt = self.config['weights_float_type']
+        p = self.plan
+        prefix = self.config.get('prefix', 'model')
+        layerTypes = self.config['layer_types']
+
+        p.append([FloatType.F32, f'{prefix}.embed_tokens.weight'])
+
+        for l in range(self.config['n_layers']):
+            lt = layerTypes[l]
+
+            p.append([FloatType.F32,
+                f'{prefix}.layers.{l}.input_layernorm.weight'])
+
+            if lt == 'linear_attention':
+                p.append([FloatType.F32,
+                    f'{prefix}.layers.{l}.linear_attn.A_log'])
+                p.append([FloatType.F32,
+                    f'{prefix}.layers.{l}.linear_attn.dt_bias'])
+                p.append([wt,
+                    f'{prefix}.layers.{l}.linear_attn.conv1d.weight'])
+                p.append([wt,
+                    f'{prefix}.layers.{l}.linear_attn.in_proj_qkv.weight'])
+                p.append([wt,
+                    f'{prefix}.layers.{l}.linear_attn.in_proj_z.weight'])
+                p.append([FloatType.F32,
+                    f'{prefix}.layers.{l}.linear_attn.in_proj_a.weight'])
+                p.append([FloatType.F32,
+                    f'{prefix}.layers.{l}.linear_attn.in_proj_b.weight'])
+                p.append([FloatType.F32,
+                    f'{prefix}.layers.{l}.linear_attn.norm.weight'])
+                p.append([wt,
+                    f'{prefix}.layers.{l}.linear_attn.out_proj.weight'])
+            else:
+                p.append([wt,
+                    f'{prefix}.layers.{l}.self_attn.q_proj.weight'])
+                p.append([wt,
+                    f'{prefix}.layers.{l}.self_attn.k_proj.weight'])
+                p.append([wt,
+                    f'{prefix}.layers.{l}.self_attn.v_proj.weight'])
+                p.append([wt,
+                    f'{prefix}.layers.{l}.self_attn.o_proj.weight'])
+                p.append([FloatType.F32,
+                    f'{prefix}.layers.{l}.self_attn.q_norm.weight'])
+                p.append([FloatType.F32,
+                    f'{prefix}.layers.{l}.self_attn.k_norm.weight'])
+
+            p.append([FloatType.F32,
+                f'{prefix}.layers.{l}.post_attention_layernorm.weight'])
+            p.append([wt,
+                f'{prefix}.layers.{l}.mlp.gate_proj.weight'])
+            p.append([wt,
+                f'{prefix}.layers.{l}.mlp.down_proj.weight'])
+            p.append([wt,
+                f'{prefix}.layers.{l}.mlp.up_proj.weight'])
+
+        p.append([FloatType.F32,
+            f'{prefix}.norm.weight'])
+        p.append([wt,
+            'lm_head.weight', f'{prefix}.embed_tokens.weight'])
 
     def write(self, outputFile: str):
         self.__preparePlan()
@@ -110,7 +178,8 @@ class Processor:
         self.__loadModel(len(self.config['files']) - 1)
         self.__unloadModel()
 
-        for planItem in self.plan:
+        total = len(self.plan)
+        for planIndex, planItem in enumerate(self.plan):
             lookup = planItem[1:]
             transform = None
             if (callable(lookup[0])):
@@ -130,13 +199,20 @@ class Processor:
             self.__loadModel(modelIndex)
 
             tensor = None
+            matched_name = None
             for layerName in lookup:
                 if (layerName in self.currentModelKeys):
                     tensor = self.currentModel.get_tensor(layerName)
+                    matched_name = layerName
                     break
             if tensor is None:
-                raise Exception(f'Layer {lookup[0]} not found')
-            print(f'🔶 Writing tensor {layerName} {tensor.shape}...')
+                raise Exception(
+                    f'Layer not found at plan index {planIndex}/{total}: '
+                    f'lookups={list(lookup)}, '
+                    f'currentModelIndex={self.currentModelIndex}, '
+                    f'currentModelFile={self.config["files"][self.currentModelIndex] if self.currentModelIndex is not None else None}'
+                )
+            print(f'🔶 [{planIndex:4d}/{total}] Writing tensor {matched_name} {tensor.shape}...', flush=True)
 
             floatType = planItem[0]
             if (transform):
@@ -149,6 +225,7 @@ def parseArchType(type: str):
         'mistral': ArchType.LLAMA,
         'qwen3': ArchType.QWEN3,
         'qwen3_moe': ArchType.QWEN3_MOE,
+        'qwen3_5': ArchType.QWEN3_5,
     }.get(type)
     if (archType is None):
         raise Exception(f'Unsupported arch type: {type}')
@@ -165,6 +242,7 @@ def parseHiddenAct(act: str):
 
 def parseRopeType(rt: str):
     ropeType = {
+        'default': 3, # Qwen multimodal RoPE
         'llama3': 2, # LLAMA3_1
     }.get(rt)
     if (ropeType is None):
@@ -189,6 +267,58 @@ def loadConfig(folderPath: str, weightsFloatType: int):
             files.append(os.path.join(folderPath, fileName))
     if (len(files) == 0):
         raise Exception('Not found any model file')
+
+    modelType = config['model_type']
+
+    if modelType == 'qwen3_5':
+        tc = config['text_config']
+        result = {
+            'version': 0,
+            'arch_type': parseArchType(modelType),
+            'hidden_act': parseHiddenAct(tc['hidden_act']),
+            'dim': tc['hidden_size'],
+            'hidden_dim': tc['intermediate_size'],
+            'n_layers': tc['num_hidden_layers'],
+            'n_heads': tc['num_attention_heads'],
+            'n_kv_heads': tc['num_key_value_heads'],
+            'weights_float_type': weightsFloatType,
+            'max_seq_len': tc['max_position_embeddings'],
+            'vocab_size': tc['vocab_size'],
+            'files': files,
+            'n_experts': 0,
+            'n_active_experts': 0,
+            'prefix': 'model.language_model',
+            'layer_types': tc['layer_types'],
+        }
+
+        ropeParams = tc.get('rope_parameters', {})
+        result['rope_theta'] = int(ropeParams.get('rope_theta', 10000))
+        result['rope_type'] = parseRopeType(ropeParams.get('rope_type', 'default'))
+
+        headDim = tc.get('head_dim')
+        if headDim is not None:
+            result['head_dim'] = headDim
+
+        rmsNormEps = tc.get('rms_norm_eps')
+        if rmsNormEps is not None:
+            result['norm_epsilon'] = parseRmsNormEpsilon(rmsNormEps)
+
+        partialRF = tc.get('partial_rotary_factor', 1.0)
+        result['partial_rotary_factor'] = int(partialRF * 100)
+
+        attnGate = tc.get('attn_output_gate', False)
+        result['attn_output_gate'] = 1 if attnGate else 0
+
+        layerBits = 0
+        for i, lt in enumerate(tc['layer_types']):
+            if lt == 'full_attention':
+                layerBits |= (1 << i)
+        # Convert to signed int32 for the binary header
+        if layerBits >= 0x80000000:
+            layerBits -= 0x100000000
+        result['layer_type_bits'] = layerBits
+
+        return result
 
     result = {
         'version': 0,
@@ -252,14 +382,40 @@ if __name__ == '__main__':
     weightsFloatType = parseFloatType(sys.argv[2])
     name = sys.argv[3]
     outputFileName = f'dllama_model_{name}_{sys.argv[2]}.m'
+    tmpFileName = outputFileName + '.tmp'
 
     print(f'Output file: {outputFileName}')
 
     config = loadConfig(sourceFolderPath, weightsFloatType)
 
-    with open(outputFileName, 'wb') as outputFile:
-        writeHeader(outputFile, config)
-        processor = Processor(config)
-        processor.write(outputFile)
-
-    print(f'✅ {outputFileName} created successfully')
+    try:
+        with open(tmpFileName, 'wb') as outputFile:
+            writeHeader(outputFile, config)
+            processor = Processor(config)
+            processor.write(outputFile)
+        os.replace(tmpFileName, outputFileName)
+        print(f'✅ {outputFileName} created successfully')
+    except KeyboardInterrupt:
+        if os.path.exists(tmpFileName):
+            try:
+                os.remove(tmpFileName)
+            except OSError:
+                pass
+        print('\n🛑 Conversion aborted by user (Ctrl+C). Partial tmp removed.', flush=True)
+        raise
+    except Exception as e:
+        failed_name = f'{outputFileName}.failed-{int(datetime.datetime.now().timestamp() * 1_000_000)}'
+        if os.path.exists(tmpFileName):
+            try:
+                os.replace(tmpFileName, failed_name)
+                partial_size = os.path.getsize(failed_name)
+                print(f'\n❌ Conversion aborted: {type(e).__name__}: {e}', flush=True)
+                print(f'   Source safetensors file loaded: {[os.path.basename(f) for f in config["files"]]}', flush=True)
+                print(f'   Partial output preserved as: {failed_name} ({partial_size:,} bytes, {partial_size/1024**3:.2f} GiB)', flush=True)
+            except OSError as move_err:
+                print(f'\n❌ Conversion aborted: {type(e).__name__}: {e}', flush=True)
+                print(f'   Could not preserve partial output: {move_err}', flush=True)
+        else:
+            print(f'\n❌ Conversion aborted before any output was written: {type(e).__name__}: {e}', flush=True)
+        traceback.print_exc()
+        sys.exit(1)

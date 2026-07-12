@@ -146,8 +146,8 @@ Tokenizer::Tokenizer(const char* tokenizerPath)
     }
 
     // TODO: this is very unstable assumption that bosId splits regular and special vocab
-    regularVocabSize = bosId;
-    specialVocabSize = vocabSize - regularVocabSize;
+    regularVocabSize = bosId > 0 ? (NnUint)bosId : 0u;
+    specialVocabSize = (NnUint)vocabSize - regularVocabSize;
 
     regularVocab.reserve(regularVocabSize * 2);
     for (int i = 0; i < regularVocabSize; i++) {

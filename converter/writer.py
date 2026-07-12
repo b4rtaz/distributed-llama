@@ -27,50 +27,89 @@ def strFloatType(type):
     return floatTypeNames[type]
 
 def writeQuantizedQ40Tensor(file, x):
-    x = x.to(torch.float32).numpy().astype(np.float32)
+    """Writes Q40-quantized tensor, streaming in 256-block chunks.
+
+    Bounds peak RAM at ~80 KB (chunk working set) regardless of input size.
+    Per-block output: [float16 delta (2B), 16 nibble-packed uint8 values (16B)] = 18 bytes.
+    Byte layout matches the previous implementation on the wire.
+    """
     blockSize = 32
     blockHalfSize = blockSize // 2
-    assert(x.shape[0] % blockSize == 0)
-    groups = x.reshape(-1, blockSize)
-    gmax = np.max(groups, axis=1)
-    gmin = np.min(groups, axis=1)
-    deltas = np.divide(np.where(-gmin > gmax, gmin, gmax), -8)
-    deltas16 = deltas.astype(np.float16)
-    ids = np.where(deltas != 0, 1.0 / deltas, 0)
-    groups = np.add(groups * ids[:, np.newaxis], 8.5)
-    groups = np.clip(groups, 0, 15).astype(int)
 
-    gLow = groups[:, :blockHalfSize] & 0xF
-    gHigh = (groups[:, blockHalfSize:] & 0xF) << 4
-    gCombined = gLow | gHigh
+    # Flatten to 1D view (no copy if tensor is already contiguous F32)
+    x_flat = x.detach().to(torch.float32).reshape(-1)
+    n = x_flat.numel()
+    assert (n % blockSize == 0), f'Q40 quantization requires rows % 32 == 0 (got {n})'
+    nBlocks = n // blockSize
+
+    CHUNK_BLOCKS = 256  # 256 * 32 = 8192 elements (~32 KB F32) per chunk
 
     nBytes = 0
-    for groupIndex in range(0, len(groups)):
-        delta16 = deltas16[groupIndex]
-        buffer = struct.pack(f'e{blockHalfSize}B', delta16, *gCombined[groupIndex])
-        file.write(buffer)
-        nBytes += len(buffer)
+    for i in range(0, nBlocks, CHUNK_BLOCKS):
+        chunkEnd = i + CHUNK_BLOCKS if i + CHUNK_BLOCKS < nBlocks else nBlocks
+        chunkN = chunkEnd - i
+        # Per-chunk working set: ~80 KB F32, ~30 KB uint8 + small temps
+        chunk_np = x_flat[i * blockSize : chunkEnd * blockSize].cpu().numpy().astype(np.float32, copy=False)
+        blockView = chunk_np.reshape(chunkN, blockSize)
+        gmax = blockView.max(axis=1)
+        gmin = blockView.min(axis=1)
+        deltas = np.divide(np.where(-gmin > gmax, gmin, gmax), -8)
+        deltas16 = deltas.astype(np.float16)
+        ids = np.where(deltas != 0, 1.0 / deltas, 0)
+        # uint8 (not int!) to keep the clipped-quantized array in 1 byte/element
+        groups8 = np.clip(blockView * ids[:, np.newaxis] + 8.5, 0, 15).astype(np.uint8)
+        gLow = groups8[:, :blockHalfSize]
+        gHigh = (groups8[:, blockHalfSize:] << 4) & 0xF0
+        gCombined = (gLow | gHigh).astype(np.uint8)
+
+        # Interleave via numpy view: each row is [delta16(2B) | nibble-packed(16B)]
+        buf = np.empty((chunkN, 2 + blockHalfSize), dtype=np.uint8)
+        buf[:, 0:2] = deltas16.view(np.uint8).reshape(chunkN, 2)
+        buf[:, 2:2 + blockHalfSize] = gCombined
+        chunkBytes = buf.tobytes()
+        file.write(chunkBytes)
+        nBytes += len(chunkBytes)
+        # Free chunk intermediates so they don't accumulate across iterations
+        del chunk_np, blockView, gmax, gmin, deltas, deltas16, ids, groups8, gLow, gHigh, gCombined, buf, chunkBytes
     return nBytes
 
 def writeQuantizedQ80Tensor(file, x):
-    x = x.to(torch.float32).numpy().astype(np.float32)
+    """Writes Q80-quantized tensor, streaming in 256-block chunks.
+
+    Bounds peak RAM at ~80 KB regardless of input size.
+    Per-block output: [float16 delta (2B), 32 int8 values (32B)] = 34 bytes.
+    """
     blockSize = 32
-    assert(x.shape[0] % blockSize == 0)
-    groups = x.reshape(-1, blockSize)
-    gmax = np.max(groups, axis=1)
-    gmin = np.min(groups, axis=1)
-    gabsMax = np.where(-gmin > gmax, -gmin, gmax)
-    deltas = gabsMax / ((1 << 7) - 1)
-    deltas16 = deltas.astype(np.float16)
-    ids = np.where(deltas != 0, 1.0 / deltas, 0)
-    groups = groups * ids[:, np.newaxis]
-    groups8 = np.round(groups).astype(np.int8)
+
+    x_flat = x.detach().to(torch.float32).reshape(-1)
+    n = x_flat.numel()
+    assert (n % blockSize == 0), f'Q80 quantization requires rows % 32 == 0 (got {n})'
+    nBlocks = n // blockSize
+
+    CHUNK_BLOCKS = 256
 
     nBytes = 0
-    for groupIndex in range(0, len(groups)):
-        buffer = struct.pack(f'e{blockSize}b', deltas16[groupIndex], *groups8[groupIndex])
-        file.write(buffer)
-        nBytes += len(buffer)
+    for i in range(0, nBlocks, CHUNK_BLOCKS):
+        chunkEnd = i + CHUNK_BLOCKS if i + CHUNK_BLOCKS < nBlocks else nBlocks
+        chunkN = chunkEnd - i
+        chunk_np = x_flat[i * blockSize : chunkEnd * blockSize].cpu().numpy().astype(np.float32, copy=False)
+        blockView = chunk_np.reshape(chunkN, blockSize)
+        gmin = blockView.min(axis=1)
+        gmax = blockView.max(axis=1)
+        gabsMax = np.where(-gmin > gmax, -gmin, gmax)
+        deltas = gabsMax / ((1 << 7) - 1)
+        deltas16 = deltas.astype(np.float16)
+        ids = np.where(deltas != 0, 1.0 / deltas, 0)
+        groups8 = np.round(blockView * ids[:, np.newaxis]).astype(np.int8)
+
+        # Interleave: each row is [delta16(2B) | 32 int8 values(32B)]
+        buf = np.empty((chunkN, 2 + blockSize), dtype=np.uint8)
+        buf[:, 0:2] = deltas16.view(np.uint8).reshape(chunkN, 2)
+        buf[:, 2:2 + blockSize] = groups8.view(np.uint8).reshape(chunkN, blockSize)
+        chunkBytes = buf.tobytes()
+        file.write(chunkBytes)
+        nBytes += len(chunkBytes)
+        del chunk_np, blockView, gmin, gmax, gabsMax, deltas, deltas16, ids, groups8, buf, chunkBytes
     return nBytes
 
 def writeF32Tensor(file, d):
@@ -130,6 +169,9 @@ def writeHeader(file, params):
         'head_dim': 19,
         'norm_epsilon': 20,
         'moe_hidden_dim': 21,
+        'partial_rotary_factor': 22,
+        'attn_output_gate': 23,
+        'layer_type_bits': 24,
     }
     header = struct.pack('i', 0xA00ABCD)
 

@@ -230,9 +230,11 @@ bool WorkerLlmInference::tryReadControlPacket() {
 }
 
 void runInferenceApp(AppCliArgs *args, void (*handler)(AppInferenceContext *context)) {
+    printf("DBG: runInferenceApp start\n"); fflush(stdout);
     NnUint nNodes = args->nWorkers + 1;
 
     LlmHeader header = loadLlmHeader(args->modelPath, args->maxSeqLen, args->syncType);
+    printf("DBG: header loaded, arch=0x%X nLayers=%u\n", header.archType, header.nLayers); fflush(stdout);
     if (nNodes > header.nKvHeads)
         // TODO: https://github.com/b4rtaz/distributed-llama/issues/70
         throw std::runtime_error("This version does not support more nodes than the number of KV heads in the model");
@@ -244,8 +246,10 @@ void runInferenceApp(AppCliArgs *args, void (*handler)(AppInferenceContext *cont
         printf("Tokenizer vocab size (%d) does not match the model vocab size (%d)\n", tokenizer.vocabSize, header.vocabSize);
 
     Sampler sampler(tokenizer.vocabSize, args->temperature, args->topp, args->seed);
+    printf("DBG: tokenizer+sampler loaded\n"); fflush(stdout);
 
     LlmNet net = buildLlmNet(&header, nNodes, args->nBatches);
+    printf("DBG: net built\n"); fflush(stdout);
     std::unique_ptr<LlmNet, void(*)(LlmNet *)> netPtr(&net, releaseLlmNet);
 
     NnNodeConfig *rootNodeConfig = &net.nodeConfigs[0];
@@ -257,6 +261,7 @@ void runInferenceApp(AppCliArgs *args, void (*handler)(AppInferenceContext *cont
     }
 
     NnNetExecution execution(args->nThreads, &net.netConfig);
+    printf("DBG: execution created\n"); fflush(stdout);
 
     std::unique_ptr<NnNodeSynchronizer> synchronizer(nullptr);
     std::unique_ptr<NnNetwork> networkPtr(nullptr);
@@ -274,7 +279,9 @@ void runInferenceApp(AppCliArgs *args, void (*handler)(AppInferenceContext *cont
     }
 
     std::vector<NnExecutorDevice> devices = resolveDevices(args, &net.netConfig, rootNodeConfig, &execution);
+    printf("DBG: devices resolved (%zu devices)\n", devices.size()); fflush(stdout);
     NnExecutor executor(&net.netConfig, rootNodeConfig, &devices, &execution, synchronizer.get(), args->benchmark);
+    printf("DBG: executor created\n"); fflush(stdout);
 
     NnRootWeightLoader weightLoader(&executor, network, nNodes);
     loadLlmNetWeight(args->modelPath, &net, &weightLoader);

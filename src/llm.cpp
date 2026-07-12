@@ -17,6 +17,7 @@ static const char *ropeTypeToString(NnRopeType type) {
     if (type == ROPE_LLAMA) return "Llama";
     if (type == ROPE_LLAMA3_1) return "Llama3.1";
     if (type == ROPE_FALCON) return "Falcon";
+    if (type == ROPE_MULTIMODAL) return "Multimodal";
     throw std::runtime_error("Unsupported rope type");
 }
 
@@ -24,6 +25,7 @@ static const char *archTypeToString(LlmArchType type) {
     if (type == LLAMA) return "Llama";
     if (type == QWEN3) return "Qwen3";
     if (type == QWEN3_MOE) return "Qwen3 MoE";
+    if (type == QWEN3_5) return "Qwen3.5";
     throw std::runtime_error("Unsupported architecture");
 }
 
@@ -43,6 +45,9 @@ LlmHeader loadLlmHeader(const char *path, const NnUint maxSeqLen, NnFloatType sy
     header.ropeScalingFactor = 1.0f;
     header.normEpsilon = 1e-5f;
     header.moeHiddenDim = 0u;
+    header.partialRotaryFactor = 1.0f;
+    header.attnOutputGate = 0u;
+    header.layerTypeBits = 0u;
 
     std::unique_ptr<FILE, int(*)(FILE *)> fdPtr(fopen(path, "rb"), fclose);
     FILE *fd = fdPtr.get();
@@ -93,6 +98,9 @@ LlmHeader loadLlmHeader(const char *path, const NnUint maxSeqLen, NnFloatType sy
         else if (key == HEAD_DIM) header.headDim = value;
         else if (key == NORM_EPSILON) header.normEpsilon = convertNormEpsilon(value);
         else if (key == MOE_HIDDEN_DIM) header.moeHiddenDim = value;
+        else if (key == PARTIAL_ROTARY_FACTOR) header.partialRotaryFactor = (float)value / 100.0f;
+        else if (key == ATTN_OUTPUT_GATE) header.attnOutputGate = value;
+        else if (key == LAYER_TYPE_BITS) header.layerTypeBits = value;
         else throw std::runtime_error("Unsupported header key");
     }
 
@@ -146,6 +154,11 @@ void printLlmHeader(LlmHeader *header) {
             header->ropeScalingHighFreqFactory,
             header->ropeScalingOrigMaxSeqLen);
     }
+    if (header->archType == QWEN3_5) {
+        printf("💡 PartialRotaryFactor: %.2f\n", header->partialRotaryFactor);
+        printf("💡 AttnOutputGate: %u\n", header->attnOutputGate);
+        printf("💡 LayerTypeBits: 0x%08x\n", header->layerTypeBits);
+    }
 }
 
 LlmNet buildLlmNet(LlmHeader *h, NnUint nNodes, NnUint nBatches) {
@@ -178,12 +191,36 @@ LlmNet buildLlmNet(LlmHeader *h, NnUint nNodes, NnUint nBatches) {
     NnUint nQNormColumns = 1;
     NnUint nKNormColumns = 1;
     NnUint nInvBufferColumns = 1;
-    if (h->archType == QWEN3 || h->archType == QWEN3_MOE) {
+    // Qwen3 / Qwen3-MoE / Qwen3.5 all use per-head RMS-norm weights stored at headDim length.
+    if (h->archType == QWEN3 || h->archType == QWEN3_MOE || h->archType == QWEN3_5) {
         ASSERT_EQ(n.qSlice.d0 % h->headDim, 0);
         ASSERT_EQ(n.kSlice.d0 % h->headDim, 0);
         nQNormColumns = n.qSlice.d0 / h->headDim;
         nKNormColumns = n.kSlice.d0 / h->headDim;
         nInvBufferColumns = std::max(nQNormColumns, nKNormColumns);
+    }
+
+    // Qwen3.5: SSM dimension setup
+    NnUint ssmHeadVDim = 128;
+    NnUint nSsmHeads = 32;
+    NnUint valueDim = nSsmHeads * ssmHeadVDim;
+    NnUint nSsmKeyHeads = 16;
+    NnUint ssmKeyDim = nSsmKeyHeads * ssmHeadVDim;
+    NnUint ssmQkvDim = ssmKeyDim * 2 + valueDim;
+    if (h->archType == QWEN3_5) {
+        n.inProjQkvSlice = sliceRowMatmul(h->weightType, nNodes, h->dim, ssmQkvDim);
+        n.inProjZSlice = sliceRowMatmul(h->weightType, nNodes, h->dim, valueDim);
+        n.inProjASlice = sliceRowMatmul(F_32, nNodes, h->dim, nSsmHeads);
+        n.inProjBSlice = sliceRowMatmul(F_32, nNodes, h->dim, nSsmHeads);
+        // out_proj maps value=ssmQkvSlice.d(n=valueDim) -> dim (HF weight shape: (out=dim, in=valueDim), row-major)
+        n.ssmOutProjSlice = sliceColMatmul(h->weightType, nNodes, valueDim, h->dim);
+        n.conv1dWeightSize = size2D(h->weightType, ssmQkvDim / nNodes, 4);
+        n.qGateSlice = sliceRowMatmul(h->weightType, nNodes, h->dim, h->qDim);
+        n.ssmDim = ssmQkvDim;
+        n.ssmDimM = ssmHeadVDim;
+        n.ssmDimN = nSsmHeads;
+        n.ssmDimK = ssmKeyDim;
+        nInvBufferColumns = std::max(nInvBufferColumns, (NnUint)(valueDim / ssmHeadVDim));
     }
 
     NnNetConfigBuilder netBuilder(nNodes, nBatches);
@@ -257,13 +294,12 @@ LlmNet buildLlmNet(LlmHeader *h, NnUint nNodes, NnUint nBatches) {
         nodeBuilder.addSegment(start.build());
 
         for (NnUint layerIndex = 0; layerIndex < h->nLayers; layerIndex++) {
-            const NnUint kBufferIndex = nodeBuilder.addBuffer("k", kvCacheSlice.keySize);
-            const NnUint vBufferIndex = nodeBuilder.addBuffer("v", kvCacheSlice.valueSize);
-
+            NnUint kBufferIndex = 0;
+            NnUint vBufferIndex = 0;
             NnSegmentConfigBuilder att;
             NnSegmentConfigBuilder ff;
 
-            // att
+            // att segment start: cast or residual merge_add
             if (layerIndex == 0) {
                 att.addOp(
                     OP_CAST, "block_cast_x", layerIndex,
@@ -280,6 +316,7 @@ LlmNet buildLlmNet(LlmHeader *h, NnUint nNodes, NnUint nBatches) {
                     NnMergeAddOpCodeConfig{});
             }
 
+            // pre-norm (shared by all arch/layer types)
             att.addOp(
                 OP_INV_RMS, "block_norm_pre_0", layerIndex,
                 pointerBatchConfig(SRC_BUFFER, xBufferIndex),
@@ -300,102 +337,279 @@ LlmNet buildLlmNet(LlmHeader *h, NnUint nNodes, NnUint nBatches) {
                     size0(),
                     NnCastOpCodeConfig{});
             }
-            att.addOp(
-                OP_MATMUL, "block_matmul_q", layerIndex,
-                pointerBatchConfig(SRC_BUFFER, yqBufferIndex),
-                pointerBatchConfig(SRC_BUFFER, qBufferIndex),
-                size2D(h->weightType, n.qSlice.n, n.qSlice.d0),
-                NnMatmulOpConfig{0, 0, moeExpertIndexesBufferIndex});
-            att.addOp(
-                OP_MATMUL, "block_matmul_k", layerIndex,
-                pointerBatchConfig(SRC_BUFFER, yqBufferIndex),
-                pointerBatchConfig(SRC_BUFFER, kTempBufferIndex),
-                size2D(h->weightType, n.kSlice.n, n.kSlice.d0),
-                NnMatmulOpConfig{0, 0, moeExpertIndexesBufferIndex});
-            att.addOp(
-                OP_MATMUL, "block_matmul_v", layerIndex,
-                pointerBatchConfig(SRC_BUFFER, yqBufferIndex),
-                pointerBatchConfig(SRC_BUFFER, vTempBufferIndex),
-                size2D(h->weightType, n.vSlice.n, n.vSlice.d0),
-                NnMatmulOpConfig{0, 0, moeExpertIndexesBufferIndex});
 
-            if (h->archType == QWEN3 || h->archType == QWEN3_MOE) {
+            // ---- attention / SSM sub-graph (arch-dependent) ----
+            if (h->archType == QWEN3_5 && (h->layerTypeBits & (1u << layerIndex)) == 0) {
+                // ---- linear_attention (SSM) layer ----
+                const NnUint qkvBufferIndex = nodeBuilder.addBuffer("qkv", size2D(F_32, nBatches, n.inProjQkvSlice.d0));
+                const NnUint zSsmBufferIndex = nodeBuilder.addBuffer("z_ssm", size2D(F_32, nBatches, n.inProjZSlice.d0));
+                const NnUint aBufferIndex = nodeBuilder.addBuffer("a_ssm", size2D(F_32, nBatches, n.inProjASlice.d0));
+                const NnUint bBufferIndex = nodeBuilder.addBuffer("b_ssm", size2D(F_32, nBatches, n.inProjBSlice.d0));
+                // ssm_out holds the matmul_out INPUT of length valueDim
+                const NnUint ssmOutBufferIndex = nodeBuilder.addBuffer("ssm_out", size2D(F_32, nBatches, n.ssmOutProjSlice.n0));
+                // Persistent conv state (kernel_size-1 = 3 per channel)
+                const NnSize3D convStateSize = size2D(F_32, n.inProjQkvSlice.d0, 3);
+                const NnUint convStateBufferIndex = nodeBuilder.addBuffer("conv_state", convStateSize);
+                // Persistent SSM state (nHeads_per_node × stateDim)
+                const NnSize3D ssmStateSize = size2D(F_32, valueDim / nNodes, 1);
+                const NnUint ssmStateBufferIndex = nodeBuilder.addBuffer("ssm_state", ssmStateSize);
+
+                // in_proj_qkv
+                att.addOp(OP_MATMUL, "block_matmul_qkv", layerIndex,
+                    pointerBatchConfig(SRC_BUFFER, yqBufferIndex),
+                    pointerBatchConfig(SRC_BUFFER, qkvBufferIndex),
+                    size2D(h->weightType, n.inProjQkvSlice.n, n.inProjQkvSlice.d0),
+                    NnMatmulOpConfig{0, 0, moeExpertIndexesBufferIndex});
+                // in_proj_z
+                att.addOp(OP_MATMUL, "block_matmul_z", layerIndex,
+                    pointerBatchConfig(SRC_BUFFER, yqBufferIndex),
+                    pointerBatchConfig(SRC_BUFFER, zSsmBufferIndex),
+                    size2D(h->weightType, n.inProjZSlice.n, n.inProjZSlice.d0),
+                    NnMatmulOpConfig{0, 0, moeExpertIndexesBufferIndex});
+                // in_proj_a (always F32)
+                att.addOp(OP_MATMUL, "block_matmul_a", layerIndex,
+                    pointerBatchConfig(SRC_BUFFER, yqBufferIndex),
+                    pointerBatchConfig(SRC_BUFFER, aBufferIndex),
+                    size2D(F_32, n.inProjASlice.n, n.inProjASlice.d0),
+                    NnMatmulOpConfig{0, 0, moeExpertIndexesBufferIndex});
+                // in_proj_b (always F32)
+                att.addOp(OP_MATMUL, "block_matmul_b", layerIndex,
+                    pointerBatchConfig(SRC_BUFFER, yqBufferIndex),
+                    pointerBatchConfig(SRC_BUFFER, bBufferIndex),
+                    size2D(F_32, n.inProjBSlice.n, n.inProjBSlice.d0),
+                    NnMatmulOpConfig{0, 0, moeExpertIndexesBufferIndex});
+                // conv1d on qkv (depthwise, in-place, with persistent state)
+                att.addOp(OP_SSM_CONV, "block_ssm_conv", layerIndex,
+                    pointerBatchConfig(SRC_BUFFER, qkvBufferIndex),
+                    pointerBatchConfig(SRC_BUFFER, qkvBufferIndex),
+                    n.conv1dWeightSize,
+                    NnSsmConvOpConfig{4, n.inProjQkvSlice.d0, convStateBufferIndex});
+                // selective scan (value portion of conv output, a, b, plus A_log/dt_bias weights)
+                // weight: A_log + dt_bias + post-conv norm (per-node F32)
+                {
+                    NnUint nHeadsNode = n.ssmDimN / nNodes;
+                    att.addOp(OP_SELECTIVE_SCAN, "block_selective_scan", layerIndex,
+                        pointerBatchConfig(SRC_BUFFER, qkvBufferIndex),
+                        pointerBatchConfig(SRC_BUFFER, ssmOutBufferIndex),
+                        size1D(F_32, 2u * nHeadsNode + n.ssmDimM),
+                        NnSelectiveScanOpConfig{n.ssmDimM, nHeadsNode, n.ssmDimK / nNodes, aBufferIndex, bBufferIndex, zSsmBufferIndex, ssmStateBufferIndex, h->normEpsilon});
+                }
+                // out_proj
+                att.addOp(OP_MATMUL, "block_matmul_out", layerIndex,
+                    pointerBatchConfig(SRC_BUFFER, ssmOutBufferIndex),
+                    pointerBatchConfig(SRC_BUFFER, yBufferIndex),
+                    size2D(h->weightType, n.ssmOutProjSlice.n0, n.ssmOutProjSlice.d),
+                    NnMatmulOpConfig{0, 0, moeExpertIndexesBufferIndex});
+
+            } else if (h->archType == QWEN3_5) {
+                // ---- full_attention layer (Qwen3.5) ----
+                // The HF Qwen3.5 attention with `attn_output_gate=True` produces Q and
+                // gate as two adjacent halves of a single linear (output shape 2*qDim).
+                // Split into two matmuls so each downstream op sees a single qDim-sized
+                // buffer — required by per-head RMS norm dimensions and for mul_silu_gate
+                // to actually multiply by the gate half.
+                kBufferIndex = nodeBuilder.addBuffer("k", kvCacheSlice.keySize);
+                vBufferIndex = nodeBuilder.addBuffer("v", kvCacheSlice.valueSize);
+
+                att.addOp(OP_MATMUL, "block_matmul_q", layerIndex,
+                    pointerBatchConfig(SRC_BUFFER, yqBufferIndex),
+                    pointerBatchConfig(SRC_BUFFER, qBufferIndex),
+                    size2D(h->weightType, n.qSlice.n, n.qSlice.d0),
+                    NnMatmulOpConfig{0, 0, moeExpertIndexesBufferIndex});
+
+                NnUint gateBufferIndex = 0;
+                if (h->attnOutputGate) {
+                    gateBufferIndex = nodeBuilder.addBuffer("gate", size2D(F_32, nBatches, n.qGateSlice.d0));
+                    att.addOp(OP_MATMUL, "block_matmul_gate", layerIndex,
+                        pointerBatchConfig(SRC_BUFFER, yqBufferIndex),
+                        pointerBatchConfig(SRC_BUFFER, gateBufferIndex),
+                        size2D(h->weightType, n.qGateSlice.n, n.qGateSlice.d0),
+                        NnMatmulOpConfig{0, 0, moeExpertIndexesBufferIndex});
+                }
+
+                att.addOp(OP_MATMUL, "block_matmul_k", layerIndex,
+                    pointerBatchConfig(SRC_BUFFER, yqBufferIndex),
+                    pointerBatchConfig(SRC_BUFFER, kTempBufferIndex),
+                    size2D(h->weightType, n.kSlice.n, n.kSlice.d0),
+                    NnMatmulOpConfig{0, 0, moeExpertIndexesBufferIndex});
+                att.addOp(OP_MATMUL, "block_matmul_v", layerIndex,
+                    pointerBatchConfig(SRC_BUFFER, yqBufferIndex),
+                    pointerBatchConfig(SRC_BUFFER, vTempBufferIndex),
+                    size2D(h->weightType, n.vSlice.n, n.vSlice.d0),
+                    NnMatmulOpConfig{0, 0, moeExpertIndexesBufferIndex});
+
+                // Q/K norms (per-head for Qwen3/Qwen3-MoE/Qwen3.5). qBufferIndex has size
+                // qSlice.d0 = qDim so nQNormColumns = qDim/headDim matches headDim-sized norm weights.
                 att.addOp(OP_INV_RMS, "block_norm_pre_q", layerIndex,
                     pointerBatchConfig(SRC_BUFFER, qBufferIndex),
                     pointerBatchConfig(SRC_BUFFER, invRmsBufferIndex),
                     size0(),
                     NnInvRmsOpConfig{h->normEpsilon, nQNormColumns});
-                att.addOp(
-                    OP_RMS_NORM, "block_norm_q", layerIndex,
+                att.addOp(OP_RMS_NORM, "block_norm_q", layerIndex,
                     pointerBatchConfig(SRC_BUFFER, qBufferIndex),
                     pointerBatchConfig(SRC_BUFFER, qBufferIndex),
                     size2D(F_32, 1, n.header->headDim),
                     NnRmsNormOpConfig{invRmsBufferIndex, nQNormColumns});
-
                 att.addOp(OP_INV_RMS, "block_norm_pre_k", layerIndex,
                     pointerBatchConfig(SRC_BUFFER, kTempBufferIndex),
                     pointerBatchConfig(SRC_BUFFER, invRmsBufferIndex),
                     size0(),
                     NnInvRmsOpConfig{h->normEpsilon, nKNormColumns});
-                att.addOp(
-                    OP_RMS_NORM, "block_norm_k", layerIndex,
+                att.addOp(OP_RMS_NORM, "block_norm_k", layerIndex,
                     pointerBatchConfig(SRC_BUFFER, kTempBufferIndex),
                     pointerBatchConfig(SRC_BUFFER, kTempBufferIndex),
                     size2D(F_32, 1, n.header->headDim),
                     NnRmsNormOpConfig{invRmsBufferIndex, nKNormColumns});
+
+                // RoPE on Q and K
+                att.addOp(OP_ROPE, "block_rope_q", layerIndex,
+                    pointerBatchConfig(SRC_BUFFER, qBufferIndex),
+                    pointerBatchConfig(SRC_BUFFER, qBufferIndex),
+                    size0(),
+                    NnRopeOpConfig{n.header->ropeType, 1, n.positionPipeIndex, ropeCacheBufferIndex,
+                        h->ropeScalingFactor, h->ropeScalingLowFreqFactor, h->ropeScalingHighFreqFactory, h->ropeScalingOrigMaxSeqLen,
+                        ropeSlice});
+                att.addOp(OP_ROPE, "block_rope_k", layerIndex,
+                    pointerBatchConfig(SRC_BUFFER, kTempBufferIndex),
+                    pointerBatchConfig(SRC_BUFFER, kTempBufferIndex),
+                    size0(),
+                    NnRopeOpConfig{n.header->ropeType, 0, n.positionPipeIndex, ropeCacheBufferIndex,
+                        h->ropeScalingFactor, h->ropeScalingLowFreqFactor, h->ropeScalingHighFreqFactory, h->ropeScalingOrigMaxSeqLen,
+                        ropeSlice});
+
+                // Shift K/V into cache
+                att.addOp(OP_SHIFT, "block_shift_k", layerIndex,
+                    pointerBatchConfig(SRC_BUFFER, kTempBufferIndex),
+                    pointerRawConfig(SRC_BUFFER, kBufferIndex),
+                    size0(),
+                    NnShiftOpCodeConfig{n.positionPipeIndex});
+                att.addOp(OP_SHIFT, "block_shift_v", layerIndex,
+                    pointerBatchConfig(SRC_BUFFER, vTempBufferIndex),
+                    pointerRawConfig(SRC_BUFFER, vBufferIndex),
+                    size0(),
+                    NnShiftOpCodeConfig{n.positionPipeIndex});
+
+                // Multi-head attention query is the dedicated qBuf (size qDim).
+                att.addOp(OP_MULTIHEAD_ATT, "block_multihead_att", layerIndex,
+                    pointerBatchedSliceConfig(SRC_BUFFER, zBufferIndex),
+                    pointerBatchedSliceConfig(SRC_BUFFER, zBufferIndex),
+                    size0(),
+                    NnMultiHeadAttOpConfig{
+                        multiHeadAttSlice.nHeads, multiHeadAttSlice.nHeads0,
+                        h->nKvHeads, h->headDim, h->seqLen, n.qSlice.d0, kvCacheSlice.kvDim0,
+                        n.positionPipeIndex, qBufferIndex, kBufferIndex, vBufferIndex, attBufferIndex});
+
+                // Optional output gate: gate * silu(att_out). Reads from the dedicated
+                // gate buffer (size qDim), not from a half of q_attgate.
+                if (h->attnOutputGate) {
+                    att.addOp(OP_MUL_SILU, "block_mul_silu_gate", layerIndex,
+                        pointerBatchedSliceConfig(SRC_BUFFER, zBufferIndex),
+                        pointerBatchedSliceConfig(SRC_BUFFER, zBufferIndex),
+                        size0(),
+                        NnMulSiluOpConfig{gateBufferIndex});
+                }
+
+                att.addOp(OP_CAST, "block_cast_y2", layerIndex,
+                    pointerBatchedSliceConfig(SRC_BUFFER, zBufferIndex),
+                    pointerBatchConfig(SRC_BUFFER, zqSliceBufferIndex),
+                    size0(),
+                    NnCastOpCodeConfig{});
+                att.addOp(OP_MATMUL, "block_matmul_wo", layerIndex,
+                    pointerBatchConfig(SRC_BUFFER, zqSliceBufferIndex),
+                    pointerBatchConfig(SRC_BUFFER, yBufferIndex),
+                    size2D(h->weightType, n.woSlice.n0, n.woSlice.d),
+                    NnMatmulOpConfig{0, 0, moeExpertIndexesBufferIndex});
+
+            } else {
+                // ---- Standard attention (non-QWEN3_5: LLAMA, QWEN3, QWEN3_MOE) ----
+                kBufferIndex = nodeBuilder.addBuffer("k", kvCacheSlice.keySize);
+                vBufferIndex = nodeBuilder.addBuffer("v", kvCacheSlice.valueSize);
+
+                att.addOp(OP_MATMUL, "block_matmul_q", layerIndex,
+                    pointerBatchConfig(SRC_BUFFER, yqBufferIndex),
+                    pointerBatchConfig(SRC_BUFFER, qBufferIndex),
+                    size2D(h->weightType, n.qSlice.n, n.qSlice.d0),
+                    NnMatmulOpConfig{0, 0, moeExpertIndexesBufferIndex});
+                att.addOp(OP_MATMUL, "block_matmul_k", layerIndex,
+                    pointerBatchConfig(SRC_BUFFER, yqBufferIndex),
+                    pointerBatchConfig(SRC_BUFFER, kTempBufferIndex),
+                    size2D(h->weightType, n.kSlice.n, n.kSlice.d0),
+                    NnMatmulOpConfig{0, 0, moeExpertIndexesBufferIndex});
+                att.addOp(OP_MATMUL, "block_matmul_v", layerIndex,
+                    pointerBatchConfig(SRC_BUFFER, yqBufferIndex),
+                    pointerBatchConfig(SRC_BUFFER, vTempBufferIndex),
+                    size2D(h->weightType, n.vSlice.n, n.vSlice.d0),
+                    NnMatmulOpConfig{0, 0, moeExpertIndexesBufferIndex});
+
+                if (h->archType == QWEN3 || h->archType == QWEN3_MOE) {
+                    att.addOp(OP_INV_RMS, "block_norm_pre_q", layerIndex,
+                        pointerBatchConfig(SRC_BUFFER, qBufferIndex),
+                        pointerBatchConfig(SRC_BUFFER, invRmsBufferIndex),
+                        size0(),
+                        NnInvRmsOpConfig{h->normEpsilon, nQNormColumns});
+                    att.addOp(OP_RMS_NORM, "block_norm_q", layerIndex,
+                        pointerBatchConfig(SRC_BUFFER, qBufferIndex),
+                        pointerBatchConfig(SRC_BUFFER, qBufferIndex),
+                        size2D(F_32, 1, n.header->headDim),
+                        NnRmsNormOpConfig{invRmsBufferIndex, nQNormColumns});
+                    att.addOp(OP_INV_RMS, "block_norm_pre_k", layerIndex,
+                        pointerBatchConfig(SRC_BUFFER, kTempBufferIndex),
+                        pointerBatchConfig(SRC_BUFFER, invRmsBufferIndex),
+                        size0(),
+                        NnInvRmsOpConfig{h->normEpsilon, nKNormColumns});
+                    att.addOp(OP_RMS_NORM, "block_norm_k", layerIndex,
+                        pointerBatchConfig(SRC_BUFFER, kTempBufferIndex),
+                        pointerBatchConfig(SRC_BUFFER, kTempBufferIndex),
+                        size2D(F_32, 1, n.header->headDim),
+                        NnRmsNormOpConfig{invRmsBufferIndex, nKNormColumns});
+                }
+
+                att.addOp(OP_ROPE, "block_rope_q", layerIndex,
+                    pointerBatchConfig(SRC_BUFFER, qBufferIndex),
+                    pointerBatchConfig(SRC_BUFFER, qBufferIndex),
+                    size0(),
+                    NnRopeOpConfig{n.header->ropeType, 1, n.positionPipeIndex, ropeCacheBufferIndex, 
+                        h->ropeScalingFactor, h->ropeScalingLowFreqFactor, h->ropeScalingHighFreqFactory, h->ropeScalingOrigMaxSeqLen,
+                        ropeSlice});
+                att.addOp(OP_ROPE, "block_rope_k", layerIndex,
+                    pointerBatchConfig(SRC_BUFFER, kTempBufferIndex),
+                    pointerBatchConfig(SRC_BUFFER, kTempBufferIndex),
+                    size0(),
+                    NnRopeOpConfig{n.header->ropeType, 0, n.positionPipeIndex, ropeCacheBufferIndex, 
+                        h->ropeScalingFactor, h->ropeScalingLowFreqFactor, h->ropeScalingHighFreqFactory, h->ropeScalingOrigMaxSeqLen,
+                        ropeSlice});
+                att.addOp(OP_SHIFT, "block_shift_k", layerIndex,
+                    pointerBatchConfig(SRC_BUFFER, kTempBufferIndex),
+                    pointerRawConfig(SRC_BUFFER, kBufferIndex),
+                    size0(),
+                    NnShiftOpCodeConfig{n.positionPipeIndex});
+                att.addOp(OP_SHIFT, "block_shift_v", layerIndex,
+                    pointerBatchConfig(SRC_BUFFER, vTempBufferIndex),
+                    pointerRawConfig(SRC_BUFFER, vBufferIndex),
+                    size0(),
+                    NnShiftOpCodeConfig{n.positionPipeIndex});
+                att.addOp(OP_MULTIHEAD_ATT, "block_multihead_att", layerIndex,
+                    pointerBatchedSliceConfig(SRC_BUFFER, zBufferIndex),
+                    pointerBatchedSliceConfig(SRC_BUFFER, zBufferIndex),
+                    size0(),
+                    NnMultiHeadAttOpConfig{
+                        multiHeadAttSlice.nHeads, multiHeadAttSlice.nHeads0,
+                        h->nKvHeads, h->headDim, h->seqLen, n.qSlice.d0, kvCacheSlice.kvDim0,
+                        n.positionPipeIndex, qBufferIndex, kBufferIndex, vBufferIndex, attBufferIndex});
+                att.addOp(OP_CAST, "block_cast_y2", layerIndex,
+                    pointerBatchedSliceConfig(SRC_BUFFER, zBufferIndex),
+                    pointerBatchConfig(SRC_BUFFER, zqSliceBufferIndex),
+                    size0(),
+                    NnCastOpCodeConfig{});
+                att.addOp(OP_MATMUL, "block_matmul_wo", layerIndex,
+                    pointerBatchConfig(SRC_BUFFER, zqSliceBufferIndex),
+                    pointerBatchConfig(SRC_BUFFER, yBufferIndex),
+                    size2D(h->weightType, n.woSlice.n0, n.woSlice.d),
+                    NnMatmulOpConfig{0, 0, moeExpertIndexesBufferIndex});
             }
 
-            att.addOp(
-                OP_ROPE, "block_rope_q", layerIndex,
-                pointerBatchConfig(SRC_BUFFER, qBufferIndex),
-                pointerBatchConfig(SRC_BUFFER, qBufferIndex),
-                size0(),
-                NnRopeOpConfig{n.header->ropeType, 1, n.positionPipeIndex, ropeCacheBufferIndex, 
-                    h->ropeScalingFactor, h->ropeScalingLowFreqFactor, h->ropeScalingHighFreqFactory, h->ropeScalingOrigMaxSeqLen,
-                    ropeSlice});
-            att.addOp(
-                OP_ROPE, "block_rope_k", layerIndex,
-                pointerBatchConfig(SRC_BUFFER, kTempBufferIndex),
-                pointerBatchConfig(SRC_BUFFER, kTempBufferIndex),
-                size0(),
-                NnRopeOpConfig{n.header->ropeType, 0, n.positionPipeIndex, ropeCacheBufferIndex, 
-                    h->ropeScalingFactor, h->ropeScalingLowFreqFactor, h->ropeScalingHighFreqFactory, h->ropeScalingOrigMaxSeqLen,
-                    ropeSlice});
-            att.addOp(
-                OP_SHIFT, "block_shift_k", layerIndex,
-                pointerBatchConfig(SRC_BUFFER, kTempBufferIndex),
-                pointerRawConfig(SRC_BUFFER, kBufferIndex),
-                size0(),
-                NnShiftOpCodeConfig{n.positionPipeIndex});
-            att.addOp(
-                OP_SHIFT, "block_shift_v", layerIndex,
-                pointerBatchConfig(SRC_BUFFER, vTempBufferIndex),
-                pointerRawConfig(SRC_BUFFER, vBufferIndex),
-                size0(),
-                NnShiftOpCodeConfig{n.positionPipeIndex});
-            att.addOp(
-                OP_MULTIHEAD_ATT, "block_multihead_att", layerIndex,
-                pointerBatchedSliceConfig(SRC_BUFFER, zBufferIndex),
-                pointerBatchedSliceConfig(SRC_BUFFER, zBufferIndex),
-                size0(),
-                NnMultiHeadAttOpConfig{
-                    multiHeadAttSlice.nHeads, multiHeadAttSlice.nHeads0,
-                    h->nKvHeads, h->headDim, h->seqLen, n.qSlice.d0, kvCacheSlice.kvDim0,
-                    n.positionPipeIndex, qBufferIndex, kBufferIndex, vBufferIndex, attBufferIndex});
-            att.addOp(
-                OP_CAST, "block_cast_y2", layerIndex,
-                pointerBatchedSliceConfig(SRC_BUFFER, zBufferIndex),
-                pointerBatchConfig(SRC_BUFFER, zqSliceBufferIndex),
-                size0(),
-                NnCastOpCodeConfig{});
-            att.addOp(
-                OP_MATMUL, "block_matmul_wo", layerIndex,
-                pointerBatchConfig(SRC_BUFFER, zqSliceBufferIndex),
-                pointerBatchConfig(SRC_BUFFER, yBufferIndex),
-                size2D(h->weightType, n.woSlice.n0, n.woSlice.d),
-                NnMatmulOpConfig{0, 0, moeExpertIndexesBufferIndex});
-            att.addOp(
-                OP_CAST, "block_cast_d", layerIndex,
+            // att segment end (shared): output to pipe + sync
+            att.addOp(OP_CAST, "block_cast_d", layerIndex,
                 pointerBatchConfig(SRC_BUFFER, yBufferIndex),
                 pointerBatchedSliceConfig(SRC_PIPE, zqPipeIndex),
                 size0(),
@@ -627,11 +841,89 @@ void loadLlmNetWeight(const char *path, LlmNet *net, NnRootWeightLoader *loader)
     b += loader->loadRoot("embedding", 0, net->tokenEmbeddingSize.nBytes, b);
 
     for (NnUint layerIndex = 0u; layerIndex < net->header->nLayers; layerIndex++) {
-        b += loader->loadRowMatmulSlices("block_matmul_q", layerIndex, 0u, &net->qSlice, b);
-        b += loader->loadRowMatmulSlices("block_matmul_k", layerIndex, 0u, &net->kSlice, b);
-        b += loader->loadRowMatmulSlices("block_matmul_v", layerIndex, 0u, &net->vSlice, b);
-        b += loader->loadColMatmulSlices("block_matmul_wo", layerIndex, 0u, &net->woSlice, b);
+        bool isQwen3 = net->header->archType == QWEN3 || net->header->archType == QWEN3_MOE;
+        bool isQwen3_5 = net->header->archType == QWEN3_5;
+        bool isFullAtt = isQwen3_5 && (net->header->layerTypeBits & (1u << layerIndex));
 
+        if (isQwen3_5) {
+            // Qwen3.5 file order: norm_0 FIRST, then att/SSM weights, then norm_1, then MLP
+            b += loader->loadAll("block_norm_0", layerIndex, net->rmsNormSize.nBytes, b);
+
+            if (isFullAtt) {
+                // Full-attention weights.
+                // For Qwen3.5 with attn_output_gate, the file stores one q_proj.weight
+                // of shape (2*qDim, dim); the inference has two separate matmuls
+                // (block_matmul_q + block_matmul_gate) reading disjoint halves of that
+                // weight consecutively. Distinct op names prevent the loader's weight
+                // self-overwrite when both matmuls target the same offset.
+                b += loader->loadRowMatmulSlices("block_matmul_q", layerIndex, 0u, &net->qSlice, b);
+                if (net->header->attnOutputGate) {
+                    b += loader->loadRowMatmulSlices("block_matmul_gate", layerIndex, 0u, &net->qGateSlice, b);
+                }
+                b += loader->loadRowMatmulSlices("block_matmul_k", layerIndex, 0u, &net->kSlice, b);
+                b += loader->loadRowMatmulSlices("block_matmul_v", layerIndex, 0u, &net->vSlice, b);
+                b += loader->loadColMatmulSlices("block_matmul_wo", layerIndex, 0u, &net->woSlice, b);
+                b += loader->loadAll("block_norm_q", layerIndex, net->qkRmsNormSize.nBytes, b);
+                b += loader->loadAll("block_norm_k", layerIndex, net->qkRmsNormSize.nBytes, b);
+            } else {
+                // SSM layer weights — file order matches converter:
+                // A_log, dt_bias, conv1d, in_proj_qkv, in_proj_z, in_proj_a, in_proj_b, norm, out_proj
+                NnUint nHeadsNode = net->ssmDimN / net->netConfig.nNodes;
+                NnSize paramF32 = size1D(F_32, nHeadsNode).nBytes;
+                // 1. A_log (per-node F32)
+                for (NnUint nIdx = 0u; nIdx < net->netConfig.nNodes; nIdx++) {
+                    if (nIdx == 0u)
+                        loader->loadRootWithOffset("block_selective_scan", layerIndex, 0, paramF32, b);
+                    else
+                        loader->writeWeight(nIdx, "block_selective_scan", layerIndex, 0, paramF32, b);
+                    b += paramF32;
+                }
+                // 2. dt_bias (per-node F32)
+                for (NnUint nIdx = 0u; nIdx < net->netConfig.nNodes; nIdx++) {
+                    if (nIdx == 0u)
+                        loader->loadRootWithOffset("block_selective_scan", layerIndex, paramF32, paramF32, b);
+                    else
+                        loader->writeWeight(nIdx, "block_selective_scan", layerIndex, paramF32, paramF32, b);
+                    b += paramF32;
+                }
+                // 3. conv1d depthwise weight — each node loads its channel slice
+                for (NnUint nIdx = 0u; nIdx < net->netConfig.nNodes; nIdx++) {
+                    if (nIdx == 0u)
+                        loader->loadRoot("block_ssm_conv", layerIndex, net->conv1dWeightSize.nBytes, b);
+                    else
+                        loader->writeWeight(nIdx, "block_ssm_conv", layerIndex, 0, net->conv1dWeightSize.nBytes, b);
+                    b += net->conv1dWeightSize.nBytes;
+                }
+                // 4-7. in_proj_qkv, in_proj_z, in_proj_a, in_proj_b
+                b += loader->loadRowMatmulSlices("block_matmul_qkv", layerIndex, 0u, &net->inProjQkvSlice, b);
+                b += loader->loadRowMatmulSlices("block_matmul_z", layerIndex, 0u, &net->inProjZSlice, b);
+                b += loader->loadRowMatmulSlices("block_matmul_a", layerIndex, 0u, &net->inProjASlice, b);
+                b += loader->loadRowMatmulSlices("block_matmul_b", layerIndex, 0u, &net->inProjBSlice, b);
+                // 8. post-conv norm.weight (HF shape: ssmHeadVDim, not per-head)
+                NnSize normF32 = size1D(F_32, net->ssmDimM).nBytes;
+                for (NnUint nIdx = 0u; nIdx < net->netConfig.nNodes; nIdx++) {
+                    NnSize offsetInOp = 2 * paramF32;
+                    if (nIdx == 0u)
+                        loader->loadRootWithOffset("block_selective_scan", layerIndex, offsetInOp, normF32, b);
+                    else
+                        loader->writeWeight(nIdx, "block_selective_scan", layerIndex, offsetInOp, normF32, b);
+                    b += normF32;
+                }
+                // 9. out_proj
+                b += loader->loadColMatmulSlices("block_matmul_out", layerIndex, 0u, &net->ssmOutProjSlice, b);
+            }
+
+            b += loader->loadAll("block_norm_1", layerIndex, net->rmsNormSize.nBytes, b);
+
+        } else {
+            // Non-QWEN3_5 file order: Q/K/V/WO first, MLP, norms last
+            b += loader->loadRowMatmulSlices("block_matmul_q", layerIndex, 0u, &net->qSlice, b);
+            b += loader->loadRowMatmulSlices("block_matmul_k", layerIndex, 0u, &net->kSlice, b);
+            b += loader->loadRowMatmulSlices("block_matmul_v", layerIndex, 0u, &net->vSlice, b);
+            b += loader->loadColMatmulSlices("block_matmul_wo", layerIndex, 0u, &net->woSlice, b);
+        }
+
+        // MLP weights (same file position for all architectures)
         if (net->header->nExperts > 0u) {
             b += loader->loadAll("block_moe_gate", layerIndex, net->moeGateSize.nBytes, b);
             for (NnUint expertIndex = 0u; expertIndex < net->header->nExperts; expertIndex++) {
@@ -645,13 +937,17 @@ void loadLlmNetWeight(const char *path, LlmNet *net, NnRootWeightLoader *loader)
             b += loader->loadRowMatmulSlices("block_matmul_w3", layerIndex, 0u, &net->w3Slice, b);
         }
 
-        if (net->header->archType == QWEN3 || net->header->archType == QWEN3_MOE) {
+        // Q/K norms (non-QWEN3_5 Qwen3 archs)
+        if (!isQwen3_5 && isQwen3) {
             b += loader->loadAll("block_norm_q", layerIndex, net->qkRmsNormSize.nBytes, b);
             b += loader->loadAll("block_norm_k", layerIndex, net->qkRmsNormSize.nBytes, b);
         }
 
-        b += loader->loadAll("block_norm_0", layerIndex, net->rmsNormSize.nBytes, b);
-        b += loader->loadAll("block_norm_1", layerIndex, net->rmsNormSize.nBytes, b);
+        // Norm_0 and norm_1 (non-QWEN3_5: after MLP and Q/K norms)
+        if (!isQwen3_5) {
+            b += loader->loadAll("block_norm_0", layerIndex, net->rmsNormSize.nBytes, b);
+            b += loader->loadAll("block_norm_1", layerIndex, net->rmsNormSize.nBytes, b);
+        }
 
         if (timer.elapsedMiliseconds() > 10000)
             printf("💿 Loaded %u/%u\n", layerIndex + 1, net->header->nLayers);

@@ -28,6 +28,9 @@ enum LlmHeaderKey {
     HEAD_DIM = 19,
     NORM_EPSILON = 20,
     MOE_HIDDEN_DIM = 21,
+    PARTIAL_ROTARY_FACTOR = 22,
+    ATTN_OUTPUT_GATE = 23,
+    LAYER_TYPE_BITS = 24,
 };
 
 enum LlmHiddenAct {
@@ -39,6 +42,7 @@ enum LlmArchType {
     LLAMA = 0xABCD00,
     QWEN3 = 0xABCD01,
     QWEN3_MOE = 0xABCD02,
+    QWEN3_5 = 0xABCD03,
 };
 
 typedef struct {
@@ -68,6 +72,9 @@ typedef struct {
     float ropeScalingHighFreqFactory;
     NnUint ropeScalingOrigMaxSeqLen;
     float normEpsilon;
+    float partialRotaryFactor;
+    NnUint attnOutputGate;
+    NnUint layerTypeBits;
 
     NnFloatType weightType;
     NnFloatType syncType;
@@ -93,6 +100,18 @@ typedef struct {
     NnSize3D rmsNormSize;
     NnSize3D qkRmsNormSize;
     NnSize3D moeGateSize;
+
+    NnRowMatmulSlice qGateSlice;
+    NnRowMatmulSlice inProjQkvSlice;
+    NnRowMatmulSlice inProjZSlice;
+    NnRowMatmulSlice inProjASlice;
+    NnRowMatmulSlice inProjBSlice;
+    NnColMatmulSlice ssmOutProjSlice;
+    NnSize3D conv1dWeightSize;
+    NnUint ssmDim;
+    NnUint ssmDimM;
+    NnUint ssmDimN;
+    NnUint ssmDimK;
 } LlmNet;
 
 LlmHeader loadLlmHeader(const char* path, const unsigned int maxSeqLen, NnFloatType syncType);

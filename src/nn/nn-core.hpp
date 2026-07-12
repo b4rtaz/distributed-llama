@@ -88,6 +88,10 @@ enum NnOpCode {
     OP_SHIFT,
     OP_SOFTMAX,
     OP_MOE_GATE,
+    OP_SSM_CONV,
+    OP_SELECTIVE_SCAN,
+    OP_MUL_SILU,
+    OP_MROPE,
 };
 
 enum NnOpQuantType {
@@ -102,7 +106,7 @@ enum NnOpQuantType {
     Q80_F32_F32,
 };
 
-#define N_OP_CODES (OP_SHIFT + 1)
+#define N_OP_CODES (OP_MROPE + 1)
 #define N_OP_QUANTS (Q80_F32_F32 + 1)
 
 enum NnPointerSource {
@@ -126,6 +130,7 @@ enum NnRopeType {
     ROPE_LLAMA = 0,
     ROPE_FALCON = 1,
     ROPE_LLAMA3_1 = 2,
+    ROPE_MULTIMODAL = 3,
 };
 
 // base configs
@@ -280,6 +285,36 @@ typedef struct {
     NnUint normTopk;
     NnUint indexesBufferIndex;
 } NnMoeGateOpCodeConfig;
+
+typedef struct {
+    NnUint convKernelDim;
+    NnUint channels;
+    NnUint stateBufferIndex;
+} NnSsmConvOpConfig;
+
+typedef struct {
+    NnUint stateDim;
+    NnUint nHeads;
+    NnUint ssmKeyDim;
+    NnUint aBufferIndex;
+    NnUint bBufferIndex;
+    NnUint zBufferIndex;
+    NnUint stateBufferIndex;
+    float normEpsilon;
+} NnSelectiveScanOpConfig;
+
+typedef struct {
+    NnUint multiplierBufferIndex;
+} NnMulSiluOpConfig;
+
+typedef struct {
+    NnUint nGroups;
+    NnUint groupSizes[3];
+    float partialRotaryFactor;
+    NnUint positionPipeIndex;
+    NnUint ropeCacheBufferIndex;
+    NnRopeSlice slice;
+} NnMRopeOpConfig;
 
 // utility functions
 
