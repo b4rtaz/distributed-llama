@@ -756,20 +756,22 @@ static NnUint resolveShaderNumberOfWorkGroupsZ(const NnOpConfig *opConfig, const
 static std::vector<uint32_t> readShader(const char *fileName) {
     std::vector<uint32_t> code;
     std::string path = std::string("./src/nn/vulkan/") + fileName;
-    FILE *file = fopen(path.c_str(), "rb");
+
+    std::unique_ptr<FILE, int(*)(FILE *)> fdPtr(fopen(path.c_str(), "rb"), fclose);
+    FILE *file = fdPtr.get();
     if (!file)
         throw std::runtime_error("Failed to open shader file: " + path);
     constexpr size_t maxSize = 16384;
     uint32_t chunk[maxSize];
     size_t bytesRead = fread(chunk, 1, maxSize, file);
     assert(bytesRead < maxSize); // Check if the file is too large
-    if (bytesRead > 0)
-        code.insert(code.end(), chunk, chunk + bytesRead);
+    if (bytesRead > 0) {
+        const size_t wordCount = bytesRead / sizeof(uint32_t);
+        code.insert(code.end(), chunk, chunk + wordCount);
+    }
     if (ferror(file)) {
-        fclose(file);
         throw std::runtime_error("Failed to read shader file: " + path);
     }
-    fclose(file);
     return code;
 }
 

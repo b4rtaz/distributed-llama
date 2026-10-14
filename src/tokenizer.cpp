@@ -57,7 +57,8 @@ Tokenizer::Tokenizer(const char* tokenizerPath)
     maxTokenLength = 0;
 
     // read in the file
-    FILE *file = fopen(tokenizerPath, "rb");
+    std::unique_ptr<FILE, int(*)(FILE *)> fdPtr(fopen(tokenizerPath, "rb"), fclose);
+    FILE *file = fdPtr.get();
     if (!file)
         throw std::runtime_error("Failed to open tokenizer file");
     int magic;
@@ -169,8 +170,6 @@ Tokenizer::Tokenizer(const char* tokenizerPath)
     strBufferSize += 1 + 2;
     strBuffer = new char[strBufferSize];
     utf8Buffer = new char[strBufferSize];
-
-    fclose(file);
 }
 
 Tokenizer::~Tokenizer() {
