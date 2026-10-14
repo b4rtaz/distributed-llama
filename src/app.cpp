@@ -47,6 +47,7 @@ AppCliArgs AppCliArgs::parse(int argc, char* *argv, bool requireMode) {
     args.gpuIndex = -1;
     args.gpuSegmentFrom = -1;
     args.gpuSegmentTo = -1;
+    args.benchmark = false;
 
     int i = 1;
     if (requireMode && argc > 1) {

@@ -384,8 +384,8 @@ NnNetwork::NnNetwork(std::vector<NnSocket> *sockets) {
     this->sockets = new int[nSockets];
     for (NnUint i = 0; i < nSockets; i++)
         this->sockets[i] = sockets->at(i).release();
-    this->sentBytes = new NnSize[nSockets];
-    this->recvBytes = new NnSize[nSockets];
+    this->sentBytes = new NnSize[nSockets]();
+    this->recvBytes = new NnSize[nSockets]();
 }
 
 NnNetwork::~NnNetwork() {
@@ -922,7 +922,7 @@ void NnWorkerWeightReader::read() {
         if (nameSize == 0) {
             network->writeAck(ROOT_SOCKET_INDEX);
             if (tempSize > 0) {
-                delete temp;
+                delete[] temp;
                 tempSize = 0;
             }
             break;
