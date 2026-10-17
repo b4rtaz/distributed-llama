@@ -1,0 +1,47 @@
+services:
+  root:
+    build: .
+    networks:
+      - llama-net
+    volumes:
+      - ./models:/models
+    depends_on:
+      - worker1
+      - worker2
+      - worker3
+    ports:
+      - "5000:5000"
+    restart: on-failure
+    command: >-
+      ./dllama-api
+      --model /models/dllama_model_llama3.2-1b-instruct_q40.m 
+      --tokenizer /models/dllama_tokenizer_llama3_2.t 
+      --buffer-float-type q80 --nthreads 2 --port 5000
+      --workers worker1:9999 worker2:9999 worker3:9999
+
+  worker1:
+    build: .
+    ports:
+      - "9999:9999"
+    networks:
+      - llama-net
+    command: >
+      ./dllama worker --port 9999 --nthreads 2
+
+  worker2:
+    build: .
+    networks:
+      - llama-net
+    command: >
+      ./dllama worker --port 9999 --nthreads 2
+
+  worker3:
+    build: .
+    networks:
+      - llama-net
+    command: >
+      ./dllama worker --port 9999 --nthreads 2
+
+networks:
+  llama-net:
+    driver: bridge
