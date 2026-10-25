@@ -34,36 +34,47 @@
 
 #if defined(__ARM_NEON)
 static inline float32x4_t expf_neon(float32x4_t x) {
-    const float32x4_t ln2 = vdupq_n_f32(0.69314718056f);
-    const float32x4_t inv_ln2 = vdupq_n_f32(1.44269504089f);
-    const float32x4_t c1 = vdupq_n_f32(1.0f);
-    const float32x4_t c2 = vdupq_n_f32(0.5f);
-    const float32x4_t c3 = vdupq_n_f32(0.1666666667f);
-    const float32x4_t c4 = vdupq_n_f32(0.04166666667f);
-    const float32x4_t c5 = vdupq_n_f32(0.008333333333f);
+    const float32x4_t minimum = vdupq_n_f32(-87.33654475f);
+    const float32x4_t maximum = vdupq_n_f32(88.0f);
+    const float32x4_t invLn2 = vdupq_n_f32(1.44269504088896341f);
+    const float32x4_t ln2High = vdupq_n_f32(0.693359375f);
+    const float32x4_t ln2Low = vdupq_n_f32(-2.12194440e-4f);
 
-    x = vminq_f32(x, vdupq_n_f32(88.0f));
-    x = vmaxq_f32(x, vdupq_n_f32(-88.0f));
+    x = vmaxq_f32(minimum, vminq_f32(maximum, x));
+    const float32x4_t z = vfmaq_f32(vdupq_n_f32(0.5f), x, invLn2);
+    int32x4_t exponent = vcvtq_s32_f32(z);
+    const float32x4_t truncated = vcvtq_f32_s32(exponent);
+    exponent = vaddq_s32(exponent, vreinterpretq_s32_u32(vcltq_f32(z, truncated)));
+    const float32x4_t exponentF32 = vcvtq_f32_s32(exponent);
 
-    float32x4_t kf = vaddq_f32(vmulq_f32(x, inv_ln2), vdupq_n_f32(0.5f));
-    int32x4_t k = vcvtq_s32_f32(kf);
-    kf = vcvtq_f32_s32(k);
+    float32x4_t reduced = vfmsq_f32(x, exponentF32, ln2High);
+    reduced = vfmsq_f32(reduced, exponentF32, ln2Low);
 
-    float32x4_t f = vmlsq_f32(x, kf, ln2);
-    float32x4_t f2 = vmulq_f32(f, f);
-    float32x4_t f3 = vmulq_f32(f2, f);
-    float32x4_t f4 = vmulq_f32(f3, f);
-    float32x4_t f5 = vmulq_f32(f4, f);
-    float32x4_t p = c1;
-    p = vaddq_f32(p, f);
-    p = vaddq_f32(p, vmulq_f32(c2, f2));
-    p = vaddq_f32(p, vmulq_f32(c3, f3));
-    p = vaddq_f32(p, vmulq_f32(c4, f4));
-    p = vaddq_f32(p, vmulq_f32(c5, f5));
+    float32x4_t polynomial = vdupq_n_f32(1.0f / 5040.0f);
+    polynomial = vfmaq_f32(vdupq_n_f32(1.0f / 720.0f), polynomial, reduced);
+    polynomial = vfmaq_f32(vdupq_n_f32(1.0f / 120.0f), polynomial, reduced);
+    polynomial = vfmaq_f32(vdupq_n_f32(1.0f / 24.0f), polynomial, reduced);
+    polynomial = vfmaq_f32(vdupq_n_f32(1.0f / 6.0f), polynomial, reduced);
+    polynomial = vfmaq_f32(vdupq_n_f32(0.5f), polynomial, reduced);
+    polynomial = vfmaq_f32(vdupq_n_f32(1.0f), polynomial, reduced);
+    polynomial = vfmaq_f32(vdupq_n_f32(1.0f), polynomial, reduced);
 
-    int32x4_t pow2k = vshlq_n_s32(vaddq_s32(k, vdupq_n_s32(127)), 23);
-    float32x4_t two_k = vreinterpretq_f32_s32(pow2k);
-    return vmulq_f32(p, two_k);
+    const int32x4_t scaleBits = vshlq_n_s32(
+        vaddq_s32(exponent, vdupq_n_s32(127)), 23);
+    return vmulq_f32(polynomial, vreinterpretq_f32_s32(scaleBits));
+}
+
+static inline float32x4_t tanh_neon(float32x4_t x) {
+    const uint32x4_t negative = vcltq_f32(x, vdupq_n_f32(0.0f));
+    const float32x4_t absolute = vabsq_f32(x);
+    const float32x4_t exponential = expf_neon(vmulq_n_f32(absolute, -2.0f));
+    const float32x4_t numerator = vsubq_f32(vdupq_n_f32(1.0f), exponential);
+    const float32x4_t denominator = vaddq_f32(vdupq_n_f32(1.0f), exponential);
+    float32x4_t reciprocal = vrecpeq_f32(denominator);
+    reciprocal = vmulq_f32(reciprocal, vrecpsq_f32(denominator, reciprocal));
+    reciprocal = vmulq_f32(reciprocal, vrecpsq_f32(denominator, reciprocal));
+    const float32x4_t result = vmulq_f32(numerator, reciprocal);
+    return vbslq_f32(negative, vnegq_f32(result), result);
 }
 #endif
 
@@ -108,6 +119,54 @@ static inline __m256 expf_avx2(__m256 x) {
     exponent = _mm256_slli_epi32(exponent, 23);
     __m256 two_n = _mm256_castsi256_ps(exponent);
     return _mm256_mul_ps(p, two_n);
+}
+
+static inline __m256 tanhExp_avx2(__m256 x) {
+    const __m256 minimum = _mm256_set1_ps(-87.33654475f);
+    const __m256 maximum = _mm256_set1_ps(88.0f);
+    const __m256 invLn2 = _mm256_set1_ps(1.44269504088896341f);
+    const __m256 ln2High = _mm256_set1_ps(0.693359375f);
+    const __m256 ln2Low = _mm256_set1_ps(-2.12194440e-4f);
+
+    x = _mm256_max_ps(minimum, _mm256_min_ps(maximum, x));
+    const __m256 z = _mm256_fmadd_ps(x, invLn2, _mm256_set1_ps(0.5f));
+    __m256i exponent = _mm256_cvttps_epi32(z);
+    const __m256 truncated = _mm256_cvtepi32_ps(exponent);
+    exponent = _mm256_add_epi32(exponent,
+        _mm256_castps_si256(_mm256_cmp_ps(z, truncated, _CMP_LT_OQ)));
+    const __m256 exponentF32 = _mm256_cvtepi32_ps(exponent);
+
+    __m256 reduced = _mm256_fnmadd_ps(exponentF32, ln2High, x);
+    reduced = _mm256_fnmadd_ps(exponentF32, ln2Low, reduced);
+
+    __m256 polynomial = _mm256_set1_ps(1.0f / 5040.0f);
+    polynomial = _mm256_fmadd_ps(polynomial, reduced, _mm256_set1_ps(1.0f / 720.0f));
+    polynomial = _mm256_fmadd_ps(polynomial, reduced, _mm256_set1_ps(1.0f / 120.0f));
+    polynomial = _mm256_fmadd_ps(polynomial, reduced, _mm256_set1_ps(1.0f / 24.0f));
+    polynomial = _mm256_fmadd_ps(polynomial, reduced, _mm256_set1_ps(1.0f / 6.0f));
+    polynomial = _mm256_fmadd_ps(polynomial, reduced, _mm256_set1_ps(0.5f));
+    polynomial = _mm256_fmadd_ps(polynomial, reduced, _mm256_set1_ps(1.0f));
+    polynomial = _mm256_fmadd_ps(polynomial, reduced, _mm256_set1_ps(1.0f));
+
+    const __m256i scaleBits = _mm256_slli_epi32(
+        _mm256_add_epi32(exponent, _mm256_set1_epi32(127)), 23);
+    return _mm256_mul_ps(polynomial, _mm256_castsi256_ps(scaleBits));
+}
+
+static inline __m256 tanh_avx2(__m256 x) {
+    const __m256 negative = _mm256_cmp_ps(x, _mm256_setzero_ps(), _CMP_LT_OQ);
+    const __m256 absolute = _mm256_andnot_ps(_mm256_set1_ps(-0.0f), x);
+    const __m256 exponential = tanhExp_avx2(
+        _mm256_mul_ps(absolute, _mm256_set1_ps(-2.0f)));
+    const __m256 numerator = _mm256_sub_ps(_mm256_set1_ps(1.0f), exponential);
+    const __m256 denominator = _mm256_add_ps(_mm256_set1_ps(1.0f), exponential);
+    __m256 reciprocal = _mm256_rcp_ps(denominator);
+    reciprocal = _mm256_mul_ps(reciprocal,
+        _mm256_fnmadd_ps(denominator, reciprocal, _mm256_set1_ps(2.0f)));
+    reciprocal = _mm256_mul_ps(reciprocal,
+        _mm256_fnmadd_ps(denominator, reciprocal, _mm256_set1_ps(2.0f)));
+    const __m256 result = _mm256_mul_ps(numerator, reciprocal);
+    return _mm256_blendv_ps(result, _mm256_sub_ps(_mm256_setzero_ps(), result), negative);
 }
 #endif
 
@@ -453,7 +512,33 @@ static void matmul_Q80_Q40_F32(float *output, const NnBlockQ80 *x, const NnBlock
 
 static void gelu_F32(float *output, const unsigned int n, const NnUint nThreads, const NnUint threadIndex) {
     SPLIT_THREADS(start, end, n, nThreads, threadIndex);
-    for (unsigned int i = start; i < end; i++) {
+    unsigned int i = start;
+#if defined(__ARM_NEON)
+    const float32x4_t one = vdupq_n_f32(1.0f);
+    for (; i + 4u <= end; i += 4u) {
+        const float32x4_t x = vld1q_f32(output + i);
+        const float32x4_t x2 = vmulq_f32(x, x);
+        const float32x4_t inner = vfmaq_n_f32(one, x2, GELU_COEF_A);
+        const float32x4_t argument = vmulq_n_f32(vmulq_f32(x, inner), SQRT_2_OVER_PI);
+        const float32x4_t result = vmulq_n_f32(
+            vmulq_f32(x, vaddq_f32(one, tanh_neon(argument))), 0.5f);
+        vst1q_f32(output + i, result);
+    }
+#elif defined(__AVX2__)
+    const __m256 one = _mm256_set1_ps(1.0f);
+    for (; i + 8u <= end; i += 8u) {
+        const __m256 x = _mm256_loadu_ps(output + i);
+        const __m256 x2 = _mm256_mul_ps(x, x);
+        const __m256 inner = _mm256_fmadd_ps(x2, _mm256_set1_ps(GELU_COEF_A), one);
+        const __m256 argument = _mm256_mul_ps(
+            _mm256_mul_ps(x, inner), _mm256_set1_ps(SQRT_2_OVER_PI));
+        const __m256 result = _mm256_mul_ps(
+            _mm256_mul_ps(x, _mm256_add_ps(one, tanh_avx2(argument))),
+            _mm256_set1_ps(0.5f));
+        _mm256_storeu_ps(output + i, result);
+    }
+#endif
+    for (; i < end; i++) {
         float x = output[i];
         output[i] = 0.5f * x * (1.0f + tanhf(SQRT_2_OVER_PI * x * (1.0f + GELU_COEF_A * x * x)));
     }
@@ -720,34 +805,33 @@ void softmax_F32(float *x, const NnUint size) {
 }
 
 static float dotProduct_F32(const float *a, const float *b, const unsigned int size) {
+    float sum = 0.0f;
+    unsigned int s = 0;
 #if defined(__ARM_NEON)
-    assert(size % 4 == 0);
     float32x4_t fa;
     float32x4_t fb;
     float32x4_t fs = vmovq_n_f32(0);
-    for (unsigned int i = 0; i < size; i += 4) {
+    s = size - (size % 4);
+    for (unsigned int i = 0; i < s; i += 4) {
         fa = vld1q_f32(&a[i]);
         fb = vld1q_f32(&b[i]);
         fs = vmlaq_f32(fs, fa, fb);
     }
-    return vaddvq_f32(fs);
+    sum = vaddvq_f32(fs);
 #elif defined(__AVX2__)
-    assert(size % 8 == 0);
     __m256 a0, b0;
     __m256 u = _mm256_set1_ps(0.0f);
-    for (unsigned int i = 0; i < size; i += 8) {
+    s = size - (size % 8);
+    for (unsigned int i = 0; i < s; i += 8) {
         a0 = _mm256_loadu_ps(&a[i]);
         b0 = _mm256_loadu_ps(&b[i]);
         u = _mm256_fmadd_ps(a0, b0, u);
     }
-    return horizontalSum_avx2(u);
-#else
-    float sum = 0.0f;
-    for (unsigned int i = 0; i < size; i++) {
-        sum += a[i] * b[i];
-    }
-    return sum;
+    sum = horizontalSum_avx2(u);
 #endif
+    for (; s < size; s++)
+        sum += a[s] * b[s];
+    return sum;
 }
 
 static void multiheadAtt_F32(
@@ -793,7 +877,7 @@ static void mul_F32(float *y, const float *x, const float *m, const NnUint n, co
 
 #if defined(__ARM_NEON)
     const unsigned int count = end - start;
-    const unsigned int neonEnd = end - (count % 8);
+    const unsigned int neonEnd = end - (count % 4);
     for (; i < neonEnd; i += 4) {
         float32x4_t out_vec = vld1q_f32(&x[i]);
         float32x4_t x_vec = vld1q_f32(&m[i]);
@@ -815,7 +899,22 @@ static void mul_F32(float *y, const float *x, const float *m, const NnUint n, co
 }
 
 static void scale_F32(const float *i, float *o, const float s, NnSize size, NnUint nThreads, NnUint threadIndex) {
-    for (NnUint x = threadIndex; x < size; x += nThreads)
+    SPLIT_THREADS(start, end, size, nThreads, threadIndex);
+    NnUint x = start;
+#if defined(__ARM_NEON)
+    const float32x4_t scale = vdupq_n_f32(s);
+    for (; x + 4u <= end; x += 4u) {
+        const float32x4_t input = vld1q_f32(i + x);
+        vst1q_f32(o + x, vmulq_f32(input, scale));
+    }
+#elif defined(__AVX2__)
+    const __m256 scale = _mm256_set1_ps(s);
+    for (; x + 8u <= end; x += 8u) {
+        const __m256 input = _mm256_loadu_ps(i + x);
+        _mm256_storeu_ps(o + x, _mm256_mul_ps(input, scale));
+    }
+#endif
+    for (; x < end; x++)
         o[x] = i[x] * s;
 }
 
@@ -979,11 +1078,26 @@ static void initEmbeddingForward(NnCpuOpContext *context) {
     ASSERT_EQ(context->weightSize.x, context->outputSize.x);
 }
 
+static NnUint floatToUintInRange(
+    const float value,
+    const NnUint begin,
+    const NnUint end,
+    const char *error)
+{
+    const double number = (double)value;
+    if (!std::isfinite(value) || std::floor(value) != value ||
+        number < (double)begin || number >= (double)end)
+        throw std::runtime_error(error);
+    return (NnUint)value;
+}
+
 static void embeddingForward_F32_F32_F32(NnUint nThreads, NnUint threadIndex, NnUint batchSize, NnCpuOpContext *context) {
     NnSize dimSize = getBytes(F_32, context->outputSize.x);
 
     for (NnUint batchIndex = 0; batchIndex < batchSize; batchIndex++) {
-        NnUint token = (NnUint)*((float *)context->input[batchIndex]);
+        const NnUint token = floatToUintInRange(
+            *((float *)context->input[batchIndex]), 0u, context->weightSize.y,
+            "EMBEDDING token must be an integer inside the vocabulary");
         copy_UNK(
             context->output[batchIndex],
             &context->weight[token * dimSize],
@@ -997,7 +1111,9 @@ static void embeddingForward_F32_F32_Q80(NnUint nThreads, NnUint threadIndex, Nn
     NnSize dimSize = getBytes(F_32, context->outputSize.x);
 
     for (NnUint batchIndex = 0; batchIndex < batchSize; batchIndex++) {
-        NnUint token = (NnUint)*((float *)context->input[batchIndex]);
+        const NnUint token = floatToUintInRange(
+            *((float *)context->input[batchIndex]), 0u, context->weightSize.y,
+            "EMBEDDING token must be an integer inside the vocabulary");
         quantizeF32toQ80(
             (float *)&context->weight[token * dimSize],
             (NnBlockQ80 *)context->output[batchIndex],
@@ -1118,7 +1234,9 @@ static void initMatmulForward(NnCpuOpContext *context) {
 }
 
 static bool matmulForward_llamafile(NnUint nThreads, NnUint threadIndex, NnUint batchSize, NnCpuOpContext *context) {
-    if (batchSize == 1u || !context->hasInputContinuousMemory || !context->hasOutputContinuousMemory || context->inputSize.z != 1u)
+    const NnMatmulOpConfig *config = (const NnMatmulOpConfig *)context->opConfig;
+    if (config->nExperts != 0u || batchSize == 1u || !context->hasInputContinuousMemory ||
+        !context->hasOutputContinuousMemory || context->inputSize.z != 1u)
         return false;
 
     const NnUint n = context->weightSize.y / getBlockSize(context->inputSize.floatType);
@@ -1209,9 +1327,13 @@ static void geluForward_F32_F32_F32(NnUint nThreads, NnUint threadIndex, NnUint 
     ASSERT_EQ(context->inputSize.x, context->outputSize.x);
     ASSERT_EQ(context->inputSize.y, context->outputSize.y);
 
-    for (NnUint batchIndex = 0; batchIndex < batchSize; batchIndex++) {
-        float *output = (float *)context->output[batchIndex];
-        gelu_F32(output, context->outputSize.x, nThreads, threadIndex);
+    ASSERT_EQ(context->inputSize.z, context->outputSize.z);
+
+    for (NnUint z = 0u; z < context->outputSize.z; z++) {
+        for (NnUint batchIndex = 0; batchIndex < batchSize; batchIndex++) {
+            float *output = (float *)context->output[z * context->outputSize.y + batchIndex];
+            gelu_F32(output, context->outputSize.x, nThreads, threadIndex);
+        }
     }
 }
 
@@ -1332,7 +1454,7 @@ static void initCastForward(NnCpuOpContext *context) {
 }
 
 static void castForward_ANY(NnUint nThreads, NnUint threadIndex, NnUint batchSize, NnCpuOpContext *context) {
-    const NnUint rowBytes = context->outputSize.nBytes / context->outputSize.y;
+    const NnUint rowBytes = getBytes(context->outputSize.floatType, context->outputSize.x);
 
     for (NnUint z = 0u; z < context->inputSize.z; z++) {
         const NnUint zOffset = z * context->inputSize.y;
@@ -1416,6 +1538,17 @@ static void repeatZForward_F32_Q80(NnUint nThreads, NnUint threadIndex, NnUint b
     }
 }
 
+static void initShiftForward(NnCpuOpContext *context) {
+    ASSERT_EQ(context->hasInputContinuousMemory, true);
+    ASSERT_EQ(context->hasOutputContinuousMemory, true);
+    ASSERT_EQ(context->inputSize.floatType, F_32);
+    ASSERT_EQ(context->outputSize.floatType, F_32);
+    ASSERT_EQ(context->inputSize.z, 1u);
+    ASSERT_EQ(context->outputSize.y, 1u);
+    assert(context->inputSize.x > 0u);
+    assert(context->outputSize.x % context->inputSize.x == 0u);
+}
+
 static void shiftForward_F32_F32(NnUint nThreads, NnUint threadIndex, NnUint batchSize, NnCpuOpContext *context) {
     ASSERT_EQ(context->hasInputContinuousMemory, true);
     ASSERT_EQ(context->hasOutputContinuousMemory, true);
@@ -1426,11 +1559,13 @@ static void shiftForward_F32_F32(NnUint nThreads, NnUint threadIndex, NnUint bat
     const NnShiftOpCodeConfig *config = (NnShiftOpCodeConfig *)context->opConfig;
     const float *indexes = (float *)context->pipes[config->indexPipeIndex];
     const NnSize dimBytes = getBytes(F_32, context->inputSize.x);
+    const NnUint nSlots = context->outputSize.x / context->inputSize.x;
     NnByte *output = context->output[0];
 
     for (NnUint batchIndex = 0; batchIndex < batchSize; batchIndex++) {
-        const NnSize index = (NnSize)indexes[batchIndex];
-        assert((index + 1) * context->inputSize.x <= context->outputSize.x);
+        const NnSize index = floatToUintInRange(
+            indexes[batchIndex], 0u, nSlots,
+            "SHIFT position must be an integer inside the output");
         copy_UNK(
             &output[index * dimBytes],
             context->input[batchIndex],
@@ -1532,6 +1667,8 @@ NnCpuOpForwardInit getCpuOpForwardInit(NnOpCode code, NnOpQuantType quantType) {
         return initCastForward;
     if (code == OP_REPEAT_Z)
         return initRepeatZForward;
+    if (code == OP_SHIFT)
+        return initShiftForward;
     if (code == OP_MOE_GATE)
         return initMoeGateForward;
     return nullptr;

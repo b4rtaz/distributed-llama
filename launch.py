@@ -95,15 +95,20 @@ def downloadFile(urls, path: str):
                 print(f'📄 {url} (attempt: {attempt})')
                 try:
                     with urlopen(url) as response:
+                        downloaded = 0
                         while True:
                             chunk = response.read(4096)
                             if not chunk:
                                 break
                             file.write(chunk)
+                            downloaded += len(chunk)
                             sizeMb = file.tell() // (1024 * 1024)
                             if sizeMb != lastSizeMb:
                                 sys.stdout.write("\rDownloaded %i MB" % sizeMb)
                                 lastSizeMb = sizeMb
+                        expectedSize = response.headers.get('Content-Length')
+                        if expectedSize is not None and downloaded != int(expectedSize):
+                            raise Exception(f'Incomplete download for {url}: expected {expectedSize} bytes, got {downloaded} bytes')
                     sys.stdout.write('\n')
                     success = True
                     break

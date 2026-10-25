@@ -328,11 +328,72 @@ void testLlamafileSgemm() {
 }
 
 void testScale() {
-    float i[] = {1.0f, 2.0f, 3.0f, 4.0f};
-    float o[4];
-    scale_F32(i, o, 0.5f, 4u, 1u, 0u);
-    float expectedOutput[] = {0.5f, 1.0f, 1.5f, 2.0f};
-    compare_F32("scale_F32", o, expectedOutput, 4u, 0.00001f);
+    constexpr NnUint size = 29u;
+    constexpr NnUint nThreads = 3u;
+    float input[size];
+    float output[size];
+    float expected[size];
+    for (NnUint i = 0u; i < size; i++) {
+        input[i] = (float)i - 5.0f;
+        output[i] = NAN;
+        expected[i] = input[i] * 0.5f;
+    }
+    for (NnUint threadIndex = 0u; threadIndex < nThreads; threadIndex++)
+        scale_F32(input, output, 0.5f, size, nThreads, threadIndex);
+    compare_F32("scale_F32", output, expected, size, 0.00001f);
+}
+
+void testGelu() {
+    constexpr NnUint size = 41u;
+    constexpr NnUint nThreads = 3u;
+    float output[size];
+    float expected[size];
+    for (NnUint i = 0u; i < size; i++) {
+        const float x = ((float)i - 20.0f) * 0.25f;
+        output[i] = x;
+        expected[i] = 0.5f * x *
+            (1.0f + tanhf(SQRT_2_OVER_PI * x * (1.0f + GELU_COEF_A * x * x)));
+    }
+    for (NnUint threadIndex = 0u; threadIndex < nThreads; threadIndex++)
+        gelu_F32(output, size, nThreads, threadIndex);
+    compare_F32("gelu_F32", output, expected, size, 0.000001f);
+}
+
+void testDotProductTail() {
+    const float a[] = {1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f, 8.0f, 9.0f};
+    const float b[] = {9.0f, 8.0f, 7.0f, 6.0f, 5.0f, 4.0f, 3.0f, 2.0f, 1.0f};
+    assert(fabsf(dotProduct_F32(a, b, 9u) - 165.0f) < 0.00001f);
+    printPassed("dotProductTail");
+}
+
+void testCast() {
+    float input[12];
+    float output[14];
+    for (NnUint i = 0u; i < 12u; i++) {
+        input[i] = (float)i;
+        output[i] = NAN;
+    }
+    output[12] = -1234.0f;
+    output[13] = -1234.0f;
+    NnByte *inputs[] = {
+        (NnByte *)(input + 0), (NnByte *)(input + 3),
+        (NnByte *)(input + 6), (NnByte *)(input + 9),
+    };
+    NnByte *outputs[] = {
+        (NnByte *)(output + 0), (NnByte *)(output + 3),
+        (NnByte *)(output + 6), (NnByte *)(output + 9),
+    };
+    NnCpuOpContext context = {};
+    context.input = inputs;
+    context.output = outputs;
+    context.inputSize = size3D(F_32, 2u, 2u, 3u);
+    context.outputSize = size3D(F_32, 2u, 2u, 3u);
+
+    castForward_ANY(1u, 0u, 2u, &context);
+
+    compare_F32("castForward_ANY", input, output, 12u, 0.0f);
+    assert(output[12] == -1234.0f);
+    assert(output[13] == -1234.0f);
 }
 
 void testTopk() {
@@ -369,6 +430,9 @@ int main() {
     testMatmul_F32_Q40_F32(1);
     testLlamafileSgemm();
     testScale();
+    testGelu();
+    testDotProductTail();
+    testCast();
     testTopk();
     return 0;
 }
