@@ -34,7 +34,6 @@ class TokensResolver:
     def resolvePreTrainedTokenizerFast(self):
         utb = unicodeToBytes()
         tokenizer = PreTrainedTokenizerFast(tokenizer_file = os.path.join(self.dirPath, 'tokenizer.json'))
-        config = openJson(os.path.join(self.dirPath, 'config.json'))
         vocabLen = len(tokenizer.get_vocab())
         for i in range(vocabLen):
             tokenChars = list(tokenizer.convert_ids_to_tokens([i])[0])
@@ -47,18 +46,11 @@ class TokensResolver:
             self.tokens.append(bytes(tokenBytes))
             self.scores.append(-float(i))
 
-        # Pad tokenizer vocab to match model vocab_size if needed
-        targetVocabSize = config.get('vocab_size', vocabLen)
-        if targetVocabSize > vocabLen:
-            print(f'⚠️ Padding tokenizer vocab from {vocabLen} to {targetVocabSize}')
-            for i in range(vocabLen, targetVocabSize):
-                self.tokens.append(f'<|reserved_{i}|>'.encode('utf-8'))
-                self.scores.append(-float(i))
-
         self.bosId = tokenizer.bos_token_id
         if (tokenizer.eos_token_id):
             self.eosIds = [tokenizer.eos_token_id]
-        if (self.bosId is None or self.eosIds is None):
+        if (self.bosId is None or self.eosId is None):
+            config = openJson(os.path.join(self.dirPath, 'config.json'))
             if (self.bosId is None):
                 self.bosId = config['bos_token_id']
             if (self.eosIds is None):
@@ -91,8 +83,7 @@ class TokensResolver:
 
     def resolve(self):
         cls = self.tokenizerConfig['tokenizer_class']
-        if (cls == 'PreTrainedTokenizer' or
-            cls == 'PreTrainedTokenizerFast' or
+        if (cls == 'PreTrainedTokenizerFast' or
             cls == 'LlamaTokenizerFast' or
             cls == 'Qwen2Tokenizer'):
             return self.resolvePreTrainedTokenizerFast()
