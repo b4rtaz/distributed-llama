@@ -14,9 +14,10 @@ Supports Linux, macOS, and Windows. Optimized for ARM and x86_64 AVX2 CPUs.
 - [🧠 How to Run on GPU](./docs/HOW_TO_RUN_GPU.md)
 
 **News**
-- 16 Sep 2025 - Qwen 3 MoE models are now supported on Vulkan.
-- 5 Sep 2025 - Qwen 3 MoE models are now supported on CPU.
-- 3 Aug 2025 - Qwen 3 0.6B, 1.7B, 8B and 14B models are now supported.
+- 27 Oct 2026 - [Diffusion Gemma Fork](https://github.com/b4rtaz/distributed-diffusion-llm)
+- 16 Sep 2025 - Qwen 3 MoE models are now supported on Vulkan
+- 5 Sep 2025 - Qwen 3 MoE models are now supported on CPU
+- 3 Aug 2025 - Qwen 3 0.6B, 1.7B, 8B and 14B models are now supported
 - 23 Mar 2025 - [🌋 Experimental Vulkan support](https://github.com/b4rtaz/distributed-llama/releases/tag/v0.13.0)
 - 12 Feb 2025 - 🚧 Merged the [fundamental codebase refactor](https://github.com/b4rtaz/distributed-llama/releases/tag/v0.12.0)
 - 9 Jan 2025 - [🍎 Llama 3.3 70B on 4 x Mac Mini M4 Pro 24GB RAM](https://github.com/b4rtaz/distributed-llama/discussions/147)
