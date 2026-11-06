@@ -1,7 +1,8 @@
 import sys
 import time
 import torch
-from writer import writeQuantizedQ40Tensor
+base = __import__('base-model-converter')
+writeQuantizedQ40Tensor = base.writeQuantizedQ40Tensor
 
 TEMP_FILE_NAME = 'writer-test.temp'
 

@@ -498,7 +498,7 @@ public:
 
             i += batchSize;
             pos += batchSize;
-            token = promptTokens[i + 1];
+            token = promptTokens[i];
         }
 
         inference->setBatchSize(1);

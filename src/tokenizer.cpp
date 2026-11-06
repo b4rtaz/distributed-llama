@@ -50,13 +50,8 @@ static uint64_t calcStringHash(const char *s) {
 }
 
 Tokenizer::Tokenizer(const char* tokenizerPath)
-    : eosTokenIds() {
-    bosId = -1;
-    addBos = false;
-    chatTemplate = nullptr;
-    maxTokenLength = 0;
+    : eosTokenIds(), bosId(-1), addBos(false), chatTemplate(nullptr), maxTokenLength(0), regularVocabSize(0) {
 
-    // read in the file
     std::unique_ptr<FILE, int(*)(FILE *)> fdPtr(fopen(tokenizerPath, "rb"), fclose);
     FILE *file = fdPtr.get();
     if (!file)
@@ -64,7 +59,6 @@ Tokenizer::Tokenizer(const char* tokenizerPath)
     int magic;
     if (fread(&magic, sizeof(int), 1, file) != 1)
         throw std::runtime_error("Cannot read tokenizer magic number");
-
 
     if (magic == 0x567123) {
         TokenizerOldHeader header;
@@ -86,6 +80,7 @@ Tokenizer::Tokenizer(const char* tokenizerPath)
         int version = -1;
         int chatTemplateLength = -1;
         int nEosTokens = 0;
+        int headerRegularVocabSize = -1;
         for (int i = 0; i < nKv; i += 2) {
             int key = buffer[i];
             int value = buffer[i + 1];
@@ -100,6 +95,7 @@ Tokenizer::Tokenizer(const char* tokenizerPath)
             else if (key == PAD_ID) {} // Ignored
             else if (key == N_EOS_TOKENS) nEosTokens = value;
             else if (key == ADD_BOS) addBos = value == 1;
+            else if (key == REGULAR_VOCAB_SIZE) headerRegularVocabSize = value;
             else {
                 throw std::runtime_error("Invalid tokenizer header key:" + std::to_string(key));
             }
@@ -122,6 +118,8 @@ Tokenizer::Tokenizer(const char* tokenizerPath)
                 eosTokenIds.push_back(eosTokenId);
             }
         }
+        if (headerRegularVocabSize >= 0)
+            regularVocabSize = headerRegularVocabSize;
     } else {
         throw std::runtime_error("Invalid tokenizer file");
     }
@@ -147,8 +145,13 @@ Tokenizer::Tokenizer(const char* tokenizerPath)
         vocabLength[i] = length;
     }
 
-    // TODO: this is very unstable assumption that bosId splits regular and special vocab
-    regularVocabSize = bosId;
+    if (regularVocabSize == 0) {
+        if (bosId < 0)
+            throw std::runtime_error("Tokenizer does not define regular vocabulary size");
+        regularVocabSize = bosId;
+    }
+    if (regularVocabSize > vocabSize)
+        throw std::runtime_error("Invalid tokenizer regular vocabulary size");
     specialVocabSize = vocabSize - regularVocabSize;
 
     regularVocab.reserve(regularVocabSize * 2);
@@ -568,6 +571,7 @@ static const char *chatTemplateTypeToString(const ChatTemplateType type) {
     if (type == TEMPLATE_LLAMA3) return "llama3";
     if (type == TEMPLATE_DEEP_SEEK3) return "deepSeek3";
     if (type == TEMPLATE_CHATML) return "chatml";
+    if (type == TEMPLATE_CHATML_THINKING) return "chatml_thinking";
     return "unknown";
 }
 
@@ -640,7 +644,7 @@ GeneratedChat ChatTemplateGenerator::generate(unsigned int nItems, ChatItem* ite
             buffer += "<｜Assistant｜><think>\n";
             publicPromptSize = 8; 
         }
-    } else if (type == TEMPLATE_CHATML) {
+    } else if (type == TEMPLATE_CHATML || type == TEMPLATE_CHATML_THINKING) {
         for (unsigned int i = 0; i < nItems; i++) {
             if (items[i].role == "system") {
                 buffer += "<|im_start|>system\n" + items[i].message + "<|im_end|>\n";
@@ -651,8 +655,13 @@ GeneratedChat ChatTemplateGenerator::generate(unsigned int nItems, ChatItem* ite
             } else if (items[i].role == "tool") {
                 buffer += "<|im_start|>tool\n" + items[i].message + "<|im_end|>\n";
             }
-            if (appendGenerationPrompt)
-                buffer += "<|im_start|>assistant\n";
+        }
+        if (appendGenerationPrompt) {
+            buffer += "<|im_start|>assistant\n";
+            if (type == TEMPLATE_CHATML_THINKING) {
+                buffer += "<think>\n";
+                publicPromptSize = 8;
+            }
         }
     }
 

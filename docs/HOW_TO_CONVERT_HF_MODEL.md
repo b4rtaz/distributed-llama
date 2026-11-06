@@ -11,13 +11,13 @@ Currently, Distributed Llama supports these Hugging Face models: `llama`, `mistr
 
 ```sh
 cd converter
-python convert-hf.py path/to/hf/model q40 mistral-7b-0.3
+python convert-model-llama.py path/to/hf/model q40 mistral-7b-0.3
 ```
 
 4. Run the converter of the tokenizer:
 
 ```sh
-python convert-tokenizer-hf.py path/to/hf/model mistral-7b-0.3
+python convert-tokenizer.py path/to/hf/model mistral-7b-0.3
 ```
 
 5. That's it! Now you can run the Distributed Llama.

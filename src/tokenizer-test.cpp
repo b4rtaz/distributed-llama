@@ -123,6 +123,41 @@ void testChatTemplateDetection() {
     ChatTemplateGenerator t0(TEMPLATE_UNKNOWN, "{\% set loop_messages = messages \%}{\% for message in loop_messages \%}{\% set content = '<|start_header_id|>' + message['role'] + '<|end_header_id|>\n\n'+ message['content'] | trim + '<|eot_id|>' \%}{\% if loop.index0 == 0 \%}{\% set content = bos_token + content \%}{\% endif \%}{{ content }}{\% endfor \%}{\% if add_generation_prompt \%}{{ '<|start_header_id|>assistant<|end_header_id|>\n\n' }}{\% endif \%}", "<eos>");
     assert(t0.type == TEMPLATE_LLAMA3);
 
+    ChatTemplateGenerator chatml(TEMPLATE_UNKNOWN, "{{ '<|im_start|>' }}", "<|im_end|>");
+    assert(chatml.type == TEMPLATE_CHATML);
+    ChatItem items[2] = {
+        {"user", "Hello"},
+        {"assistant", "Hi"},
+    };
+    GeneratedChat generated = chatml.generate(2, items, true);
+    assert(std::strcmp(
+        generated.content,
+        "<|im_start|>user\nHello<|im_end|>\n"
+        "<|im_start|>assistant\nHi<|im_end|>\n"
+        "<|im_start|>assistant\n") == 0);
+
+    ChatTemplateGenerator qwen3(
+        TEMPLATE_UNKNOWN,
+        "{{ '<|im_start|>' }}{% if enable_thinking is defined %}",
+        "<|im_end|>");
+    assert(qwen3.type == TEMPLATE_CHATML);
+    generated = qwen3.generate(1, items, true);
+    assert(std::strcmp(
+        generated.content,
+        "<|im_start|>user\nHello<|im_end|>\n"
+        "<|im_start|>assistant\n") == 0);
+
+    ChatTemplateGenerator chatmlThinking(
+        TEMPLATE_CHATML_THINKING,
+        "{{ '<|im_start|>' }}{% if enable_thinking is defined %}",
+        "<|im_end|>");
+    generated = chatmlThinking.generate(1, items, true);
+    assert(std::strcmp(
+        generated.content,
+        "<|im_start|>user\nHello<|im_end|>\n"
+        "<|im_start|>assistant\n<think>\n") == 0);
+    assert(std::strcmp(generated.publicPrompt, "<think>\n") == 0);
+
     printOk("chatTemplateDetection");
 }
 

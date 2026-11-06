@@ -78,13 +78,17 @@ endif
 # llm
 tokenizer.o: src/tokenizer.cpp
 	$(CXX) $(CXXFLAGS) -c $^ -o $@
-llm.o: src/llm.cpp
+graph.o: src/graphs/graph.cpp
+	$(CXX) $(CXXFLAGS) -c $^ -o $@
+llama-graph.o: src/graphs/llama-graph.cpp
+	$(CXX) $(CXXFLAGS) -c $^ -o $@
+qwen35-graph.o: src/graphs/qwen35-graph.cpp
 	$(CXX) $(CXXFLAGS) -c $^ -o $@
 app.o: src/app.cpp
 	$(CXX) $(CXXFLAGS) -c $^ -o $@
 tokenizer-test: src/tokenizer-test.cpp nn-quants.o nn-core.o llamafile-sgemm.o nn-cpu-ops.o tokenizer.o
 	$(CXX) $(CXXFLAGS) $^ -o $@ $(LIBS)
-dllama: src/dllama.cpp nn-quants.o nn-core.o nn-executor.o nn-network.o llamafile-sgemm.o nn-cpu-ops.o nn-cpu.o tokenizer.o llm.o app.o ${DEPS}
+dllama: src/dllama.cpp nn-quants.o nn-core.o nn-executor.o nn-network.o llamafile-sgemm.o nn-cpu-ops.o nn-cpu.o tokenizer.o graph.o llama-graph.o qwen35-graph.o app.o ${DEPS}
 	$(CXX) $(CXXFLAGS) $(filter-out %.spv, $^) -o $@ $(LIBS)
-dllama-api: src/dllama-api.cpp nn-quants.o nn-core.o nn-executor.o nn-network.o llamafile-sgemm.o nn-cpu-ops.o nn-cpu.o tokenizer.o llm.o app.o ${DEPS}
+dllama-api: src/dllama-api.cpp nn-quants.o nn-core.o nn-executor.o nn-network.o llamafile-sgemm.o nn-cpu-ops.o nn-cpu.o tokenizer.o graph.o llama-graph.o qwen35-graph.o app.o ${DEPS}
 	$(CXX) $(CXXFLAGS) $(filter-out %.spv, $^) -o $@ $(LIBS)

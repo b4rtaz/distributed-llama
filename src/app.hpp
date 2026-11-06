@@ -5,7 +5,7 @@
 #include "nn/nn-core.hpp"
 #include "nn/nn-cpu.hpp"
 #include "tokenizer.hpp"
-#include "llm.hpp"
+#include "graphs/graph.hpp"
 
 class AppCliArgs {
 public:
@@ -60,7 +60,7 @@ private:
     NnNetwork *network;
     LlmControlPacket controlPacket;
 public:
-    RootLlmInference(LlmNet *net, NnNetExecution *execution, NnExecutor *executor, NnNetwork *network);
+    RootLlmInference(LlmGraph *graph, NnNetExecution *execution, NnExecutor *executor, NnNetwork *network);
     void setBatchSize(NnUint batchSize);
     void setPosition(NnUint position);
     void setToken(NnUint batchIndex, NnUint token);

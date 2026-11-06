@@ -233,6 +233,138 @@ static void rmsNorm_F32(float *output, const float *x, const float invRms, const
         output[i] = w[i] * (invRms * x[i]);
 }
 
+static void rmsNormZeroCentered_F32(
+    float *output, const float *x, const float invRms, const float *w,
+    const NnUint size, const NnUint nThreads, const NnUint threadIndex) {
+    SPLIT_THREADS(start, end, size, nThreads, threadIndex);
+    for (NnUint i = start; i < end; i++)
+        output[i] = (1.0f + w[i]) * (invRms * x[i]);
+}
+
+static inline float sigmoid_F32(float x) {
+    if (x >= 0.0f)
+        return 1.0f / (1.0f + expf(-x));
+    const float e = expf(x);
+    return e / (1.0f + e);
+}
+
+static inline float softplus_F32(float x) {
+    return std::max(x, 0.0f) + log1pf(expf(-fabsf(x)));
+}
+
+static void sigmoidMul_F32(
+    float *output, const float *input, const float *multiplier, NnUint size,
+    NnUint nThreads, NnUint threadIndex) {
+    SPLIT_THREADS(start, end, size, nThreads, threadIndex);
+    for (NnUint i = start; i < end; i++)
+        output[i] = input[i] * sigmoid_F32(multiplier[i]);
+}
+
+static void partialRope_F32(
+    float *output, const float *input, const float *positionCache,
+    NnUint nHeads, NnUint headDim, NnUint rotaryDim,
+    NnUint nThreads, NnUint threadIndex) {
+    assert(rotaryDim > 0u && rotaryDim <= headDim && rotaryDim % 2u == 0u);
+    const NnUint rotaryHalf = rotaryDim / 2u;
+    SPLIT_THREADS(headStart, headEnd, nHeads, nThreads, threadIndex);
+    for (NnUint head = headStart; head < headEnd; head++) {
+        const NnUint offset = head * headDim;
+        for (NnUint i = 0u; i < rotaryHalf; i++) {
+            const float x0 = input[offset + i];
+            const float x1 = input[offset + rotaryHalf + i];
+            const float cosine = positionCache[i];
+            const float sine = positionCache[rotaryHalf + i];
+            output[offset + i] = x0 * cosine - x1 * sine;
+            output[offset + rotaryHalf + i] = x1 * cosine + x0 * sine;
+        }
+        if (output != input) {
+            for (NnUint i = rotaryDim; i < headDim; i++)
+                output[offset + i] = input[offset + i];
+        }
+    }
+}
+
+static void causalConv1d_F32(
+    float *output, const float *input, float *state, const float *weight,
+    NnUint nChannels, NnUint kernelSize, NnUint position, bool applySilu,
+    NnUint nThreads, NnUint threadIndex) {
+    assert(kernelSize > 0u);
+    SPLIT_THREADS(channelStart, channelEnd, nChannels, nThreads, threadIndex);
+    for (NnUint channel = channelStart; channel < channelEnd; channel++) {
+        float *channelState = &state[channel * kernelSize];
+        const float *channelWeight = &weight[channel * kernelSize];
+        if (position == 0u)
+            std::memset(channelState, 0, kernelSize * sizeof(float));
+        channelState[position % kernelSize] = input[channel];
+
+        float value = 0.0f;
+        for (NnUint kernelIndex = 0u; kernelIndex < kernelSize; kernelIndex++) {
+            const NnUint stateIndex = (position + 1u + kernelIndex) % kernelSize;
+            value += channelWeight[kernelIndex] * channelState[stateIndex];
+        }
+        output[channel] = applySilu ? value * sigmoid_F32(value) : value;
+    }
+}
+
+static void gatedDeltaNet_F32(
+    float *output, const float *query, const float *key, const float *value,
+    const float *a, const float *b, float *state,
+    const float *aLog, const float *dtBias,
+    NnUint nKeyHeads, NnUint nValueHeads, NnUint keyHeadDim, NnUint valueHeadDim,
+    bool resetState, NnUint nThreads, NnUint threadIndex) {
+    assert(nKeyHeads > 0u && nValueHeads >= nKeyHeads);
+    assert(nValueHeads % nKeyHeads == 0u);
+    const NnUint keyRepeat = nValueHeads / nKeyHeads;
+    const float queryScale = 1.0f / sqrtf((float)keyHeadDim);
+    SPLIT_THREADS(headStart, headEnd, nValueHeads, nThreads, threadIndex);
+
+    for (NnUint valueHead = headStart; valueHead < headEnd; valueHead++) {
+        const NnUint keyHead = valueHead / keyRepeat;
+        const float *q = &query[keyHead * keyHeadDim];
+        const float *k = &key[keyHead * keyHeadDim];
+        const float *v = &value[valueHead * valueHeadDim];
+        float *headState = &state[valueHead * keyHeadDim * valueHeadDim];
+        float *headOutput = &output[valueHead * valueHeadDim];
+
+        if (resetState)
+            std::memset(headState, 0, keyHeadDim * valueHeadDim * sizeof(float));
+
+        float qSquared = 0.0f;
+        float kSquared = 0.0f;
+        for (NnUint keyIndex = 0u; keyIndex < keyHeadDim; keyIndex++) {
+            qSquared += q[keyIndex] * q[keyIndex];
+            kSquared += k[keyIndex] * k[keyIndex];
+        }
+        const float qScale = queryScale / sqrtf(qSquared + 1e-6f);
+        const float kScale = 1.0f / sqrtf(kSquared + 1e-6f);
+        const float beta = sigmoid_F32(b[valueHead]);
+        const float g = -expf(aLog[valueHead]) * softplus_F32(a[valueHead] + dtBias[valueHead]);
+        const float decay = expf(g);
+
+        for (NnUint keyIndex = 0u; keyIndex < keyHeadDim; keyIndex++) {
+            float *stateRow = &headState[keyIndex * valueHeadDim];
+            for (NnUint valueIndex = 0u; valueIndex < valueHeadDim; valueIndex++)
+                stateRow[valueIndex] *= decay;
+        }
+
+        for (NnUint valueIndex = 0u; valueIndex < valueHeadDim; valueIndex++) {
+            float memoryValue = 0.0f;
+            for (NnUint keyIndex = 0u; keyIndex < keyHeadDim; keyIndex++)
+                memoryValue += headState[keyIndex * valueHeadDim + valueIndex] * (k[keyIndex] * kScale);
+            const float delta = (v[valueIndex] - memoryValue) * beta;
+            for (NnUint keyIndex = 0u; keyIndex < keyHeadDim; keyIndex++)
+                headState[keyIndex * valueHeadDim + valueIndex] += (k[keyIndex] * kScale) * delta;
+        }
+
+        for (NnUint valueIndex = 0u; valueIndex < valueHeadDim; valueIndex++) {
+            float result = 0.0f;
+            for (NnUint keyIndex = 0u; keyIndex < keyHeadDim; keyIndex++)
+                result += headState[keyIndex * valueHeadDim + valueIndex] * (q[keyIndex] * qScale);
+            headOutput[valueIndex] = result;
+        }
+    }
+}
+
 static void rmsNorm_Q80_F32_F32(float *output, const NnBlockQ80 *x, const float invRms, const float *w, const NnUint size, const NnUint nThreads, const NnUint threadIndex) {
     assert(size % Q80_BLOCK_SIZE == 0);
     const NnUint nBlocks = size / Q80_BLOCK_SIZE;
@@ -1216,6 +1348,29 @@ static void rmsNormForward_Q80_F32_F32(NnUint nThreads, NnUint threadIndex, NnUi
     }
 }
 
+static void rmsNormZeroCenteredForward_F32_F32_F32(
+    NnUint nThreads, NnUint threadIndex, NnUint batchSize, NnCpuOpContext *context) {
+    ASSERT_EQ(context->inputSize.floatType, F_32);
+
+    const NnRmsNormOpConfig *config = (NnRmsNormOpConfig *)context->opConfig;
+    const float *weight = (float *)context->weight;
+    const NnUint invRmsBatchSize = context->bufferConfigs[config->invRmsBufferIndex].size.x;
+    const float *invRms = (float *)context->buffers[config->invRmsBufferIndex];
+    const NnUint colSize = context->weightSize.x;
+
+    for (NnUint batchIndex = 0; batchIndex < batchSize; batchIndex++) {
+        const float *input = (float *)context->input[batchIndex];
+        float *output = (float *)context->output[batchIndex];
+        for (NnUint colIndex = 0; colIndex < config->nColumns; colIndex++) {
+            rmsNormZeroCentered_F32(
+                &output[colIndex * colSize],
+                &input[colIndex * colSize],
+                invRms[batchIndex * invRmsBatchSize + colIndex],
+                weight, colSize, nThreads, threadIndex);
+        }
+    }
+}
+
 static void initMatmulForward(NnCpuOpContext *context) {
     const NnMatmulOpConfig *config = (NnMatmulOpConfig *)context->opConfig;
     ASSERT_EQ(context->inputSize.y, context->nBatches);
@@ -1366,6 +1521,63 @@ static void ropeForward_F32_F32(NnUint nThreads, NnUint threadIndex, NnUint batc
     }
 }
 
+static void initPartialRopeForward_F32(NnCpuOpContext *context) {
+    const NnPartialRopeOpConfig *config = (NnPartialRopeOpConfig *)context->opConfig;
+    const NnRopeSlice *slice = &config->slice;
+    const NnUint expectedDim = config->isQ == 1u ? slice->qDim0 : slice->kvDim0;
+    ASSERT_EQ(context->inputSize.floatType, F_32);
+    ASSERT_EQ(context->outputSize.floatType, F_32);
+    ASSERT_EQ(context->inputSize.x, expectedDim);
+    ASSERT_EQ(context->outputSize.x, expectedDim);
+    ASSERT_EQ(context->inputSize.x % slice->headDim, 0u);
+    assert(config->rotaryDim > 0u && config->rotaryDim <= slice->headDim);
+    ASSERT_EQ(config->rotaryDim % 2u, 0u);
+
+    NnBufferConfig *cacheConfig = &context->bufferConfigs[config->ropeCacheBufferIndex];
+    ASSERT_EQ(cacheConfig->size.floatType, F_32);
+    assert(cacheConfig->size.x >= config->rotaryDim);
+    assert(cacheConfig->size.y >= slice->seqLen);
+
+    if (context->bufferFlags[config->ropeCacheBufferIndex] == 1u)
+        return;
+    context->bufferFlags[config->ropeCacheBufferIndex] = 1u;
+
+    float *cache = (float *)context->buffers[config->ropeCacheBufferIndex];
+    std::memset(cache, 0, cacheConfig->size.nBytes);
+    const NnUint rotaryHalf = config->rotaryDim / 2u;
+    for (NnUint position = 0u; position < slice->seqLen; position++) {
+        float *positionCache = &cache[position * cacheConfig->size.x];
+        for (NnUint i = 0u; i < rotaryHalf; i++) {
+            const float frequency = 1.0f / powf(
+                slice->ropeTheta, 2.0f * (float)i / (float)config->rotaryDim);
+            const float angle = (float)position * frequency;
+            positionCache[i] = cosf(angle);
+            positionCache[rotaryHalf + i] = sinf(angle);
+        }
+    }
+}
+
+static void partialRopeForward_F32_F32(
+    NnUint nThreads, NnUint threadIndex, NnUint batchSize, NnCpuOpContext *context) {
+    const NnPartialRopeOpConfig *config = (NnPartialRopeOpConfig *)context->opConfig;
+    const NnBufferConfig *cacheConfig = &context->bufferConfigs[config->ropeCacheBufferIndex];
+    const float *cache = (float *)context->buffers[config->ropeCacheBufferIndex];
+    const float *positions = (float *)context->pipes[config->positionPipeIndex];
+    const NnUint nHeads = context->inputSize.x / config->slice.headDim;
+
+    for (NnUint batchIndex = 0u; batchIndex < batchSize; batchIndex++) {
+        const NnUint position = floatToUintInRange(
+            positions[batchIndex], 0u, config->slice.seqLen,
+            "PARTIAL_ROPE position must be inside the context");
+        partialRope_F32(
+            (float *)context->output[batchIndex],
+            (float *)context->input[batchIndex],
+            &cache[position * cacheConfig->size.x],
+            nHeads, config->slice.headDim, config->rotaryDim,
+            nThreads, threadIndex);
+    }
+}
+
 static void initMultiHeadAttForward(NnCpuOpContext *context) {
     const NnMultiHeadAttOpConfig *config = (NnMultiHeadAttOpConfig *)context->opConfig;
 
@@ -1428,6 +1640,38 @@ static void mulForward_F32_F32(NnUint nThreads, NnUint threadIndex, NnUint batch
                 context->outputSize.x,
                 nThreads,
                 threadIndex);
+        }
+    }
+}
+
+static void initSigmoidMulForward(NnCpuOpContext *context) {
+    const NnSigmoidMulOpConfig *config = (NnSigmoidMulOpConfig *)context->opConfig;
+    const NnBufferConfig *multiplierConfig = &context->bufferConfigs[config->multiplierBufferIndex];
+    assert(context->weightSize.nBytes == 0u);
+    ASSERT_EQ(context->inputSize.floatType, F_32);
+    ASSERT_EQ(context->outputSize.floatType, F_32);
+    ASSERT_EQ(context->inputSize.x, context->outputSize.x);
+    ASSERT_EQ(context->inputSize.y, context->outputSize.y);
+    ASSERT_EQ(context->inputSize.z, context->outputSize.z);
+    ASSERT_EQ(multiplierConfig->size.floatType, F_32);
+    ASSERT_EQ(multiplierConfig->size.x, context->inputSize.x);
+    ASSERT_EQ(multiplierConfig->size.y, context->inputSize.y);
+    ASSERT_EQ(multiplierConfig->size.z, context->inputSize.z);
+}
+
+static void sigmoidMulForward_F32_F32(
+    NnUint nThreads, NnUint threadIndex, NnUint batchSize, NnCpuOpContext *context) {
+    const NnSigmoidMulOpConfig *config = (NnSigmoidMulOpConfig *)context->opConfig;
+    const float *multiplier = (float *)context->buffers[config->multiplierBufferIndex];
+    for (NnUint z = 0u; z < context->inputSize.z; z++) {
+        const NnUint zOffset = z * context->inputSize.y;
+        for (NnUint batchIndex = 0u; batchIndex < batchSize; batchIndex++) {
+            const NnUint index = zOffset + batchIndex;
+            sigmoidMul_F32(
+                (float *)context->output[index],
+                (float *)context->input[index],
+                &multiplier[index * context->inputSize.x],
+                context->inputSize.x, nThreads, threadIndex);
         }
     }
 }
@@ -1575,6 +1819,104 @@ static void shiftForward_F32_F32(NnUint nThreads, NnUint threadIndex, NnUint bat
     }
 }
 
+static void initCausalConv1dForward(NnCpuOpContext *context) {
+    const NnCausalConv1DOpConfig *config = (NnCausalConv1DOpConfig *)context->opConfig;
+    const NnBufferConfig *stateConfig = &context->bufferConfigs[config->stateBufferIndex];
+    ASSERT_EQ(context->inputSize.floatType, F_32);
+    ASSERT_EQ(context->outputSize.floatType, F_32);
+    ASSERT_EQ(context->weightSize.floatType, F_32);
+    ASSERT_EQ(context->inputSize.x, context->outputSize.x);
+    ASSERT_EQ(context->inputSize.y, context->outputSize.y);
+    ASSERT_EQ(context->inputSize.z, context->outputSize.z);
+    ASSERT_EQ(context->weightSize.x, config->kernelSize);
+    ASSERT_EQ(context->weightSize.y, context->inputSize.x);
+    ASSERT_EQ(context->weightSize.z, 1u);
+    ASSERT_EQ(stateConfig->size.floatType, F_32);
+    ASSERT_EQ(stateConfig->size.x, config->kernelSize);
+    ASSERT_EQ(stateConfig->size.y, context->inputSize.x);
+    ASSERT_EQ(stateConfig->size.z, 1u);
+    std::memset(context->buffers[config->stateBufferIndex], 0, stateConfig->size.nBytes);
+}
+
+static void causalConv1dForward_F32_F32_F32(
+    NnUint nThreads, NnUint threadIndex, NnUint batchSize, NnCpuOpContext *context) {
+    const NnCausalConv1DOpConfig *config = (NnCausalConv1DOpConfig *)context->opConfig;
+    const float *positions = (float *)context->pipes[config->positionPipeIndex];
+    float *state = (float *)context->buffers[config->stateBufferIndex];
+    const float *weight = (float *)context->weight;
+
+    for (NnUint batchIndex = 0u; batchIndex < batchSize; batchIndex++) {
+        const NnUint position = floatToUintInRange(
+            positions[batchIndex], 0u, UINT32_MAX,
+            "CAUSAL_CONV1D position must be a non-negative integer");
+        causalConv1d_F32(
+            (float *)context->output[batchIndex],
+            (float *)context->input[batchIndex],
+            state, weight, context->inputSize.x, config->kernelSize, position,
+            config->applySilu == 1u, nThreads, threadIndex);
+    }
+}
+
+static void initGatedDeltaNetForward(NnCpuOpContext *context) {
+    const NnGatedDeltaNetOpConfig *config = (NnGatedDeltaNetOpConfig *)context->opConfig;
+    const NnBufferConfig *keyConfig = &context->bufferConfigs[config->keyBufferIndex];
+    const NnBufferConfig *valueConfig = &context->bufferConfigs[config->valueBufferIndex];
+    const NnBufferConfig *aConfig = &context->bufferConfigs[config->aBufferIndex];
+    const NnBufferConfig *bConfig = &context->bufferConfigs[config->bBufferIndex];
+    const NnBufferConfig *stateConfig = &context->bufferConfigs[config->recurrentStateBufferIndex];
+
+    ASSERT_EQ(context->inputSize.floatType, F_32);
+    ASSERT_EQ(context->outputSize.floatType, F_32);
+    ASSERT_EQ(context->weightSize.floatType, F_32);
+    assert(config->nKeyHeads > 0u && config->nValueHeads >= config->nKeyHeads);
+    ASSERT_EQ(config->nValueHeads % config->nKeyHeads, 0u);
+    ASSERT_EQ(context->inputSize.x, config->nKeyHeads * config->keyHeadDim);
+    ASSERT_EQ(context->outputSize.x, config->nValueHeads * config->valueHeadDim);
+    ASSERT_EQ(keyConfig->size.x, context->inputSize.x);
+    ASSERT_EQ(valueConfig->size.x, context->outputSize.x);
+    ASSERT_EQ(aConfig->size.x, config->nValueHeads);
+    ASSERT_EQ(bConfig->size.x, config->nValueHeads);
+    ASSERT_EQ(context->weightSize.x, config->nValueHeads);
+    ASSERT_EQ(context->weightSize.y, 2u);
+    ASSERT_EQ(stateConfig->size.floatType, F_32);
+    ASSERT_EQ(stateConfig->size.x, config->valueHeadDim);
+    ASSERT_EQ(stateConfig->size.y, config->keyHeadDim);
+    ASSERT_EQ(stateConfig->size.z, config->nValueHeads);
+    std::memset(context->buffers[config->recurrentStateBufferIndex], 0, stateConfig->size.nBytes);
+}
+
+static void gatedDeltaNetForward_F32_F32_F32(
+    NnUint nThreads, NnUint threadIndex, NnUint batchSize, NnCpuOpContext *context) {
+    const NnGatedDeltaNetOpConfig *config = (NnGatedDeltaNetOpConfig *)context->opConfig;
+    const float *positions = (float *)context->pipes[config->positionPipeIndex];
+    const float *key = (float *)context->buffers[config->keyBufferIndex];
+    const float *value = (float *)context->buffers[config->valueBufferIndex];
+    const float *a = (float *)context->buffers[config->aBufferIndex];
+    const float *b = (float *)context->buffers[config->bBufferIndex];
+    float *state = (float *)context->buffers[config->recurrentStateBufferIndex];
+    const float *aLog = (float *)context->weight;
+    const float *dtBias = &aLog[config->nValueHeads];
+
+    const NnUint keyBatchSize = config->nKeyHeads * config->keyHeadDim;
+    const NnUint valueBatchSize = config->nValueHeads * config->valueHeadDim;
+    for (NnUint batchIndex = 0u; batchIndex < batchSize; batchIndex++) {
+        const NnUint position = floatToUintInRange(
+            positions[batchIndex], 0u, UINT32_MAX,
+            "GATED_DELTA_NET position must be a non-negative integer");
+        gatedDeltaNet_F32(
+            (float *)context->output[batchIndex],
+            (float *)context->input[batchIndex],
+            &key[batchIndex * keyBatchSize],
+            &value[batchIndex * valueBatchSize],
+            &a[batchIndex * config->nValueHeads],
+            &b[batchIndex * config->nValueHeads],
+            state, aLog, dtBias,
+            config->nKeyHeads, config->nValueHeads,
+            config->keyHeadDim, config->valueHeadDim,
+            position == 0u, nThreads, threadIndex);
+    }
+}
+
 static void softmaxForward_F32_F32(NnUint nThreads, NnUint threadIndex, NnUint batchSize, NnCpuOpContext *context) {
     assert(*context->input == *context->output);
 
@@ -1655,20 +1997,30 @@ NnCpuOpForwardInit getCpuOpForwardInit(NnOpCode code, NnOpQuantType quantType) {
         return initInvRmsForward;
     if (code == OP_RMS_NORM)
         return initRmsNormForward_ANY_F32_F32;
+    if (code == OP_RMS_NORM_ZERO_CENTERED)
+        return initRmsNormForward_ANY_F32_F32;
     if (code == OP_ROPE)
         return initRopeForward_F32;
+    if (code == OP_PARTIAL_ROPE)
+        return initPartialRopeForward_F32;
     if (code == OP_MULTIHEAD_ATT)
         return initMultiHeadAttForward;
     if (code == OP_MATMUL)
         return initMatmulForward;
     if (code == OP_MUL)
         return initMulForward;
+    if (code == OP_SIGMOID_MUL)
+        return initSigmoidMulForward;
     if (code == OP_CAST)
         return initCastForward;
     if (code == OP_REPEAT_Z)
         return initRepeatZForward;
     if (code == OP_SHIFT)
         return initShiftForward;
+    if (code == OP_CAUSAL_CONV1D)
+        return initCausalConv1dForward;
+    if (code == OP_GATED_DELTA_NET)
+        return initGatedDeltaNetForward;
     if (code == OP_MOE_GATE)
         return initMoeGateForward;
     return nullptr;
@@ -1693,12 +2045,18 @@ NnCpuOpForward getCpuOpForward(NnOpCode code, NnOpQuantType quantType) {
         if (quantType == F32_F32_F32) return rmsNormForward_F32_F32_F32;
         if (quantType == Q80_F32_F32) return rmsNormForward_Q80_F32_F32;
     }
+    if (code == OP_RMS_NORM_ZERO_CENTERED) {
+        if (quantType == F32_F32_F32) return rmsNormZeroCenteredForward_F32_F32_F32;
+    }
     if (code == OP_MATMUL) {
         if (quantType == F32_F32_F32) return matmulForward_F32_F32_F32;
         if (quantType == Q80_Q40_F32) return matmulForward_Q80_Q40_F32;
     }
     if (code == OP_ROPE) {
         if (quantType == F32_F32_F32) return ropeForward_F32_F32;
+    }
+    if (code == OP_PARTIAL_ROPE) {
+        if (quantType == F32_F32_F32) return partialRopeForward_F32_F32;
     }
     if (code == OP_MULTIHEAD_ATT) {
         if (quantType == F32_F32_F32) return multiHeadAttForward_F32_F32;
@@ -1711,6 +2069,9 @@ NnCpuOpForward getCpuOpForward(NnOpCode code, NnOpQuantType quantType) {
     }
     if (code == OP_MUL) {
         if (quantType == F32_F32_F32) return mulForward_F32_F32;
+    }
+    if (code == OP_SIGMOID_MUL) {
+        if (quantType == F32_F32_F32) return sigmoidMulForward_F32_F32;
     }
     if (code == OP_SCALE) {
         if (quantType == F32_F32_F32) return scaleForward_F32_F32;
@@ -1726,6 +2087,12 @@ NnCpuOpForward getCpuOpForward(NnOpCode code, NnOpQuantType quantType) {
     }
     if (code == OP_SHIFT) {
         if (quantType == F32_F32_F32) return shiftForward_F32_F32;
+    }
+    if (code == OP_CAUSAL_CONV1D) {
+        if (quantType == F32_F32_F32) return causalConv1dForward_F32_F32_F32;
+    }
+    if (code == OP_GATED_DELTA_NET) {
+        if (quantType == F32_F32_F32) return gatedDeltaNetForward_F32_F32_F32;
     }
     if (code == OP_SOFTMAX) {
         if (quantType == F32_F32_F32) return softmaxForward_F32_F32;

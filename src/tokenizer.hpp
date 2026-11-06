@@ -32,6 +32,7 @@ enum TokenizerHeaderKey {
     CHAT_STOP = 8, // Ignored
     N_EOS_TOKENS = 9,
     ADD_BOS = 10,
+    REGULAR_VOCAB_SIZE = 11,
 };
 
 class Tokenizer {
@@ -107,6 +108,7 @@ enum ChatTemplateType {
     TEMPLATE_LLAMA3 = 2,
     TEMPLATE_DEEP_SEEK3 = 3,
     TEMPLATE_CHATML = 4,
+    TEMPLATE_CHATML_THINKING = 5,
 };
 
 struct ChatItem {
