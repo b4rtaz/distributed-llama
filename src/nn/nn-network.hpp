@@ -133,4 +133,22 @@ private:
     void allocate(NnUint size);
 };
 
+class NnLocalWeightLoader {
+private:
+    NnExecutor *executor;
+    NnUint nodeIndex;
+    NnUint nNodes;
+    NnByte *temp;
+    NnSize tempSize;
+    void allocate(NnSize size);
+public:
+    NnLocalWeightLoader(NnExecutor *executor, NnUint nodeIndex, NnUint nNodes);
+    ~NnLocalWeightLoader();
+    NnSize loadRoot(const char *opName, NnUint opIndex, NnSize nBytes, NnByte *weight);
+    NnSize loadAll(const char *opName, NnUint opIndex, NnSize nBytes, NnByte *weight);
+    NnSize loadRowMatmulSlices(const char *opName, const NnUint opIndex, const NnUint expertIndex, NnRowMatmulSlice *slice, NnByte *weight);
+    NnSize loadColMatmulSlices(const char *opName, const NnUint opIndex, const NnUint expertIndex, NnColMatmulSlice *slice, NnByte *weight);
+    void finish();
+};
+
 #endif
