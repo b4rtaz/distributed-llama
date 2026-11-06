@@ -311,8 +311,8 @@ void runWorkerApp(AppCliArgs *args) {
 
         NnWorkerConfigReader configReader(network);
         NnNetConfig netConfig = configReader.readNet();
-        NnNodeConfig nodeConfig = configReader.readNode();
         std::unique_ptr<NnNetConfig, void(*)(NnNetConfig *)> netConfigPtr(&netConfig, releaseNetConfig);
+        NnNodeConfig nodeConfig = configReader.readNode();
         std::unique_ptr<NnNodeConfig, void(*)(NnNodeConfig *)> nodeConfigPtr(&nodeConfig, releaseNodeConfig);
 
         printNodeRequiredMemory(&netConfig, &nodeConfig);

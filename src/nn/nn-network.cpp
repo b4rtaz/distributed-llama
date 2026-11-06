@@ -724,36 +724,55 @@ NnWorkerConfigReader::NnWorkerConfigReader(NnNetwork *network) {
 
 NnNetConfig NnWorkerConfigReader::readNet() {
     network->readAck(ROOT_SOCKET_INDEX);
-    NnNetConfig config;
+    NnNetConfig config = {};
+    std::unique_ptr<NnNetConfig, void(*)(NnNetConfig *)> configPtr(&config, releaseNetConfig);
     network->read(ROOT_SOCKET_INDEX, &config.nBatches, sizeof(config.nBatches));
     network->read(ROOT_SOCKET_INDEX, &config.nNodes, sizeof(config.nNodes));
-    network->read(ROOT_SOCKET_INDEX, &config.nPipes, sizeof(config.nPipes));
-    config.pipes = new NnPipeConfig[config.nPipes];
+    NnUint nPipes;
+    network->read(ROOT_SOCKET_INDEX, &nPipes, sizeof(nPipes));
+    if (nPipes > 0) {
+        config.pipes = new NnPipeConfig[nPipes]();
+        config.nPipes = nPipes;
+    }
     for (NnUint pipeIndex = 0; pipeIndex < config.nPipes; pipeIndex++) {
         NnPipeConfig *pipeConfig = &config.pipes[pipeIndex];
         network->read(ROOT_SOCKET_INDEX, &pipeConfig->size, sizeof(pipeConfig->size));
         pipeConfig->name = readString(network, ROOT_SOCKET_INDEX);
     }
-    network->read(ROOT_SOCKET_INDEX, &config.nPreSyncs, sizeof(config.nPreSyncs));
-    config.preSyncs = new NnPreSyncConfig[config.nPreSyncs];
+    NnUint nPreSyncs;
+    network->read(ROOT_SOCKET_INDEX, &nPreSyncs, sizeof(nPreSyncs));
+    if (nPreSyncs > 0) {
+        config.preSyncs = new NnPreSyncConfig[nPreSyncs]();
+        config.nPreSyncs = nPreSyncs;
+    }
     for (NnUint preSyncIndex = 0; preSyncIndex < config.nPreSyncs; preSyncIndex++) {
         NnPreSyncConfig *preSyncConfig = &config.preSyncs[preSyncIndex];
         network->read(ROOT_SOCKET_INDEX, &preSyncConfig->pipeIndex, sizeof(preSyncConfig->pipeIndex));
     }
     network->writeAck(ROOT_SOCKET_INDEX);
+    configPtr.release();
     return config;
 }
 
 NnNodeConfig NnWorkerConfigReader::readNode() {
     network->readAck(ROOT_SOCKET_INDEX);
 
-    NnNodeConfig config;
+    NnNodeConfig config = {};
+    std::unique_ptr<NnNodeConfig, void(*)(NnNodeConfig *)> configPtr(&config, releaseNodeConfig);
     network->read(ROOT_SOCKET_INDEX, &config.nodeIndex, sizeof(config.nodeIndex));
-    network->read(ROOT_SOCKET_INDEX, &config.nBuffers, sizeof(config.nBuffers));
-    network->read(ROOT_SOCKET_INDEX, &config.nSegments, sizeof(config.nSegments));
+    NnUint nBuffers;
+    NnUint nSegments;
+    network->read(ROOT_SOCKET_INDEX, &nBuffers, sizeof(nBuffers));
+    network->read(ROOT_SOCKET_INDEX, &nSegments, sizeof(nSegments));
 
-    config.buffers = new NnBufferConfig[config.nBuffers];
-    config.segments = new NnSegmentConfig[config.nSegments];
+    if (nBuffers > 0) {
+        config.buffers = new NnBufferConfig[nBuffers]();
+        config.nBuffers = nBuffers;
+    }
+    if (nSegments > 0) {
+        config.segments = new NnSegmentConfig[nSegments]();
+        config.nSegments = nSegments;
+    }
 
     for (NnUint bufferIndex = 0; bufferIndex < config.nBuffers; bufferIndex++) {
         NnBufferConfig *bufferConfig = &config.buffers[bufferIndex];
@@ -763,11 +782,14 @@ NnNodeConfig NnWorkerConfigReader::readNode() {
 
     for (NnUint segmentIndex = 0; segmentIndex < config.nSegments; segmentIndex++) {
         NnSegmentConfig *segmentConfig = &config.segments[segmentIndex];
-        network->read(ROOT_SOCKET_INDEX, &segmentConfig->nSyncs, sizeof(segmentConfig->nSyncs));
-        network->read(ROOT_SOCKET_INDEX, &segmentConfig->nOps, sizeof(segmentConfig->nOps));
+        NnUint nSyncs;
+        NnUint nOps;
+        network->read(ROOT_SOCKET_INDEX, &nSyncs, sizeof(nSyncs));
+        network->read(ROOT_SOCKET_INDEX, &nOps, sizeof(nOps));
 
-        if (segmentConfig->nSyncs > 0) {
-            segmentConfig->syncs = new NnSyncConfig[segmentConfig->nSyncs];
+        if (nSyncs > 0) {
+            segmentConfig->syncs = new NnSyncConfig[nSyncs]();
+            segmentConfig->nSyncs = nSyncs;
 
             for (NnUint syncIndex = 0; syncIndex < segmentConfig->nSyncs; syncIndex++) {
                 NnSyncConfig *syncConfig = &segmentConfig->syncs[syncIndex];
@@ -776,8 +798,9 @@ NnNodeConfig NnWorkerConfigReader::readNode() {
             }
         }
 
-        if (segmentConfig->nOps > 0) {
-            segmentConfig->ops = new NnOpConfig[segmentConfig->nOps];
+        if (nOps > 0) {
+            segmentConfig->ops = new NnOpConfig[nOps]();
+            segmentConfig->nOps = nOps;
 
             for (NnUint opIndex = 0; opIndex < segmentConfig->nOps; opIndex++) {
                 NnOpConfig *opConfig = &segmentConfig->ops[opIndex];
@@ -796,6 +819,7 @@ NnNodeConfig NnWorkerConfigReader::readNode() {
         }
     }
     network->writeAck(ROOT_SOCKET_INDEX);
+    configPtr.release();
     return config;
 }
 
