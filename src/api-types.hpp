@@ -69,10 +69,9 @@ struct ChatMessage {
 struct ChunkChoice {
     int index;
     ChatMessageDelta delta;
-    bool has_delta;
     std::string finish_reason;
 
-    ChunkChoice() : index(0), delta(), has_delta(false) {}
+    ChunkChoice() : index(0), delta() {}
 };
 
 
@@ -195,7 +194,9 @@ void to_json(json& j, const ToolCallDelta& call) {
 
 // Define to_json for Delta struct
 void to_json(json& j, const ChatMessageDelta& msg) {
-    j = json{{"role", msg.role}};
+    j = json::object();
+    if (!msg.role.empty())
+        j["role"] = msg.role;
     if (!msg.content.empty())
         j["content"] = msg.content;
     if (msg.has_tool_calls && !msg.tool_calls.empty()) {
@@ -219,10 +220,7 @@ void to_json(json& j, const ChatMessage& msg) {
 }
 
 void to_json(json& j, const ChunkChoice& choice) {
-    j = json{{"index", choice.index}, {"finish_reason", choice.finish_reason}};
-    if (choice.has_delta) {
-        j["delta"] = choice.delta;
-    }
+    j = json{{"index", choice.index}, {"delta", choice.delta}, {"finish_reason", choice.finish_reason}};
 }
 
 void to_json(json& j, const Choice& choice) {

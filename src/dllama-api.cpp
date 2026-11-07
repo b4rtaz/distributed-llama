@@ -286,7 +286,6 @@ void writeChatCompletionChunk(HttpRequest &request, const std::string &delta, co
         choice.finish_reason = "stop";
     } else {
         choice.delta = ChatMessageDelta("assistant", delta);
-        choice.has_delta = true;
     }
     ChatCompletionChunk chunk = ChatCompletionChunk(choice);
 
@@ -295,7 +294,7 @@ void writeChatCompletionChunk(HttpRequest &request, const std::string &delta, co
     request.writeStreamChunk(buffer.str());
 
     if (stop) {
-        request.writeStreamChunk("data: [DONE]");
+        request.writeStreamChunk("data: [DONE]\r\n\r\n");
         request.writeStreamEndChunk();
     }
 }
