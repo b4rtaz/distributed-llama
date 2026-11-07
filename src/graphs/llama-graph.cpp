@@ -1,121 +1,99 @@
-#include "nn/nn-core.hpp"
-#include "nn/nn-config-builder.hpp"
-#include "nn/nn-cpu.hpp"
-#include "nn/nn-network.hpp"
-#include "mmap.hpp"
-#include "llm.hpp"
-#include <cerrno>
+#include "../nn/nn-core.hpp"
+#include "../nn/nn-config-builder.hpp"
+#include "../mmap.hpp"
+#include "llama-graph.hpp"
+#include <cassert>
+#include <memory>
 #include <stdexcept>
+#include <vector>
 
-static const char *hiddenActToString(LlmHiddenAct act) {
-    if (act == HIDDEN_ACT_GELU) return "Gelu";
-    if (act == HIDDEN_ACT_SILU) return "Silu";
-    throw std::runtime_error("Unsupported hidden act");
-}
-
-static const char *ropeTypeToString(NnRopeType type) {
-    if (type == ROPE_LLAMA) return "Llama";
-    if (type == ROPE_LLAMA3_1) return "Llama3.1";
-    if (type == ROPE_FALCON) return "Falcon";
-    throw std::runtime_error("Unsupported rope type");
-}
-
-static const char *archTypeToString(LlmArchType type) {
+static const char *archTypeToString(LlamaLlmArchType type) {
     if (type == LLAMA) return "Llama";
     if (type == QWEN3) return "Qwen3";
     if (type == QWEN3_MOE) return "Qwen3 MoE";
     throw std::runtime_error("Unsupported architecture");
 }
 
-static float convertNormEpsilon(int value) {
-    if (value == 5) return 1e-05f;
-    if (value == 6) return 1e-06f;
-    throw std::runtime_error("Unsupported norm epsilon");
-}
+class LlamaLlmModel : public LlmModel {
+public:
+    LlamaLlmModel() : LlmModel({LLM_MAGIC_LLAMA}) {}
 
-LlmHeader loadLlmHeader(const char *path, const NnUint maxSeqLen, NnFloatType syncType) {
-    LlmHeader header;
-    std::memset(&header, 0, sizeof(LlmHeader));
-    header.weightType = F_UNK;
-    header.hiddenAct = HIDDEN_ACT_SILU;
-    header.ropeType = ROPE_LLAMA;
-    header.ropeTheta = 10000.0f;
-    header.ropeScalingFactor = 1.0f;
-    header.normEpsilon = 1e-5f;
-    header.moeHiddenDim = 0u;
+    std::unique_ptr<LlmHeader> loadHeader(
+        FILE *file, int magic, NnUint maxSeqLen, NnFloatType syncType) const override;
+    void printHeader(const LlmHeader *header) const override;
+    std::unique_ptr<LlmGraph> buildGraph(
+        LlmHeader *header, NnUint nNodes, NnUint nBatches) const override;
+    void loadGraph(const char *path, LlmGraph *graph, NnRootWeightLoader *loader) const override;
+};
 
-    std::unique_ptr<FILE, int(*)(FILE *)> fdPtr(fopen(path, "rb"), fclose);
-    FILE *fd = fdPtr.get();
-    if (fd == NULL)
-        throw std::runtime_error(std::string("Cannot open model file (") + path + std::string("): ") + std::strerror(errno));
+std::unique_ptr<LlmHeader> LlamaLlmModel::loadHeader(
+    FILE *file, int magic, NnUint maxSeqLen, NnFloatType syncType) const {
+    std::unique_ptr<LlamaLlmHeader> header(new LlamaLlmHeader());
+    header->magic = magic;
+    header->weightType = F_UNK;
+    header->hiddenAct = HIDDEN_ACT_SILU;
+    header->ropeType = ROPE_LLAMA;
+    header->ropeTheta = 10000.0f;
+    header->ropeScalingFactor = 1.0f;
+    header->normEpsilon = 1e-5f;
+    header->moeHiddenDim = 0u;
 
-    int magic;
-    if (fread(&magic, sizeof(int), 1, fd) != 1)
-        throw std::runtime_error("Cannot read magic value");
-
-    if (magic == 0xABCD00 || magic == 0xABCD01)
-        throw std::runtime_error("Old model format is not supported");
-    if (magic != 0xA00ABCD)
-        throw std::runtime_error("Unsupported magic number");
-
-    if (fread(&header.headerSize, sizeof(int), 1, fd) != 1)
+    if (fread(&header->headerSize, sizeof(int), 1, file) != 1)
         throw std::runtime_error("Cannot read header size");
 
-    std::vector<int> bufferPtr(header.headerSize);
+    std::vector<int> bufferPtr(header->headerSize);
     int *buffer = &bufferPtr[0];
-    if (fread(buffer, header.headerSize, 1, fd) != 1)
+    if (fread(buffer, header->headerSize, 1, file) != 1)
         throw std::runtime_error("Cannot read header values");
 
-    int nKv = (header.headerSize - 2 * sizeof(int)) / sizeof(int);
-
+    int nKv = (header->headerSize - 2 * sizeof(int)) / sizeof(int);
     for (int i = 0; i < nKv; i += 2) {
         int key = buffer[i];
         int value = buffer[i + 1];
-        if (key == VERSION) header.version = value;
-        else if (key == ARCH_TYPE) header.archType = (LlmArchType)value;
-        else if (key == DIM) header.dim = value;
-        else if (key == HIDDEN_DIM) header.hiddenDim = value;
-        else if (key == N_LAYERS) header.nLayers = value;
-        else if (key == N_HEADS) header.nHeads = value;
-        else if (key == N_KV_HEADS) header.nKvHeads = value;
-        else if (key == N_EXPERTS) header.nExperts = value;
-        else if (key == N_ACTIVE_EXPERTS) header.nActiveExperts = value;
-        else if (key == VOCAB_SIZE) header.vocabSize = value;
-        else if (key == SEQ_LEN) header.seqLen = value;
-        else if (key == HIDDEN_ACT) header.hiddenAct = (LlmHiddenAct)value;
-        else if (key == ROPE_THETA) header.ropeTheta = (float)value;
-        else if (key == WEIGHT_FLOAT_TYPE) header.weightType = (NnFloatType)value;
-        else if (key == ROPE_SCALING_FACTOR) header.ropeScalingFactor = (float)value;
-        else if (key == ROPE_SCALING_LOW_FREQ_FACTOR) header.ropeScalingLowFreqFactor = (float)value;
-        else if (key == ROPE_SCALING_HIGH_FREQ_FACTORY) header.ropeScalingHighFreqFactory = (float)value;
-        else if (key == ROPE_SCALING_ORIG_MAX_SEQ_LEN) header.ropeScalingOrigMaxSeqLen = value;
-        else if (key == ROPE_TYPE) header.ropeType = (NnRopeType)value;
-        else if (key == HEAD_DIM) header.headDim = value;
-        else if (key == NORM_EPSILON) header.normEpsilon = convertNormEpsilon(value);
-        else if (key == MOE_HIDDEN_DIM) header.moeHiddenDim = value;
-        else throw std::runtime_error("Unsupported header key");
+        if (key == VERSION) header->version = value;
+        else if (key == ARCH_TYPE) header->archType = (LlamaLlmArchType)value;
+        else if (key == DIM) header->dim = value;
+        else if (key == HIDDEN_DIM) header->hiddenDim = value;
+        else if (key == N_LAYERS) header->nLayers = value;
+        else if (key == N_HEADS) header->nHeads = value;
+        else if (key == N_KV_HEADS) header->nKvHeads = value;
+        else if (key == N_EXPERTS) header->nExperts = value;
+        else if (key == N_ACTIVE_EXPERTS) header->nActiveExperts = value;
+        else if (key == VOCAB_SIZE) header->vocabSize = value;
+        else if (key == SEQ_LEN) header->seqLen = value;
+        else if (key == HIDDEN_ACT) header->hiddenAct = (NnHiddenAct)value;
+        else if (key == ROPE_THETA) header->ropeTheta = (float)value;
+        else if (key == WEIGHT_FLOAT_TYPE) header->weightType = (NnFloatType)value;
+        else if (key == ROPE_SCALING_FACTOR) header->ropeScalingFactor = (float)value;
+        else if (key == ROPE_SCALING_LOW_FREQ_FACTOR) header->ropeScalingLowFreqFactor = (float)value;
+        else if (key == ROPE_SCALING_HIGH_FREQ_FACTORY) header->ropeScalingHighFreqFactory = (float)value;
+        else if (key == ROPE_SCALING_ORIG_MAX_SEQ_LEN) header->ropeScalingOrigMaxSeqLen = value;
+        else if (key == ROPE_TYPE) header->ropeType = (NnRopeType)value;
+        else if (key == HEAD_DIM) header->headDim = value;
+        else if (key == NORM_EPSILON) header->normEpsilon = convertNormEpsilon(value);
+        else if (key == MOE_HIDDEN_DIM) header->moeHiddenDim = value;
+        else throw std::runtime_error("Unsupported Llama header key");
     }
 
-    if (header.weightType == F_UNK)
+    if (header->weightType == F_UNK)
         throw std::runtime_error("Model does not specify weight type");
 
-    header.origSeqLen = header.seqLen;
-    if (maxSeqLen > 0 && header.seqLen > maxSeqLen)
-        header.seqLen = maxSeqLen;
-
-    if (header.headDim == 0)
-        header.headDim = header.dim / header.nHeads;
-    header.qDim = header.headDim * header.nHeads;
-    header.kvDim = header.headDim * header.nKvHeads;
-    header.syncType = syncType;
-    header.fileSize = (NnSize)seekToEnd(fd);
-
-    if (header.archType == QWEN3 || header.archType == QWEN3_MOE)
-        header.ropeType = ROPE_FALCON;
-    return header;
+    header->origSeqLen = header->seqLen;
+    if (maxSeqLen > 0 && header->seqLen > maxSeqLen)
+        header->seqLen = maxSeqLen;
+    if (header->headDim == 0)
+        header->headDim = header->dim / header->nHeads;
+    header->qDim = header->headDim * header->nHeads;
+    header->kvDim = header->headDim * header->nKvHeads;
+    header->syncType = syncType;
+    if (header->archType == QWEN3 || header->archType == QWEN3_MOE)
+        header->ropeType = ROPE_FALCON;
+    return std::unique_ptr<LlmHeader>(header.release());
 }
 
-void printLlmHeader(LlmHeader *header) {
+void LlamaLlmModel::printHeader(const LlmHeader *baseHeader) const {
+    const LlamaLlmHeader *header = static_cast<const LlamaLlmHeader *>(baseHeader);
+    printf("💡 Format: llama\n");
     printf("💡 Arch: %s\n", archTypeToString(header->archType));
     printf("💡 HiddenAct: %s\n", hiddenActToString(header->hiddenAct));
     printf("💡 Dim: %u\n", header->dim);
@@ -127,9 +105,8 @@ void printLlmHeader(LlmHeader *header) {
     printf("💡 nLayers: %u\n", header->nLayers);
     printf("💡 nHeads: %u\n", header->nHeads);
     printf("💡 nKvHeads: %u\n", header->nKvHeads);
-    if (header->seqLen != header->origSeqLen) {
+    if (header->seqLen != header->origSeqLen)
         printf("💡 OrigSeqLen: %u\n", header->origSeqLen);
-    }
     if (header->nExperts > 0) {
         printf("💡 nExperts: %u\n", header->nExperts);
         printf("💡 nActiveExperts: %u\n", header->nActiveExperts);
@@ -148,7 +125,9 @@ void printLlmHeader(LlmHeader *header) {
     }
 }
 
-LlmNet buildLlmNet(LlmHeader *h, NnUint nNodes, NnUint nBatches) {
+std::unique_ptr<LlmGraph> LlamaLlmModel::buildGraph(
+    LlmHeader *baseHeader, NnUint nNodes, NnUint nBatches) const {
+    LlamaLlmHeader *h = static_cast<LlamaLlmHeader *>(baseHeader);
     NnUint nExpertsOr1 = std::max(h->nExperts, 1u);
     NnUint nActiveExpertsOr1 = std::max(h->nActiveExperts, 1u);
     NnUint ffDim = h->hiddenDim;
@@ -156,7 +135,8 @@ LlmNet buildLlmNet(LlmHeader *h, NnUint nNodes, NnUint nBatches) {
     if (h->archType == QWEN3_MOE)
         ffDim = h->moeHiddenDim;
 
-    LlmNet n;
+    std::unique_ptr<LlamaGraph> graph(new LlamaGraph());
+    LlamaGraph &n = *graph;
     n.tokenEmbeddingSize = size2D(F_32, h->vocabSize, h->dim);
     n.rmsNormSize = size1D(F_32, h->dim);
     n.qkRmsNormSize = size1D(F_32, h->headDim);
@@ -179,8 +159,8 @@ LlmNet buildLlmNet(LlmHeader *h, NnUint nNodes, NnUint nBatches) {
     NnUint nKNormColumns = 1;
     NnUint nInvBufferColumns = 1;
     if (h->archType == QWEN3 || h->archType == QWEN3_MOE) {
-        ASSERT_EQ(n.qSlice.d0 % h->headDim, 0);
-        ASSERT_EQ(n.kSlice.d0 % h->headDim, 0);
+        assert(n.qSlice.d0 % h->headDim == 0);
+        assert(n.kSlice.d0 % h->headDim == 0);
         nQNormColumns = n.qSlice.d0 / h->headDim;
         nKNormColumns = n.kSlice.d0 / h->headDim;
         nInvBufferColumns = std::max(nQNormColumns, nKNormColumns);
@@ -198,7 +178,7 @@ LlmNet buildLlmNet(LlmHeader *h, NnUint nNodes, NnUint nBatches) {
 
     n.header = h;
     n.netConfig = netBuilder.build();
-    n.nodeConfigs = new NnNodeConfig[nNodes];
+    n.nodeConfigs = new NnNodeConfig[nNodes]();
 
     for (NnUint nodeIndex = 0; nodeIndex < nNodes; nodeIndex++) {
         NnRopeSlice ropeSlice = sliceRope(h->ropeType, h->qDim, h->kvDim, h->nKvHeads, nNodes, h->seqLen, h->headDim, h->ropeTheta, nodeIndex);
@@ -329,7 +309,7 @@ LlmNet buildLlmNet(LlmHeader *h, NnUint nNodes, NnUint nBatches) {
                     OP_RMS_NORM, "block_norm_q", layerIndex,
                     pointerBatchConfig(SRC_BUFFER, qBufferIndex),
                     pointerBatchConfig(SRC_BUFFER, qBufferIndex),
-                    size2D(F_32, 1, n.header->headDim),
+                    size2D(F_32, 1, h->headDim),
                     NnRmsNormOpConfig{invRmsBufferIndex, nQNormColumns});
 
                 att.addOp(OP_INV_RMS, "block_norm_pre_k", layerIndex,
@@ -341,7 +321,7 @@ LlmNet buildLlmNet(LlmHeader *h, NnUint nNodes, NnUint nBatches) {
                     OP_RMS_NORM, "block_norm_k", layerIndex,
                     pointerBatchConfig(SRC_BUFFER, kTempBufferIndex),
                     pointerBatchConfig(SRC_BUFFER, kTempBufferIndex),
-                    size2D(F_32, 1, n.header->headDim),
+                    size2D(F_32, 1, h->headDim),
                     NnRmsNormOpConfig{invRmsBufferIndex, nKNormColumns});
             }
 
@@ -350,7 +330,7 @@ LlmNet buildLlmNet(LlmHeader *h, NnUint nNodes, NnUint nBatches) {
                 pointerBatchConfig(SRC_BUFFER, qBufferIndex),
                 pointerBatchConfig(SRC_BUFFER, qBufferIndex),
                 size0(),
-                NnRopeOpConfig{n.header->ropeType, 1, n.positionPipeIndex, ropeCacheBufferIndex, 
+                NnRopeOpConfig{h->ropeType, 1, n.positionPipeIndex, ropeCacheBufferIndex, 
                     h->ropeScalingFactor, h->ropeScalingLowFreqFactor, h->ropeScalingHighFreqFactory, h->ropeScalingOrigMaxSeqLen,
                     ropeSlice});
             att.addOp(
@@ -358,7 +338,7 @@ LlmNet buildLlmNet(LlmHeader *h, NnUint nNodes, NnUint nBatches) {
                 pointerBatchConfig(SRC_BUFFER, kTempBufferIndex),
                 pointerBatchConfig(SRC_BUFFER, kTempBufferIndex),
                 size0(),
-                NnRopeOpConfig{n.header->ropeType, 0, n.positionPipeIndex, ropeCacheBufferIndex, 
+                NnRopeOpConfig{h->ropeType, 0, n.positionPipeIndex, ropeCacheBufferIndex, 
                     h->ropeScalingFactor, h->ropeScalingLowFreqFactor, h->ropeScalingHighFreqFactory, h->ropeScalingOrigMaxSeqLen,
                     ropeSlice});
             att.addOp(
@@ -601,19 +581,15 @@ LlmNet buildLlmNet(LlmHeader *h, NnUint nNodes, NnUint nBatches) {
         nodeBuilder.addSegment(end.build());
         n.nodeConfigs[nodeIndex] = nodeBuilder.build();
     }
-    return n;
+    return std::unique_ptr<LlmGraph>(graph.release());
 }
 
-void releaseLlmNet(LlmNet *net) {
-    for (NnUint nodeIndex = 0u; nodeIndex < net->netConfig.nNodes; nodeIndex++)
-        releaseNodeConfig(&net->nodeConfigs[nodeIndex]);
-    releaseNetConfig(&net->netConfig);
-    delete[] net->nodeConfigs;
-}
-
-void loadLlmNetWeight(const char *path, LlmNet *net, NnRootWeightLoader *loader) {
+void LlamaLlmModel::loadGraph(
+    const char *path, LlmGraph *baseGraph, NnRootWeightLoader *loader) const {
+    LlamaGraph *net = static_cast<LlamaGraph *>(baseGraph);
+    LlamaLlmHeader *header = static_cast<LlamaLlmHeader *>(net->header);
     MmapFile file;
-    openMmapFile(&file, path, net->header->fileSize);
+    openMmapFile(&file, path, header->fileSize);
 #if DEBUG_USE_MMAP_FOR_WEIGHTS
     assert(net->netConfig.nNodes == 1u);
 #else
@@ -623,18 +599,18 @@ void loadLlmNetWeight(const char *path, LlmNet *net, NnRootWeightLoader *loader)
 
     Timer timer;
     NnByte *data = (NnByte *)file.data;
-    NnByte *b = &data[net->header->headerSize];
+    NnByte *b = &data[header->headerSize];
     b += loader->loadRoot("embedding", 0, net->tokenEmbeddingSize.nBytes, b);
 
-    for (NnUint layerIndex = 0u; layerIndex < net->header->nLayers; layerIndex++) {
+    for (NnUint layerIndex = 0u; layerIndex < header->nLayers; layerIndex++) {
         b += loader->loadRowMatmulSlices("block_matmul_q", layerIndex, 0u, &net->qSlice, b);
         b += loader->loadRowMatmulSlices("block_matmul_k", layerIndex, 0u, &net->kSlice, b);
         b += loader->loadRowMatmulSlices("block_matmul_v", layerIndex, 0u, &net->vSlice, b);
         b += loader->loadColMatmulSlices("block_matmul_wo", layerIndex, 0u, &net->woSlice, b);
 
-        if (net->header->nExperts > 0u) {
+        if (header->nExperts > 0u) {
             b += loader->loadAll("block_moe_gate", layerIndex, net->moeGateSize.nBytes, b);
-            for (NnUint expertIndex = 0u; expertIndex < net->header->nExperts; expertIndex++) {
+            for (NnUint expertIndex = 0u; expertIndex < header->nExperts; expertIndex++) {
                 b += loader->loadRowMatmulSlices("block_matmul_w1", layerIndex, expertIndex, &net->w1Slice, b);
                 b += loader->loadColMatmulSlices("block_matmul_w2", layerIndex, expertIndex, &net->w2Slice, b);
                 b += loader->loadRowMatmulSlices("block_matmul_w3", layerIndex, expertIndex, &net->w3Slice, b);
@@ -645,7 +621,7 @@ void loadLlmNetWeight(const char *path, LlmNet *net, NnRootWeightLoader *loader)
             b += loader->loadRowMatmulSlices("block_matmul_w3", layerIndex, 0u, &net->w3Slice, b);
         }
 
-        if (net->header->archType == QWEN3 || net->header->archType == QWEN3_MOE) {
+        if (header->archType == QWEN3 || header->archType == QWEN3_MOE) {
             b += loader->loadAll("block_norm_q", layerIndex, net->qkRmsNormSize.nBytes, b);
             b += loader->loadAll("block_norm_k", layerIndex, net->qkRmsNormSize.nBytes, b);
         }
@@ -654,16 +630,21 @@ void loadLlmNetWeight(const char *path, LlmNet *net, NnRootWeightLoader *loader)
         b += loader->loadAll("block_norm_1", layerIndex, net->rmsNormSize.nBytes, b);
 
         if (timer.elapsedMiliseconds() > 10000)
-            printf("💿 Loaded %u/%u\n", layerIndex + 1, net->header->nLayers);
+            printf("💿 Loaded %u/%u\n", layerIndex + 1, header->nLayers);
     }
 
     b += loader->loadAll("final_norm", 0u, net->rmsNormSize.nBytes, b);
     b += loader->loadRowMatmulSlices("final_matmul_logits", 0u, 0u, &net->wclsSlice, b);
 
-    long long missingBytes = (long long)(b - data) - net->header->fileSize;
+    long long missingBytes = (long long)(b - data) - header->fileSize;
     if (missingBytes != 0u)
         throw std::runtime_error("Missing bytes in weight file: " + std::to_string(missingBytes));
     printf("💿 Weights loaded\n");
 
     loader->finish();
+}
+
+const LlmModel &getLlamaLlmModel() {
+    static LlamaLlmModel model;
+    return model;
 }

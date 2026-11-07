@@ -22,7 +22,7 @@ struct MmapFile {
 #endif
 };
 
-long seekToEnd(FILE* file) {
+inline long seekToEnd(FILE* file) {
 #ifdef _WIN32
     _fseeki64(file, 0, SEEK_END);
     return _ftelli64(file);
@@ -32,7 +32,7 @@ long seekToEnd(FILE* file) {
 #endif
 }
 
-void openMmapFile(MmapFile *file, const char *path, size_t size) {
+inline void openMmapFile(MmapFile *file, const char *path, size_t size) {
     file->size = size;
 #ifdef _WIN32
     file->hFile = CreateFileA(path, GENERIC_READ, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
@@ -69,7 +69,7 @@ void openMmapFile(MmapFile *file, const char *path, size_t size) {
 #endif
 }
 
-void closeMmapFile(MmapFile *file) {
+inline void closeMmapFile(MmapFile *file) {
 #ifdef _WIN32
     UnmapViewOfFile(file->data);
     CloseHandle(file->hMapping);

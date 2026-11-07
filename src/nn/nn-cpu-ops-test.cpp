@@ -141,6 +141,107 @@ void testRmsNorm(const NnUint m) {
     compare_F32("rmsNorm_Q80_F32_F32", y.data(), yTemp.data(), m, 0.01);
 }
 
+void testRmsNormZeroCentered() {
+    const float input[] = {1.0f, 2.0f, -3.0f, 4.0f};
+    const float weight[] = {0.0f, 1.0f, -0.5f, -1.0f};
+    float output[4] = {};
+    const float expected[] = {0.5f, 2.0f, -0.75f, 0.0f};
+    rmsNormZeroCentered_F32(output, input, 0.5f, weight, 4u, 1u, 0u);
+    compare_F32("rmsNormZeroCentered", output, expected, 4u, 0.000001f);
+}
+
+void testSigmoidMul() {
+    const float input[] = {2.0f, 3.0f, -4.0f};
+    const float multiplier[] = {0.0f, logf(3.0f), -logf(3.0f)};
+    float output[3] = {};
+    const float expected[] = {1.0f, 2.25f, -1.0f};
+    sigmoidMul_F32(output, input, multiplier, 3u, 1u, 0u);
+    compare_F32("sigmoidMul_F32", output, expected, 3u, 0.000001f);
+}
+
+void testPartialRope() {
+    const float angle = 0.5f;
+    const float cache[] = {cosf(angle), sinf(angle)};
+    const float input[] = {
+        1.0f, 2.0f, 3.0f, 4.0f,
+        -1.0f, 0.5f, 6.0f, 7.0f,
+    };
+    float output[8] = {};
+    const float expected[] = {
+        1.0f * cosf(angle) - 2.0f * sinf(angle),
+        2.0f * cosf(angle) + 1.0f * sinf(angle),
+        3.0f, 4.0f,
+        -1.0f * cosf(angle) - 0.5f * sinf(angle),
+        0.5f * cosf(angle) - 1.0f * sinf(angle),
+        6.0f, 7.0f,
+    };
+    partialRope_F32(output, input, cache, 2u, 4u, 2u, 1u, 0u);
+    compare_F32("partialRope_F32", output, expected, 8u, 0.000001f);
+}
+
+void testCausalConv1d() {
+    const float weight[] = {1.0f, 2.0f, 3.0f};
+    const float inputs[] = {1.0f, 2.0f, 3.0f, 4.0f};
+    const float expected[] = {3.0f, 8.0f, 14.0f, 20.0f};
+    float state[3] = {99.0f, 99.0f, 99.0f};
+    float output = 0.0f;
+    for (NnUint position = 0u; position < 4u; position++) {
+        causalConv1d_F32(
+            &output, &inputs[position], state, weight,
+            1u, 3u, position, false, 1u, 0u);
+        compare_F32("causalConv1d_F32", &output, &expected[position], 1u, 0.000001f);
+    }
+    causalConv1d_F32(&output, inputs, state, weight, 1u, 3u, 0u, false, 1u, 0u);
+    compare_F32("causalConv1dReset", &output, expected, 1u, 0.000001f);
+}
+
+void testGatedDeltaNet() {
+    const float query0[] = {1.0f, 0.0f};
+    const float key0[] = {1.0f, 0.0f};
+    const float value0[] = {2.0f};
+    const float query1[] = {0.0f, 1.0f};
+    const float key1[] = {0.0f, 1.0f};
+    const float value1[] = {4.0f};
+    const float a[] = {0.0f};
+    const float b[] = {0.0f};
+    const float aLog[] = {0.0f};
+    const float dtBias[] = {0.0f};
+    float state[2] = {99.0f, 99.0f};
+    float output = 0.0f;
+
+    gatedDeltaNet_F32(
+        &output, query0, key0, value0, a, b, state, aLog, dtBias,
+        1u, 1u, 2u, 1u, true, 1u, 0u);
+    const float expected0 = 1.0f / ((1.0f + 1e-6f) * sqrtf(2.0f));
+    compare_F32("gatedDeltaNetStep0", &output, &expected0, 1u, 0.000001f);
+
+    gatedDeltaNet_F32(
+        &output, query1, key1, value1, a, b, state, aLog, dtBias,
+        1u, 1u, 2u, 1u, false, 1u, 0u);
+    const float expected1 = sqrtf(2.0f) / (1.0f + 1e-6f);
+    compare_F32("gatedDeltaNetStep1", &output, &expected1, 1u, 0.000001f);
+
+    gatedDeltaNet_F32(
+        &output, query0, key0, value0, a, b, state, aLog, dtBias,
+        1u, 1u, 2u, 1u, true, 1u, 0u);
+    compare_F32("gatedDeltaNetReset", &output, &expected0, 1u, 0.000001f);
+}
+
+void testQwen35CpuOpRegistration() {
+    const NnOpCode codes[] = {
+        OP_RMS_NORM_ZERO_CENTERED,
+        OP_SIGMOID_MUL,
+        OP_PARTIAL_ROPE,
+        OP_CAUSAL_CONV1D,
+        OP_GATED_DELTA_NET,
+    };
+    for (NnUint i = 0u; i < sizeof(codes) / sizeof(codes[0]); i++) {
+        assert(getCpuOpForward(codes[i], F32_F32_F32) != nullptr);
+        assert(getCpuOpForwardInit(codes[i], F32_F32_F32) != nullptr);
+    }
+    printPassed("qwen35CpuOpRegistration");
+}
+
 // a *= b
 void testMul(const NnUint m) {
     const NnUint n = Q80_BLOCK_SIZE * m;
@@ -416,6 +517,12 @@ int main() {
     testQuantization(1);
     testInvRms();
     testRmsNorm(128);
+    testRmsNormZeroCentered();
+    testSigmoidMul();
+    testPartialRope();
+    testCausalConv1d();
+    testGatedDeltaNet();
+    testQwen35CpuOpRegistration();
     testMul(32);
     testMul(2);
     testMul(1);

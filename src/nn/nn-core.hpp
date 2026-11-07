@@ -88,6 +88,12 @@ enum NnOpCode {
     OP_SHIFT,
     OP_SOFTMAX,
     OP_MOE_GATE,
+    // Qwen3.5 graph primitives. Device implementations intentionally follow later.
+    OP_SIGMOID_MUL,
+    OP_PARTIAL_ROPE,
+    OP_CAUSAL_CONV1D,
+    OP_GATED_DELTA_NET,
+    OP_RMS_NORM_ZERO_CENTERED,
 };
 
 enum NnOpQuantType {
@@ -102,7 +108,7 @@ enum NnOpQuantType {
     Q80_F32_F32,
 };
 
-#define N_OP_CODES (OP_SHIFT + 1)
+#define N_OP_CODES (OP_RMS_NORM_ZERO_CENTERED + 1)
 #define N_OP_QUANTS (Q80_F32_F32 + 1)
 
 enum NnPointerSource {
@@ -120,6 +126,11 @@ enum NnSyncType {
     SYNC_WITH_ROOT, // whole pipe to all nodes
     SYNC_NODE_SLICES, // my slice of pipe to all nodes
     SYNC_NODE_SLICES_EXCEPT_ROOT, // only workers send slices to root, root does not send
+};
+
+enum NnHiddenAct {
+    HIDDEN_ACT_GELU,
+    HIDDEN_ACT_SILU,
 };
 
 enum NnRopeType {
@@ -281,10 +292,44 @@ typedef struct {
     NnUint indexesBufferIndex;
 } NnMoeGateOpCodeConfig;
 
+typedef struct {
+    NnUint multiplierBufferIndex;
+} NnSigmoidMulOpConfig;
+
+typedef struct {
+    NnUint isQ;
+    NnUint positionPipeIndex;
+    NnUint ropeCacheBufferIndex;
+    NnUint rotaryDim;
+    NnRopeSlice slice;
+} NnPartialRopeOpConfig;
+
+typedef struct {
+    NnUint stateBufferIndex;
+    NnUint positionPipeIndex;
+    NnUint kernelSize;
+    NnUint applySilu;
+} NnCausalConv1DOpConfig;
+
+typedef struct {
+    NnUint keyBufferIndex;
+    NnUint valueBufferIndex;
+    NnUint aBufferIndex;
+    NnUint bBufferIndex;
+    NnUint recurrentStateBufferIndex;
+    NnUint positionPipeIndex;
+    NnUint nKeyHeads;
+    NnUint nValueHeads;
+    NnUint keyHeadDim;
+    NnUint valueHeadDim;
+} NnGatedDeltaNetOpConfig;
+
 // utility functions
 
 const char *opCodeToString(NnOpCode code);
 const char *opQuantTypeToString(NnOpQuantType type);
+const char *hiddenActToString(NnHiddenAct act);
+const char *ropeTypeToString(NnRopeType type);
 
 NnSize getBytes(NnFloatType floatType, NnSize n);
 NnSize getBlockSize(NnFloatType floatType);

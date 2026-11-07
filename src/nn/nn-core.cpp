@@ -88,6 +88,11 @@ const char *opCodeToString(NnOpCode code) {
     if (code == OP_SHIFT) return "SHIFT";
     if (code == OP_SOFTMAX) return "SOFTMAX";
     if (code == OP_MOE_GATE) return "MOE_GATE";
+    if (code == OP_SIGMOID_MUL) return "SIGMOID_MUL";
+    if (code == OP_PARTIAL_ROPE) return "PARTIAL_ROPE";
+    if (code == OP_CAUSAL_CONV1D) return "CAUSAL_CONV1D";
+    if (code == OP_GATED_DELTA_NET) return "GATED_DELTA_NET";
+    if (code == OP_RMS_NORM_ZERO_CENTERED) return "RMS_NORM_ZERO_CENTERED";
     throw std::invalid_argument("Unknown op code: " + std::to_string(code));
 }
 
@@ -101,6 +106,19 @@ const char *opQuantTypeToString(NnOpQuantType type) {
     if (type == Q80_Q40_F32) return "Q80_Q40_F32";
     if (type == Q80_F32_F32) return "Q80_F32_F32";
     throw std::invalid_argument("Unknown op quant type");
+}
+
+const char *hiddenActToString(NnHiddenAct act) {
+    if (act == HIDDEN_ACT_GELU) return "Gelu";
+    if (act == HIDDEN_ACT_SILU) return "Silu";
+    throw std::invalid_argument("Unsupported hidden act");
+}
+
+const char *ropeTypeToString(NnRopeType type) {
+    if (type == ROPE_LLAMA) return "Llama";
+    if (type == ROPE_FALCON) return "Falcon";
+    if (type == ROPE_LLAMA3_1) return "Llama3.1";
+    throw std::invalid_argument("Unsupported rope type");
 }
 
 NnSize3D size0() {

@@ -4,7 +4,7 @@
 #include "nn/nn-cpu-ops.hpp"
 #include "nn/nn-network.hpp"
 #include "nn/nn-executor.hpp"
-#include "llm.hpp"
+#include "graphs/graph.hpp"
 #include "tokenizer.hpp"
 #include "app.hpp"
 #include <stdexcept>
@@ -51,7 +51,7 @@ static void inference(AppInferenceContext *context) {
         context->inference->forward();
 
         pos += batchSize;
-        token = inputTokens[pos + 1];
+        token = inputTokens[pos];
 
         if (context->network != nullptr)
             context->network->getStats(&sentBytes, &recvBytes);
@@ -220,7 +220,7 @@ static void chat(AppInferenceContext *context) {
 
             i += batchSize;
             pos += batchSize;
-            token = inputTokens[i + 1];
+            token = inputTokens[i];
         }
 
         context->inference->setBatchSize(1);

@@ -18,6 +18,8 @@ static ChatTemplateType parseChatTemplateType(char *val) {
     if (std::strcmp(val, "llama2") == 0) return TEMPLATE_LLAMA2;
     if (std::strcmp(val, "llama3") == 0) return TEMPLATE_LLAMA3;
     if (std::strcmp(val, "deepSeek3") == 0) return TEMPLATE_DEEP_SEEK3;
+    if (std::strcmp(val, "chatml") == 0) return TEMPLATE_CHATML;
+    if (std::strcmp(val, "chatml_thinking") == 0) return TEMPLATE_CHATML_THINKING;
     throw std::runtime_error("Invalid chat template type: " + std::string(val));
 }
 
@@ -166,11 +168,11 @@ static std::vector<NnExecutorDevice> resolveDevices(AppCliArgs *args, NnNetConfi
     return devices;
 }
 
-RootLlmInference::RootLlmInference(LlmNet *net, NnNetExecution *execution, NnExecutor *executor, NnNetwork *network) {
-    this->header = net->header;
-    this->tokenPipe = (float *)execution->pipes[net->tokenPipeIndex];
-    this->positionPipe = (float *)execution->pipes[net->positionPipeIndex];
-    this->logitsPipe = (float *)execution->pipes[net->logitsPipeIndex];
+RootLlmInference::RootLlmInference(LlmGraph *graph, NnNetExecution *execution, NnExecutor *executor, NnNetwork *network) {
+    this->header = graph->header;
+    this->tokenPipe = (float *)execution->pipes[graph->tokenPipeIndex];
+    this->positionPipe = (float *)execution->pipes[graph->positionPipeIndex];
+    this->logitsPipe = (float *)execution->pipes[graph->logitsPipeIndex];
     this->execution = execution;
     this->executor = executor;
     this->network = network; // May be nullptr!
@@ -233,31 +235,33 @@ bool WorkerLlmInference::tryReadControlPacket() {
 void runInferenceApp(AppCliArgs *args, void (*handler)(AppInferenceContext *context)) {
     NnUint nNodes = args->nWorkers + 1;
 
-    LlmHeader header = loadLlmHeader(args->modelPath, args->maxSeqLen, args->syncType);
-    if (nNodes > header.nKvHeads)
+    const int magic = loadLlmMagic(args->modelPath);
+    const LlmModel &model = resolveLlmModel(magic);
+    std::unique_ptr<LlmHeader> header = loadLlmHeader(
+        model, magic, args->modelPath, args->maxSeqLen, args->syncType);
+    if (nNodes > header->nKvHeads)
         // TODO: https://github.com/b4rtaz/distributed-llama/issues/70
         throw std::runtime_error("This version does not support more nodes than the number of KV heads in the model");
-    if (header.weightType == F_Q40 && header.syncType != F_Q80)
+    if (header->weightType == F_Q40 && header->syncType != F_Q80)
         throw std::runtime_error("This version supports only Q40 weights with Q80 sync type");
 
     Tokenizer tokenizer(args->tokenizerPath);
-    if (args->info && tokenizer.vocabSize != header.vocabSize)
-        printf("Tokenizer vocab size (%d) does not match the model vocab size (%d)\n", tokenizer.vocabSize, header.vocabSize);
+    if (args->info && tokenizer.vocabSize != header->vocabSize)
+        printf("Tokenizer vocab size (%d) does not match the model vocab size (%d)\n", tokenizer.vocabSize, header->vocabSize);
 
     Sampler sampler(tokenizer.vocabSize, args->temperature, args->topp, args->seed);
 
-    LlmNet net = buildLlmNet(&header, nNodes, args->nBatches);
-    std::unique_ptr<LlmNet, void(*)(LlmNet *)> netPtr(&net, releaseLlmNet);
+    std::unique_ptr<LlmGraph> graph = model.buildGraph(header.get(), nNodes, args->nBatches);
 
-    NnNodeConfig *rootNodeConfig = &net.nodeConfigs[0];
+    NnNodeConfig *rootNodeConfig = &graph->nodeConfigs[0];
 
     if (args->info) {
         tokenizer.printHeader();
-        printLlmHeader(&header);
-        printNodeRequiredMemory(&net.netConfig, rootNodeConfig);
+        model.printHeader(header.get());
+        printNodeRequiredMemory(&graph->netConfig, rootNodeConfig);
     }
 
-    NnNetExecution execution(args->nThreads, &net.netConfig);
+    NnNetExecution execution(args->nThreads, &graph->netConfig);
 
     std::unique_ptr<NnNodeSynchronizer> synchronizer(nullptr);
     std::unique_ptr<NnNetwork> networkPtr(nullptr);
@@ -268,19 +272,19 @@ void runInferenceApp(AppCliArgs *args, void (*handler)(AppInferenceContext *cont
     } else {
         networkPtr = NnNetwork::connect(args->nWorkers, args->workerHosts, args->workerPorts);
         network = networkPtr.get();
-        synchronizer.reset(new NnNetworkNodeSynchronizer(network, &execution, &net.netConfig, rootNodeConfig));
+        synchronizer.reset(new NnNetworkNodeSynchronizer(network, &execution, &graph->netConfig, rootNodeConfig));
 
         NnRootConfigWriter configWriter(network);
-        configWriter.writeToWorkers(&net.netConfig, net.nodeConfigs);
+        configWriter.writeToWorkers(&graph->netConfig, graph->nodeConfigs);
     }
 
-    std::vector<NnExecutorDevice> devices = resolveDevices(args, &net.netConfig, rootNodeConfig, &execution);
-    NnExecutor executor(&net.netConfig, rootNodeConfig, &devices, &execution, synchronizer.get(), args->benchmark);
+    std::vector<NnExecutorDevice> devices = resolveDevices(args, &graph->netConfig, rootNodeConfig, &execution);
+    NnExecutor executor(&graph->netConfig, rootNodeConfig, &devices, &execution, synchronizer.get(), args->benchmark);
 
     NnRootWeightLoader weightLoader(&executor, network, nNodes);
-    loadLlmNetWeight(args->modelPath, &net, &weightLoader);
+    model.loadGraph(args->modelPath, graph.get(), &weightLoader);
 
-    RootLlmInference inference(&net, &execution, &executor, network);
+    RootLlmInference inference(graph.get(), &execution, &executor, network);
 
     if (network != nullptr) {
         network->resetStats();
@@ -292,7 +296,7 @@ void runInferenceApp(AppCliArgs *args, void (*handler)(AppInferenceContext *cont
 
     AppInferenceContext context;
     context.args = args;
-    context.header = &header;
+    context.header = header.get();
     context.inference = &inference;
     context.sampler = &sampler;
     context.tokenizer = &tokenizer;

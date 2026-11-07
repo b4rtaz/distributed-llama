@@ -40,6 +40,11 @@ enum class HttpMethod {
     METHOD_UNKNOWN = 5
 };
 
+class HttpRequestException : public std::runtime_error {
+public:
+    HttpRequestException(const std::string message) : std::runtime_error(message) {}
+};
+
 class HttpRequest {
 public:
     static HttpRequest read(int serverSocket) {
@@ -118,7 +123,7 @@ public:
         for (;;) {
             bytesRead = recv(serverSocket, buffer, sizeof(buffer) - 1, 0);
             if (bytesRead <= 0) {
-                throw std::runtime_error("Error while reading headers from socket");
+                throw HttpRequestException("Error while reading headers from socket");
             }
             buffer[bytesRead] = '\0';
             headerData.append(buffer);
@@ -152,7 +157,7 @@ public:
                     try {
                       contentLength = std::stoi(value);  // stoi ignores any whitespace
                     } catch (const std::invalid_argument& e) {
-                      throw std::runtime_error("Bad Content-Length header - not a number");
+                      throw HttpRequestException("Bad Content-Length header - not a number");
                     }
                     break;
                 }
@@ -164,7 +169,7 @@ public:
             // If we read any extra past the header before, read that much less now
             // But first, sanity check to make sure Content-Length isn't lying and there is actually more
             if (extraReadPastHeader.size() > static_cast<size_t>(contentLength)) {
-                throw std::runtime_error("Received more body data than Content-Length header said");
+                throw HttpRequestException("Received more body data than Content-Length header said");
             }
             contentLength -= extraReadPastHeader.size();
 
@@ -173,7 +178,7 @@ public:
             while (totalRead < contentLength) {
                 bytesRead = recv(serverSocket, body.data() + totalRead, contentLength - totalRead, 0);
                 if (bytesRead <= 0) {
-                    throw std::runtime_error("Error while reading body from socket");
+                    throw HttpRequestException("Error while reading body from socket");
                 }
                 totalRead += bytesRead;
             }
@@ -498,7 +503,7 @@ public:
 
             i += batchSize;
             pos += batchSize;
-            token = promptTokens[i + 1];
+            token = promptTokens[i];
         }
 
         inference->setBatchSize(1);
@@ -631,6 +636,8 @@ static void server(AppInferenceContext *context) {
             Router::resolve(request, routes);
         } catch (const NnTransferSocketException& e) {
             printf("Socket error: %d %s\n", e.code, e.what());
+        } catch (const HttpRequestException &e) {
+            printf("HTTP request error: %s\n", e.what());
         } catch (const NnExecutorException &e) {
             throw;
         }
