@@ -39,6 +39,7 @@ Python 3 and C++ compiler required. The command will download the model and the 
 | Qwen 3 8B Q40                     | 6.7 GB   | `python launch.py qwen3_8b_q40`                      |
 | Qwen 3 14B Q40                    | 10.9 GB  | `python launch.py qwen3_14b_q40`                     |
 | Qwen 3 30B A3B Q40                | 17.0 GB  | `python launch.py qwen3_30b_a3b_q40`                 |
+| Qwen 3.5 9B Q40                   | 8.0 GB   | `python launch.py qwen3_5_9b_q40`                    |
 
 ### 🛠️ Convert Model Manually
 
