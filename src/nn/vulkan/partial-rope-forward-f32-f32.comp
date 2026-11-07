@@ -1,0 +1,55 @@
+#version 450
+
+#define N_THREADS 64
+
+layout(local_size_x = N_THREADS, local_size_y = 1, local_size_z = 1) in;
+
+layout(constant_id = 0) const uint N_BATCHES = 32;
+
+struct BatchInfo {
+    uint inputOffset;
+    uint inputSizeX;
+    uint outputOffset;
+    uint outputSizeX;
+};
+
+layout(binding = 0) readonly buffer inputBuffer { float x[]; };
+layout(binding = 1) writeonly buffer outputBuffer { float y[]; };
+layout(binding = 2) readonly uniform batchInfosBuffer { BatchInfo infos[N_BATCHES]; };
+layout(binding = 3) readonly uniform configBuffer {
+    uint isQ;
+    uint positionPipeIndex;
+    uint ropeCacheBufferIndex;
+    uint rotaryDim;
+    uint qDim0;
+    uint qDimStart;
+    uint qDimEnd;
+    uint qShift;
+    uint kvDim;
+    uint kvDim0;
+    uint kvDimStart;
+    uint sliceDim;
+    uint seqLen;
+    uint headDim;
+    uint nKvHeads;
+    float ropeTheta;
+};
+layout(binding = 4) readonly buffer positionsBuffer { float positions[]; };
+
+void main() {
+    BatchInfo info = infos[gl_WorkGroupID.y];
+    uint index = gl_GlobalInvocationID.x;
+    if (index >= info.inputSizeX) return;
+    uint d = index % headDim;
+    uint halfDim = rotaryDim / 2;
+    // One invocation owns both halves, including when input aliases output.
+    if (d < halfDim) {
+        float angle = positions[gl_WorkGroupID.y] / pow(ropeTheta, 2.0 * float(d) / float(rotaryDim));
+        float c = cos(angle), s = sin(angle);
+        float u = x[info.inputOffset + index], v = x[info.inputOffset + index + halfDim];
+        y[info.outputOffset + index] = u * c - v * s;
+        y[info.outputOffset + index + halfDim] = v * c + u * s;
+    } else if (d >= rotaryDim) {
+        y[info.outputOffset + index] = x[info.inputOffset + index];
+    }
+}

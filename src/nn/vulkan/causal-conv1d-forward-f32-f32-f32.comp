@@ -1,0 +1,51 @@
+#version 450
+
+#define N_THREADS 64
+
+layout(local_size_x = N_THREADS, local_size_y = 1, local_size_z = 1) in;
+
+layout(constant_id = 0) const uint N_BATCHES = 32;
+
+struct BatchInfo {
+    uint inputOffset;
+    uint inputSizeX;
+    uint outputOffset;
+    uint outputSizeX;
+};
+
+layout(binding = 0) readonly buffer inputBuffer { float x[]; };
+layout(binding = 1) writeonly buffer outputBuffer { float y[]; };
+layout(binding = 2) readonly uniform batchInfosBuffer { BatchInfo infos[N_BATCHES]; };
+layout(binding = 3) readonly buffer weightBuffer { float weight[]; };
+layout(binding = 4) readonly uniform configBuffer {
+    uint stateBufferIndex;
+    uint positionPipeIndex;
+    uint kernelSize;
+    uint applySilu;
+};
+layout(binding = 5) buffer stateBuffer { float state[]; };
+layout(binding = 6) readonly buffer positionsBuffer { float positions[]; };
+
+float sigmoid(float v) {
+    float e = exp(-abs(v));
+    return v >= 0.0 ? 1.0 / (1.0 + e) : e / (1.0 + e);
+}
+
+void main() {
+    // Each channel owns its state and processes the active tokens in order.
+    // Dispatch Y carries the active batch size; other Y groups do no work.
+    if (gl_WorkGroupID.y != 0) return;
+    uint channel = gl_GlobalInvocationID.x;
+    if (channel >= infos[0].inputSizeX) return;
+    uint offset = channel * kernelSize;
+    for (uint batchIndex = 0; batchIndex < gl_NumWorkGroups.y; ++batchIndex) {
+        uint position = uint(positions[batchIndex]);
+        if (position == 0)
+            for (uint k = 0; k < kernelSize; ++k) state[offset + k] = 0.0;
+        state[offset + position % kernelSize] = x[infos[batchIndex].inputOffset + channel];
+        float v = 0.0;
+        for (uint k = 0; k < kernelSize; ++k)
+            v += weight[offset + k] * state[offset + (position + 1 + k) % kernelSize];
+        y[infos[batchIndex].outputOffset + channel] = applySilu == 1 ? v * sigmoid(v) : v;
+    }
+}

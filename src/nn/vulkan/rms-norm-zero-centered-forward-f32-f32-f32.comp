@@ -1,0 +1,34 @@
+#version 450
+
+#define N_THREADS 64
+
+layout(local_size_x = N_THREADS, local_size_y = 1, local_size_z = 1) in;
+
+layout(constant_id = 0) const uint N_BATCHES = 32;
+
+struct BatchInfo {
+    uint inputOffset;
+    uint inputSizeX;
+    uint outputOffset;
+    uint outputSizeX;
+};
+
+layout(binding = 0) readonly buffer inputBuffer { float x[]; };
+layout(binding = 1) writeonly buffer outputBuffer { float y[]; };
+layout(binding = 2) readonly uniform batchInfosBuffer { BatchInfo infos[N_BATCHES]; };
+layout(binding = 3) readonly buffer weightBuffer { float weight[]; };
+layout(binding = 4) readonly uniform configBuffer {
+    uint invRmsBufferIndex;
+    uint nColumns;
+};
+layout(binding = 5) readonly buffer invRmsBuffer { float invRms[]; };
+
+void main() {
+    uint batchIndex = gl_WorkGroupID.y;
+    BatchInfo info = infos[batchIndex];
+    uint index = gl_GlobalInvocationID.x;
+    if (index >= info.outputSizeX) return;
+    uint dim = info.inputSizeX / nColumns;
+    uint stride = uint(invRms.length()) / N_BATCHES;
+    y[info.outputOffset + index] = (1.0 + weight[index % dim]) * (x[info.inputOffset + index] * invRms[batchIndex * stride + index / dim]);
+}

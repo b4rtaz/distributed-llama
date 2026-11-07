@@ -392,6 +392,10 @@ NnVulkanDeviceData::NnVulkanDeviceData(NnVulkanBufferFactory *bufferFactory, NnN
         const NnBufferConfig *config = &nodeConfig->buffers[i];
         const bool isSliceable = config->size.z == 1u;
         buffers[i] = bufferFactory->create(config->name, config->size.nBytes, isSliceable, vk::BufferUsageFlagBits::eStorageBuffer, false);
+        if (config->initZero) {
+            std::vector<NnByte> zero(config->size.nBytes, 0);
+            buffers[i]->write(zero.data());
+        }
     }
 
     NnRopeOpConfig *ropeLlamaOpConfig = (NnRopeOpConfig *)findFirstOpConfig(nodeConfig, OP_ROPE);
@@ -496,6 +500,13 @@ NnDeviceSegment *NnVulkanDevice::createSegment(NnUint segmentIndex) {
 };
 
 static const char *getShaderFileName(const NnOpCode opCode, const NnOpQuantType quantType) {
+    if (quantType == F32_F32_F32) {
+        if (opCode == OP_SIGMOID_MUL) return "sigmoid-mul-forward-f32-f32.spv";
+        if (opCode == OP_PARTIAL_ROPE) return "partial-rope-forward-f32-f32.spv";
+        if (opCode == OP_CAUSAL_CONV1D) return "causal-conv1d-forward-f32-f32-f32.spv";
+        if (opCode == OP_GATED_DELTA_NET) return "gated-delta-net-forward-f32-f32-f32.spv";
+        if (opCode == OP_RMS_NORM_ZERO_CENTERED) return "rms-norm-zero-centered-forward-f32-f32-f32.spv";
+    }
     if (opCode == OP_MERGE_ADD) {
         if (quantType == F32_F32_F32) return "merge-add-forward-f32-f32.spv";
         if (quantType == Q80_Q80_F32) return "merge-add-forward-q80-f32.spv";
@@ -552,55 +563,78 @@ static const char *getShaderFileName(const NnOpCode opCode, const NnOpQuantType 
 
 static void buildShaderLayout(std::vector<NnOpBufferAccess> &a, NnVulkanDeviceData *data, NnVulkanDeviceSegmentData *segmentData, NnUint opIndex, NnOpConfig *opConfig) {
     // input
-    a.push_back({ACCESS_READONLY, data->resolvePointerVulkanBuffer(&opConfig->input)});
+    a.push_back({ACCESS_READONLY, data->resolvePointerVulkanBuffer(&opConfig->input), opConfig->input.type == PNTR_RAW});
     // output
-    a.push_back({ACCESS_READ_WRITE, data->resolvePointerVulkanBuffer(&opConfig->output)});
+    a.push_back({ACCESS_READ_WRITE, data->resolvePointerVulkanBuffer(&opConfig->output), opConfig->output.type == PNTR_RAW});
     // batch info
-    a.push_back({ACCESS_IMMUTABLE, segmentData->resolveOpBatchInfoVulkanBuffer(opIndex)});
+    a.push_back({ACCESS_IMMUTABLE, segmentData->resolveOpBatchInfoVulkanBuffer(opIndex), false});
     // weight
     if (opConfig->weightSize.nBytes > 0)
-        a.push_back({ACCESS_IMMUTABLE, segmentData->resolveOpWeightVulkanBuffer(opIndex)});
+        a.push_back({ACCESS_IMMUTABLE, segmentData->resolveOpWeightVulkanBuffer(opIndex), false});
     // config
     if (opConfig->configSize > 0) {
-        a.push_back({ACCESS_IMMUTABLE, segmentData->resolveOpConfigVulkanBuffer(opIndex)});
+        a.push_back({ACCESS_IMMUTABLE, segmentData->resolveOpConfigVulkanBuffer(opIndex), false});
 
         switch (opConfig->code) {
+        case OP_RMS_NORM_ZERO_CENTERED:
         case OP_RMS_NORM: {
             const NnRmsNormOpConfig *config = (NnRmsNormOpConfig *)opConfig->config;
-            a.push_back({ACCESS_READONLY, data->resolveBufferByIndex(config->invRmsBufferIndex)});
+            a.push_back({ACCESS_READONLY, data->resolveBufferByIndex(config->invRmsBufferIndex), false});
         } break;
         case OP_MUL: {
             const NnMulOpCodeConfig *config = (NnMulOpCodeConfig *)opConfig->config;
-            a.push_back({ACCESS_READONLY, data->resolveBufferByIndex(config->multiplierBufferIndex)});
+            a.push_back({ACCESS_READONLY, data->resolveBufferByIndex(config->multiplierBufferIndex), false});
+        } break;
+        case OP_SIGMOID_MUL: {
+            const auto *config = (NnSigmoidMulOpConfig *)opConfig->config;
+            a.push_back({ACCESS_READONLY, data->resolveBufferByIndex(config->multiplierBufferIndex), false});
+        } break;
+        case OP_PARTIAL_ROPE: {
+            const auto *config = (NnPartialRopeOpConfig *)opConfig->config;
+            a.push_back({ACCESS_READONLY, data->resolvePipeByIndex(config->positionPipeIndex), false});
+        } break;
+        case OP_CAUSAL_CONV1D: {
+            const auto *config = (NnCausalConv1DOpConfig *)opConfig->config;
+            a.push_back({ACCESS_READ_WRITE, data->resolveBufferByIndex(config->stateBufferIndex), true});
+            a.push_back({ACCESS_READONLY, data->resolvePipeByIndex(config->positionPipeIndex), false});
+        } break;
+        case OP_GATED_DELTA_NET: {
+            const auto *config = (NnGatedDeltaNetOpConfig *)opConfig->config;
+            a.push_back({ACCESS_READONLY, data->resolveBufferByIndex(config->keyBufferIndex), false});
+            a.push_back({ACCESS_READONLY, data->resolveBufferByIndex(config->valueBufferIndex), false});
+            a.push_back({ACCESS_READONLY, data->resolveBufferByIndex(config->aBufferIndex), false});
+            a.push_back({ACCESS_READONLY, data->resolveBufferByIndex(config->bBufferIndex), false});
+            a.push_back({ACCESS_READ_WRITE, data->resolveBufferByIndex(config->recurrentStateBufferIndex), true});
+            a.push_back({ACCESS_READONLY, data->resolvePipeByIndex(config->positionPipeIndex), false});
         } break;
         case OP_MATMUL: {
             const NnMatmulOpConfig *config = (NnMatmulOpConfig *)opConfig->config;
-            a.push_back({ACCESS_READONLY, data->resolveBufferByIndex(config->activeExpertIndexesBufferIndex)});
+            a.push_back({ACCESS_READONLY, data->resolveBufferByIndex(config->activeExpertIndexesBufferIndex), false});
         } break;
         case OP_SCALE: {
             const NnScaleOpCodeConfig *config = (NnScaleOpCodeConfig *)opConfig->config;
-            a.push_back({ACCESS_READONLY, data->resolveBufferByIndex(config->scaleBufferIndex)});
+            a.push_back({ACCESS_READONLY, data->resolveBufferByIndex(config->scaleBufferIndex), false});
         } break;
         case OP_SHIFT: {
             const NnShiftOpCodeConfig *config = (NnShiftOpCodeConfig *)opConfig->config;
-            a.push_back({ACCESS_READONLY, data->resolvePipeByIndex(config->indexPipeIndex)});
+            a.push_back({ACCESS_READONLY, data->resolvePipeByIndex(config->indexPipeIndex), false});
         } break;
         case OP_ROPE: {
             const NnRopeOpConfig *config = (NnRopeOpConfig *)opConfig->config;
-            a.push_back({ACCESS_READONLY, data->resolvePipeByIndex(config->positionPipeIndex)});
-            a.push_back({ACCESS_IMMUTABLE, data->resolveBufferByIndex(config->ropeCacheBufferIndex)});
+            a.push_back({ACCESS_READONLY, data->resolvePipeByIndex(config->positionPipeIndex), false});
+            a.push_back({ACCESS_IMMUTABLE, data->resolveBufferByIndex(config->ropeCacheBufferIndex), false});
         } break;
         case OP_MULTIHEAD_ATT: {
             const NnMultiHeadAttOpConfig *config = (NnMultiHeadAttOpConfig *)opConfig->config;
-            a.push_back({ACCESS_READONLY, data->resolvePipeByIndex(config->positionPipeIndex)});
-            a.push_back({ACCESS_READONLY, data->resolveBufferByIndex(config->queryBufferIndex)});
-            a.push_back({ACCESS_READONLY, data->resolveBufferByIndex(config->keyCacheBufferIndex)});
-            a.push_back({ACCESS_READONLY, data->resolveBufferByIndex(config->valueCacheBufferIndex)});
-            a.push_back({ACCESS_READ_WRITE, data->resolveBufferByIndex(config->attBufferIndex)});
+            a.push_back({ACCESS_READONLY, data->resolvePipeByIndex(config->positionPipeIndex), false});
+            a.push_back({ACCESS_READONLY, data->resolveBufferByIndex(config->queryBufferIndex), false});
+            a.push_back({ACCESS_READONLY, data->resolveBufferByIndex(config->keyCacheBufferIndex), true});
+            a.push_back({ACCESS_READONLY, data->resolveBufferByIndex(config->valueCacheBufferIndex), true});
+            a.push_back({ACCESS_READ_WRITE, data->resolveBufferByIndex(config->attBufferIndex), false});
         } break;
         case OP_MOE_GATE: {
             const NnMoeGateOpCodeConfig *config = (NnMoeGateOpCodeConfig *)opConfig->config;
-            a.push_back({ACCESS_READ_WRITE, data->resolveBufferByIndex(config->indexesBufferIndex)});
+            a.push_back({ACCESS_READ_WRITE, data->resolveBufferByIndex(config->indexesBufferIndex), false});
         } break;
         default:
             break;
@@ -608,33 +642,42 @@ static void buildShaderLayout(std::vector<NnOpBufferAccess> &a, NnVulkanDeviceDa
     }
 }
 
-static bool containsBuffer(std::vector<NnVulkanBuffer *> &buffers, NnVulkanBuffer *buffer) {
-    for (NnVulkanBuffer *b : buffers) {
-        if (b == buffer) return true;
+static bool containsBuffer(std::vector<NnVulkanBufferSync> &buffers, NnVulkanBuffer *buffer) {
+    for (const NnVulkanBufferSync &sync : buffers) {
+        if (sync.buffer == buffer) return true;
     }
     return false;
 }
 
-static void resolveBuffersToSync(std::vector<std::vector<NnVulkanBuffer *>>& buffersToSync, std::vector<std::vector<NnOpBufferAccess>>& accesses) {
-    std::vector<NnVulkanBuffer *> modifiedBuffers;
+static void resolveBuffersToSync(std::vector<std::vector<NnVulkanBufferSync>>& buffersToSync,
+    std::vector<std::vector<NnOpBufferAccess>>& accesses) {
+    std::vector<NnVulkanBufferSync> modifiedBuffers;
     for (NnUint opIndex = 0; opIndex < accesses.size(); opIndex++) {
         if (opIndex > 0) {
             bool flush = false;
             for (const NnOpBufferAccess &access : accesses[opIndex]) {
-                if (access.type == ACCESS_READONLY && containsBuffer(modifiedBuffers, access.buffer)) {
+                if (access.type != ACCESS_IMMUTABLE && containsBuffer(modifiedBuffers, access.buffer)) {
                     flush = true;
                     break;
                 }
             }
             if (flush) {
-                for (NnVulkanBuffer *buffer : modifiedBuffers)
-                    buffersToSync[opIndex].push_back(buffer);
+                for (const NnVulkanBufferSync &sync : modifiedBuffers)
+                    buffersToSync[opIndex].push_back(sync);
                 modifiedBuffers.clear();
             }
         }
         for (const NnOpBufferAccess &access : accesses[opIndex]) {
-            if (access.type == ACCESS_READ_WRITE && !containsBuffer(modifiedBuffers, access.buffer))
-                modifiedBuffers.push_back(access.buffer);
+            if (access.type != ACCESS_READ_WRITE)
+                continue;
+            if (!containsBuffer(modifiedBuffers, access.buffer)) {
+                modifiedBuffers.push_back({access.buffer, access.syncWhole});
+            } else {
+                for (NnVulkanBufferSync &sync : modifiedBuffers) {
+                    if (sync.buffer == access.buffer && access.syncWhole)
+                        sync.syncWhole = true;
+                }
+            }
         }
     }
 }
@@ -671,6 +714,7 @@ static std::vector<NnUint> resolveShaderConstants(const NnOpConfig *opConfig, co
         opConfig->code == OP_MATMUL ||
         opConfig->code == OP_MERGE_SUM ||
         opConfig->code == OP_MUL ||
+        opConfig->code == OP_SIGMOID_MUL ||
         opConfig->code == OP_REPEAT_Z ||
         opConfig->code == OP_SCALE ||
         opConfig->code == OP_SILU ||
@@ -695,6 +739,13 @@ static std::vector<NnUint> resolveShaderConstants(const NnOpConfig *opConfig, co
 }
 
 static NnUint resolveShaderNumberOfWorkGroupsX(const NnOpConfig *opConfig, const NnSize3D inputSize, const NnSize3D outputSize) {
+    if (opConfig->code == OP_GATED_DELTA_NET) {
+        const auto *config = (NnGatedDeltaNetOpConfig *)opConfig->config;
+        return config->nValueHeads;
+    }
+    if (opConfig->code == OP_SIGMOID_MUL || opConfig->code == OP_PARTIAL_ROPE ||
+        opConfig->code == OP_CAUSAL_CONV1D || opConfig->code == OP_RMS_NORM_ZERO_CENTERED)
+        return (outputSize.x + 63u) / 64u;
     if (
         opConfig->code == OP_CAST ||
         opConfig->code == OP_REPEAT_Z
@@ -877,7 +928,7 @@ NnVulkanDeviceSegment::NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanS
         VULKAN_TRACE("Loading shader: %s", shaderFileName);
         vk::ShaderModuleCreateInfo shaderModuleCreateInfo(
             vk::ShaderModuleCreateFlags(),
-            code.size(),
+            code.size() * sizeof(uint32_t),
             code.data()
         );
 
@@ -1068,17 +1119,25 @@ void NnVulkanDeviceSegment::forward(NnUint opIndex, NnUint nThreads, NnUint thre
         lastBatchSize = batchSize;
         commandBuffer.begin({ vk::CommandBufferUsageFlags{} });
 
+        commandBuffer.pipelineBarrier(
+            vk::PipelineStageFlagBits::eComputeShader,
+            vk::PipelineStageFlagBits::eComputeShader, vk::DependencyFlags(),
+            {vk::MemoryBarrier(vk::AccessFlagBits::eShaderWrite,
+                vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite)},
+            nullptr, nullptr);
+
         for (NnUint opIndex = 0; opIndex < segmentConfig->nOps; opIndex++) {
             std::vector<vk::BufferMemoryBarrier> memoryBarriers;
-            for (NnVulkanBuffer *buffer : buffersToSync[opIndex]) {
+            for (const NnVulkanBufferSync &sync : buffersToSync[opIndex]) {
+                NnVulkanBuffer *buffer = sync.buffer;
                 vk::BufferMemoryBarrier barrier(
                     vk::AccessFlagBits::eShaderWrite,
-                    vk::AccessFlagBits::eShaderRead,
+                    vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite,
                     context->queueFamilyIndex,
                     context->queueFamilyIndex,
                     buffer->deviceBuffer,
                     0,
-                    buffer->calcSliceSize(batchSize, netConfig->nBatches)
+                    sync.syncWhole ? buffer->bufferSize : buffer->calcSliceSize(batchSize, netConfig->nBatches)
                 );
                 memoryBarriers.push_back(barrier);
             }

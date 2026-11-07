@@ -327,14 +327,14 @@ std::unique_ptr<LlmGraph> Qwen35LlmModel::buildGraph(
                 const NnUint aBufferIndex = nodeBuilder.addBuffer("linear_a", size2D(F_32, nBatches, linearASlice.d0));
                 const NnUint bBufferIndex = nodeBuilder.addBuffer("linear_b", size2D(F_32, nBatches, linearBSlice.d0));
                 const NnUint qConvStateBufferIndex = nodeBuilder.addBuffer(
-                    "linear_q_conv_state", size2D(F_32, linearQSlice.d0, h->linearConvKernelDim));
+                    "linear_q_conv_state", size2D(F_32, linearQSlice.d0, h->linearConvKernelDim), true);
                 const NnUint kConvStateBufferIndex = nodeBuilder.addBuffer(
-                    "linear_k_conv_state", size2D(F_32, linearKSlice.d0, h->linearConvKernelDim));
+                    "linear_k_conv_state", size2D(F_32, linearKSlice.d0, h->linearConvKernelDim), true);
                 const NnUint vConvStateBufferIndex = nodeBuilder.addBuffer(
-                    "linear_v_conv_state", size2D(F_32, linearVSlice.d0, h->linearConvKernelDim));
+                    "linear_v_conv_state", size2D(F_32, linearVSlice.d0, h->linearConvKernelDim), true);
                 const NnUint recurrentStateBufferIndex = nodeBuilder.addBuffer(
                     "linear_recurrent_state", size3D(F_32, localLinearValueHeads,
-                        h->linearKeyHeadDim, h->linearValueHeadDim));
+                        h->linearKeyHeadDim, h->linearValueHeadDim), true);
                 const NnUint coreOutputBufferIndex = nodeBuilder.addBuffer(
                     "linear_core_output", size2D(F_32, nBatches, linearVSlice.d0));
                 const NnUint coreOutputQBufferIndex = h->syncType == F_32

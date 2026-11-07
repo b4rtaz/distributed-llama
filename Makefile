@@ -71,7 +71,7 @@ DEPS += $(VULKAN_SHADER_BINS)
 
 %.spv: %.comp
 	$(CGLSLC) -c $< -o $@ --target-env=vulkan1.2
-nn-vulkan-test: src/nn/nn-vulkan-test.cpp nn-quants.o nn-core.o nn-executor.o nn-vulkan.o ${DEPS}
+nn-vulkan-test: src/nn/nn-vulkan-test.cpp nn-quants.o nn-core.o nn-executor.o nn-vulkan.o nn-cpu.o nn-cpu-ops.o llamafile-sgemm.o ${DEPS}
 	$(CXX) $(CXXFLAGS) $(filter-out %.spv, $^) -o $@ $(LIBS)
 endif
 

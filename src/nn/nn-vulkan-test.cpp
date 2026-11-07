@@ -3,6 +3,7 @@
 #include "nn-config-builder.hpp"
 #include "nn-quants.hpp"
 #include "nn-vulkan.hpp"
+#include "nn-cpu.hpp"
 
 #define N_BATCHES 4
 
@@ -12,7 +13,7 @@ void printOk(const char *name) {
 
 void assertFloat(NnUint position, const float value, const float expectedValue, const float tolerance) {
     float diff = fabs(expectedValue - value);
-    if (diff > tolerance) {
+    if (!std::isfinite(value) || !std::isfinite(expectedValue) || diff > tolerance) {
         printf("❌ [%d] failed: value=%f, expectedValue=%f, diff=%f\n", position, value, expectedValue, diff);
         exit(1);
     }
@@ -928,8 +929,190 @@ void testMoeGate_F32_F32() {
         });
 }
 
+// Shared executor setup for independent op tests. Each test supplies its own
+// buffers, dimensions and config; outputs and recurrent state are compared.
+struct OpParityConfig {
+    NnNodeConfigBuilder nodeBuilder{0};
+    NnSegmentConfigBuilder segment;
+    NnPointerConfig input;
+    NnPointerConfig output;
+    NnUint positions;
+    NnUint stateIndex = UINT32_MAX;
+    NnUint cacheIndex = UINT32_MAX;
+};
+
+template <typename Build>
+void executeOpParity(const char *name, NnUint inputDim, NnUint outputDim, bool inPlace, Build build) {
+    NnNetConfigBuilder netBuilder(1, N_BATCHES);
+    NnUint input = netBuilder.addPipe("input", size2D(F_32, N_BATCHES, inputDim));
+    NnUint output = inPlace ? input : netBuilder.addPipe("output", size2D(F_32, N_BATCHES, outputDim));
+    NnUint positions = netBuilder.addPipe("positions", size2D(F_32, N_BATCHES, 1));
+    netBuilder.addPreSync(positions);
+    OpParityConfig config;
+    config.input = pointerBatchConfig(SRC_PIPE, input);
+    config.output = pointerBatchConfig(SRC_PIPE, output);
+    config.positions = positions;
+    build(config);
+    NnNodeConfigBuilder &nodeBuilder = config.nodeBuilder;
+    NnSegmentConfigBuilder &segment = config.segment;
+    const NnUint stateIndex = config.stateIndex;
+    const NnUint cacheIndex = config.cacheIndex;
+    nodeBuilder.addSegment(segment.build());
+    NnNetConfig net = netBuilder.build();
+    NnNodeConfig node = nodeBuilder.build();
+    std::unique_ptr<NnNetConfig, void(*)(NnNetConfig *)> netGuard(&net, releaseNetConfig);
+    std::unique_ptr<NnNodeConfig, void(*)(NnNodeConfig *)> nodeGuard(&node, releaseNodeConfig);
+    NnNetExecution cpuExecution(1, &net), gpuExecution(1, &net);
+    auto *cpu = new NnCpuDevice(&net, &node, &cpuExecution);
+    auto *gpu = new NnVulkanDevice(0, &net, &node, &gpuExecution);
+    for (NnUint b = 0; b < node.nBuffers; ++b) {
+        assert(node.buffers[b].initZero == (b == stateIndex));
+        if (!node.buffers[b].initZero)
+            continue;
+        const NnUint count = node.buffers[b].size.nBytes / sizeof(float);
+        std::vector<float> initial(count);
+        gpu->data.buffers[b]->read((NnByte *)initial.data());
+        for (NnUint j = 0; j < count; ++j) {
+            assertFloat(j, initial[j], 0.0f, 0.0f);
+            assertFloat(j, ((float *)cpu->buffers[b])[j], 0.0f, 0.0f);
+        }
+    }
+    std::vector<NnExecutorDevice> cpuDevices, gpuDevices;
+    cpuDevices.push_back(NnExecutorDevice(cpu, -1, -1));
+    gpuDevices.push_back(NnExecutorDevice(gpu, -1, -1));
+    NnFakeNodeSynchronizer sync;
+    NnExecutor cpuExecutor(&net, &node, &cpuDevices, &cpuExecution, &sync, false);
+    NnExecutor gpuExecutor(&net, &node, &gpuDevices, &gpuExecution, &sync, false);
+    NnUint weightCount = node.segments[0].ops[node.segments[0].nOps - 1].weightSize.nBytes / sizeof(float);
+    std::vector<float> weight(weightCount);
+    for (NnUint j = 0; j < weightCount; ++j)
+        weight[j] = 0.3f * sinf(float(j) + 0.5f);
+    if (weightCount) {
+        cpuExecutor.loadWeight("op", 0, 0, weightCount * sizeof(float), (NnByte *)weight.data());
+        gpuExecutor.loadWeight("op", 0, 0, weightCount * sizeof(float), (NnByte *)weight.data());
+    }
+    // Seed state with nonzero values so position-zero reset must actually work.
+    for (NnUint b = 0; b < node.nBuffers; ++b) {
+        if (b == cacheIndex) continue;
+        NnUint count = node.buffers[b].size.nBytes / sizeof(float);
+        std::vector<float> values(count);
+        for (NnUint j = 0; j < count; ++j)
+            values[j] = b == stateIndex ? 9.0f : sinf(float(j) * 0.13f + float(b));
+        std::memcpy(cpu->buffers[b], values.data(), count * sizeof(float));
+        gpu->data.buffers[b]->write((NnByte *)values.data());
+    }
+    const NnUint batchSizes[] = {4, 2, 1, 4, 4};
+    NnUint position = 0;
+    for (NnUint step = 0; step < 5; ++step) {
+        NnUint batchSize = batchSizes[step];
+        if (step == 3) position = 0;
+        cpuExecution.setBatchSize(batchSize);
+        gpuExecution.setBatchSize(batchSize);
+        for (NnUint b = 0; b < batchSize; ++b) {
+            ((float *)cpuExecution.pipes[positions])[b] = float(position++);
+            for (NnUint j = 0; j < inputDim; ++j)
+                ((float *)cpuExecution.pipes[input])[b * inputDim + j] = cosf(float(j + b * 7 + step) * 0.2f);
+        }
+        std::memcpy(gpuExecution.pipes[input], cpuExecution.pipes[input], net.pipes[input].size.nBytes);
+        std::memcpy(gpuExecution.pipes[positions], cpuExecution.pipes[positions], net.pipes[positions].size.nBytes);
+        cpuExecutor.forward();
+        gpuExecutor.forward();
+        for (NnUint j = 0; j < batchSize * outputDim; ++j)
+            assertFloat(j, ((float *)gpuExecution.pipes[output])[j], ((float *)cpuExecution.pipes[output])[j], 0.00003f);
+        if (stateIndex != UINT32_MAX) {
+            NnUint count = node.buffers[stateIndex].size.nBytes / sizeof(float);
+            std::vector<float> state(count);
+            gpu->data.buffers[stateIndex]->read((NnByte *)state.data());
+            for (NnUint j = 0; j < count; ++j)
+                assertFloat(j, state[j], ((float *)cpu->buffers[stateIndex])[j], 0.00003f);
+        }
+    }
+    printOk(name);
+}
+
+void testSigmoidMul_F32_F32(bool inPlace) {
+    executeOpParity("testSigmoidMul_F32_F32", 70, 70, inPlace, [](OpParityConfig &c) {
+        NnUint gate = c.nodeBuilder.addBuffer("gate", size2D(F_32, N_BATCHES, 70));
+        c.segment.addOp(OP_SIGMOID_MUL, "op", 0, c.input, c.output,
+            size0(), NnSigmoidMulOpConfig{gate});
+    });
+}
+
+void testRmsNormZeroCentered_F32_F32_F32(bool inPlace) {
+    executeOpParity("testRmsNormZeroCentered_F32_F32_F32", 70, 70, inPlace, [](OpParityConfig &c) {
+        // Two odd-sized columns, with a larger backing stride for inverse RMS.
+        NnUint rms = c.nodeBuilder.addBuffer("rms", size2D(F_32, N_BATCHES, 4));
+        c.segment.addOp(OP_RMS_NORM_ZERO_CENTERED, "op", 0, c.input, c.output,
+            size1D(F_32, 35), NnRmsNormOpConfig{rms, 2});
+    });
+}
+
+void testPartialRope_F32_F32(bool inPlace) {
+    executeOpParity("testPartialRope_F32_F32", 70, 70, inPlace, [](OpParityConfig &c) {
+        c.cacheIndex = c.nodeBuilder.addBuffer("cache", size2D(F_32, 32, 18));
+        NnRopeSlice slice = {};
+        slice.qDim0 = 70;
+        slice.kvDim0 = 70;
+        slice.headDim = 35;
+        slice.seqLen = 32;
+        slice.ropeTheta = 10000.0f;
+        c.segment.addOp(OP_PARTIAL_ROPE, "op", 0, c.input, c.output, size0(),
+            NnPartialRopeOpConfig{1, c.positions, c.cacheIndex, 18, slice});
+    });
+}
+
+void testRmsNormStrided_F32_F32_F32() {
+    executeOpParity("testRmsNormStrided_F32_F32_F32", 72, 72, true, [](OpParityConfig &c) {
+        NnUint rms = c.nodeBuilder.addBuffer("rms", size2D(F_32, N_BATCHES, 4));
+        c.segment.addOp(OP_RMS_NORM, "op", 0, c.input, c.output,
+            size1D(F_32, 36), NnRmsNormOpConfig{rms, 2});
+    });
+}
+
+void testInvRmsStrided_F32_F32() {
+    executeOpParity("testInvRmsStrided_F32_F32", 72, 72, true, [](OpParityConfig &c) {
+        NnUint rms = c.nodeBuilder.addBuffer("rms", size2D(F_32, N_BATCHES, 4));
+        c.segment.addOp(OP_INV_RMS, "inv_rms", 0, c.input,
+            pointerBatchConfig(SRC_BUFFER, rms), size0(), NnInvRmsOpConfig{1e-6f, 2});
+        c.segment.addOp(OP_RMS_NORM, "op", 0, c.input, c.output,
+            size1D(F_32, 36), NnRmsNormOpConfig{rms, 2});
+    });
+}
+
+void testCausalConv1d_F32_F32_F32(bool inPlace, bool applySilu) {
+    executeOpParity("testCausalConv1d_F32_F32_F32", 70, 70, inPlace, [applySilu](OpParityConfig &c) {
+        c.stateIndex = c.nodeBuilder.addBuffer("state", size2D(F_32, 70, 3), true);
+        c.segment.addOp(OP_CAUSAL_CONV1D, "op", 0, c.input, c.output,
+            size2D(F_32, 70, 3),
+            NnCausalConv1DOpConfig{c.stateIndex, c.positions, 3, applySilu ? 1u : 0u});
+    });
+}
+
+void testGatedDeltaNet_F32_F32_F32() {
+    executeOpParity("testGatedDeltaNet_F32_F32_F32", 70, 268, false, [](OpParityConfig &c) {
+        // Grouped heads and dimensions beyond a workgroup cover replication and tails.
+        NnUint key = c.nodeBuilder.addBuffer("key", size2D(F_32, N_BATCHES, 70));
+        NnUint value = c.nodeBuilder.addBuffer("value", size2D(F_32, N_BATCHES, 268));
+        NnUint a = c.nodeBuilder.addBuffer("a", size2D(F_32, N_BATCHES, 4));
+        NnUint b = c.nodeBuilder.addBuffer("b", size2D(F_32, N_BATCHES, 4));
+        c.stateIndex = c.nodeBuilder.addBuffer("state", size3D(F_32, 4, 35, 67), true);
+        c.segment.addOp(OP_GATED_DELTA_NET, "op", 0, c.input, c.output, size2D(F_32, 2, 4),
+            NnGatedDeltaNetOpConfig{key, value, a, b, c.stateIndex, c.positions, 2, 4, 35, 67});
+    });
+}
+
 int main() {
     initQuants();
+    for (bool inPlace : {false, true}) {
+        testSigmoidMul_F32_F32(inPlace);
+        testRmsNormZeroCentered_F32_F32_F32(inPlace);
+        testPartialRope_F32_F32(inPlace);
+        testCausalConv1d_F32_F32_F32(inPlace, false);
+        testCausalConv1d_F32_F32_F32(inPlace, true);
+    }
+    testGatedDeltaNet_F32_F32_F32();
+    testRmsNormStrided_F32_F32_F32();
+    testInvRmsStrided_F32_F32();
 
     testRmsNorm_F32_F32_F32<4>();
     testRmsNorm_F32_F32_F32<1024>();

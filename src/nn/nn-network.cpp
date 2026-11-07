@@ -681,6 +681,7 @@ void NnRootConfigWriter::writeNode(NnUint socketIndex, NnNodeConfig *config) {
     for (NnUint bufferIndex = 0; bufferIndex < config->nBuffers; bufferIndex++) {
         NnBufferConfig *bufferConfig = &config->buffers[bufferIndex];
         network->write(socketIndex, &bufferConfig->size, sizeof(bufferConfig->size));
+        network->write(socketIndex, &bufferConfig->initZero, sizeof(bufferConfig->initZero));
         writeString(network, socketIndex, bufferConfig->name);
     }
 
@@ -777,6 +778,7 @@ NnNodeConfig NnWorkerConfigReader::readNode() {
     for (NnUint bufferIndex = 0; bufferIndex < config.nBuffers; bufferIndex++) {
         NnBufferConfig *bufferConfig = &config.buffers[bufferIndex];
         network->read(ROOT_SOCKET_INDEX, &bufferConfig->size, sizeof(bufferConfig->size));
+        network->read(ROOT_SOCKET_INDEX, &bufferConfig->initZero, sizeof(bufferConfig->initZero));
         bufferConfig->name = readString(network, ROOT_SOCKET_INDEX);
     }
 

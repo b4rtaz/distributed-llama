@@ -139,7 +139,13 @@ enum NnOpBufferAccessType {
 typedef struct {
     NnOpBufferAccessType type;
     NnVulkanBuffer *buffer;
+    bool syncWhole;
 } NnOpBufferAccess;
+
+typedef struct {
+    NnVulkanBuffer *buffer;
+    bool syncWhole;
+} NnVulkanBufferSync;
 
 class NnVulkanDeviceSegment : public NnDeviceSegment {
 private:
@@ -161,7 +167,7 @@ private:
     std::vector<vk::Pipeline> pipelines;
     vk::PipelineCache pipelineCache;
     vk::CommandBuffer commandBuffer;
-    std::vector<std::vector<NnVulkanBuffer *>> buffersToSync;
+    std::vector<std::vector<NnVulkanBufferSync>> buffersToSync;
     NnUint lastBatchSize;
 public:
     NnVulkanDeviceSegment(NnVulkanContext *context, NnVulkanStagingCopier *copier, NnVulkanBufferFactory *bufferFactory, NnVulkanDeviceData *data, NnNetConfig *netConfig, NnUint segmentIndex, NnSegmentConfig *segmentConfig, NnNetExecution *netExecution);

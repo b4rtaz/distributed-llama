@@ -1835,7 +1835,6 @@ static void initCausalConv1dForward(NnCpuOpContext *context) {
     ASSERT_EQ(stateConfig->size.x, config->kernelSize);
     ASSERT_EQ(stateConfig->size.y, context->inputSize.x);
     ASSERT_EQ(stateConfig->size.z, 1u);
-    std::memset(context->buffers[config->stateBufferIndex], 0, stateConfig->size.nBytes);
 }
 
 static void causalConv1dForward_F32_F32_F32(
@@ -1882,7 +1881,6 @@ static void initGatedDeltaNetForward(NnCpuOpContext *context) {
     ASSERT_EQ(stateConfig->size.x, config->valueHeadDim);
     ASSERT_EQ(stateConfig->size.y, config->keyHeadDim);
     ASSERT_EQ(stateConfig->size.z, config->nValueHeads);
-    std::memset(context->buffers[config->recurrentStateBufferIndex], 0, stateConfig->size.nBytes);
 }
 
 static void gatedDeltaNetForward_F32_F32_F32(

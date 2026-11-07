@@ -50,6 +50,6 @@ void main() {
     }
 
     if (threadIndex == 0) {
-        y[batchIndex * nColumns + colIndex] = inversesqrt((sums[0] / float(dim)) + epsilon);
+        y[info.outputOffset + colIndex] = inversesqrt((sums[0] / float(dim)) + epsilon);
     }
 }

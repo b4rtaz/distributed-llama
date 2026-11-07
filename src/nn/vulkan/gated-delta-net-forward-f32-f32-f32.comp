@@ -1,0 +1,79 @@
+#version 450
+
+#define N_THREADS 64
+
+layout(local_size_x = N_THREADS, local_size_y = 1, local_size_z = 1) in;
+
+layout(constant_id = 0) const uint N_BATCHES = 32;
+
+struct BatchInfo {
+    uint inputOffset;
+    uint inputSizeX;
+    uint outputOffset;
+    uint outputSizeX;
+};
+
+layout(binding = 0) readonly buffer inputBuffer { float x[]; };
+layout(binding = 1) writeonly buffer outputBuffer { float y[]; };
+layout(binding = 2) readonly uniform batchInfosBuffer { BatchInfo infos[N_BATCHES]; };
+layout(binding = 3) readonly buffer weightBuffer { float weight[]; };
+layout(binding = 4) readonly uniform configBuffer {
+    uint keyBufferIndex;
+    uint valueBufferIndex;
+    uint aBufferIndex;
+    uint bBufferIndex;
+    uint recurrentStateBufferIndex;
+    uint positionPipeIndex;
+    uint nKeyHeads;
+    uint nValueHeads;
+    uint keyHeadDim;
+    uint valueHeadDim;
+};
+layout(binding = 5) readonly buffer keyBuffer { float key[]; };
+layout(binding = 6) readonly buffer valueBuffer { float value[]; };
+layout(binding = 7) readonly buffer aBuffer { float a[]; };
+layout(binding = 8) readonly buffer bBuffer { float betaInput[]; };
+layout(binding = 9) buffer stateBuffer { float state[]; };
+layout(binding = 10) readonly buffer positionsBuffer { float positions[]; };
+
+float sigmoid(float v) {
+    float e = exp(-abs(v));
+    return v >= 0.0 ? 1.0 / (1.0 + e) : e / (1.0 + e);
+}
+
+void main() {
+    if (gl_WorkGroupID.y != 0) return;
+    uint head = gl_WorkGroupID.x;
+    uint keyHead = head / (nValueHeads / nKeyHeads);
+    // Columns are independent; each invocation owns complete state columns.
+    for (uint batchIndex = 0; batchIndex < gl_NumWorkGroups.y; ++batchIndex) {
+        uint queryOffset = infos[batchIndex].inputOffset + keyHead * keyHeadDim;
+        uint keyOffset = (batchIndex * nKeyHeads + keyHead) * keyHeadDim;
+        float querySquared = 0.0, keySquared = 0.0;
+        for (uint k = 0; k < keyHeadDim; ++k) {
+            querySquared += x[queryOffset + k] * x[queryOffset + k];
+            keySquared += key[keyOffset + k] * key[keyOffset + k];
+        }
+        float qScale = inversesqrt(float(keyHeadDim)) * inversesqrt(querySquared + 1e-6);
+        float kScale = inversesqrt(keySquared + 1e-6);
+        float beta = sigmoid(betaInput[batchIndex * nValueHeads + head]);
+        float dt = a[batchIndex * nValueHeads + head] + weight[nValueHeads + head];
+        float decay = exp(-exp(weight[head]) * (max(dt, 0.0) + log(1.0 + exp(-abs(dt)))));
+        for (uint v = gl_LocalInvocationID.x; v < valueHeadDim; v += N_THREADS) {
+            float memoryValue = 0.0;
+            for (uint k = 0; k < keyHeadDim; ++k) {
+                uint s = (head * keyHeadDim + k) * valueHeadDim + v;
+                state[s] = positions[batchIndex] == 0.0 ? 0.0 : state[s] * decay;
+                memoryValue += state[s] * (key[keyOffset + k] * kScale);
+            }
+            float delta = (value[(batchIndex * nValueHeads + head) * valueHeadDim + v] - memoryValue) * beta;
+            float result = 0.0;
+            for (uint k = 0; k < keyHeadDim; ++k) {
+                uint s = (head * keyHeadDim + k) * valueHeadDim + v;
+                state[s] += (key[keyOffset + k] * kScale) * delta;
+                result += state[s] * (x[queryOffset + k] * qScale);
+            }
+            y[infos[batchIndex].outputOffset + head * valueHeadDim + v] = result;
+        }
+    }
+}

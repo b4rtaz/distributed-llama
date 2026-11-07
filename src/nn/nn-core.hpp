@@ -88,7 +88,6 @@ enum NnOpCode {
     OP_SHIFT,
     OP_SOFTMAX,
     OP_MOE_GATE,
-    // Qwen3.5 graph primitives. Device implementations intentionally follow later.
     OP_SIGMOID_MUL,
     OP_PARTIAL_ROPE,
     OP_CAUSAL_CONV1D,
@@ -149,6 +148,7 @@ typedef struct {
 typedef struct {
     char *name;
     NnSize3D size;
+    bool initZero;
 } NnBufferConfig;
 
 typedef struct {

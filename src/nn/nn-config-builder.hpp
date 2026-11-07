@@ -62,9 +62,9 @@ public:
         this->nodeIndex = nodeIndex;
     }
 
-    NnUint addBuffer(const char *name, NnSize3D size) {
+    NnUint addBuffer(const char *name, NnSize3D size, bool initZero = false) {
         NnUint bufferIndex = buffers.size();
-        buffers.push_back({ cloneString(name), size });
+        buffers.push_back({ cloneString(name), size, initZero });
         return bufferIndex;
     }
 
