@@ -1,5 +1,5 @@
-#ifndef API_TYPES_HPP
-#define API_TYPES_HPP
+#ifndef DLLAMA_API_HPP
+#define DLLAMA_API_HPP
 
 #include <string>
 

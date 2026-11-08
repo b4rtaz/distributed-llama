@@ -78,7 +78,7 @@ static void inference(AppInferenceContext *context) {
         context->inference->setToken(0, token);
         context->inference->forward();
 
-        token = context->sampler->sample(context->inference->logitsPipe);
+        token = context->sampler->sample(context->inference->outputPipe);
 
         char *piece = context->tokenizer->decode(token);
 
@@ -151,7 +151,7 @@ static void perplexity(AppInferenceContext *context) {
         context->inference->setToken(0, inputTokens[pos]);
         context->inference->forward();
 
-        float *logits = context->inference->logitsPipe;
+        float *logits = context->inference->outputPipe;
         softmax_F32(logits, context->header->vocabSize);
 
         int targetToken = inputTokens[pos + 1];
@@ -235,7 +235,7 @@ static void chat(AppInferenceContext *context) {
             context->inference->setToken(0, token);
             context->inference->forward();
 
-            token = context->sampler->sample(context->inference->logitsPipe);
+            token = context->sampler->sample(context->inference->outputPipe);
 
             char *piece = context->tokenizer->decode(token);
             EosDetectorType eosType = eosDetector.append(token, piece);

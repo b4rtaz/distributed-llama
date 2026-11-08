@@ -1,7 +1,6 @@
 #ifndef APP_HPP
 #define APP_HPP
 
-#include <chrono>
 #include "nn/nn-core.hpp"
 #include "nn/nn-cpu.hpp"
 #include "tokenizer.hpp"
@@ -50,7 +49,7 @@ typedef struct {
 
 class RootLlmInference {
 public:
-    float *logitsPipe;
+    float *outputPipe;
 private:
     float *tokenPipe;
     float *positionPipe;

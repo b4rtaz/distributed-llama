@@ -2,6 +2,7 @@
 #include <cassert>
 #include <cstring>
 #include <stdexcept>
+#include <chrono>
 #if defined(DLLAMA_VULKAN)
     #include "nn/nn-vulkan.hpp"
 #endif
@@ -169,10 +170,14 @@ static std::vector<NnExecutorDevice> resolveDevices(AppCliArgs *args, NnNetConfi
 }
 
 RootLlmInference::RootLlmInference(LlmGraph *graph, NnNetExecution *execution, NnExecutor *executor, NnNetwork *network) {
+    assert(graph->tokenPipeIndex != UINT_MAX);
+    assert(graph->positionPipeIndex != UINT_MAX);
+    assert(graph->outputPipeIndex != UINT_MAX);
+
     this->header = graph->header;
     this->tokenPipe = (float *)execution->pipes[graph->tokenPipeIndex];
     this->positionPipe = (float *)execution->pipes[graph->positionPipeIndex];
-    this->logitsPipe = (float *)execution->pipes[graph->logitsPipeIndex];
+    this->outputPipe = (float *)execution->pipes[graph->outputPipeIndex];
     this->execution = execution;
     this->executor = executor;
     this->network = network; // May be nullptr!

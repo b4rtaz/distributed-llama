@@ -173,7 +173,7 @@ std::unique_ptr<LlmGraph> Qwen35LlmModel::buildGraph(
     n.positionPipeIndex = netBuilder.addPipe("POS", size2D(F_32, nBatches, 1));
     n.tokenPipeIndex = netBuilder.addPipe("TOK", size2D(F_32, nBatches, 1));
     n.xPipeIndex = netBuilder.addPipe("X", size2D(F_32, nBatches, h->dim));
-    n.logitsPipeIndex = netBuilder.addPipe("LG", size2D(F_32, nBatches, h->vocabSize));
+    n.outputPipeIndex = netBuilder.addPipe("LG", size2D(F_32, nBatches, h->vocabSize));
     const NnUint zqPipeIndex = netBuilder.addPipe("ZQ", size2D(h->syncType, nBatches, h->dim * nNodes));
     netBuilder.addPreSync(n.positionPipeIndex);
     n.netConfig = netBuilder.build();
@@ -483,8 +483,8 @@ std::unique_ptr<LlmGraph> Qwen35LlmModel::buildGraph(
             NnMatmulOpConfig{0, 0, unusedExpertIndexesBufferIndex});
         end.addOp(OP_CAST, "final_cast_logits", 0,
             pointerBatchConfig(SRC_BUFFER, logitsSliceBufferIndex),
-            pointerBatchedSliceConfig(SRC_PIPE, n.logitsPipeIndex), size0(), NnCastOpCodeConfig{});
-        end.addSync(n.logitsPipeIndex, SYNC_NODE_SLICES_EXCEPT_ROOT);
+            pointerBatchedSliceConfig(SRC_PIPE, n.outputPipeIndex), size0(), NnCastOpCodeConfig{});
+        end.addSync(n.outputPipeIndex, SYNC_NODE_SLICES_EXCEPT_ROOT);
         nodeBuilder.addSegment(end.build());
         n.nodeConfigs[nodeIndex] = nodeBuilder.build();
     }

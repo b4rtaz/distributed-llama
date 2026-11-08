@@ -43,11 +43,11 @@ public:
     NnNodeConfig *nodeConfigs;
     NnUint positionPipeIndex;
     NnUint tokenPipeIndex;
-    NnUint logitsPipeIndex;
+    NnUint outputPipeIndex;
 
     LlmGraph()
         : header(nullptr), netConfig(), nodeConfigs(nullptr),
-          positionPipeIndex(0), tokenPipeIndex(0), logitsPipeIndex(0) {}
+          positionPipeIndex(UINT_MAX), tokenPipeIndex(UINT_MAX), outputPipeIndex(UINT_MAX) {}
     virtual ~LlmGraph();
 
 private:
