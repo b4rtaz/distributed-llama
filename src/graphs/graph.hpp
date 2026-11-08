@@ -5,6 +5,7 @@
 #include "../nn/nn-executor.hpp"
 #include "../nn/nn-network.hpp"
 #include <cstdio>
+#include <climits>
 #include <initializer_list>
 #include <memory>
 #include <stdexcept>
