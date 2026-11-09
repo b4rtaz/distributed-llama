@@ -3,6 +3,8 @@
 #extension GL_EXT_control_flow_attributes : enable
 
 #define N_THREADS 256
+#define ATTENTION_MASK_CAUSAL 0
+#define ATTENTION_MASK_BIDIRECTIONAL 1
 
 layout(local_size_x = N_THREADS, local_size_y = 1, local_size_z = 1) in;
 
@@ -31,6 +33,7 @@ layout(binding = 3) readonly uniform configBuffer {
     uint keyCacheBufferIndex;
     uint valueCacheBufferIndex;
     uint attBufferIndex;
+    uint attentionMask;
 };
 layout(binding = 4) readonly buffer positionsBuffer { float positions[]; };
 layout(binding = 5) readonly buffer queryBuffer { float query[]; };
@@ -38,7 +41,7 @@ layout(binding = 6) readonly buffer keyCacheBuffer { float keyCache[]; };
 layout(binding = 7) readonly buffer valueCacheBuffer { float valueCache[]; };
 layout(binding = 8) buffer attBufferBuffer { float att[]; };
 
-shared uint sharedPosition;
+shared uint sharedAttentionLength;
 shared float sharedMaxScore;
 shared float temp[N_THREADS];
 
@@ -48,7 +51,9 @@ void main() {
     const uint h = gl_WorkGroupID.x;
 
     if (threadIndex == 0) {
-        sharedPosition = uint(positions[batchIndex]);
+        sharedAttentionLength = attentionMask == ATTENTION_MASK_BIDIRECTIONAL
+            ? gl_NumWorkGroups.y
+            : uint(positions[batchIndex]) + 1;
     }
 
     barrier();
@@ -58,7 +63,7 @@ void main() {
     const float invHeadDimRoot = 1.0f / sqrt(float(headDim));
 
     const BatchInfo info = infos[batchIndex];
-    const uint position = sharedPosition;
+    const uint attentionLength = sharedAttentionLength;
 
     const uint attOffset = batchIndex * nHeads0 * seqLen + h * seqLen;
     const uint qOffset = batchIndex * qSliceD0 + h * headDim;
@@ -66,7 +71,7 @@ void main() {
     const uint yOffset = info.outputOffset + h * headDim;
 
     float ms = -1e10f;
-    for (uint p = threadIndex; p <= position; p += N_THREADS) {
+    for (uint p = threadIndex; p < attentionLength; p += N_THREADS) {
         const uint kOffset = kvOffset + p * kvDim0;
 
         float score = 0.0f;
@@ -97,7 +102,7 @@ void main() {
     const float maxScore = sharedMaxScore;
 
     float s = 0.0f;
-    for (uint p = threadIndex; p <= position; p += N_THREADS) {
+    for (uint p = threadIndex; p < attentionLength; p += N_THREADS) {
         float v = exp(att[attOffset + p] - maxScore);
         att[attOffset + p] = v;
         s += v;
@@ -117,7 +122,7 @@ void main() {
     for (uint i = threadIndex; i < headDim; i += N_THREADS) {
         float sum = 0.0f;
         const uint vOffset = kvOffset + i;
-        for (uint p = 0; p <= position; p += 1) {
+        for (uint p = 0; p < attentionLength; p += 1) {
             const float a = att[attOffset + p];
             const float v = valueCache[vOffset + p * kvDim0];
             sum += v * a;

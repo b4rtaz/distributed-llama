@@ -1,8 +1,11 @@
+import os
+
 base = __import__('base-model-converter')
 
 
 class ArchType:
     QWEN35 = 0xABCE01
+    QWEN35_STARTLUX_INSTANT = 0xABCE02
 
 
 HEADER_MAGIC = 0xA00ABCE
@@ -30,12 +33,23 @@ HEADER_KEYS = {
 }
 
 
-def resolveArchitecture(config):
+def resolveArchitecture(folderPath, config):
     architectures = config.get('architectures', [])
-    if ('Qwen3_5ForConditionalGeneration' in architectures or
-            'Qwen3_5ForCausalLM' in architectures or
-            config.get('model_type') == 'qwen3_5_text'):
+    promptAttention = config.get('jev_prompt_attention')
+    isQwen35Architecture = ('Qwen3_5ForConditionalGeneration' in architectures or
+        'Qwen3_5ForCausalLM' in architectures or
+        config.get('model_type') == 'qwen3_5_text')
+    isQwen35 = isQwen35Architecture and promptAttention != 'bidirectional'
+    if isQwen35:
         return ArchType.QWEN35
+
+    isStartLuxInstant = isQwen35Architecture and promptAttention == 'bidirectional'
+    if isStartLuxInstant:
+        decisionConfigPath = os.path.join(folderPath, 'decision_config.json')
+        if not os.path.exists(decisionConfigPath):
+            raise Exception('A bidirectional StartLux model requires decision_config.json')
+        return ArchType.QWEN35_STARTLUX_INSTANT
+
     raise Exception(f'Unsupported Qwen3.5 architecture: {architectures}')
 
 
@@ -64,7 +78,7 @@ class Qwen35ModelPlan(base.BaseModelPlan):
 
     def __init__(self, folderPath, sourceConfig, weightsFloatType, weightMap):
         super().__init__(folderPath, sourceConfig, weightsFloatType, weightMap)
-        self.archType = resolveArchitecture(sourceConfig)
+        self.archType = resolveArchitecture(folderPath, sourceConfig)
         self.textConfig = sourceConfig.get('text_config', sourceConfig)
         self.__buildHeader()
         self.__validateLayerTypes()

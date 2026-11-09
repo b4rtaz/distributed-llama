@@ -804,6 +804,24 @@ static NnUint resolveShaderNumberOfWorkGroupsZ(const NnOpConfig *opConfig, const
     return resolveNumberOfBatchInfoZ(inputSize, outputSize);
 }
 
+static NnBatchMode resolveBatchMode(const NnOpConfig *opConfig) {
+    switch (opConfig->code) {
+    case OP_MERGE_ADD:
+        return ((NnMergeAddOpCodeConfig *)opConfig->config)->batchMode;
+    case OP_INV_RMS:
+        return ((NnInvRmsOpConfig *)opConfig->config)->batchMode;
+    case OP_RMS_NORM:
+    case OP_RMS_NORM_ZERO_CENTERED:
+        return ((NnRmsNormOpConfig *)opConfig->config)->batchMode;
+    case OP_CAST:
+        return ((NnCastOpCodeConfig *)opConfig->config)->batchMode;
+    case OP_MATMUL:
+        return ((NnMatmulOpConfig *)opConfig->config)->batchMode;
+    default:
+        return BATCH_MODE_ALL;
+    }
+}
+
 static std::vector<uint32_t> readShader(const char *fileName) {
     std::vector<uint32_t> code;
     std::string path = std::string("./src/nn/vulkan/") + fileName;
@@ -1170,9 +1188,12 @@ void NnVulkanDeviceSegment::forward(NnUint opIndex, NnUint nThreads, NnUint thre
             const NnSize3D outputSize = data->resolveBufferSize(&opConfig->output);
 
             const NnUint groupCountX = resolveShaderNumberOfWorkGroupsX(opConfig, inputSize, outputSize);
-            const NnUint groupCountY = batchSize;
+            const NnBatchRange batchRange = getBatchRange(batchSize, resolveBatchMode(opConfig));
+            const NnUint groupCountY = batchRange.end - batchRange.begin;
             const NnUint groupCountZ = resolveShaderNumberOfWorkGroupsZ(opConfig, inputSize, outputSize);
-            commandBuffer.dispatch(groupCountX, groupCountY, groupCountZ);
+            commandBuffer.dispatchBase(
+                0u, batchRange.begin, 0u,
+                groupCountX, groupCountY, groupCountZ);
             VULKAN_TRACE("Dispatched %s (%d, %d, %d)", opCodeToString(opConfig->code), groupCountX, groupCountY, groupCountZ);
         }
         commandBuffer.end();

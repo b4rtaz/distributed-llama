@@ -81,7 +81,7 @@ std::unique_ptr<LlmHeader> Qwen35LlmModel::loadHeader(
 
     if (!hasArchType)
         throw std::runtime_error("Qwen3.5 model does not specify architecture type");
-    if (header->archType != QWEN35)
+    if (header->archType != QWEN35 && header->archType != QWEN35_STARTLUX_INSTANT)
         throw std::runtime_error("Unsupported Qwen3.5 architecture");
     if (header->weightType == F_UNK)
         throw std::runtime_error("Qwen3.5 model does not specify weight type");
@@ -103,8 +103,10 @@ std::unique_ptr<LlmHeader> Qwen35LlmModel::loadHeader(
 
 void Qwen35LlmModel::printHeader(const LlmHeader *baseHeader) const {
     const Qwen35LlmHeader *header = static_cast<const Qwen35LlmHeader *>(baseHeader);
-    printf("💡 Format: Qwen3.5\n");
-    printf("💡 Arch: Qwen3.5\n");
+    if (header->archType == QWEN35_STARTLUX_INSTANT)
+        printf("💡 Arch: Qwen3.5 StartLux Instant\n");
+    else if (header->archType == QWEN35)
+        printf("💡 Arch: Qwen3.5\n");
     printf("💡 Dim: %u\n", header->dim);
     printf("💡 HiddenDim: %u\n", header->hiddenDim);
     printf("💡 HeadDim: %u\n", header->headDim);
@@ -131,6 +133,12 @@ std::unique_ptr<LlmGraph> Qwen35LlmModel::buildGraph(
     const NnUint linearValueDim = h->linearNValueHeads * h->linearValueHeadDim;
     const NnUint localLinearKeyHeads = h->linearNKeyHeads / nNodes;
     const NnUint localLinearValueHeads = h->linearNValueHeads / nNodes;
+    const NnAttentionMask attentionMask = h->archType == QWEN35_STARTLUX_INSTANT
+        ? ATTENTION_MASK_BIDIRECTIONAL
+        : ATTENTION_MASK_CAUSAL;
+    const NnBatchMode outputBatchMode = h->archType == QWEN35_STARTLUX_INSTANT
+        ? BATCH_MODE_LAST
+        : BATCH_MODE_ALL;
 
     assert(h->linearNKeyHeads % nNodes == 0);
     assert(h->linearNValueHeads % nNodes == 0);
@@ -304,7 +312,7 @@ std::unique_ptr<LlmGraph> Qwen35LlmModel::buildGraph(
                     NnMultiHeadAttOpConfig{multiHeadAttSlice.nHeads, multiHeadAttSlice.nHeads0,
                         h->nKvHeads, h->headDim, h->seqLen, n.qSlice.d0, kvCacheSlice.kvDim0,
                         n.positionPipeIndex, qBufferIndex, keyCacheBufferIndex, valueCacheBufferIndex,
-                        attentionBufferIndex});
+                        attentionBufferIndex, attentionMask});
                 mixer.addOp(OP_SIGMOID_MUL, "block_attention_gate", layerIndex,
                     pointerBatchConfig(SRC_BUFFER, attentionOutputBufferIndex),
                     pointerBatchConfig(SRC_BUFFER, attentionOutputBufferIndex), size0(),
@@ -465,25 +473,26 @@ std::unique_ptr<LlmGraph> Qwen35LlmModel::buildGraph(
         NnSegmentConfigBuilder end;
         end.addOp(OP_MERGE_ADD, "final_merge_add", 0,
             pointerBatchConfig(SRC_PIPE, zqPipeIndex), pointerBatchConfig(SRC_BUFFER, xBufferIndex),
-            size0(), NnMergeAddOpCodeConfig{});
+            size0(), NnMergeAddOpCodeConfig{outputBatchMode});
         end.addOp(OP_INV_RMS, "final_norm_pre", 0,
             pointerBatchConfig(SRC_BUFFER, xBufferIndex), pointerBatchConfig(SRC_BUFFER, invRmsBufferIndex),
-            size0(), NnInvRmsOpConfig{h->normEpsilon, 1});
+            size0(), NnInvRmsOpConfig{h->normEpsilon, 1, outputBatchMode});
         end.addOp(OP_RMS_NORM_ZERO_CENTERED, "final_norm", 0,
             pointerBatchConfig(SRC_BUFFER, xBufferIndex), pointerBatchConfig(SRC_BUFFER, yBufferIndex),
-            n.rmsNormSize, NnRmsNormOpConfig{invRmsBufferIndex, 1});
+            n.rmsNormSize, NnRmsNormOpConfig{invRmsBufferIndex, 1, outputBatchMode});
         if (yBufferIndex != yqBufferIndex) {
             end.addOp(OP_CAST, "final_cast_y", 0,
                 pointerBatchConfig(SRC_BUFFER, yBufferIndex), pointerBatchConfig(SRC_BUFFER, yqBufferIndex),
-                size0(), NnCastOpCodeConfig{});
+                size0(), NnCastOpCodeConfig{outputBatchMode});
         }
         end.addOp(OP_MATMUL, "final_matmul_logits", 0,
             pointerBatchConfig(SRC_BUFFER, yqBufferIndex), pointerBatchConfig(SRC_BUFFER, logitsSliceBufferIndex),
             size2D(h->weightType, n.wclsSlice.n, n.wclsSlice.d0),
-            NnMatmulOpConfig{0, 0, unusedExpertIndexesBufferIndex});
+            NnMatmulOpConfig{0, 0, unusedExpertIndexesBufferIndex, outputBatchMode});
         end.addOp(OP_CAST, "final_cast_logits", 0,
             pointerBatchConfig(SRC_BUFFER, logitsSliceBufferIndex),
-            pointerBatchedSliceConfig(SRC_PIPE, n.outputPipeIndex), size0(), NnCastOpCodeConfig{});
+            pointerBatchedSliceConfig(SRC_PIPE, n.outputPipeIndex), size0(),
+            NnCastOpCodeConfig{outputBatchMode});
         end.addSync(n.outputPipeIndex, SYNC_NODE_SLICES_EXCEPT_ROOT);
         nodeBuilder.addSegment(end.build());
         n.nodeConfigs[nodeIndex] = nodeBuilder.build();

@@ -361,7 +361,8 @@ std::unique_ptr<LlmGraph> LlamaLlmModel::buildGraph(
                 NnMultiHeadAttOpConfig{
                     multiHeadAttSlice.nHeads, multiHeadAttSlice.nHeads0,
                     h->nKvHeads, h->headDim, h->seqLen, n.qSlice.d0, kvCacheSlice.kvDim0,
-                    n.positionPipeIndex, qBufferIndex, kBufferIndex, vBufferIndex, attBufferIndex});
+                    n.positionPipeIndex, qBufferIndex, kBufferIndex, vBufferIndex, attBufferIndex,
+                    ATTENTION_MASK_CAUSAL});
             att.addOp(
                 OP_CAST, "block_cast_y2", layerIndex,
                 pointerBatchedSliceConfig(SRC_BUFFER, zBufferIndex),

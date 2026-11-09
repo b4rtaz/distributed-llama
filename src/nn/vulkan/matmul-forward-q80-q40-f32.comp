@@ -41,6 +41,7 @@ layout(binding = 4) readonly uniform opConfigBuffer {
     uint nExperts;
     uint nActiveExperts;
     uint activeExpertIndexesBufferIndex;
+    uint batchMode;
 };
 layout(binding = 5) readonly buffer activeExpertIndexesBuffer { float activeExpertIndexes[]; };
 

@@ -32,7 +32,7 @@ public:
     std::string getMethod() const;
     void writeCors();
     void writeNotFound();
-    void writeJson(const std::string &json);
+    void writeJson(const std::string &json, int status = 200);
     void writeStreamStartChunk();
     void writeStreamChunk(const std::string &data);
     void writeStreamEndChunk();

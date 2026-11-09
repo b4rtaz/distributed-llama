@@ -28,6 +28,7 @@ enum Qwen35LlmHeaderKey {
 
 enum Qwen35LlmArchType {
     QWEN35 = 0xABCE01,
+    QWEN35_STARTLUX_INSTANT = 0xABCE02,
 };
 
 struct Qwen35LlmHeader : public LlmHeader {

@@ -467,6 +467,25 @@ void testDotProductTail() {
     printPassed("dotProductTail");
 }
 
+void testMultiheadAttentionLength() {
+    float query[] = {1.0f};
+    float keyCache[] = {1.0f, 1.0f};
+    float valueCache[] = {10.0f, 20.0f};
+    float attention[2];
+    float output[1];
+
+    multiheadAtt_F32(
+        output, query, attention, keyCache, valueCache,
+        1u, 1u, 1u, 1u, 1u, 1u, 2u, 1u, 0u);
+    assert(fabsf(output[0] - 10.0f) < 0.00001f);
+
+    multiheadAtt_F32(
+        output, query, attention, keyCache, valueCache,
+        2u, 1u, 1u, 1u, 1u, 1u, 2u, 1u, 0u);
+    assert(fabsf(output[0] - 15.0f) < 0.00001f);
+    printPassed("multiheadAttentionLength");
+}
+
 void testCast() {
     float input[12];
     float output[14];
@@ -539,6 +558,7 @@ int main() {
     testScale();
     testGelu();
     testDotProductTail();
+    testMultiheadAttentionLength();
     testCast();
     testTopk();
     return 0;

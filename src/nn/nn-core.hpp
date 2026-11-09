@@ -138,6 +138,27 @@ enum NnRopeType {
     ROPE_LLAMA3_1 = 2,
 };
 
+enum NnAttentionMask {
+    ATTENTION_MASK_CAUSAL = 0,
+    ATTENTION_MASK_BIDIRECTIONAL = 1,
+};
+
+enum NnBatchMode {
+    BATCH_MODE_ALL = 0,
+    BATCH_MODE_LAST = 1,
+};
+
+typedef struct {
+    NnUint begin;
+    NnUint end;
+} NnBatchRange;
+
+inline NnBatchRange getBatchRange(NnUint batchSize, NnBatchMode batchMode) {
+    if (batchMode == BATCH_MODE_LAST && batchSize > 0u)
+        return {batchSize - 1u, batchSize};
+    return {0u, batchSize};
+}
+
 // base configs
 
 typedef struct {
@@ -210,17 +231,20 @@ typedef struct {
 typedef struct {
     float epsilon;
     NnUint nColumns;
+    NnBatchMode batchMode;
 } NnInvRmsOpConfig;
 
 typedef struct {
     NnUint invRmsBufferIndex;
     NnUint nColumns;
+    NnBatchMode batchMode;
 } NnRmsNormOpConfig;
 
 typedef struct {
     NnUint nExperts;
     NnUint nActiveExperts;
     NnUint activeExpertIndexesBufferIndex;
+    NnBatchMode batchMode;
 } NnMatmulOpConfig;
 
 typedef struct {
@@ -248,10 +272,11 @@ typedef struct {
     NnUint keyCacheBufferIndex;
     NnUint valueCacheBufferIndex;
     NnUint attBufferIndex;
+    NnAttentionMask attentionMask;
 } NnMultiHeadAttOpConfig;
 
 typedef struct {
-    // empty
+    NnBatchMode batchMode;
 } NnMergeAddOpCodeConfig;
 
 typedef struct {
@@ -271,7 +296,7 @@ typedef struct {
 } NnScaleOpCodeConfig;
 
 typedef struct {
-    // empty
+    NnBatchMode batchMode;
 } NnCastOpCodeConfig;
 
 typedef struct {
