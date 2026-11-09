@@ -504,6 +504,8 @@ void testCast() {
         (NnByte *)(output + 6), (NnByte *)(output + 9),
     };
     NnCpuOpContext context = {};
+    NnCastOpCodeConfig config = {BATCH_MODE_ALL};
+    context.opConfig = &config;
     context.input = inputs;
     context.output = outputs;
     context.inputSize = size3D(F_32, 2u, 2u, 3u);
