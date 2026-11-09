@@ -11,7 +11,7 @@
 
 typedef struct {
     const char *name;
-    NnByte nBatches;
+    NnUint nBatches;
     NnByte *bufferFlags;
     NnByte **buffers;
     NnBufferConfig *bufferConfigs;
