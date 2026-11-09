@@ -256,6 +256,11 @@ bool WorkerLlmInference::tryReadControlPacket() {
 }
 
 void runInferenceApp(AppCliArgs *args, void (*handler)(AppInferenceContext *context)) {
+    if (args->modelPath == nullptr)
+        throw std::runtime_error("Model path must be specified");
+    if (args->tokenizerPath == nullptr)
+        throw std::runtime_error("Tokenizer path must be specified");
+
     NnUint nNodes = args->nWorkers + 1;
 
     const int magic = loadLlmMagic(args->modelPath);
