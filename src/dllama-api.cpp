@@ -4,7 +4,6 @@
 #include <sstream>
 #include <vector>
 #include <string>
-#include <csignal>
 #include <thread>
 #include <chrono>
 
@@ -389,10 +388,6 @@ void usage() {
 }
 
 int main(int argc, char *argv[]) {
-#ifdef SIGPIPE
-    std::signal(SIGPIPE, SIG_IGN);
-#endif
-
     AppCliArgs args = AppCliArgs::parse(argc, argv, false);
     if (args.help) {
         usage();

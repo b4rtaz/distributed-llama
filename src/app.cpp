@@ -337,33 +337,34 @@ void runInferenceApp(AppCliArgs *args, void (*handler)(AppInferenceContext *cont
 }
 
 void runWorkerApp(AppCliArgs *args) {
-    while (true) {
-        std::unique_ptr<NnNetwork> networkPtr = NnNetwork::serve(args->host, args->port);
-        NnNetwork *network = networkPtr.get();
+    for (NnUint attempt = 0; ; attempt++) {
+        try {
+            std::unique_ptr<NnNetwork> networkPtr = NnNetwork::serve(args->host, args->port);
+            NnNetwork *network = networkPtr.get();
 
-        NnWorkerConfigReader configReader(network);
-        NnNetConfig netConfig = configReader.readNet();
-        std::unique_ptr<NnNetConfig, void(*)(NnNetConfig *)> netConfigPtr(&netConfig, releaseNetConfig);
-        NnNodeConfig nodeConfig = configReader.readNode();
-        std::unique_ptr<NnNodeConfig, void(*)(NnNodeConfig *)> nodeConfigPtr(&nodeConfig, releaseNodeConfig);
+            NnWorkerConfigReader configReader(network);
+            NnNetConfig netConfig = configReader.readNet();
+            std::unique_ptr<NnNetConfig, void(*)(NnNetConfig *)> netConfigPtr(&netConfig, releaseNetConfig);
+            NnNodeConfig nodeConfig = configReader.readNode();
+            std::unique_ptr<NnNodeConfig, void(*)(NnNodeConfig *)> nodeConfigPtr(&nodeConfig, releaseNodeConfig);
 
-        printNodeRequiredMemory(&netConfig, &nodeConfig);
+            if (attempt == 0)
+                printNodeRequiredMemory(&netConfig, &nodeConfig);
 
-        NnNetExecution execution(args->nThreads, &netConfig);
+            NnNetExecution execution(args->nThreads, &netConfig);
 
-        std::vector<NnExecutorDevice> devices = resolveDevices(args, &netConfig, &nodeConfig, &execution);
-        NnNetworkNodeSynchronizer synchronizer(network, &execution, &netConfig, &nodeConfig);
-        NnExecutor executor(&netConfig, &nodeConfig, &devices, &execution, &synchronizer, false);
+            std::vector<NnExecutorDevice> devices = resolveDevices(args, &netConfig, &nodeConfig, &execution);
+            NnNetworkNodeSynchronizer synchronizer(network, &execution, &netConfig, &nodeConfig);
+            NnExecutor executor(&netConfig, &nodeConfig, &devices, &execution, &synchronizer, false);
 
-        NnWorkerWeightReader weightReader(&executor, network);
-        weightReader.read();
+            NnWorkerWeightReader weightReader(&executor, network);
+            weightReader.read();
 
-        WorkerLlmInference inference(&execution, network);
-        bool isFirstAttempt = true;
-        bool isTurboEnabled = false;
-        clock_t startTime;
-        while (true) {
-            try {
+            WorkerLlmInference inference(&execution, network);
+            bool isFirstAttempt = true;
+            bool isTurboEnabled = false;
+            clock_t startTime;
+            while (true) {
                 if (isFirstAttempt)
                     startTime = clock();
 
@@ -386,13 +387,11 @@ void runWorkerApp(AppCliArgs *args) {
                 }
                 executor.forward();
                 isFirstAttempt = true;
-            } catch (const NnTransferSocketException &e) {
-                printf("🚨 Network error: %s\n", e.what());
-                break;
-            } catch (const NnExecutorException &e) {
-                printf("🚨 Inference error: %s\n", e.what());
-                break;
             }
+        } catch (const NnTransferSocketException &e) {
+            printf("🚨 Network error: %s\n", e.what());
+        } catch (const NnExecutorException &e) {
+            printf("🚨 Inference error: %s\n", e.what());
         }
     }
 }

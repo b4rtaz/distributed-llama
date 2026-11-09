@@ -13,6 +13,7 @@ typedef SSIZE_T ssize_t;
 #include "nn-network.hpp"
 #include <cassert>
 #include <cstring>
+#include <csignal>
 #include <stdexcept>
 #include <vector>
 #include <fcntl.h>
@@ -245,6 +246,9 @@ int acceptSocket(int serverSocket) {
 }
 
 void initSockets() {
+#ifdef SIGPIPE
+    std::signal(SIGPIPE, SIG_IGN);
+#endif
 #ifdef _WIN32
     WSADATA wsaData;
     if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
