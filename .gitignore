@@ -13,7 +13,7 @@ __pycache__
 main
 run*.sh
 server
-system1-api
+systemone-api
 /dllama
 /dllama-*
 *.exe

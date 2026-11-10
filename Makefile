@@ -94,5 +94,5 @@ dllama: src/dllama.cpp nn-quants.o nn-core.o nn-executor.o nn-network.o llamafil
 	$(CXX) $(CXXFLAGS) $(filter-out %.spv, $^) -o $@ $(LIBS)
 dllama-api: src/dllama-api.cpp nn-quants.o nn-core.o nn-executor.o nn-network.o llamafile-sgemm.o nn-cpu-ops.o nn-cpu.o tokenizer.o graph.o llama-graph.o qwen35-graph.o app.o http.o ${DEPS}
 	$(CXX) $(CXXFLAGS) $(filter-out %.spv, $^) -o $@ $(LIBS)
-system1-api: src/system1-api.cpp nn-quants.o nn-core.o nn-executor.o nn-network.o llamafile-sgemm.o nn-cpu-ops.o nn-cpu.o tokenizer.o graph.o llama-graph.o qwen35-graph.o app.o http.o ${DEPS}
+systemone-api: src/systemone-api.cpp nn-quants.o nn-core.o nn-executor.o nn-network.o llamafile-sgemm.o nn-cpu-ops.o nn-cpu.o tokenizer.o graph.o llama-graph.o qwen35-graph.o app.o http.o ${DEPS}
 	$(CXX) $(CXXFLAGS) $(filter-out %.spv, $^) -o $@ $(LIBS)

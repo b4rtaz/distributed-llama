@@ -21,7 +21,7 @@
 #include "graphs/qwen35-graph.hpp"
 #include "http.hpp"
 #include "nn/nn-network.hpp"
-#include "system1-api.hpp"
+#include "systemone-api.hpp"
 #include "tokenizer.hpp"
 
 static const char *SYSTEM_PROMPT =
@@ -506,7 +506,7 @@ public:
           header(static_cast<Qwen35LlmHeader *>(context->header)),
           modelName(getFileName(context->args->modelPath)) {
         if (header->archType != QWEN35_STARTLUX_INSTANT)
-            throw std::runtime_error("system1-api requires a QWEN35_STARTLUX_INSTANT model");
+            throw std::runtime_error("systemone-api requires a QWEN35_STARTLUX_INSTANT model");
         validateTokenizer();
     }
 
@@ -919,7 +919,7 @@ static void server(AppInferenceContext *context) {
 }
 
 static void usage() {
-    fprintf(stderr, "Usage: system1-api --model <path> --tokenizer <path> --decision-config <path> [options]\n");
+    fprintf(stderr, "Usage: systemone-api --model <path> --tokenizer <path> --decision-config <path> [options]\n");
     fprintf(stderr, "        [--nbatches <maximum prompt tokens>] [--max-seq-len <max>]\n");
     fprintf(stderr, "        [--buffer-float-type {f32|f16|q40|q80}] [--nthreads <n>]\n");
     fprintf(stderr, "        [--host <addr>] [--port <port>] [--workers <ip:port> ...]\n");

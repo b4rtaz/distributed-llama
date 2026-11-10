@@ -1,5 +1,5 @@
-#ifndef SYSTEM1_API_HPP
-#define SYSTEM1_API_HPP
+#ifndef SYSTEMONE_API_HPP
+#define SYSTEMONE_API_HPP
 
 #include <string>
 #include <vector>
