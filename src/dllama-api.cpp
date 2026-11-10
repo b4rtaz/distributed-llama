@@ -4,7 +4,6 @@
 #include <sstream>
 #include <vector>
 #include <string>
-#include <csignal>
 #include <thread>
 #include <chrono>
 
@@ -331,11 +330,7 @@ void handleCompletionsRequest(HttpRequest& request, ApiServer *api) {
 }
 
 void handleModelsRequest(HttpRequest& request, const char* modelPath) {
-    std::string path(modelPath);
-    size_t pos = path.find_last_of("/\\");
-    std::string modelName = (pos == std::string::npos) ? path : path.substr(pos + 1);
-
-    Model model(modelName);
+    Model model(getFileName(modelPath));
     ModelList list(model);
     std::string response = ((json)list).dump();
     request.writeJson(response);
@@ -393,10 +388,6 @@ void usage() {
 }
 
 int main(int argc, char *argv[]) {
-#ifdef SIGPIPE
-    std::signal(SIGPIPE, SIG_IGN);
-#endif
-
     AppCliArgs args = AppCliArgs::parse(argc, argv, false);
     if (args.help) {
         usage();

@@ -743,21 +743,22 @@ void testMatmul_Q80_Q40_F32() {
         });
 }
 
+template <NnAttentionMask attentionMask>
 void testMultiheadAtt_F32_F32() {
-    #define MULTIHEAD_ATT_DIM 128
     execute(
         [](NnNetConfigBuilder *netBuilder, NnNodeConfigBuilder *nodeBuilder, NnSegmentConfigBuilder *segmentBuilder) {
-            const NnUint nHeads = 32;
-            const NnUint nKvHeads = 8;
-            const NnUint headDim = MULTIHEAD_ATT_DIM / nHeads;
-            const NnUint seqLen = 4096;
-            const NnUint qSliceD0 = 2048;
-            const NnUint kvDim0 = 512;
+            const NnUint nHeads = 1;
+            const NnUint nKvHeads = 1;
+            const NnUint headDim = 1;
+            const NnUint seqLen = N_BATCHES;
+            const NnUint qSliceD0 = 1;
+            const NnUint kvDim0 = 1;
             const NnKvCacheSlice kvCacheSlice = sliceKvCache(kvDim0, seqLen, 1);
             const NnMultiHeadAttSlice multiHeadAttSlice = sliceMultiHeadAtt(nHeads, seqLen, 1, N_BATCHES);
 
-            NnUint xPipeIndex = netBuilder->addPipe("X", size2D(F_32, N_BATCHES, MULTIHEAD_ATT_DIM));
+            NnUint xPipeIndex = netBuilder->addPipe("X", size2D(F_32, N_BATCHES, 1));
             NnUint posPipeIndex = netBuilder->addPipe("POS", size2D(F_32, N_BATCHES, 1));
+            netBuilder->addPreSync(posPipeIndex);
             NnUint qBufferIndex = nodeBuilder->addBuffer("POS", size2D(F_32, N_BATCHES, qSliceD0));
             NnUint kCacheBufferIndex = nodeBuilder->addBuffer("kCache", kvCacheSlice.keySize);
             NnUint vCacheBufferIndex = nodeBuilder->addBuffer("vCache", kvCacheSlice.valueSize);
@@ -769,13 +770,37 @@ void testMultiheadAtt_F32_F32() {
                 pointerBatchConfig(SRC_PIPE, xPipeIndex),
                 size0(),
                 NnMultiHeadAttOpConfig{nHeads, nHeads, nKvHeads, headDim, seqLen, qSliceD0, kvDim0,
-                    posPipeIndex, qBufferIndex, kCacheBufferIndex, vCacheBufferIndex, attCacheBufferIndex});
+                    posPipeIndex, qBufferIndex, kCacheBufferIndex, vCacheBufferIndex, attCacheBufferIndex,
+                    attentionMask});
         },
         [](NnExecutor *executor, NnNetExecution *execution, NnVulkanDevice *device) {
-            // TODO: for now this is a smoke test
             execution->setBatchSize(N_BATCHES);
+            float *positions = (float *)execution->pipes[1];
+            float query[N_BATCHES];
+            float keys[N_BATCHES];
+            float values[N_BATCHES];
+            for (NnUint i = 0; i < N_BATCHES; i++) {
+                positions[i] = (float)i;
+                query[i] = 1.0f;
+                keys[i] = 1.0f;
+                values[i] = 10.0f * (i + 1u);
+            }
+            device->data.buffers[0]->write((NnByte *)query);
+            device->data.buffers[1]->write((NnByte *)keys);
+            device->data.buffers[2]->write((NnByte *)values);
+
             executor->forward();
-            printOk("testMultiheadAtt_F32_F32");
+
+            float *output = (float *)execution->pipes[0];
+            for (NnUint i = 0; i < N_BATCHES; i++) {
+                const float expected = attentionMask == ATTENTION_MASK_BIDIRECTIONAL
+                    ? 25.0f
+                    : 5.0f * (i + 2u);
+                assertFloat(i, output[i], expected, 0.00001f);
+            }
+            printOk(attentionMask == ATTENTION_MASK_BIDIRECTIONAL
+                ? "testMultiheadAttBidirectional_F32_F32"
+                : "testMultiheadAttCausal_F32_F32");
         });
 }
 
@@ -1160,7 +1185,8 @@ int main() {
     testMatmul_Q80_Q40_F32<64, 64>();
     testMatmul_Q80_Q40_F32<192, 16>();
 
-    testMultiheadAtt_F32_F32();
+    testMultiheadAtt_F32_F32<ATTENTION_MASK_CAUSAL>();
+    testMultiheadAtt_F32_F32<ATTENTION_MASK_BIDIRECTIONAL>();
 
     testSoftmax_F32_F32<256, 1>();
     testSoftmax_F32_F32<512, 4>();

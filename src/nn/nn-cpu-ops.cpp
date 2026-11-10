@@ -968,7 +968,7 @@ static float dotProduct_F32(const float *a, const float *b, const unsigned int s
 
 static void multiheadAtt_F32(
     float *y, const float *q, float *att, float *keyCache, float *valueCache,
-    const NnUint pos, const NnUint nHeads, const NnUint nHeads0, const NnUint nKvHeads, const NnUint kvDim0, const NnUint headDim, const NnUint seqLen,
+    const NnUint attentionLength, const NnUint nHeads, const NnUint nHeads0, const NnUint nKvHeads, const NnUint kvDim0, const NnUint headDim, const NnUint seqLen,
     const NnUint nThreads, const NnUint threadIndex) 
 {
     SPLIT_THREADS(h0Start, h0End, nHeads0, nThreads, threadIndex);
@@ -982,18 +982,18 @@ static void multiheadAtt_F32(
         const float *hVc = &valueCache[headIndex * headDim];
         float *hAtt = &att[h0 * seqLen];
 
-        for (NnUint t = 0; t <= pos; t++) {
+        for (NnUint t = 0; t < attentionLength; t++) {
             const float *posK = &hKc[t * kvDim0];
             const float score = dotProduct_F32(hQ, posK, headDim) / headDimRoot;
             hAtt[t] = score;
         }
 
-        softmax_F32(hAtt, pos + 1);
+        softmax_F32(hAtt, attentionLength);
 
         float *hY = &y[h0 * headDim];
         std::memset(hY, 0, headDim * sizeof(float));
 
-        for (NnUint t = 0; t <= pos; t++) {
+        for (NnUint t = 0; t < attentionLength; t++) {
             const float *posV = &hVc[t * kvDim0];
             const float posA = hAtt[t];
             for (int i = 0; i < headDim; i++) {
@@ -1149,9 +1149,11 @@ static void topk_F32(const float *x, NnUint *y, NnSize size, NnUint k) {
 //
 
 static void mergeAddForward_F32_F32(NnUint nThreads, NnUint threadIndex, NnUint batchSize, NnCpuOpContext *context) {
+    const NnMergeAddOpCodeConfig *config = (NnMergeAddOpCodeConfig *)context->opConfig;
+    const NnBatchRange batchRange = getBatchRange(batchSize, config->batchMode);
     NnUint nSlices = context->inputSize.x / context->outputSize.x;
 
-    for (NnUint batchIndex = 0; batchIndex < batchSize; batchIndex++) {
+    for (NnUint batchIndex = batchRange.begin; batchIndex < batchRange.end; batchIndex++) {
         float *output = (float *)context->output[batchIndex];
         float *input = (float *)context->input[batchIndex];
         for (NnUint sliceIndex = 0; sliceIndex < nSlices; sliceIndex++) {
@@ -1171,9 +1173,11 @@ static void mergeAddForward_Q80_F32(NnUint nThreads, NnUint threadIndex, NnUint 
     assert(context->inputSize.floatType == F_Q80);
     assert(context->outputSize.floatType == F_32);
 
+    const NnMergeAddOpCodeConfig *config = (NnMergeAddOpCodeConfig *)context->opConfig;
+    const NnBatchRange batchRange = getBatchRange(batchSize, config->batchMode);
     NnUint nSlices = context->inputSize.x / context->outputSize.x;
     NnUint xSize = context->outputSize.x / Q80_BLOCK_SIZE;
-    for (NnUint batchIndex = 0; batchIndex < batchSize; batchIndex++) {
+    for (NnUint batchIndex = batchRange.begin; batchIndex < batchRange.end; batchIndex++) {
         float *output = (float *)context->output[batchIndex];
         NnBlockQ80 *input = (NnBlockQ80 *)context->input[batchIndex];
         for (NnUint sliceIndex = 0; sliceIndex < nSlices; sliceIndex++) {
@@ -1265,8 +1269,9 @@ static void initInvRmsForward(NnCpuOpContext *context) {
 static void invRmsForward_F32_F32(NnUint nThreads, NnUint threadIndex, NnUint batchSize, NnCpuOpContext *context) {
     const NnInvRmsOpConfig *config = (NnInvRmsOpConfig *)context->opConfig;
     const NnUint colSize = context->inputSize.x / config->nColumns;
+    const NnBatchRange batchRange = getBatchRange(batchSize, config->batchMode);
 
-    for (NnUint batchIndex = threadIndex; batchIndex < batchSize; batchIndex += nThreads) {
+    for (NnUint batchIndex = batchRange.begin + threadIndex; batchIndex < batchRange.end; batchIndex += nThreads) {
         float *input = (float *)context->input[batchIndex];
         float *output = (float *)context->output[batchIndex];
         DEBUG_VECTOR(context, "input", input);
@@ -1304,9 +1309,10 @@ static void rmsNormForward_F32_F32_F32(NnUint nThreads, NnUint threadIndex, NnUi
     const float *weight = (float *)context->weight;
     const NnUint invRmsBatchSize = context->bufferConfigs[config->invRmsBufferIndex].size.x;
     const float *invRms = (float *)context->buffers[config->invRmsBufferIndex];
+    const NnBatchRange batchRange = getBatchRange(batchSize, config->batchMode);
 
     const NnUint colSize = context->weightSize.x;
-    for (NnUint batchIndex = 0; batchIndex < batchSize; batchIndex++) {
+    for (NnUint batchIndex = batchRange.begin; batchIndex < batchRange.end; batchIndex++) {
         float *input = (float *)context->input[batchIndex];
         float *output = (float *)context->output[batchIndex];
         DEBUG_VECTOR(context, "input", input);
@@ -1332,8 +1338,9 @@ static void rmsNormForward_Q80_F32_F32(NnUint nThreads, NnUint threadIndex, NnUi
 
     const float *weight = (float *)context->weight;
     const float *invRms = (float *)context->buffers[config->invRmsBufferIndex];
+    const NnBatchRange batchRange = getBatchRange(batchSize, config->batchMode);
 
-    for (NnUint batchIndex = 0; batchIndex < batchSize; batchIndex++) {
+    for (NnUint batchIndex = batchRange.begin; batchIndex < batchRange.end; batchIndex++) {
         NnBlockQ80 *input = (NnBlockQ80 *)context->input[batchIndex];
         float *output = (float *)context->output[batchIndex];
         rmsNorm_Q80_F32_F32(
@@ -1357,8 +1364,9 @@ static void rmsNormZeroCenteredForward_F32_F32_F32(
     const NnUint invRmsBatchSize = context->bufferConfigs[config->invRmsBufferIndex].size.x;
     const float *invRms = (float *)context->buffers[config->invRmsBufferIndex];
     const NnUint colSize = context->weightSize.x;
+    const NnBatchRange batchRange = getBatchRange(batchSize, config->batchMode);
 
-    for (NnUint batchIndex = 0; batchIndex < batchSize; batchIndex++) {
+    for (NnUint batchIndex = batchRange.begin; batchIndex < batchRange.end; batchIndex++) {
         const float *input = (float *)context->input[batchIndex];
         float *output = (float *)context->output[batchIndex];
         for (NnUint colIndex = 0; colIndex < config->nColumns; colIndex++) {
@@ -1390,8 +1398,9 @@ static void initMatmulForward(NnCpuOpContext *context) {
 
 static bool matmulForward_llamafile(NnUint nThreads, NnUint threadIndex, NnUint batchSize, NnCpuOpContext *context) {
     const NnMatmulOpConfig *config = (const NnMatmulOpConfig *)context->opConfig;
-    if (config->nExperts != 0u || batchSize == 1u || !context->hasInputContinuousMemory ||
-        !context->hasOutputContinuousMemory || context->inputSize.z != 1u)
+    if (config->batchMode != BATCH_MODE_ALL || config->nExperts != 0u || batchSize == 1u ||
+        !context->hasInputContinuousMemory || !context->hasOutputContinuousMemory ||
+        context->inputSize.z != 1u)
         return false;
 
     const NnUint n = context->weightSize.y / getBlockSize(context->inputSize.floatType);
@@ -1415,8 +1424,9 @@ static void matmulForward_F32_F32_F32(NnUint nThreads, NnUint threadIndex, NnUin
     const NnMatmulOpConfig *config = (NnMatmulOpConfig *)context->opConfig;
     const NnUint nActiveExpertsOr1 = std::max(config->nActiveExperts, 1u);
     const float *activeExpertIndexes = (const float *)context->buffers[config->activeExpertIndexesBufferIndex];
+    const NnBatchRange batchRange = getBatchRange(batchSize, config->batchMode);
 
-    for (NnUint y = 0; y < batchSize; y++) {
+    for (NnUint y = batchRange.begin; y < batchRange.end; y++) {
         for (NnUint e = 0; e < nActiveExpertsOr1; e++) {
             const NnUint activeExpertIndex = config->nActiveExperts == 0u
                 ? 0u
@@ -1443,8 +1453,9 @@ static void matmulForward_Q80_Q40_F32(NnUint nThreads, NnUint threadIndex, NnUin
     const NnMatmulOpConfig *config = (NnMatmulOpConfig *)context->opConfig;
     const NnUint nActiveExpertsOr1 = std::max(config->nActiveExperts, 1u);
     const float *activeExpertIndexes = (const float *)context->buffers[config->activeExpertIndexesBufferIndex];
+    const NnBatchRange batchRange = getBatchRange(batchSize, config->batchMode);
 
-    for (NnUint y = 0; y < batchSize; y++) {
+    for (NnUint y = batchRange.begin; y < batchRange.end; y++) {
         for (NnUint e = 0; e < nActiveExpertsOr1; e++) {
             const NnUint activeExpertIndex = config->nActiveExperts == 0u
                 ? 0u
@@ -1589,6 +1600,8 @@ static void initMultiHeadAttForward(NnCpuOpContext *context) {
     NnSize3D *posSize = &context->pipeConfigs[config->positionPipeIndex].size;
     ASSERT_EQ(posSize->x, 1);
     ASSERT_EQ(posSize->y, context->nBatches);
+    assert(config->attentionMask == ATTENTION_MASK_CAUSAL ||
+        config->attentionMask == ATTENTION_MASK_BIDIRECTIONAL);
 }
 
 static void multiHeadAttForward_F32_F32(NnUint nThreads, NnUint threadIndex, NnUint batchSize, NnCpuOpContext *context) {
@@ -1600,18 +1613,26 @@ static void multiHeadAttForward_F32_F32(NnUint nThreads, NnUint threadIndex, NnU
     float *att = (float *)context->buffers[config->attBufferIndex];
     const float *positions = (float *)context->pipes[config->positionPipeIndex];
 
+    if (config->attentionMask == ATTENTION_MASK_BIDIRECTIONAL) {
+        for (NnUint batchIndex = 0; batchIndex < batchSize; batchIndex++)
+            assert((NnUint)positions[batchIndex] == batchIndex);
+    }
+
     for (NnUint batchIndex = 0; batchIndex < batchSize; batchIndex++) {
         float *y = (float *)context->output[batchIndex];
         float *q = &query[batchIndex * config->qSliceD0];
         NnUint pos = (NnUint)positions[batchIndex];
         assert(pos < config->seqLen);
+        const NnUint attentionLength = config->attentionMask == ATTENTION_MASK_BIDIRECTIONAL
+            ? batchSize
+            : pos + 1u;
 
         DEBUG_VECTOR(context, "input", y);
         DEBUG_VECTOR(context, "q", q);
 
         multiheadAtt_F32(y, q, 
             &att[batchIndex * config->nHeads0 * config->seqLen],
-            keyCache, valueCache, pos,
+            keyCache, valueCache, attentionLength,
             config->nHeads, config->nHeads0,
             config->nKvHeads, config->kvDim0, config->headDim, config->seqLen, nThreads, threadIndex);
 
@@ -1698,11 +1719,13 @@ static void initCastForward(NnCpuOpContext *context) {
 }
 
 static void castForward_ANY(NnUint nThreads, NnUint threadIndex, NnUint batchSize, NnCpuOpContext *context) {
+    const NnCastOpCodeConfig *config = (NnCastOpCodeConfig *)context->opConfig;
+    const NnBatchRange batchRange = getBatchRange(batchSize, config->batchMode);
     const NnUint rowBytes = getBytes(context->outputSize.floatType, context->outputSize.x);
 
     for (NnUint z = 0u; z < context->inputSize.z; z++) {
         const NnUint zOffset = z * context->inputSize.y;
-        for (NnUint y = 0u; y < batchSize; y++) {
+        for (NnUint y = batchRange.begin; y < batchRange.end; y++) {
             copy_UNK(
                 context->output[zOffset + y],
                 context->input[zOffset + y],
@@ -1717,9 +1740,11 @@ static void castForward_F32_Q80(NnUint nThreads, NnUint threadIndex, NnUint batc
     ASSERT_EQ(context->inputSize.floatType, F_32);
     ASSERT_EQ(context->outputSize.floatType, F_Q80);
 
+    const NnCastOpCodeConfig *config = (NnCastOpCodeConfig *)context->opConfig;
+    const NnBatchRange batchRange = getBatchRange(batchSize, config->batchMode);
     for (NnUint z = 0u; z < context->inputSize.z; z++) {
         const NnUint zOffset = z * context->inputSize.y;
-        for (NnUint y = 0u; y < batchSize; y++) {
+        for (NnUint y = batchRange.begin; y < batchRange.end; y++) {
             quantizeF32toQ80(
                 (float *)context->input[zOffset + y],
                 (NnBlockQ80 *)context->output[zOffset + y],
@@ -1734,9 +1759,11 @@ static void castForward_Q80_F32(NnUint nThreads, NnUint threadIndex, NnUint batc
     ASSERT_EQ(context->inputSize.floatType, F_Q80);
     ASSERT_EQ(context->outputSize.floatType, F_32);
 
+    const NnCastOpCodeConfig *config = (NnCastOpCodeConfig *)context->opConfig;
+    const NnBatchRange batchRange = getBatchRange(batchSize, config->batchMode);
     for (NnUint z = 0u; z < context->inputSize.z; z++) {
         const NnUint zOffset = z * context->inputSize.y;
-        for (NnUint y = 0u; y < batchSize; y++) {
+        for (NnUint y = batchRange.begin; y < batchRange.end; y++) {
             dequantizeQ80toF32(
                 (NnBlockQ80 *)context->input[zOffset + y],
                 (float *)context->output[zOffset + y],

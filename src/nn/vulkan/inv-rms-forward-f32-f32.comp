@@ -21,6 +21,7 @@ layout(binding = 2) readonly uniform batchInfosBuffer { BatchInfo infos[N_BATCHE
 layout(binding = 3) readonly uniform opConfigBuffer {
     float epsilon;
     uint nColumns;
+    uint batchMode;
 };
 
 shared float sums[N_THREADS];

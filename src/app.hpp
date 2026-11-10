@@ -6,6 +6,8 @@
 #include "tokenizer.hpp"
 #include "graphs/graph.hpp"
 
+const char *getFileName(const char *path);
+
 class AppCliArgs {
 public:
     char *mode;
@@ -17,6 +19,7 @@ public:
     // inference
     char *modelPath;
     char *tokenizerPath;
+    char *extraConfigPath;
     char *prompt;
     NnFloatType syncType;
     NnUint nWorkers;
@@ -38,7 +41,8 @@ public:
     const char *host;
     NnUint port;
 
-    static AppCliArgs parse(int argc, char **argv, bool hasMode);
+    static AppCliArgs parse(
+        int argc, char **argv, bool requireMode, const char *extraConfigName = nullptr);
     ~AppCliArgs();
 };
 

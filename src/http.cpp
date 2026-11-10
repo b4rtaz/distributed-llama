@@ -135,7 +135,7 @@ static HttpRequest parseRequest(int socket) {
 
     std::getline(input, request.body, '\0');
     if (!request.body.empty())
-        request.parsedJson = nlohmann::json::parse(request.body);
+        request.parsedJson = nlohmann::json::parse(request.body, nullptr, false);
     return request;
 }
 
@@ -187,9 +187,19 @@ void HttpRequest::writeNotFound() {
     writeSocket(socket, data.c_str(), data.size());
 }
 
-void HttpRequest::writeJson(const std::string &json) {
+static const char *httpStatusText(int status) {
+    if (status == 200) return "OK";
+    if (status == 400) return "Bad Request";
+    if (status == 404) return "Not Found";
+    if (status == 405) return "Method Not Allowed";
+    if (status == 422) return "Unprocessable Entity";
+    if (status == 500) return "Internal Server Error";
+    return "Error";
+}
+
+void HttpRequest::writeJson(const std::string &json, int status) {
     std::ostringstream buffer;
-    buffer << "HTTP/1.1 200 OK\r\n"
+    buffer << "HTTP/1.1 " << status << " " << httpStatusText(status) << "\r\n"
         << "Access-Control-Allow-Origin: *\r\n"
         << "Content-Type: application/json; charset=utf-8\r\n"
         << "Connection: close\r\n"

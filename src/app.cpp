@@ -1,11 +1,20 @@
 #include "app.hpp"
 #include <cassert>
 #include <cstring>
+#include <string>
 #include <stdexcept>
 #include <chrono>
 #if defined(DLLAMA_VULKAN)
     #include "nn/nn-vulkan.hpp"
 #endif
+
+const char *getFileName(const char *path) {
+    const char *separator = std::strrchr(path, '/');
+    const char *backslash = std::strrchr(path, '\\');
+    if (backslash != nullptr && (separator == nullptr || backslash > separator))
+        separator = backslash;
+    return separator == nullptr ? path : separator + 1;
+}
 
 static NnFloatType parseFloatType(char *val) {
     if (std::strcmp(val, "f32") == 0) return F_32;
@@ -24,7 +33,9 @@ static ChatTemplateType parseChatTemplateType(char *val) {
     throw std::runtime_error("Invalid chat template type: " + std::string(val));
 }
 
-AppCliArgs AppCliArgs::parse(int argc, char* *argv, bool requireMode) {
+AppCliArgs AppCliArgs::parse(
+    int argc, char* *argv, bool requireMode, const char *extraConfigName
+) {
     AppCliArgs args;
     args.info = true;
     args.help = false;
@@ -33,6 +44,7 @@ AppCliArgs AppCliArgs::parse(int argc, char* *argv, bool requireMode) {
     args.nThreads = 1;
     args.modelPath = nullptr;
     args.tokenizerPath = nullptr;
+    args.extraConfigPath = nullptr;
     args.prompt = nullptr;
     args.syncType = F_32;
     args.nWorkers = 0;
@@ -73,6 +85,8 @@ AppCliArgs AppCliArgs::parse(int argc, char* *argv, bool requireMode) {
             args.modelPath = value;
         } else if (std::strcmp(name, "--tokenizer") == 0) {
             args.tokenizerPath = value;
+        } else if (extraConfigName != nullptr && std::strcmp(name, extraConfigName) == 0) {
+            args.extraConfigPath = value;
         } else if (std::strcmp(name, "--prompt") == 0) {
             args.prompt = value;
         } else if (std::strcmp(name, "--buffer-float-type") == 0) {
@@ -106,6 +120,8 @@ AppCliArgs AppCliArgs::parse(int argc, char* *argv, bool requireMode) {
             args.host = value;
         } else if (std::strcmp(name, "--nthreads") == 0) {
             args.nThreads = atoi(value);
+        } else if (std::strcmp(name, "--nbatches") == 0) {
+            args.nBatches = atoi(value);
         } else if (std::strcmp(name, "--steps") == 0) {
             args.steps = atoi(value);
         } else if (std::strcmp(name, "--temperature") == 0) {
@@ -135,6 +151,8 @@ AppCliArgs AppCliArgs::parse(int argc, char* *argv, bool requireMode) {
 
     if (args.nThreads < 1)
         throw std::runtime_error("Number of threads must be at least 1");
+    if (args.nBatches < 1)
+        throw std::runtime_error("Number of batches must be at least 1");
     return args;
 }
 
@@ -238,6 +256,11 @@ bool WorkerLlmInference::tryReadControlPacket() {
 }
 
 void runInferenceApp(AppCliArgs *args, void (*handler)(AppInferenceContext *context)) {
+    if (args->modelPath == nullptr)
+        throw std::runtime_error("Model path must be specified");
+    if (args->tokenizerPath == nullptr)
+        throw std::runtime_error("Tokenizer path must be specified");
+
     NnUint nNodes = args->nWorkers + 1;
 
     const int magic = loadLlmMagic(args->modelPath);
@@ -314,33 +337,34 @@ void runInferenceApp(AppCliArgs *args, void (*handler)(AppInferenceContext *cont
 }
 
 void runWorkerApp(AppCliArgs *args) {
-    while (true) {
-        std::unique_ptr<NnNetwork> networkPtr = NnNetwork::serve(args->host, args->port);
-        NnNetwork *network = networkPtr.get();
+    for (NnUint attempt = 0; ; attempt++) {
+        try {
+            std::unique_ptr<NnNetwork> networkPtr = NnNetwork::serve(args->host, args->port);
+            NnNetwork *network = networkPtr.get();
 
-        NnWorkerConfigReader configReader(network);
-        NnNetConfig netConfig = configReader.readNet();
-        std::unique_ptr<NnNetConfig, void(*)(NnNetConfig *)> netConfigPtr(&netConfig, releaseNetConfig);
-        NnNodeConfig nodeConfig = configReader.readNode();
-        std::unique_ptr<NnNodeConfig, void(*)(NnNodeConfig *)> nodeConfigPtr(&nodeConfig, releaseNodeConfig);
+            NnWorkerConfigReader configReader(network);
+            NnNetConfig netConfig = configReader.readNet();
+            std::unique_ptr<NnNetConfig, void(*)(NnNetConfig *)> netConfigPtr(&netConfig, releaseNetConfig);
+            NnNodeConfig nodeConfig = configReader.readNode();
+            std::unique_ptr<NnNodeConfig, void(*)(NnNodeConfig *)> nodeConfigPtr(&nodeConfig, releaseNodeConfig);
 
-        printNodeRequiredMemory(&netConfig, &nodeConfig);
+            if (attempt == 0)
+                printNodeRequiredMemory(&netConfig, &nodeConfig);
 
-        NnNetExecution execution(args->nThreads, &netConfig);
+            NnNetExecution execution(args->nThreads, &netConfig);
 
-        std::vector<NnExecutorDevice> devices = resolveDevices(args, &netConfig, &nodeConfig, &execution);
-        NnNetworkNodeSynchronizer synchronizer(network, &execution, &netConfig, &nodeConfig);
-        NnExecutor executor(&netConfig, &nodeConfig, &devices, &execution, &synchronizer, false);
+            std::vector<NnExecutorDevice> devices = resolveDevices(args, &netConfig, &nodeConfig, &execution);
+            NnNetworkNodeSynchronizer synchronizer(network, &execution, &netConfig, &nodeConfig);
+            NnExecutor executor(&netConfig, &nodeConfig, &devices, &execution, &synchronizer, false);
 
-        NnWorkerWeightReader weightReader(&executor, network);
-        weightReader.read();
+            NnWorkerWeightReader weightReader(&executor, network);
+            weightReader.read();
 
-        WorkerLlmInference inference(&execution, network);
-        bool isFirstAttempt = true;
-        bool isTurboEnabled = false;
-        clock_t startTime;
-        while (true) {
-            try {
+            WorkerLlmInference inference(&execution, network);
+            bool isFirstAttempt = true;
+            bool isTurboEnabled = false;
+            clock_t startTime;
+            while (true) {
                 if (isFirstAttempt)
                     startTime = clock();
 
@@ -363,13 +387,11 @@ void runWorkerApp(AppCliArgs *args) {
                 }
                 executor.forward();
                 isFirstAttempt = true;
-            } catch (const NnTransferSocketException &e) {
-                printf("🚨 Network error: %s\n", e.what());
-                break;
-            } catch (const NnExecutorException &e) {
-                printf("🚨 Inference error: %s\n", e.what());
-                break;
             }
+        } catch (const NnTransferSocketException &e) {
+            printf("🚨 Network error: %s\n", e.what());
+        } catch (const NnExecutorException &e) {
+            printf("🚨 Inference error: %s\n", e.what());
         }
     }
 }
