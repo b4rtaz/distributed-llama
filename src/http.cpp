@@ -1,4 +1,5 @@
 #include "http.hpp"
+#include "nn/nn-executor.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -244,6 +245,14 @@ void runHttpServer(const char *host, int port, const std::vector<Route> &routes)
             printf("Socket error: %d %s\n", e.code, e.what());
         } catch (const HttpRequestException &e) {
             printf("HTTP request error: %s\n", e.what());
+        } catch (const NnExecutorException &) {
+            // Inference is broken; let the retry loop in main() restart the app.
+            throw;
+        } catch (const NnConnectionSocketException &) {
+            throw;
+        } catch (const std::exception &e) {
+            // A failed request must not take down the server.
+            printf("🚨 Request error: %s\n", e.what());
         }
     }
 }
