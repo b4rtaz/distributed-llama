@@ -1,11 +1,19 @@
 #pragma once
 
 #include <functional>
+#include <stdexcept>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
 #include "json.hpp"
+
+class HttpRequestException : public std::runtime_error {
+public:
+    explicit HttpRequestException(const std::string &message);
+};
+
+nlohmann::json parseBodyJson(const std::string &text);
 
 enum class HttpMethod {
     METHOD_GET = 0,

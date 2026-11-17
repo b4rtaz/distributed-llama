@@ -310,11 +310,16 @@ public:
 
 private:
     InferenceParams parseRequest(HttpRequest& request) {
-        InferenceParams params = parseInferenceParams(
-            request.parsedJson,
-            args->temperature,
-            args->topp,
-            args->seed);
+        InferenceParams params;
+        try {
+            params = parseInferenceParams(
+                request.parsedJson,
+                args->temperature,
+                args->topp,
+                args->seed);
+        } catch (const nlohmann::json::exception &e) {
+            throw HttpRequestException(e.what());
+        }
         sampler->setSeed(params.seed);
         if (!params.tools.empty()) {
             std::string prompt = tryBuildToolsSystemPrompt(params.tools, params.tool_choice);

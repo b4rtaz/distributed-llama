@@ -1,12 +1,10 @@
 #include "http.hpp"
-#include "nn/nn-executor.hpp"
 
 #include <algorithm>
 #include <cctype>
 #include <cstdio>
 #include <cstring>
 #include <sstream>
-#include <stdexcept>
 #include <vector>
 
 #ifdef _WIN32
@@ -20,10 +18,16 @@
 
 #include "nn/nn-network.hpp"
 
-class HttpRequestException : public std::runtime_error {
-public:
-    explicit HttpRequestException(const std::string &message) : std::runtime_error(message) {}
-};
+HttpRequestException::HttpRequestException(const std::string &message)
+    : std::runtime_error(message) {}
+
+nlohmann::json parseBodyJson(const std::string &text) {
+    try {
+        return nlohmann::json::parse(text);
+    } catch (const nlohmann::json::exception &e) {
+        throw HttpRequestException(e.what());
+    }
+}
 
 static HttpMethod parseMethod(const std::string &method) {
     if (method == "GET") return HttpMethod::METHOD_GET;
@@ -136,7 +140,7 @@ static HttpRequest parseRequest(int socket) {
 
     std::getline(input, request.body, '\0');
     if (!request.body.empty())
-        request.parsedJson = nlohmann::json::parse(request.body, nullptr, false);
+        request.parsedJson = parseBodyJson(request.body);
     return request;
 }
 
@@ -245,14 +249,6 @@ void runHttpServer(const char *host, int port, const std::vector<Route> &routes)
             printf("Socket error: %d %s\n", e.code, e.what());
         } catch (const HttpRequestException &e) {
             printf("HTTP request error: %s\n", e.what());
-        } catch (const NnExecutorException &) {
-            // Inference is broken; let the retry loop in main() restart the app.
-            throw;
-        } catch (const NnConnectionSocketException &) {
-            throw;
-        } catch (const std::exception &e) {
-            // A failed request must not take down the server.
-            printf("🚨 Request error: %s\n", e.what());
         }
     }
 }
