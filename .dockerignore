@@ -1,0 +1,15 @@
+# General Ignore
+.git
+.github
+.vscode
+.dockerignore
+.gitignore
+README.md
+Dockerfile
+docker-compose.yaml
+
+# Unique to distributed-llama
+report
+docs
+examples
+models
