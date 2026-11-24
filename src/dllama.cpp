@@ -9,6 +9,12 @@
 #include "app.hpp"
 #include <stdexcept>
 #include <cmath>
+#include <cstdlib>
+#include <termios.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <signal.h>
+#include <sys/ioctl.h>
 
 static void inference(AppInferenceContext *context) {
     if (context->args->prompt == nullptr)
@@ -171,7 +177,43 @@ static void perplexity(AppInferenceContext *context) {
     printf("   bitPerToken: %f\n", -avgLogProb / std::log(2.0));
 }
 
+static struct termios g_origTermiosChat;
+static bool g_termiosSavedChat = false;
+static volatile sig_atomic_t g_stopGeneration = 0;
+
+static void restoreTerminalChat() {
+    if (g_termiosSavedChat) {
+        tcsetattr(STDIN_FILENO, TCSANOW, &g_origTermiosChat);
+        g_termiosSavedChat = false;
+    }
+}
+
+static void enableCbreakChat() {
+    if (!isatty(STDIN_FILENO)) return;
+    struct termios t;
+    if (tcgetattr(STDIN_FILENO, &t) != 0) return;
+    g_origTermiosChat = t;
+    g_termiosSavedChat = true;
+    t.c_lflag &= ~(ICANON | ECHO);
+    t.c_cc[VMIN] = 0;
+    t.c_cc[VTIME] = 0;
+    tcsetattr(STDIN_FILENO, TCSANOW, &t);
+}
+
+static void pollStopKeyChat() {
+    char c;
+    ssize_t r = read(STDIN_FILENO, &c, 1);
+    if (r > 0 && c == 2) g_stopGeneration = 1;
+}
+
+static void onSigIntChat(int) {
+    restoreTerminalChat();
+    _exit(0);
+}
+
 static void chat(AppInferenceContext *context) {
+    atexit(restoreTerminalChat);
+    signal(SIGINT, onSigIntChat);
     const NnUint seqLen = context->header->seqLen;
     char prompt[2048];
 
@@ -203,7 +245,11 @@ static void chat(AppInferenceContext *context) {
         context->tokenizer->encode((char*)inputPrompt.content, inputTokens, &nInputTokens, isStart, true);
 
         NnUint userPromptEndPos = (NnUint)std::min<unsigned int>(seqLen, pos + nInputTokens - 1);
+        enableCbreakChat();
+        g_stopGeneration = 0;
         for (NnUint i = 0; ;) {
+            pollStopKeyChat();
+            if (g_stopGeneration) break;
             int remainingTokens = userPromptEndPos - pos;
             if (remainingTokens <= 0)
                 break;
@@ -230,7 +276,9 @@ static void chat(AppInferenceContext *context) {
         if (inputPrompt.publicPrompt != nullptr)
             printf("%s", inputPrompt.publicPrompt);
 
-        while (pos < seqLen) {
+        while (pos < seqLen && !g_stopGeneration) {
+            pollStopKeyChat();
+            if (g_stopGeneration) break;
             context->inference->setPosition(pos);
             context->inference->setToken(0, token);
             context->inference->forward();
@@ -251,6 +299,9 @@ static void chat(AppInferenceContext *context) {
             if (eosType == EOS) break;
         }
 
+        restoreTerminalChat();
+        if (g_stopGeneration) printf("\n(stopped)\n");
+        g_stopGeneration = 0;
         deltaItems.clear();
     } while (pos < seqLen);
 
